@@ -28,6 +28,7 @@
   --home-a: #4b5fe0;
   --home-b: #8a5cd6;
   --home-soft: #e9ecfb;
+  --home-glow: 0.35;
   /* 대리석 배경 + 글라스 카드 */
   --marble-base: linear-gradient(165deg, #fcfcfc 0%, #f1f1f1 55%, #f7f7f7 100%);
   --marble-sheen: radial-gradient(70% 45% at 15% 8%, rgba(255, 255, 255, 1), transparent 62%),
@@ -88,9 +89,10 @@
     --c-etc: #f5f5f5;
     --paper: #161616;
     --rule: #2e2e2e;
-    --home-a: #6f82f0;
-    --home-b: #a07ee8;
+    --home-a: #7b8dff;
+    --home-b: #b08cf5;
     --home-soft: #232a46;
+    --home-glow: 0.55;
     --marble-base: linear-gradient(165deg, #141414 0%, #0c0c0c 55%, #121212 100%);
     --marble-sheen: radial-gradient(70% 45% at 15% 8%, rgba(255, 255, 255, 0.07), transparent 62%),
       radial-gradient(55% 38% at 85% 28%, rgba(255, 255, 255, 0.03), transparent 60%),
@@ -233,9 +235,25 @@ input, textarea, select { font: inherit; color: inherit; }
   position: relative; overflow: hidden;
   border-radius: 22px; padding: 22px 20px;
   color: #fff;
-  background: linear-gradient(135deg, var(--home-a) 0%, var(--home-b) 100%);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--home-a) 35%, transparent);
+  background:
+    radial-gradient(80% 60% at 0% 0%, rgba(255, 255, 255, 0.28), transparent 60%),
+    linear-gradient(135deg, var(--home-a) 0%, var(--home-b) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 10px 30px color-mix(in srgb, var(--home-a) calc(var(--home-glow) * 100%), transparent),
+    0 24px 70px color-mix(in srgb, var(--home-b) calc(var(--home-glow) * 70%), transparent);
 }
+/* 히어로 뒤에 번지는 빛 */
+.screen.home { position: relative; }
+.ambient {
+  position: absolute; left: 0; right: 0; top: -30px; height: 320px; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(55% 60% at 30% 35%, color-mix(in srgb, var(--home-a) calc(var(--home-glow) * 100%), transparent), transparent 70%),
+    radial-gradient(50% 55% at 75% 45%, color-mix(in srgb, var(--home-b) calc(var(--home-glow) * 90%), transparent), transparent 70%);
+  filter: blur(36px);
+}
+.screen.home > *:not(.ambient) { position: relative; z-index: 1; }
 /* 흑백 대리석 히어로 (기록·메모·목표·일정) */
 .hero.mono {
   background:
@@ -278,8 +296,8 @@ input, textarea, select { font: inherit; color: inherit; }
   background: var(--surface-2); color: var(--text);
 }
 .hero .pill {
-  background: rgba(255, 255, 255, 0.2); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.22); color: #fff; border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 14px rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(10px);
 }
 
@@ -309,10 +327,18 @@ input, textarea, select { font: inherit; color: inherit; }
 .moment-btn b { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
 .moment-btn small { font-size: 11.5px; color: var(--text-2); }
 .moment-btn.on {
-  background: color-mix(in srgb, var(--home-a) 12%, var(--glass-bg)); color: var(--text);
-  border-color: color-mix(in srgb, var(--home-a) 45%, transparent);
-  box-shadow: inset 0 1px 0 var(--glass-hi), 0 6px 18px color-mix(in srgb, var(--home-a) 18%, transparent);
+  background:
+    radial-gradient(80% 60% at 0% 0%, color-mix(in srgb, var(--home-a) 22%, transparent), transparent 60%),
+    color-mix(in srgb, var(--home-a) 14%, var(--glass-bg));
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--home-a) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    0 8px 24px color-mix(in srgb, var(--home-a) calc(var(--home-glow) * 70%), transparent),
+    0 0 0 1px color-mix(in srgb, var(--home-a) 20%, transparent);
 }
+.moment-btn.on .emoji { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--home-a) 70%, transparent)); }
+.next-step { box-shadow: inset 0 1px 0 var(--card-glass-hi), 0 8px 24px color-mix(in srgb, var(--home-a) calc(var(--home-glow) * 50%), transparent); }
 .moment-btn.on b { color: var(--home-a); }
 .moment-btn:disabled { opacity: 0.6; }
 .moment .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

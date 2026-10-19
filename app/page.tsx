@@ -166,7 +166,8 @@ export default function HomePage() {
           ) : undefined
         }
       />
-      <div className="screen">
+      <div className="screen home">
+        <div className="ambient" aria-hidden="true" />
         {stats.empty ? (
           <section className="hero">
             <div className="label">시작하기</div>
