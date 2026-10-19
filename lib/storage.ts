@@ -5,7 +5,8 @@ import { CATEGORIES, CategoryId, MemoCat } from "./categories";
 /* ---------- 기록(점수+메모) ---------- */
 
 export interface CategoryEntry {
-  score: number; // -5 ~ +5
+  score: number; // 오늘 위치: -5 ~ +5 (어제 위치 + 오늘 고른 변화, 범위 밖이면 끝에서 멈춤)
+  delta?: number; // 오늘 고른 "어제보다" 변화: -3 ~ +3 (입력 UI용, 없으면 score 차이로 계산)
   note: string;
 }
 

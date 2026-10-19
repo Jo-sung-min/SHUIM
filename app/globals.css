@@ -418,7 +418,13 @@ input, textarea, select { font: inherit; color: inherit; }
 /* ---------- 기록 ---------- */
 .entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .entry-title { font-weight: 700; display: flex; align-items: center; gap: 8px; font-size: 15px; }
-.score-val { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 40px; text-align: right; font-size: 16px; }
+.score-val { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 40px; text-align: right; font-size: 16px; display: grid; justify-items: end; line-height: 1.2; }
+.score-val .delta.up { color: var(--up); }
+.score-val .delta.down { color: var(--down); }
+.score-val .delta.flat { color: var(--text-2); }
+.score-val small { font-size: 11px; font-weight: 500; color: var(--text-3); white-space: nowrap; }
+.score-val .muted { font-size: 13px; font-weight: 600; }
+.score-axis { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-3); margin-top: 5px; padding: 0 2px; }
 .score-row { display: flex; gap: 3px; }
 .score-btn {
   flex: 1; padding: 8px 0; border-radius: 8px;

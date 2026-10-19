@@ -11,7 +11,11 @@ import HelpBanner from "@/components/HelpBanner";
 import { Empty, Hero, Segmented, TopBar, fmtDate } from "@/components/ui";
 import { IconPlus, IconSparkle } from "@/components/Icons";
 
-const SCORES = Array.from({ length: SCORE_MAX - SCORE_MIN + 1 }, (_, i) => SCORE_MIN + i);
+/** 어제 대비 변화 선택지: -3(많이 내려감) ~ +3(많이 올라옴) */
+const DELTA_MAX = 3;
+const DELTAS = Array.from({ length: DELTA_MAX * 2 + 1 }, (_, i) => i - DELTA_MAX);
+const clamp = (v: number) => Math.max(SCORE_MIN, Math.min(SCORE_MAX, v));
+const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 type View = "today" | "flow";
 
 export default function LogPage() {
@@ -42,7 +46,7 @@ export default function LogPage() {
         <Hero
           label={stat.streak > 0 ? `연속 ${stat.streak}일째` : "첫 기록"}
           title={title}
-          sub="점수의 높낮이보다 어제보다 얼마나 움직였는지가 핵심이에요."
+          sub="점수는 어제와 비교한 변화예요. 어디에 있는지가 아니라 어느 쪽으로 움직였는지를 적어요."
           stats={[`행동 ${stat.did}개`, `기분 ${stat.filled}/${CATEGORIES.length}`]}
         />
         <div style={{ marginTop: 12 }}>
@@ -100,13 +104,19 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
     [date]
   );
 
-  const update = (id: CategoryId, patch: Partial<{ score: number; note: string }>) => {
+  const update = (id: CategoryId, patch: Partial<{ score: number; delta: number; note: string }>) => {
     setDay((d) => {
       const next = { ...d, [id]: { score: d[id]?.score ?? 0, note: d[id]?.note ?? "", ...patch } };
       persist(next, did);
       return next;
     });
   };
+
+  /** 어제 위치 (어제 기록이 없으면 보통 날 0을 기준으로) */
+  const prevScoreOf = (id: CategoryId) => prev?.[id]?.score ?? 0;
+
+  /** "어제보다 d만큼" 선택 → 오늘 위치 = 어제 위치 + d */
+  const pickDelta = (id: CategoryId, d: number) => update(id, { delta: d, score: clamp(prevScoreOf(id) + d) });
 
   const toggleDid = (text: string) => {
     const t = text.trim();
@@ -163,7 +173,7 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
       </section>
 
       <div className="section-title">
-        <span>오늘의 기분</span>
+        <span>오늘의 기분 · 어제보다</span>
         <span className={`saved-indicator ${saved ? "on" : ""}`}>{filled === 0 ? "" : saved ? "저장됨" : "저장 중…"}</span>
       </div>
 
@@ -172,8 +182,9 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
       <div className="stack">
         {CATEGORIES.map((c) => {
           const e = day[c.id];
-          const p = prev?.[c.id]?.score;
-          const diff = e && typeof p === "number" ? e.score - p : null;
+          const hasPrev = typeof prev?.[c.id]?.score === "number";
+          const p = prevScoreOf(c.id);
+          const delta = e ? e.delta ?? e.score - p : null;
           return (
             <section key={c.id} className="card">
               <div className="entry-head">
@@ -181,28 +192,38 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
                   {c.emoji} {c.label}
                 </div>
                 <div className="score-val" aria-live="polite">
-                  {e ? (e.score > 0 ? `+${e.score}` : e.score) : <span className="muted">–</span>}
-                  {diff !== null && diff !== 0 && (
-                    <span style={{ color: diff > 0 ? "var(--up)" : "var(--down)", fontSize: 12, marginLeft: 6 }}>
-                      {diff > 0 ? "▲" : "▼"}
-                      {Math.abs(diff)}
-                    </span>
+                  {delta === null ? (
+                    <span className="muted">어제보다?</span>
+                  ) : (
+                    <>
+                      <span className={`delta ${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>
+                        {delta > 0 ? "▲" : delta < 0 ? "▼" : "→"} {delta === 0 ? "그대로" : Math.abs(delta)}
+                      </span>
+                      <small>
+                        {hasPrev ? `어제 ${signed(p)}` : "기준 0"} → 오늘 {signed(e!.score)}
+                      </small>
+                    </>
                   )}
                 </div>
               </div>
-              <div className="score-row" role="radiogroup" aria-label={`${c.label} 점수`}>
-                {SCORES.map((s) => (
+              <div className="score-row" role="radiogroup" aria-label={`${c.label}, 어제보다 얼마나`}>
+                {DELTAS.map((d) => (
                   <button
-                    key={s}
+                    key={d}
                     type="button"
                     role="radio"
-                    aria-checked={e?.score === s}
-                    className={`score-btn ${s < 0 ? "neg" : s > 0 ? "pos" : ""} ${e?.score === s ? "on" : ""}`}
-                    onClick={() => update(c.id, { score: s })}
+                    aria-checked={delta === d}
+                    className={`score-btn ${d < 0 ? "neg" : d > 0 ? "pos" : ""} ${delta === d ? "on" : ""}`}
+                    onClick={() => pickDelta(c.id, d)}
                   >
-                    {s > 0 ? `+${s}` : s}
+                    {d === 0 ? "=" : signed(d)}
                   </button>
                 ))}
+              </div>
+              <div className="score-axis" aria-hidden="true">
+                <span>▼ 내려감</span>
+                <span>어제와 같음</span>
+                <span>올라옴 ▲</span>
               </div>
               <textarea
                 className="note"
