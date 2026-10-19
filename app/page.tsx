@@ -39,9 +39,9 @@ interface Data {
   schedule: ScheduleItem[];
 }
 
-const MOMENTS: Record<MomentMode, { emoji: string; label: string; sub: string; heading: string; color: string }> = {
-  praise: { emoji: "🌟", label: "나를 칭찬하기", sub: "기록에서 잘한 걸 찾아줘요", heading: "오늘의 칭찬", color: "var(--c-money)" },
-  love: { emoji: "💗", label: "나를 사랑하기", sub: "오늘 나를 아끼는 방법", heading: "오늘 나를 사랑하는 법", color: "var(--c-relation)" },
+const MOMENTS: Record<MomentMode, { emoji: string; label: string; sub: string; heading: string }> = {
+  praise: { emoji: "🌟", label: "나를 칭찬하기", sub: "기록에서 잘한 걸 찾아줘요", heading: "오늘의 칭찬" },
+  love: { emoji: "💗", label: "나를 사랑하기", sub: "오늘 나를 아끼는 방법", heading: "오늘 나를 사랑하는 법" },
 };
 
 /** API로 보낼 재료: 최근 기록, 오늘 한 일, 메모, 목표, 일정 */
@@ -212,7 +212,6 @@ export default function HomePage() {
                 <button
                   key={mode}
                   className={`moment-btn ${open === mode ? "on" : ""}`}
-                  style={{ ["--m" as string]: m.color }}
                   onClick={() => pressMoment(mode)}
                   disabled={loading !== null}
                   aria-pressed={open === mode}
@@ -231,7 +230,7 @@ export default function HomePage() {
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
         {loading && loading !== "briefing" && (
-          <section className="card moment" style={{ marginTop: 10, ["--m" as string]: MOMENTS[loading].color }} aria-busy="true">
+          <section className="card moment" style={{ marginTop: 10 }} aria-busy="true">
             <div className="head"><span className="label">{MOMENTS[loading].heading}</span></div>
             <div className="skeleton" style={{ height: 20, width: "75%", marginBottom: 14 }} />
             <div className="skeleton" style={{ height: 14, width: "100%" }} />
@@ -241,7 +240,7 @@ export default function HomePage() {
         )}
 
         {open && openMoment && !loading && (
-          <section className="card moment" style={{ marginTop: 10, ["--m" as string]: MOMENTS[open].color }}>
+          <section className="card moment" style={{ marginTop: 10 }}>
             <div className="head">
               <span className="label">{MOMENTS[open].emoji} {MOMENTS[open].heading}</span>
               <span className="row" style={{ gap: 6 }}>

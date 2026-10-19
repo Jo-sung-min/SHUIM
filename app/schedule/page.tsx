@@ -86,7 +86,7 @@ export default function SchedulePage() {
                   <b>{Number(k.slice(8))}</b>
                   <span className="marks">
                     {marks.map((m) => (
-                      <i key={m.id} style={{ background: k === sel ? "var(--bg)" : memoCatById(m.cat).color, opacity: m.done ? 0.4 : 1 }} />
+                      <i key={m.id} style={{ opacity: m.done ? 0.35 : 1 }} />
                     ))}
                   </span>
                 </button>
@@ -146,10 +146,9 @@ function EventRow({ item, showDate, onToggle, onEdit }: { item: ScheduleItem; sh
   return (
     <div className={`event ${item.done ? "done" : ""}`}>
       <span className="time">{showDate ? fmtDate(item.date, false).replace("월 ", "/").replace("일", "") : item.time ?? "종일"}</span>
-      <span className="bar" style={{ background: c.color }} />
       <button className="grow" style={{ background: "none", border: "none", textAlign: "left", padding: 0 }} onClick={onEdit}>
         <div className="title">{item.title}</div>
-        <div className="tiny muted">{showDate && item.time ? `${item.time} · ` : ""}{c.label}</div>
+        <div className="tiny muted">{showDate && item.time ? `${item.time} · ` : ""}{c.emoji} {c.label}</div>
       </button>
       <button className="check" aria-label={item.done ? "완료 취소" : "완료"} onClick={onToggle}>
         {item.done && <IconCheck />}

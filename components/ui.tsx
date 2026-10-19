@@ -76,9 +76,8 @@ export function CatChips({
 export function CatTag({ cat }: { cat: MemoCat }) {
   const c = memoCatById(cat);
   return (
-    <span className="cat" style={{ color: c.color }}>
-      <span className="dot" style={{ background: c.color }} />
-      {c.label}
+    <span className="cat">
+      {c.emoji} {c.label}
     </span>
   );
 }

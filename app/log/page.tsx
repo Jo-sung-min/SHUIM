@@ -143,7 +143,6 @@ function TodayWrite() {
             <section key={c.id} className="card">
               <div className="entry-head">
                 <div className="entry-title">
-                  <span className="dot" style={{ background: c.color }} />
                   {c.emoji} {c.label}
                 </div>
                 <div className="score-val" aria-live="polite">

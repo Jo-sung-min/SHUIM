@@ -54,21 +54,26 @@ export default function MemoPage() {
             오늘의 나가 읽고 방향을 잡아줘요.
           </Empty>
         ) : (
-          <div className="stack" style={{ marginTop: 6 }}>
+          <div className="notepad">
+            <div className="notepad-binding" aria-hidden="true">
+              <i /><i /><i /><i /><i /><i /><i />
+            </div>
             {list.map((m) => (
-              <article key={m.id} className="card memo" onClick={() => setEditing(m)} role="button" tabIndex={0}>
-                <div className="memo-meta">
-                  <CatTag cat={m.cat} />
-                  <span>·</span>
-                  <span>{fmtRelative(m.updatedAt)}</span>
-                  {m.pinned && (
-                    <span className="pin" aria-label="고정됨">
-                      <IconPin />
-                    </span>
-                  )}
+              <button key={m.id} type="button" className="memo" onClick={() => setEditing(m)}>
+                <div className="paper">
+                  <div className="memo-meta">
+                    <CatTag cat={m.cat} />
+                    <span>·</span>
+                    <span>{fmtRelative(m.updatedAt)}</span>
+                    {m.pinned && (
+                      <span className="pin" aria-label="고정됨">
+                        <IconPin />
+                      </span>
+                    )}
+                  </div>
+                  <p className="memo-text">{m.text}</p>
                 </div>
-                <p className="memo-text">{m.text}</p>
-              </article>
+              </button>
             ))}
           </div>
         )}
@@ -133,7 +138,7 @@ function MemoSheet({
         </div>
         <div className="field">
           <label>내용</label>
-          <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="오늘 든 생각, 깨달은 것, 다짐…" />
+          <textarea className="lined" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="오늘 든 생각, 깨달은 것, 다짐…" />
         </div>
         <label className="row" style={{ fontSize: 14, gap: 10 }}>
           <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
