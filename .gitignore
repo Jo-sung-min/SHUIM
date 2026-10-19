@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# production
+build/
+dist/
+
+# env (API 키 등 비밀값)
+.env
+.env.local
+.env.*.local
+
+# typescript
+*.tsbuildinfo
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# vercel
+.vercel
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# claude desktop local launch config
+.claude/
