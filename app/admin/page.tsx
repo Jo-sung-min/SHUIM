@@ -43,7 +43,7 @@ export default function AdminPage() {
         <Hero
           label="프로토타입 · 로그인 없이 누구나 열람"
           title={flagged.length ? `검토할 글 ${flagged.length}개` : "검토할 글이 없어요"}
-          sub={`신고가 ${REPORT_THRESHOLD}번 이상 쌓인 글과 댓글이 여기 모여요. 숨기거나, 작성자를 차단하거나, 문제 없음으로 돌려보낼 수 있어요.`}
+          sub={`외침·위로 피드·댓글 중 신고가 ${REPORT_THRESHOLD}번 이상 쌓인 것이 여기 모여요. 숨기거나, 작성자를 차단하거나, 문제 없음으로 돌려보낼 수 있어요.`}
           stats={[`대기 ${flagged.length}`, `차단 유저 ${blocked.length}`]}
         />
 
@@ -92,12 +92,12 @@ export default function AdminPage() {
 
 function FlaggedCard({ f, s, onChange }: { f: FlaggedItem; s: CommunityStore; onChange: (s: CommunityStore) => void }) {
   const counts = REPORT_REASONS.map((r) => ({ ...r, n: f.reports.filter((x) => x.reason === r.id).length })).filter((r) => r.n > 0);
-  const isPost = f.target.kind === "post";
   const cat = "cat" in f.item ? shoutCatById(f.item.cat) : null;
+  const kindLabel = f.target.kind === "post" ? `${cat!.emoji} ${cat!.label}` : f.target.kind === "feed" ? "🎞️ 위로 피드" : "💬 댓글";
   return (
     <section className="card admin-item">
       <div className="post-head">
-        <span className="cat">{isPost ? `${cat!.emoji} ${cat!.label}` : "💬 댓글"}</span>
+        <span className="cat">{kindLabel}</span>
         <span>·</span>
         <span className="nick">{f.author.nick}{f.author.id === s.me.id ? " (나)" : ""}</span>
         <span>·</span>

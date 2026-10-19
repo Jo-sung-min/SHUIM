@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * 외침(커뮤니티) 데이터 계층.
+ * 외침(커뮤니티) + 위로 피드 데이터 계층.
  * 지금은 localStorage 프로토타입이지만, 함수 시그니처는 서버 API로 바꿔 끼울 수 있게 맞춰 두었다.
- * - 글/댓글에는 "좋아요"가 없고 "힘내요"만 있다.
+ * - 글/댓글/피드에는 "좋아요"가 없고 "힘내요"만 있다.
  * - 위로가 아닌 내용은 신고할 수 있고, 신고가 REPORT_THRESHOLD(5)번 쌓이면 관리자 검토 대기열에 올라간다.
- * - 관리자는 검토 대기열에서 글을 숨기거나 작성자를 차단할 수 있다. 차단된 유저의 글·댓글은 숨겨지고 글을 쓸 수 없다.
+ * - 관리자는 검토 대기열에서 내용을 숨기거나 작성자를 차단할 수 있다. 차단된 유저의 글·댓글·피드는 숨겨지고 글을 쓸 수 없다.
+ * - 위로 피드: 크리에이터가 올리는 짧은 위로글을 쇼츠처럼 세로로 넘겨 본다. 글을 올리면 누구나 크리에이터가 된다.
  */
 
 import { COMMUNITY_KEY, read, uid, write } from "./storage";
@@ -43,6 +44,10 @@ export const REPORT_REASONS: { id: ReportReason; label: string; desc: string }[]
 
 export const REPORT_THRESHOLD = 5;
 
+/** 위로 피드 배경 스타일 수 (CSS .reel.bg-0 ~ bg-N) */
+export const FEED_BG_COUNT = 6;
+export const FEED_BG_LABELS = ["먹", "안개", "새벽", "밤하늘", "종이", "노을"];
+
 export interface Report {
   by: string; // userId
   reason: ReportReason;
@@ -54,6 +59,12 @@ export interface User {
   nick: string;
   blockedAt?: number;
   blockedReason?: string;
+}
+
+export interface Creator {
+  bio: string;
+  followers: string[]; // userId 목록
+  since: number;
 }
 
 interface Base {
@@ -72,7 +83,13 @@ export interface Post extends Base {
 }
 
 export interface Comment extends Base {
-  postId: string;
+  postId: string; // Post.id 또는 FeedPost.id
+}
+
+export interface FeedPost extends Base {
+  title?: string;
+  bg: number; // 0 ~ FEED_BG_COUNT-1
+  saves: string[]; // 저장한 userId 목록
 }
 
 export interface CommunityStore {
@@ -80,9 +97,13 @@ export interface CommunityStore {
   users: User[];
   posts: Post[];
   comments: Comment[];
+  feed: FeedPost[];
+  creators: Record<string, Creator>;
+  following: string[]; // 내가 팔로우한 크리에이터 userId
 }
 
-export type Target = { kind: "post"; id: string } | { kind: "comment"; id: string };
+export type TargetKind = "post" | "comment" | "feed";
+export type Target = { kind: TargetKind; id: string };
 
 /* ---------- 닉네임 ---------- */
 
@@ -95,11 +116,28 @@ function randomNick() {
 /* ---------- 로드/세이브 ---------- */
 
 export function loadCommunity(): CommunityStore {
-  const s = read<CommunityStore | null>(COMMUNITY_KEY, null);
-  if (s) return s;
-  const fresh = seedCommunity();
-  write(COMMUNITY_KEY, fresh);
-  return fresh;
+  const s = read<Partial<CommunityStore> | null>(COMMUNITY_KEY, null);
+  if (!s || !s.me) {
+    const fresh = seedCommunity();
+    write(COMMUNITY_KEY, fresh);
+    return fresh;
+  }
+  // 이전 버전(피드 없음) 마이그레이션
+  if (!s.feed) {
+    const seeded = seedCommunity();
+    const migrated: CommunityStore = {
+      me: s.me,
+      users: s.users ?? seeded.users,
+      posts: s.posts ?? [],
+      comments: [...(s.comments ?? []), ...seeded.comments.filter((c) => seeded.feed.some((f) => f.id === c.postId))],
+      feed: seeded.feed,
+      creators: seeded.creators,
+      following: [],
+    };
+    write(COMMUNITY_KEY, migrated);
+    return migrated;
+  }
+  return s as CommunityStore;
 }
 
 export const saveCommunity = (s: CommunityStore) => write(COMMUNITY_KEY, s);
@@ -125,6 +163,26 @@ export function isVisible(s: CommunityStore, item: Base): boolean {
   return !isBlocked(userById(s, item.authorId));
 }
 
+/* ---------- 공통: 대상별 패치 ---------- */
+
+function patchTarget(s: CommunityStore, target: Target, fn: <T extends Base>(x: T) => T): CommunityStore {
+  const map = <T extends Base>(list: T[]) => list.map((x) => (x.id === target.id ? fn(x) : x));
+  const next =
+    target.kind === "post"
+      ? { ...s, posts: map(s.posts) }
+      : target.kind === "comment"
+      ? { ...s, comments: map(s.comments) }
+      : { ...s, feed: map(s.feed) };
+  saveCommunity(next);
+  return next;
+}
+
+export function findTarget(s: CommunityStore, target: Target): Post | Comment | FeedPost | undefined {
+  if (target.kind === "post") return s.posts.find((p) => p.id === target.id);
+  if (target.kind === "comment") return s.comments.find((c) => c.id === target.id);
+  return s.feed.find((f) => f.id === target.id);
+}
+
 /* ---------- 글 ---------- */
 
 export function createPost(s: CommunityStore, cat: ShoutCat, text: string): CommunityStore {
@@ -143,7 +201,7 @@ export function deletePost(s: CommunityStore, id: string): CommunityStore {
   return next;
 }
 
-/* ---------- 댓글 ---------- */
+/* ---------- 댓글 (외침 글과 피드 글 공용) ---------- */
 
 export function addComment(s: CommunityStore, postId: string, text: string): CommunityStore {
   if (isBlocked(s.me)) return s;
@@ -164,24 +222,73 @@ export function deleteComment(s: CommunityStore, id: string): CommunityStore {
 export const commentsOf = (s: CommunityStore, postId: string) =>
   s.comments.filter((c) => c.postId === postId && isVisible(s, c)).sort((a, b) => a.createdAt - b.createdAt);
 
-/* ---------- 힘내요 ---------- */
+/* ---------- 위로 피드 (크리에이터) ---------- */
 
-function patch<T extends Base>(list: T[], id: string, fn: (x: T) => T): T[] {
-  return list.map((x) => (x.id === id ? fn(x) : x));
+export const isCreator = (s: CommunityStore, userId: string) => Boolean(s.creators[userId]);
+
+export function creatorOf(s: CommunityStore, userId: string): Creator {
+  return s.creators[userId] ?? { bio: "", followers: [], since: Date.now() };
 }
+
+/** 보이는 피드 글, 최신순. 팔로우한 크리에이터 글은 앞쪽에 섞이지 않고 순서 그대로 (쇼츠처럼 시간순) */
+export const listFeed = (s: CommunityStore) => s.feed.filter((f) => isVisible(s, f)).sort((a, b) => b.createdAt - a.createdAt);
+
+export function createFeedPost(s: CommunityStore, text: string, bg: number, title?: string): CommunityStore {
+  if (isBlocked(s.me)) return s;
+  const t = text.trim();
+  if (!t) return s;
+  const f: FeedPost = {
+    id: uid(), authorId: s.me.id, text: t, title: title?.trim() || undefined,
+    bg: Math.max(0, Math.min(FEED_BG_COUNT - 1, bg)), createdAt: Date.now(), cheers: [], reports: [], saves: [],
+  };
+  const creators = { ...s.creators };
+  if (!creators[s.me.id]) creators[s.me.id] = { bio: "", followers: [], since: Date.now() };
+  const next = { ...s, feed: [f, ...s.feed], creators };
+  saveCommunity(next);
+  return next;
+}
+
+export function deleteFeedPost(s: CommunityStore, id: string): CommunityStore {
+  const next = { ...s, feed: s.feed.filter((f) => f.id !== id), comments: s.comments.filter((c) => c.postId !== id) };
+  saveCommunity(next);
+  return next;
+}
+
+export function updateCreatorBio(s: CommunityStore, bio: string): CommunityStore {
+  const cur = creatorOf(s, s.me.id);
+  const next = { ...s, creators: { ...s.creators, [s.me.id]: { ...cur, bio: bio.trim().slice(0, 80) } } };
+  saveCommunity(next);
+  return next;
+}
+
+export function toggleFollow(s: CommunityStore, creatorId: string): CommunityStore {
+  if (creatorId === s.me.id) return s;
+  const following = s.following.includes(creatorId) ? s.following.filter((x) => x !== creatorId) : [...s.following, creatorId];
+  const cur = creatorOf(s, creatorId);
+  const followers = following.includes(creatorId) ? Array.from(new Set([...cur.followers, s.me.id])) : cur.followers.filter((x) => x !== s.me.id);
+  const next = { ...s, following, creators: { ...s.creators, [creatorId]: { ...cur, followers } } };
+  saveCommunity(next);
+  return next;
+}
+
+export function toggleSave(s: CommunityStore, feedId: string): CommunityStore {
+  const me = s.me.id;
+  const next = {
+    ...s,
+    feed: s.feed.map((f) => (f.id === feedId ? { ...f, saves: f.saves.includes(me) ? f.saves.filter((x) => x !== me) : [...f.saves, me] } : f)),
+  };
+  saveCommunity(next);
+  return next;
+}
+
+/* ---------- 힘내요 ---------- */
 
 export function toggleCheer(s: CommunityStore, target: Target): CommunityStore {
   const me = s.me.id;
-  const fn = <T extends Base>(x: T): T => ({
+  return patchTarget(s, target, (x) => ({
     ...x,
     cheers: x.cheers.includes(me) ? x.cheers.filter((u) => u !== me) : [...x.cheers, me],
-  });
-  const next =
-    target.kind === "post"
-      ? { ...s, posts: patch(s.posts, target.id, fn) }
-      : { ...s, comments: patch(s.comments, target.id, fn) };
-  saveCommunity(next);
-  return next;
+  }));
 }
 
 /* ---------- 신고 ---------- */
@@ -192,21 +299,16 @@ export function hasReported(s: CommunityStore, item: Base) {
 
 export function report(s: CommunityStore, target: Target, reason: ReportReason): CommunityStore {
   const me = s.me.id;
-  const fn = <T extends Base>(x: T): T =>
-    activeReports(x).some((r) => r.by === me) ? x : { ...x, reports: [...x.reports, { by: me, reason, at: Date.now() }] };
-  const next =
-    target.kind === "post"
-      ? { ...s, posts: patch(s.posts, target.id, fn) }
-      : { ...s, comments: patch(s.comments, target.id, fn) };
-  saveCommunity(next);
-  return next;
+  return patchTarget(s, target, (x) =>
+    activeReports(x).some((r) => r.by === me) ? x : { ...x, reports: [...x.reports, { by: me, reason, at: Date.now() }] }
+  );
 }
 
 /* ---------- 관리자 ---------- */
 
 export interface FlaggedItem {
   target: Target;
-  item: Post | Comment;
+  item: Post | Comment | FeedPost;
   author: User;
   reports: Report[];
   postText?: string; // 댓글이면 원글 요약
@@ -214,34 +316,25 @@ export interface FlaggedItem {
 
 export function listFlagged(s: CommunityStore): FlaggedItem[] {
   const out: FlaggedItem[] = [];
-  const authorOk = (item: Base) => !isBlocked(userById(s, item.authorId));
-  for (const p of s.posts) if (isFlagged(p) && authorOk(p)) out.push({ target: { kind: "post", id: p.id }, item: p, author: userById(s, p.authorId), reports: activeReports(p) });
-  for (const c of s.comments)
-    if (isFlagged(c) && authorOk(c))
+  const ok = (item: Base) => isFlagged(item) && !isBlocked(userById(s, item.authorId));
+  for (const p of s.posts ?? []) if (ok(p)) out.push({ target: { kind: "post", id: p.id }, item: p, author: userById(s, p.authorId), reports: activeReports(p) });
+  for (const f of s.feed ?? []) if (ok(f)) out.push({ target: { kind: "feed", id: f.id }, item: f, author: userById(s, f.authorId), reports: activeReports(f) });
+  for (const c of s.comments ?? [])
+    if (ok(c))
       out.push({
         target: { kind: "comment", id: c.id },
         item: c,
         author: userById(s, c.authorId),
         reports: activeReports(c),
-        postText: s.posts.find((p) => p.id === c.postId)?.text,
+        postText: (s.posts.find((p) => p.id === c.postId) ?? s.feed.find((f) => f.id === c.postId))?.text,
       });
   return out.sort((a, b) => b.reports.length - a.reports.length || b.item.createdAt - a.item.createdAt);
 }
 
-export function adminHide(s: CommunityStore, target: Target): CommunityStore {
-  const fn = <T extends Base>(x: T): T => ({ ...x, hidden: true });
-  const next = target.kind === "post" ? { ...s, posts: patch(s.posts, target.id, fn) } : { ...s, comments: patch(s.comments, target.id, fn) };
-  saveCommunity(next);
-  return next;
-}
+export const adminHide = (s: CommunityStore, target: Target) => patchTarget(s, target, (x) => ({ ...x, hidden: true }));
 
 /** "문제 없음": 지금까지의 신고를 검토 완료로 처리 (피드에 계속 보임) */
-export function adminDismiss(s: CommunityStore, target: Target): CommunityStore {
-  const fn = <T extends Base>(x: T): T => ({ ...x, reviewedAt: Date.now() });
-  const next = target.kind === "post" ? { ...s, posts: patch(s.posts, target.id, fn) } : { ...s, comments: patch(s.comments, target.id, fn) };
-  saveCommunity(next);
-  return next;
-}
+export const adminDismiss = (s: CommunityStore, target: Target) => patchTarget(s, target, (x) => ({ ...x, reviewedAt: Date.now() }));
 
 export function adminBlockUser(s: CommunityStore, userId: string, reason: string): CommunityStore {
   const mark = (u: User): User => (u.id === userId ? { ...u, blockedAt: Date.now(), blockedReason: reason } : u);
@@ -286,6 +379,9 @@ export function seedCommunity(): CommunityStore {
   const C = (id: string, postId: string, authorId: string, text: string, ago: number, cheers: string[] = [], reports: Report[] = []): Comment => ({
     id, postId, authorId, text, createdAt: t - ago, cheers, reports,
   });
+  const F = (id: string, authorId: string, bg: number, text: string, ago: number, cheers: string[] = [], saves: string[] = [], title?: string): FeedPost => ({
+    id, authorId, bg, text, title, createdAt: t - ago, cheers, reports: [], saves,
+  });
   const R = (by: string, reason: ReportReason, ago: number): Report => ({ by, reason, at: t - ago });
 
   const posts: Post[] = [
@@ -311,8 +407,25 @@ export function seedCommunity(): CommunityStore {
     C("c6", "p4", "u2", "이유가 없어도 무서울 수 있어요. 내일이 오면 내일의 당신이 알아서 할 거예요.", 10 * H, ["u5"]),
     C("c7", "p5", "u4", "지금 '미안'이라는 두 글자만 문자로 보내도 돼요. 통화는 그다음에.", 25 * H, ["u3", "u1"]),
     C("c8", "p6", "u5", "저는 누워서 숨을 4초 들이쉬고 6초 내쉬는 걸 10번 해요. 잠이 안 와도 심장은 좀 느려져요.", 29 * H, ["u6"]),
+    // 피드 댓글
+    C("fc1", "f1", "u1", "이 글 보고 오늘 처음으로 울었어요. 고마워요.", 1.2 * H, ["u2", "u4"]),
+    C("fc2", "f1", "u5", "저장해두고 매일 아침 읽을게요.", 0.9 * H, ["u2"]),
+    C("fc3", "f3", "u4", "숫자를 안 보는 연습, 저도 같이 할게요.", 8 * H, ["u3"]),
   ];
-  return { me, users, posts, comments };
+  const feed: FeedPost[] = [
+    F("f1", "u2", 0, "떨어진 날은\n내가 모자란 날이 아니라\n내가 거기까지 걸어간 날이에요.\n\n3차까지 간 사람은\n3차까지 걸어간 사람이에요.", 1.5 * H, ["u1", "u3", "u4", "u5", "u6"], ["u1", "u5"], "떨어진 날에게"),
+    F("f2", "u3", 2, "불안은 미래를 재는 자예요.\n자를 내려놓으면\n오늘 한 걸음만 남아요.\n\n오늘은 그 한 걸음만 봐요.", 4 * H, ["u1", "u2", "u5"], ["u4"], "자를 내려놓기"),
+    F("f3", "u2", 3, "주식창을 열지 않은 하루는\n아무 일도 없던 하루가 아니라\n나를 지킨 하루예요.", 9 * H, ["u1", "u4", "u6"], ["u1"], undefined),
+    F("f4", "u5", 1, "잠이 안 오는 밤엔\n잠을 쫓지 말고\n숨만 세어요.\n넷 들이쉬고, 여섯 내쉬고.\n\n잠은 오지 않아도\n심장은 느려져요.", 15 * H, ["u3", "u6"], ["u6"], "잠이 안 오는 밤"),
+    F("f5", "u3", 4, "괜히 짜증낸 날,\n미안하다는 말은\n두 글자면 충분해요.\n\n길게 쓰려다 못 보내는 것보다\n두 글자가 먼저예요.", 27 * H, ["u1", "u2", "u4"], [], undefined),
+    F("f6", "u2", 5, "오늘 30분 걸은 사람에게.\n\n3주 만의 30분은\n30분이 아니라 3주예요.", 31 * H, ["u1", "u3", "u4", "u5", "u6", "u7"], ["u3", "u5"], "작은 승리에게"),
+  ];
+  const creators: Record<string, Creator> = {
+    u2: { bio: "떨어진 날의 사람들에게 쓰는 짧은 글", followers: ["u1", "u3", "u4", "u5", "u6"], since: t - 40 * 24 * H },
+    u3: { bio: "불안을 작게 만드는 문장들", followers: ["u1", "u2", "u5"], since: t - 25 * 24 * H },
+    u5: { bio: "잠 못 드는 밤을 위한 글", followers: ["u2", "u6"], since: t - 12 * 24 * H },
+  };
+  return { me, users, posts, comments, feed, creators, following: [] };
 }
 
 export function resetCommunity(): CommunityStore {
