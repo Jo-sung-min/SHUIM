@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat, memoCatById } from "@/lib/categories";
 import { Goal, GoalStep, goalProgress, loadGoals, saveGoals, todayKey, uid } from "@/lib/storage";
-import { CatChips, CatTag, Empty, Sheet, TopBar, fmtDate } from "@/components/ui";
+import { CatChips, CatTag, Empty, Hero, Sheet, TopBar, fmtDate } from "@/components/ui";
 import { IconCheck, IconPlus } from "@/components/Icons";
 
 export default function GoalsPage() {
@@ -47,10 +47,21 @@ export default function GoalsPage() {
 
   if (!goals) return <TopBar title="목표" />;
 
+  const totalSteps = active.reduce((n, g) => n + g.steps.length, 0);
+  const doneSteps = active.reduce((n, g) => n + g.steps.filter((s) => s.done).length, 0);
+  const pct = totalSteps ? Math.round((doneSteps / totalSteps) * 100) : 0;
+
   return (
     <>
       <TopBar title="목표" eyebrow={active.length ? `진행 중 ${active.length}개` : "작게 쪼갤수록 속도가 붙어요"} />
       <div className="screen">
+        <Hero
+          label={active.length ? `진행 중 ${active.length}개` : "목표"}
+          title={active.length ? (totalSteps ? `단계의 ${pct}%까지 왔어요` : "단계를 쪼개 볼까요") : "작게 하나 세워볼까요"}
+          sub="남은 것보다 이미 체크한 단계를 먼저 봐요."
+          stats={[`단계 ${doneSteps}/${totalSteps}`, `달성 ${done.length}개`]}
+        />
+        <div style={{ height: 12 }} />
         {active.length === 0 && done.length === 0 ? (
           <Empty icon="🚩" title="목표를 하나 세워볼까요">
             크게 잡지 않아도 돼요.

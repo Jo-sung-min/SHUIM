@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ACTION_PRESETS, CATEGORIES, CategoryId, SCORE_MAX, SCORE_MIN, categoryById } from "@/lib/categories";
-import { DayRecord, Journal, loadJournal, loadLog, saveDay, saveDayLog, todayKey } from "@/lib/storage";
+import { DayRecord, Journal, loadJournal, loadLog, saveDay, saveDayLog, streak, todayKey } from "@/lib/storage";
 import { hasCrisisSignal } from "@/lib/crisis";
 import { biggestShifts, lastNDays, series, volatility } from "@/lib/accel";
 import AccelChart from "@/components/AccelChart";
 import HelpBanner from "@/components/HelpBanner";
-import { Empty, Segmented, TopBar, fmtDate } from "@/components/ui";
+import { Empty, Hero, Segmented, TopBar, fmtDate } from "@/components/ui";
 import { IconPlus, IconSparkle } from "@/components/Icons";
 
 const SCORES = Array.from({ length: SCORE_MAX - SCORE_MIN + 1 }, (_, i) => SCORE_MIN + i);
@@ -16,19 +16,50 @@ type View = "today" | "flow";
 
 export default function LogPage() {
   const [view, setView] = useState<View>("today");
+  const [stat, setStat] = useState({ streak: 0, filled: 0, did: 0 });
+  const onWriteChange = useCallback(
+    (filled: number, did: number) => setStat((s) => (s.filled === filled && s.did === did ? s : { ...s, filled, did })),
+    []
+  );
+
+  useEffect(() => {
+    const j = loadJournal();
+    const t = todayKey();
+    setStat({ streak: streak(j), filled: Object.keys(j[t] ?? {}).length, did: loadLog()[t]?.did.length ?? 0 });
+  }, []);
+
+  const title =
+    stat.filled === 0 && stat.did === 0
+      ? "오늘 한 걸음만 적어요"
+      : stat.filled >= CATEGORIES.length
+      ? "오늘 기록을 다 채웠어요"
+      : "이어서 한 줄만 더";
+
   return (
     <>
       <TopBar title="기록" eyebrow={fmtDate(todayKey())} />
       <div className="screen">
-        <Segmented
-          value={view}
-          onChange={setView}
-          options={[
-            { value: "today", label: "오늘 쓰기" },
-            { value: "flow", label: "흐름 보기" },
-          ]}
+        <Hero
+          label={stat.streak > 0 ? `연속 ${stat.streak}일째` : "첫 기록"}
+          title={title}
+          sub="점수의 높낮이보다 어제보다 얼마나 움직였는지가 핵심이에요."
+          stats={[`행동 ${stat.did}개`, `기분 ${stat.filled}/${CATEGORIES.length}`]}
         />
-        {view === "today" ? <TodayWrite /> : <Flow />}
+        <div style={{ marginTop: 12 }}>
+          <Segmented
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "today", label: "오늘 쓰기" },
+              { value: "flow", label: "흐름 보기" },
+            ]}
+          />
+        </div>
+        {view === "today" ? (
+          <TodayWrite onChange={onWriteChange} />
+        ) : (
+          <Flow />
+        )}
       </div>
     </>
   );
@@ -36,7 +67,7 @@ export default function LogPage() {
 
 /* ================= 오늘 쓰기 ================= */
 
-function TodayWrite() {
+function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => void }) {
   const date = todayKey();
   const [day, setDay] = useState<DayRecord>({});
   const [did, setDid] = useState<string[]>([]);
@@ -90,11 +121,15 @@ function TodayWrite() {
   const crisis = useMemo(() => hasCrisisSignal(Object.values(day).map((e) => e?.note ?? "").join(" ")), [day]);
   const filled = Object.keys(day).length;
 
+  useEffect(() => {
+    if (ready) onChange(filled, did.length);
+  }, [ready, filled, did.length, onChange]);
+
   if (!ready) return null;
 
   return (
     <>
-      <div className="section-title">
+      <div className="section-title" style={{ marginTop: 16 }}>
         <span>오늘 한 일</span>
         <span className="tiny muted">{did.length ? `${did.length}개` : "작은 것도 좋아요"}</span>
       </div>
@@ -186,9 +221,6 @@ function TodayWrite() {
         })}
       </div>
 
-      <p className="tiny muted" style={{ textAlign: "center", marginTop: 18 }}>
-        점수의 높낮이보다 어제보다 얼마나 움직였는지가 핵심이에요.
-      </p>
     </>
   );
 }

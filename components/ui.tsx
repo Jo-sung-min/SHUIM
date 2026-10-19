@@ -16,6 +16,37 @@ export function TopBar({ title, eyebrow, right }: { title: string; eyebrow?: str
   );
 }
 
+/* ---------- 흑백 대리석 히어로 (각 탭 상단) ---------- */
+export function Hero({
+  label,
+  title,
+  sub,
+  stats,
+  children,
+}: {
+  label?: string;
+  title: string;
+  sub?: string;
+  stats?: string[];
+  children?: ReactNode;
+}) {
+  return (
+    <section className="hero mono compact">
+      {label && <div className="label">{label}</div>}
+      <h2>{title}</h2>
+      {sub && <p>{sub}</p>}
+      {stats && stats.length > 0 && (
+        <div className="stats">
+          {stats.map((s) => (
+            <span key={s} className="pill">{s}</span>
+          ))}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
 /* ---------- 세그먼트 ---------- */
 export function Segmented<T extends string>({
   value,

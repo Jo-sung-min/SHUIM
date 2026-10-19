@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat } from "@/lib/categories";
 import { Memo, loadMemos, saveMemos, uid } from "@/lib/storage";
-import { CatChips, CatTag, Empty, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import { CatChips, CatTag, Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import { IconPin, IconPlus } from "@/components/Icons";
 
 type Filter = MemoCat | "all";
@@ -41,11 +41,22 @@ export default function MemoPage() {
 
   if (!memos) return <TopBar title="메모" />;
 
+  const pinnedCount = memos.filter((m) => m.pinned).length;
+  const latest = memos.length ? Math.max(...memos.map((m) => m.updatedAt)) : null;
+
   return (
     <>
       <TopBar title="메모" eyebrow={`${memos.length}개`} />
       <div className="screen">
-        <CatChips value={filter} onChange={setFilter} />
+        <Hero
+          label={latest ? `마지막 메모 ${fmtRelative(latest)}` : "노트"}
+          title={memos.length ? "생각을 흘려보내지 말고 적어둬요" : "첫 장을 열어볼까요"}
+          sub="고정한 메모는 오늘의 나가 먼저 읽어요."
+          stats={[`메모 ${memos.length}개`, `고정 ${pinnedCount}개`]}
+        />
+        <div style={{ marginTop: 12 }}>
+          <CatChips value={filter} onChange={setFilter} />
+        </div>
 
         {list.length === 0 ? (
           <Empty icon="📝" title={filter === "all" ? "첫 메모를 남겨볼까요" : "이 카테고리엔 아직 메모가 없어요"}>

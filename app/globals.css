@@ -28,6 +28,22 @@
   --home-a: #4b5fe0;
   --home-b: #8a5cd6;
   --home-soft: #e9ecfb;
+  /* 대리석 배경 + 글라스 카드 */
+  --marble-base: linear-gradient(165deg, #fcfcfc 0%, #f1f1f1 55%, #f7f7f7 100%);
+  --marble-sheen: radial-gradient(70% 45% at 15% 8%, rgba(255, 255, 255, 1), transparent 62%),
+    radial-gradient(55% 38% at 85% 28%, rgba(0, 0, 0, 0.045), transparent 60%),
+    radial-gradient(48% 32% at 25% 68%, rgba(0, 0, 0, 0.05), transparent 64%),
+    radial-gradient(42% 30% at 88% 88%, rgba(255, 255, 255, 0.9), transparent 60%);
+  --marble-vein: linear-gradient(112deg, transparent 46.5%, rgba(0, 0, 0, 0.035) 48%, transparent 49.2%),
+    linear-gradient(118deg, transparent 71%, rgba(0, 0, 0, 0.028) 72.3%, transparent 73.6%),
+    linear-gradient(104deg, transparent 22%, rgba(255, 255, 255, 0.9) 23.5%, transparent 25%);
+  --card-glass: rgba(255, 255, 255, 0.62);
+  --card-glass-border: rgba(255, 255, 255, 0.85);
+  --card-glass-hi: rgba(255, 255, 255, 0.95);
+  --card-glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 10px 30px rgba(0, 0, 0, 0.06);
+  --mono-a: #1b1b1b;
+  --mono-b: #3a3a3a;
+  --mono-c: #222222;
   --radius: 18px;
   --radius-sm: 12px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 6px 20px rgba(0, 0, 0, 0.05);
@@ -75,6 +91,21 @@
     --home-a: #6f82f0;
     --home-b: #a07ee8;
     --home-soft: #232a46;
+    --marble-base: linear-gradient(165deg, #141414 0%, #0c0c0c 55%, #121212 100%);
+    --marble-sheen: radial-gradient(70% 45% at 15% 8%, rgba(255, 255, 255, 0.07), transparent 62%),
+      radial-gradient(55% 38% at 85% 28%, rgba(255, 255, 255, 0.03), transparent 60%),
+      radial-gradient(48% 32% at 25% 68%, rgba(255, 255, 255, 0.04), transparent 64%),
+      radial-gradient(42% 30% at 88% 88%, rgba(255, 255, 255, 0.05), transparent 60%);
+    --marble-vein: linear-gradient(112deg, transparent 46.5%, rgba(255, 255, 255, 0.05) 48%, transparent 49.2%),
+      linear-gradient(118deg, transparent 71%, rgba(255, 255, 255, 0.04) 72.3%, transparent 73.6%),
+      linear-gradient(104deg, transparent 22%, rgba(0, 0, 0, 0.5) 23.5%, transparent 25%);
+    --card-glass: rgba(28, 28, 28, 0.55);
+    --card-glass-border: rgba(255, 255, 255, 0.1);
+    --card-glass-hi: rgba(255, 255, 255, 0.08);
+    --card-glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    --mono-a: #2a2a2a;
+    --mono-b: #4a4a4a;
+    --mono-c: #303030;
     --shadow: none;
     --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.6);
     --glass-bg: rgba(255, 255, 255, 0.06);
@@ -128,7 +159,9 @@ input, textarea, select { font: inherit; color: inherit; }
   max-width: var(--app-w);
   margin: 0 auto;
   min-height: 100dvh;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: var(--marble-vein), var(--marble-sheen), var(--marble-base);
+  background-attachment: scroll;
   position: relative;
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
 }
@@ -170,11 +203,16 @@ input, textarea, select { font: inherit; color: inherit; }
 .tabbar a:active { background: var(--glass-bg); }
 
 /* ---------- 카드 ---------- */
-.card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);
+.card, .tile, .event, .notepad, .help {
+  background: var(--card-glass);
+  border: 1px solid var(--card-glass-border);
+  box-shadow: inset 0 1px 0 var(--card-glass-hi), var(--card-glass-shadow);
+  backdrop-filter: blur(18px) saturate(130%);
 }
-.card.flat { box-shadow: none; }
+.card {
+  border-radius: var(--radius); padding: 16px;
+}
+.card.flat { box-shadow: inset 0 1px 0 var(--card-glass-hi); }
 .card.tint { background: var(--surface-2); border-color: transparent; box-shadow: none; }
 .stack { display: grid; gap: 10px; }
 .stack > * { min-width: 0; }
@@ -198,6 +236,22 @@ input, textarea, select { font: inherit; color: inherit; }
   background: linear-gradient(135deg, var(--home-a) 0%, var(--home-b) 100%);
   box-shadow: 0 12px 32px color-mix(in srgb, var(--home-a) 35%, transparent);
 }
+/* 흑백 대리석 히어로 (기록·메모·목표·일정) */
+.hero.mono {
+  background:
+    linear-gradient(108deg, transparent 38%, rgba(255, 255, 255, 0.08) 40%, transparent 42.5%),
+    linear-gradient(116deg, transparent 66%, rgba(255, 255, 255, 0.05) 67.5%, transparent 69%),
+    radial-gradient(70% 60% at 10% 0%, rgba(255, 255, 255, 0.16), transparent 60%),
+    radial-gradient(50% 40% at 90% 100%, rgba(255, 255, 255, 0.08), transparent 60%),
+    linear-gradient(135deg, var(--mono-a) 0%, var(--mono-b) 55%, var(--mono-c) 100%);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+.hero.mono::before { background: rgba(255, 255, 255, 0.07); }
+.hero.compact { padding: 18px 20px; border-radius: 20px; margin-top: 4px; }
+.hero.compact h2 { font-size: 20px; margin: 4px 0 6px; }
+.hero.compact p { font-size: 13.5px; }
+.hero .stats { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.hero .stats .pill { font-weight: 600; }
 .hero::before {
   content: ""; position: absolute; inset: auto -40px -60px auto; width: 220px; height: 220px;
   border-radius: 50%; background: rgba(255, 255, 255, 0.12);
@@ -268,7 +322,7 @@ input, textarea, select { font: inherit; color: inherit; }
 
 /* 요약 통계 타일 */
 .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 12px 10px; }
+.tile { border-radius: 14px; padding: 12px 12px 10px; }
 .tile b { display: block; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .tile small { color: var(--text-2); font-size: 11.5px; }
 
@@ -366,7 +420,10 @@ input, textarea, select { font: inherit; color: inherit; }
 .sheet {
   position: fixed; z-index: 41; left: 50%; bottom: 0; transform: translateX(-50%);
   width: 100%; max-width: var(--app-w); max-height: 88dvh; overflow-y: auto;
-  background: var(--surface); border-radius: 24px 24px 0 0; box-shadow: var(--shadow-lg);
+  background: color-mix(in srgb, var(--surface) 88%, transparent); border-radius: 24px 24px 0 0;
+  border-top: 1px solid var(--card-glass-border);
+  box-shadow: inset 0 1px 0 var(--card-glass-hi), var(--shadow-lg);
+  backdrop-filter: blur(24px) saturate(130%);
   padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
   animation: slideup 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -379,8 +436,7 @@ input, textarea, select { font: inherit; color: inherit; }
 
 /* ---------- 메모 (노트) ---------- */
 .notepad {
-  background: var(--paper); border: 1px solid var(--border); border-radius: 16px;
-  box-shadow: var(--shadow); overflow: hidden; margin-top: 6px;
+  border-radius: 16px; overflow: hidden; margin-top: 6px;
 }
 .notepad-binding {
   height: 26px; display: flex; justify-content: center; gap: 18px; align-items: center;
@@ -445,7 +501,7 @@ textarea.lined {
 .day.on .marks i { background: currentColor; opacity: 0.6; }
 .week-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .week-nav b { font-size: 15px; font-weight: 800; }
-.event { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+.event { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; }
 .event .time { width: 46px; font-size: 12.5px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; flex: none; }
 .event .title { font-size: 15px; font-weight: 600; }
 .event.done .title { color: var(--text-3); text-decoration: line-through; }
@@ -462,7 +518,7 @@ textarea.lined {
 .summary-body { white-space: pre-wrap; font-size: 15px; line-height: 1.75; word-break: keep-all; }
 
 /* ---------- 도움 ---------- */
-.help { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 14px 16px; font-size: 13px; color: var(--text-2); margin-top: 28px; }
+.help { border-radius: var(--radius); padding: 14px 16px; font-size: 13px; color: var(--text-2); margin-top: 28px; }
 .help.alert { border-color: var(--text); background: var(--surface-2); color: var(--text); margin: 0 0 12px; }
 .help-lines { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 6px; }
 .help-lines a { color: var(--text); font-weight: 600; }

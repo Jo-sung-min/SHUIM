@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat, memoCatById } from "@/lib/categories";
 import { ScheduleItem, addDays, loadSchedule, saveSchedule, todayKey, uid } from "@/lib/storage";
-import { CatChips, DOW_LABELS, Empty, Sheet, TopBar, fmtDate } from "@/components/ui";
+import { CatChips, DOW_LABELS, Empty, Hero, Sheet, TopBar, fmtDate } from "@/components/ui";
 import { IconCheck, IconChevronL, IconChevronR, IconPlus } from "@/components/Icons";
 
 function weekStart(key: string): string {
@@ -62,6 +62,9 @@ export default function SchedulePage() {
 
   const [wy, wm] = ws.split("-").map(Number);
   const dayItems = byDate[sel] ?? [];
+  const todayItems = byDate[today] ?? [];
+  const todayLeft = todayItems.filter((i) => !i.done);
+  const nextItem = todayLeft[0];
 
   return (
     <>
@@ -71,7 +74,13 @@ export default function SchedulePage() {
         right={sel !== today ? <button className="text-btn" onClick={() => setSel(today)}>오늘로</button> : undefined}
       />
       <div className="screen">
-        <section className="card flat" style={{ padding: 12 }}>
+        <Hero
+          label={fmtDate(today)}
+          title={todayItems.length === 0 ? "오늘은 비어 있어요" : todayLeft.length === 0 ? "오늘 일정을 다 끝냈어요" : `오늘 ${todayLeft.length}개 남았어요`}
+          sub={nextItem ? `다음: ${nextItem.time ? nextItem.time + " " : ""}${nextItem.title}` : "여유도 일정이에요."}
+          stats={[`완료 ${todayItems.length - todayLeft.length}/${todayItems.length}`, `다가오는 ${upcoming.length}개`]}
+        />
+        <section className="card flat" style={{ padding: 12, marginTop: 12 }}>
           <div className="week-nav">
             <button className="icon-btn" aria-label="지난주" onClick={() => setSel(addDays(sel, -7))}><IconChevronL /></button>
             <b>{wy}년 {wm}월</b>
