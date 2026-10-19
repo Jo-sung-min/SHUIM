@@ -108,9 +108,12 @@ const K = {
   schedule: "maeum-accel:schedule:v1",
   briefing: "maeum-accel:briefing:v1",
   moments: "maeum-accel:moments:v1",
+  community: "maeum-accel:community:v1",
 } as const;
 
-function read<T>(key: string, fallback: T): T {
+export const COMMUNITY_KEY = K.community;
+
+export function read<T>(key: string, fallback: T): T {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -119,7 +122,7 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
-function write(key: string, value: unknown) {
+export function write(key: string, value: unknown) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -225,6 +228,7 @@ export function clearMoments() {
 /* ---------- 전체 삭제 ---------- */
 
 export function clearAll() {
+  // community 키도 포함 (다음 외침 탭 진입 시 샘플이 다시 생성됨)
   for (const k of Object.values(K)) {
     try {
       window.localStorage.removeItem(k);

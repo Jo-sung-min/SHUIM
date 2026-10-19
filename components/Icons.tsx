@@ -90,6 +90,33 @@ export const IconChart = (p: P) => (
     <path d="M7 15l4-5 3 3 5-7" />
   </svg>
 );
+export const IconMegaphone = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 10v4a1 1 0 0 0 1 1h3l7 4V5L7 9H4a1 1 0 0 0-1 1Z" />
+    <path d="M17 9.5a3.5 3.5 0 0 1 0 5M8 15l1.5 5h3" />
+  </svg>
+);
+export const IconShield = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6Z" />
+    <path d="M9 12l2 2 4-4" />
+  </svg>
+);
+export const IconMessage = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4V6Z" />
+  </svg>
+);
+export const IconSend = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M21 3 10 14M21 3l-7 18-4-7-7-4Z" />
+  </svg>
+);
+export const IconClose = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
 export const IconMore = (p: P) => (
   <svg {...base({ fill: "currentColor", stroke: "none", ...p })}>
     <circle cx="6" cy="12" r="1.8" />
