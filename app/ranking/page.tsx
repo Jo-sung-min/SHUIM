@@ -42,7 +42,6 @@ export default function RankingPage() {
     <>
       <TopBar
         title="불행 랭킹"
-        eyebrow="힘내요를 많이 받은 불행이 위에 와요"
         right={
           view === "current" ? (
             <button className="icon-btn" aria-label="지금 집계" title="지금 집계" onClick={() => setS(refreshCurrentWeek(s))}>
@@ -57,7 +56,6 @@ export default function RankingPage() {
         <Hero
           label={batch ? `${weekLabel(batch.week)} · ${batch.finalized ? "확정" : `잠정 · ${fmtRelative(batch.computedAt)} 집계`}` : "집계 전"}
           title={batch?.rows.length ? `1위 ${batch.rows[0].nick}, 힘내요 ${batch.rows[0].cheers}` : "아직 불행 털어내기 글이 없어요"}
-          sub="불행 털어내기에 쓴 글이 받은 힘내요를 사람별로 더해요. 월요일 0시에 지난주가 확정되고, 이번 주는 5분마다 다시 셈해요."
           stats={batch ? [`순위 ${batch.rows.length}명`, `모금 ${fmtWon(batch.fund.total)}`, myRow ? `나 ${myRow.rank}위` : "나 순위 밖"] : []}
         />
 

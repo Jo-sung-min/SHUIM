@@ -46,7 +46,6 @@ export default function LogPage() {
         <Hero
           label={stat.streak > 0 ? `연속 ${stat.streak}일째` : "첫 기록"}
           title={title}
-          sub="점수는 어제와 비교한 변화예요. 어디에 있는지가 아니라 어느 쪽으로 움직였는지를 적어요."
           stats={[`행동 ${stat.did}개`, `기분 ${stat.filled}/${CATEGORIES.length}`]}
         />
         <div style={{ marginTop: 12 }}>

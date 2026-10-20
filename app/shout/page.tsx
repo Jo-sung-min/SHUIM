@@ -57,7 +57,7 @@ export default function ShoutPage() {
     <>
       <TopBar
         title="외침"
-        eyebrow="익명 · 서로를 위로하는 곳"
+        eyebrow="익명"
         right={
           <Link href="/admin" className="icon-btn" aria-label="관리자 검토" style={{ position: "relative" }}>
             <IconShield />
@@ -71,7 +71,6 @@ export default function ShoutPage() {
         <Hero
           label={`나는 ${s.me.nick}`}
           title="오늘의 불행을 털어내요"
-          sub="좋아요 대신 힘내요만 있어요. 위로가 아닌 글은 신고할 수 있고, 5번 쌓이면 관리자가 봐요."
           stats={[`외침 ${s.posts.filter((p) => isVisible(s, p)).length}개`, `힘내요 ${totalCheers}개`]}
         />
 

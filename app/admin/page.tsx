@@ -88,7 +88,6 @@ export default function AdminPage() {
         <Hero
           label={demo ? "프로토타입 · 아직 계정이 없어 누구나 열람" : "관리자"}
           title={flagged.length ? `검토할 글 ${flagged.length}개` : "검토할 글이 없어요"}
-          sub={`외침·위로 피드·댓글 중 신고가 ${REPORT_THRESHOLD}번 이상 쌓인 것이 여기 모여요. 숨기거나, 작성자를 차단하거나, 문제 없음으로 돌려보낼 수 있어요.`}
           stats={[`대기 ${flagged.length}`, `차단 유저 ${blocked.length}`]}
         />
 
@@ -180,7 +179,7 @@ function PromptAdmin() {
       <Hero
         label="AI 프롬프트"
         title={customized ? `${customized}개를 직접 고쳤어요` : "기본 프롬프트를 쓰고 있어요"}
-        sub="오늘의 나·칭찬·사랑하기·점검 버튼이 Claude에게 보내는 지시문이에요. 고치면 이 기기에서 보내는 요청에 바로 적용돼요. JSON 출력 형식 부분은 화면이 그 모양을 기대하니 유지해요."
+        sub="JSON 출력 형식 부분은 유지해요."
         stats={[`${PROMPT_META.length}개 프롬프트`, `최대 ${PROMPT_MAX_LEN.toLocaleString()}자`]}
       />
       <div className="stack" style={{ marginTop: 12 }}>

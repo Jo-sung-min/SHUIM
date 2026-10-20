@@ -53,7 +53,6 @@ export default function SummaryPage() {
     <>
       <TopBar
         title="흐름 정리"
-        eyebrow="기록을 AI가 읽고 내 말로 비춰줘요"
         right={
           <Link href="/log" className="icon-btn" aria-label="기록으로">
             <IconChevronL />

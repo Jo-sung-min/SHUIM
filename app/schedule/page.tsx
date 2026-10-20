@@ -77,7 +77,7 @@ export default function SchedulePage() {
         <Hero
           label={fmtDate(today)}
           title={todayItems.length === 0 ? "오늘은 비어 있어요" : todayLeft.length === 0 ? "오늘 일정을 다 끝냈어요" : `오늘 ${todayLeft.length}개 남았어요`}
-          sub={nextItem ? `다음: ${nextItem.time ? nextItem.time + " " : ""}${nextItem.title}` : "여유도 일정이에요."}
+          sub={nextItem ? `다음 · ${nextItem.time ? nextItem.time + " " : ""}${nextItem.title}` : undefined}
           stats={[`완료 ${todayItems.length - todayLeft.length}/${todayItems.length}`, `다가오는 ${upcoming.length}개`]}
         />
         <section className="card flat" style={{ padding: 12, marginTop: 12 }}>

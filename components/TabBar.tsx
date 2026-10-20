@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconCalendar, IconFlag, IconMegaphone, IconNote, IconPen, IconReels, IconSun } from "./Icons";
+import { IconMegaphone, IconPen, IconReels, IconSun, IconUser } from "./Icons";
 
+/** 하단 탭 5개, 아이콘만 (인스타그램처럼). 나머지 기능은 "나" 페이지에서 */
 const TABS = [
-  { href: "/", label: "오늘의 나", Icon: IconSun, match: (p: string) => p === "/" || p === "/summary" },
+  { href: "/", label: "홈", Icon: IconSun, match: (p: string) => p === "/" || p === "/summary" },
   { href: "/log", label: "기록", Icon: IconPen },
-  { href: "/memo", label: "메모", Icon: IconNote },
-  { href: "/goals", label: "목표", Icon: IconFlag },
-  { href: "/schedule", label: "일정", Icon: IconCalendar },
   { href: "/shout", label: "외침", Icon: IconMegaphone, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
   { href: "/feed", label: "위로", Icon: IconReels },
+  { href: "/me", label: "나", Icon: IconUser, match: (p: string) => ["/me", "/memo", "/goals", "/schedule", "/auth"].some((x) => p.startsWith(x)) },
 ];
 
 export default function TabBar() {
@@ -21,9 +20,8 @@ export default function TabBar() {
       {TABS.map(({ href, label, Icon, match }) => {
         const active = match ? match(path) : path.startsWith(href);
         return (
-          <Link key={href} href={href} className={active ? "active" : ""} aria-current={active ? "page" : undefined}>
-            <Icon strokeWidth={active ? 2.3 : 1.8} />
-            {label}
+          <Link key={href} href={href} className={active ? "active" : ""} aria-current={active ? "page" : undefined} aria-label={label} title={label}>
+            <Icon strokeWidth={active ? 2.4 : 1.7} />
           </Link>
         );
       })}

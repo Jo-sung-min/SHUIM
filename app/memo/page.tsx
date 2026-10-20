@@ -54,7 +54,6 @@ export default function MemoPage() {
         <Hero
           label={latest ? `마지막 메모 ${fmtRelative(latest)}` : "노트"}
           title={memos.length ? "생각을 흘려보내지 말고 적어둬요" : "첫 장을 열어볼까요"}
-          sub="고정한 메모는 오늘의 나가 먼저 읽어요."
           stats={[`메모 ${memos.length}개`, `고정 ${pinnedCount}개`]}
         />
         <div style={{ marginTop: 12 }}>

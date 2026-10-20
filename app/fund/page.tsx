@@ -39,14 +39,13 @@ export default function FundPage() {
 
   return (
     <>
-      <TopBar title="불행 모금" eyebrow="이번 주 불행 순위 1~10위에게 나눠요" />
+      <TopBar title="불행 모금" />
       <div className="screen">
         <ShoutTabs />
         <div style={{ height: 12 }} />
         <Hero
           label={`${weekLabel(cur)} · 이번 주 모금`}
           title={fmtWon(batch?.fund.total ?? 0)}
-          sub="월요일 0시에 지난주 불행 랭킹이 확정되면, 모인 금액을 1~10위에게 비율대로 나눠드려요."
           stats={[`후원 ${batch?.fund.count ?? 0}건`, `후원자 ${batch?.fund.donors ?? 0}명`, `분배 대상 ${top10.length}명`]}
         />
 
