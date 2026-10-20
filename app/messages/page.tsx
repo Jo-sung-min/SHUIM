@@ -38,7 +38,7 @@ export default function MessagesPage() {
             외침이나 피드에서 닉네임을 누르면 그 사람 프로필에서 메시지를 보낼 수 있어요.
           </Empty>
         ) : (
-          <div className="stack" style={{ gap: 6 }}>
+          <div className="stack" style={{ gap: 8, marginTop: 6 }}>
             {list.map((c) => (
               <Link key={c.id} href={`/messages/${c.id}`} className={`conv ${c.unread ? "unread" : ""}`}>
                 <span className="avatar sm" style={c.other.avatarUrl ? { backgroundImage: `url(${c.other.avatarUrl})` } : undefined}>

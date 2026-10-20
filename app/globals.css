@@ -175,7 +175,8 @@ input, textarea, select { font: inherit; color: inherit; }
   .app { box-shadow: 0 0 0 1px var(--border), 0 20px 60px rgba(0, 0, 0, 0.08); }
 }
 
-.screen { padding: 0 18px; animation: fade 0.22s ease-out; }
+.screen { padding: 10px 18px 0; animation: fade 0.22s ease-out; }
+.screen.thread { padding-top: 14px; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 .topbar {
