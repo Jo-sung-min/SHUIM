@@ -30,7 +30,10 @@
 `.env`의 `DB_URL`로 연결한다. Spring 스타일 `jdbc:postgresql://host:port/db?user=..&password=..`도, Node 스타일 `postgresql://user:pass@host:port/db`도 받는다 ([lib/db.ts](lib/db.ts)). 외부 호스트는 SSL로 붙는다.
 
 - 연결 확인: 서버 실행 후 `GET /api/db` → `{ ok, latencyMs, host, database, user, version }` (비밀번호는 반환하지 않음)
-- 아직 테이블은 없고 앱 데이터는 localStorage. 외침·피드·계정을 DB로 옮기는 작업은 "다음 단계"에
+- 스키마·시드는 **Flyway 규칙**의 SQL로 관리: `db/migration/V1__init_schema.sql`(테이블 21개), `V2__seed_sample_community.sql`(외침·피드·댓글·힘내요·신고·모금 샘플)
+- 적용: `npm run db:migrate` (Java 없이 Node로 실행, 각 파일을 트랜잭션으로 적용). 상태: `npm run db:status`, 검증: `npm run db:validate`
+- 실행기는 `flyway_schema_history` 테이블을 Flyway와 같은 컬럼·체크섬(CRC32, 줄 단위)으로 남긴다. 나중에 Spring Boot(Flyway)에 같은 파일을 `src/main/resources/db/migration/`에 두면 이미 적용된 것으로 인식한다. 만약 Flyway가 checksum mismatch를 내면 `flyway repair` 한 번이면 된다
+- 앱 화면은 아직 localStorage를 읽는다. 외침·피드·계정 화면을 이 테이블로 연결하는 작업은 "다음 단계"에
 
 ## 실행
 
@@ -71,6 +74,9 @@ lib/
   categories.ts          카테고리 정의, 행동 프리셋
   storage.ts             localStorage 저장 (기록/행동/메모/목표/일정/브리핑·점검 캐시), 계정별 키 분리, 샘플 데이터
   auth.ts                계정 (가입/로그인/로그아웃/닉네임, 관리자 판정) — 기기 로컬 프로토타입
+  db.ts                  PostgreSQL 연결 (DB_URL 파싱, pg Pool)
+db/migration/            Flyway 규칙 SQL 마이그레이션 (V1 스키마, V2 샘플)
+scripts/migrate.mjs      Flyway 호환 마이그레이션 실행기 (npm run db:migrate / db:status / db:validate)
   prompts.ts             AI 시스템 프롬프트 기본값 4종 (서버·클라이언트 공용)
   community.ts           외침·위로 피드 데이터 계층 (글/댓글/피드/크리에이터/팔로우/힘내요/신고/차단). 지금은 localStorage + 샘플 유저,
                          서버로 옮길 때 이 파일의 함수들을 API 호출로 바꾸면 됨

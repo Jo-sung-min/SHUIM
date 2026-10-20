@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:status": "node scripts/migrate.mjs --status",
+    "db:validate": "node scripts/migrate.mjs --validate"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
