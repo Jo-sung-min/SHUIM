@@ -9,7 +9,7 @@
  * - 위로 피드: 크리에이터가 올리는 짧은 위로글을 쇼츠처럼 세로로 넘겨 본다. 글을 올리면 누구나 크리에이터가 된다.
  */
 
-import { COMMUNITY_KEY, read, uid, write } from "./storage";
+import { COMMUNITY_KEY, addDays, read, todayKey, uid, write } from "./storage";
 
 export type ShoutCat = "misfortune" | "anxiety" | "money" | "work" | "relation" | "body" | "small-win" | "free";
 
@@ -92,6 +92,37 @@ export interface FeedPost extends Base {
   saves: string[]; // 저장한 userId 목록
 }
 
+/* ---------- 불행 랭킹 · 주간 집계 테이블 · 불행 모금 ---------- */
+
+export interface Donation {
+  id: string;
+  by: string; // userId
+  amount: number; // 원 (프로토타입: 실제 결제 없음)
+  message?: string;
+  at: number;
+}
+
+export interface RankRow {
+  rank: number;
+  userId: string;
+  nick: string;
+  cheers: number; // 그 주 불행 털어내기 글에 받은 힘내요 합
+  posts: number;
+  topPostId: string;
+  topPostText: string;
+  share: number; // 분배 비율 % (1~10위만, 그 외 0)
+  payout: number; // 분배 금액 (원)
+}
+
+/** 한 주의 집계 결과. 화면은 원본 글을 다시 훑지 않고 이 테이블만 읽는다. */
+export interface WeeklyBatch {
+  week: string; // 월요일 날짜 키 (YYYY-MM-DD)
+  computedAt: number;
+  finalized: boolean; // 지난 주 = 확정(다시 계산 안 함), 이번 주 = 잠정
+  rows: RankRow[];
+  fund: { total: number; count: number; donors: number };
+}
+
 export interface CommunityStore {
   me: User;
   users: User[];
@@ -100,6 +131,8 @@ export interface CommunityStore {
   feed: FeedPost[];
   creators: Record<string, Creator>;
   following: string[]; // 내가 팔로우한 크리에이터 userId
+  donations: Donation[];
+  weekly: Record<string, WeeklyBatch>; // 주간 집계 테이블 (week → batch)
 }
 
 export type TargetKind = "post" | "comment" | "feed";
@@ -122,10 +155,11 @@ export function loadCommunity(): CommunityStore {
     write(COMMUNITY_KEY, fresh);
     return fresh;
   }
+  let store: CommunityStore;
   // 이전 버전(피드 없음) 마이그레이션
   if (!s.feed) {
     const seeded = seedCommunity();
-    const migrated: CommunityStore = {
+    store = {
       me: s.me,
       users: s.users ?? seeded.users,
       posts: s.posts ?? [],
@@ -133,12 +167,146 @@ export function loadCommunity(): CommunityStore {
       feed: seeded.feed,
       creators: seeded.creators,
       following: [],
+      donations: seeded.donations,
+      weekly: {},
     };
-    write(COMMUNITY_KEY, migrated);
-    return migrated;
+  } else {
+    store = s as CommunityStore;
   }
-  return s as CommunityStore;
+  // 이전 버전(모금·주간 집계 없음) 마이그레이션: 샘플 모금과 지난주 불행 글을 보충
+  if (!store.donations || !store.weekly) {
+    const seeded = seedCommunity();
+    store = {
+      ...store,
+      posts: [...store.posts, ...seeded.posts.filter((p) => !store.posts.some((x) => x.id === p.id))],
+      donations: store.donations ?? seeded.donations,
+      weekly: store.weekly ?? {},
+    };
+  }
+  const ensured = ensureWeeklyBatches(store);
+  if (ensured !== store || !s.feed || !s.donations || !s.weekly) write(COMMUNITY_KEY, ensured);
+  return ensured;
 }
+
+/* ---------- 주간 집계 (배치) ---------- */
+
+/** 1~10위 분배 비율(%). 합 100. */
+export const RANK_SHARES = [25, 18, 14, 11, 9, 7, 6, 4, 3, 3];
+const PROVISIONAL_TTL = 5 * 60 * 1000; // 이번 주 잠정 집계 갱신 주기
+
+/** 그 시각이 속한 주의 월요일 날짜 키 */
+export function weekKeyOf(ts: number): string {
+  const d = new Date(ts);
+  const dow = (d.getDay() + 6) % 7; // 월=0
+  d.setDate(d.getDate() - dow);
+  return todayKey(d);
+}
+export const currentWeekKey = () => weekKeyOf(Date.now());
+export const weekEndOf = (week: string) => addDays(week, 6);
+export function weekLabel(week: string): string {
+  const [, m1, d1] = week.split("-").map(Number);
+  const [, m2, d2] = weekEndOf(week).split("-").map(Number);
+  return `${m1}/${d1} ~ ${m2}/${d2}`;
+}
+
+/** 한 주의 불행 랭킹 + 모금 집계. 불행 털어내기 글에 받은 힘내요를 사람별로 합산. */
+export function computeWeekly(s: CommunityStore, week: string, finalized: boolean): WeeklyBatch {
+  const inWeek = (ts: number) => weekKeyOf(ts) === week;
+  const posts = s.posts.filter((p) => p.cat === "misfortune" && inWeek(p.createdAt) && isVisible(s, p));
+  const byUser = new Map<string, { cheers: number; posts: number; top: Post; first: number }>();
+  for (const p of posts) {
+    const cur = byUser.get(p.authorId);
+    const n = p.cheers.length;
+    if (!cur) byUser.set(p.authorId, { cheers: n, posts: 1, top: p, first: p.createdAt });
+    else {
+      cur.cheers += n;
+      cur.posts += 1;
+      if (n > cur.top.cheers.length) cur.top = p;
+      cur.first = Math.min(cur.first, p.createdAt);
+    }
+  }
+  const donations = (s.donations ?? []).filter((d) => inWeek(d.at));
+  const total = donations.reduce((n, d) => n + d.amount, 0);
+  const sorted = [...byUser.entries()].sort((a, b) => b[1].cheers - a[1].cheers || a[1].first - b[1].first).slice(0, 20);
+
+  // 분배: 1~10위. 순위가 10명 미만이면 있는 사람끼리 비율을 다시 맞춤. 반올림 나머지는 1위에게.
+  const top = sorted.slice(0, 10);
+  const shareSum = RANK_SHARES.slice(0, top.length).reduce((a, b) => a + b, 0) || 1;
+  let distributed = 0;
+  const rows: RankRow[] = sorted.map(([userId, v], i) => {
+    const share = i < 10 ? Math.round((RANK_SHARES[i] / shareSum) * 1000) / 10 : 0;
+    const payout = i < 10 ? Math.floor((total * RANK_SHARES[i]) / shareSum) : 0;
+    distributed += payout;
+    return { rank: i + 1, userId, nick: userById(s, userId).nick, cheers: v.cheers, posts: v.posts, topPostId: v.top.id, topPostText: v.top.text.slice(0, 80), share, payout };
+  });
+  if (rows[0] && total > distributed) rows[0].payout += total - distributed;
+  return { week, computedAt: Date.now(), finalized, rows, fund: { total, count: donations.length, donors: new Set(donations.map((d) => d.by)).size } };
+}
+
+/**
+ * 배치: 지난 주는 한 번만 계산해 확정, 이번 주는 잠정 집계를 주기적으로 갱신.
+ * (서버로 옮기면 월요일 0시 크론 + 캐시 테이블에 해당)
+ */
+export function ensureWeeklyBatches(s: CommunityStore): CommunityStore {
+  const cur = currentWeekKey();
+  const weeks = new Set<string>([cur]);
+  for (const p of s.posts) if (p.cat === "misfortune") weeks.add(weekKeyOf(p.createdAt));
+  for (const d of s.donations ?? []) weeks.add(weekKeyOf(d.at));
+  const weekly = { ...(s.weekly ?? {}) };
+  let changed = false;
+  for (const w of weeks) {
+    const b = weekly[w];
+    if (w < cur) {
+      if (!b || !b.finalized) {
+        weekly[w] = computeWeekly(s, w, true);
+        changed = true;
+      }
+    } else if (w === cur) {
+      if (!b || b.finalized || Date.now() - b.computedAt > PROVISIONAL_TTL) {
+        weekly[w] = computeWeekly(s, w, false);
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return s;
+  const next = { ...s, weekly };
+  saveCommunity(next);
+  return next;
+}
+
+/** "지금 집계": 이번 주 잠정 집계를 강제로 다시 계산 */
+export function refreshCurrentWeek(s: CommunityStore): CommunityStore {
+  const cur = currentWeekKey();
+  const next = { ...s, weekly: { ...s.weekly, [cur]: computeWeekly(s, cur, false) } };
+  saveCommunity(next);
+  return next;
+}
+
+export const weeklyOf = (s: CommunityStore, week: string): WeeklyBatch | undefined => s.weekly?.[week];
+export const pastWeeks = (s: CommunityStore) =>
+  Object.keys(s.weekly ?? {}).filter((w) => w < currentWeekKey()).sort().reverse();
+
+/* ---------- 불행 모금 (프로토타입: 실제 결제 없음) ---------- */
+
+export const DONATION_PRESETS = [1000, 3000, 5000, 10000];
+
+export function donate(s: CommunityStore, amount: number, message?: string): CommunityStore {
+  const amt = Math.floor(amount);
+  if (!Number.isFinite(amt) || amt < 100 || amt > 1_000_000) return s;
+  const d: Donation = { id: uid(), by: s.me.id, amount: amt, message: message?.trim() || undefined, at: Date.now() };
+  const withDonation = { ...s, donations: [d, ...(s.donations ?? [])] };
+  return refreshCurrentWeek(withDonation);
+}
+
+/** 확정된 주에서 내가 받은 분배 내역 */
+export function myPayouts(s: CommunityStore): { week: string; rank: number; amount: number }[] {
+  return Object.values(s.weekly ?? {})
+    .filter((b) => b.finalized)
+    .flatMap((b) => b.rows.filter((r) => r.userId === s.me.id && r.payout > 0).map((r) => ({ week: b.week, rank: r.rank, amount: r.payout })))
+    .sort((a, b) => (a.week < b.week ? 1 : -1));
+}
+
+export const fmtWon = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 
 export const saveCommunity = (s: CommunityStore) => write(COMMUNITY_KEY, s);
 
@@ -397,6 +565,25 @@ export function seedCommunity(): CommunityStore {
       14 * H, [],
       [R("u1", "not_comfort", 13 * H), R("u2", "abuse", 12 * H), R("u3", "not_comfort", 12 * H), R("u5", "not_comfort", 10 * H), R("u6", "not_comfort", 9 * H)]
     ),
+    // 이번 주 불행 털어내기 (랭킹용)
+    P("p8", "misfortune", "u4", "월세 올려달래요. 15만원. 이직도 안 됐는데. 집에 와서 통장 보고 그냥 누웠어요.", 20 * H, ["u1", "u2", "u3", "u5", "u6", "u7"]),
+    P("p9", "misfortune", "u6", "엄마 검사 결과가 안 좋대요. 회사에선 티도 못 내고 하루 종일 웃었어요.", 28 * H, ["u1", "u2", "u3", "u4", "u5", "u7", "me"]),
+    P("p10", "misfortune", "u3", "5년 사귄 사람이랑 헤어졌어요. 짐 정리하다가 같이 산 컵을 버릴지 말지 30분 고민했어요.", 40 * H, ["u1", "u2", "u5"]),
+    // 지난주 불행 털어내기 (확정 집계용)
+    P("p11", "misfortune", "u5", "아빠 장례 치르고 첫 출근. 아무도 모르고, 저도 아무 말 안 했어요.", 8 * 24 * H, ["u1", "u2", "u3", "u4", "u6", "u7", "me"]),
+    P("p12", "misfortune", "u1", "전 회사에서 받을 돈 못 받았어요. 노동청 가는 길에 비 맞았고요.", 9 * 24 * H, ["u2", "u3", "u4", "u5"]),
+    P("p13", "misfortune", "u6", "강아지가 떠났어요. 12년. 집에 오면 아직 현관에서 기다리는 것 같아요.", 10 * 24 * H, ["u1", "u2", "u3", "u4", "u5", "u7"]),
+    P("p14", "misfortune", "u4", "통장에 4만원. 월급은 열흘 뒤. 라면을 샀는데 계산대에서 카드가 안 됐어요.", 11 * 24 * H, ["u2", "u3"]),
+  ];
+  const donations: Donation[] = [
+    { id: "d1", by: "u2", amount: 5000, message: "지난주 글 읽고 울었어요. 조금이라도.", at: t - 6 * H },
+    { id: "d2", by: "u3", amount: 3000, at: t - 18 * H },
+    { id: "d3", by: "u7", amount: 10000, message: "다들 버텨요.", at: t - 30 * H },
+    { id: "d4", by: "u1", amount: 1000, at: t - 44 * H },
+    { id: "d5", by: "u2", amount: 10000, message: "장례 치르고 출근하신 분께.", at: t - 8 * 24 * H },
+    { id: "d6", by: "u3", amount: 5000, at: t - 9 * 24 * H },
+    { id: "d7", by: "u5", amount: 3000, at: t - 10 * 24 * H },
+    { id: "d8", by: "u6", amount: 20000, message: "강아지 보내신 분, 저도 작년에.", at: t - 10 * 24 * H },
   ];
   const comments: Comment[] = [
     C("c1", "p1", "u2", "3차까지 간 건 운이 아니에요. 그 회사가 못 알아본 거지, 당신이 모자란 게 아니에요.", 1.5 * H, ["u1", "u3"]),
@@ -425,11 +612,11 @@ export function seedCommunity(): CommunityStore {
     u3: { bio: "불안을 작게 만드는 문장들", followers: ["u1", "u2", "u5"], since: t - 25 * 24 * H },
     u5: { bio: "잠 못 드는 밤을 위한 글", followers: ["u2", "u6"], since: t - 12 * 24 * H },
   };
-  return { me, users, posts, comments, feed, creators, following: [] };
+  return { me, users, posts, comments, feed, creators, following: [], donations, weekly: {} };
 }
 
 export function resetCommunity(): CommunityStore {
-  const s = seedCommunity();
+  const s = ensureWeeklyBatches(seedCommunity());
   saveCommunity(s);
   return s;
 }

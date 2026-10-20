@@ -24,6 +24,7 @@ import {
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import ShoutTabs from "@/components/ShoutTabs";
 import { CheerButton, CommentThread, ReportSheet, TargetMenuSheet } from "@/components/CommunityUI";
 import { IconMessage, IconMore, IconPlus, IconShield } from "@/components/Icons";
 
@@ -65,6 +66,8 @@ export default function ShoutPage() {
         }
       />
       <div className="screen">
+        <ShoutTabs />
+        <div style={{ height: 12 }} />
         <Hero
           label={`나는 ${s.me.nick}`}
           title="오늘의 불행을 털어내요"

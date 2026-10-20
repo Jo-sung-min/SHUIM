@@ -10,7 +10,7 @@ const TABS = [
   { href: "/memo", label: "메모", Icon: IconNote },
   { href: "/goals", label: "목표", Icon: IconFlag },
   { href: "/schedule", label: "일정", Icon: IconCalendar },
-  { href: "/shout", label: "외침", Icon: IconMegaphone, match: (p: string) => p.startsWith("/shout") || p.startsWith("/admin") },
+  { href: "/shout", label: "외침", Icon: IconMegaphone, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
   { href: "/feed", label: "위로", Icon: IconReels },
 ];
 

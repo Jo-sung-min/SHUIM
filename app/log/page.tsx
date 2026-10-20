@@ -12,7 +12,7 @@ import { Empty, Hero, Segmented, TopBar, fmtDate } from "@/components/ui";
 import { IconPlus, IconSparkle } from "@/components/Icons";
 
 /** 어제 대비 변화 선택지: -3(많이 내려감) ~ +3(많이 올라옴) */
-const DELTA_MAX = 3;
+const DELTA_MAX = 5;
 const DELTAS = Array.from({ length: DELTA_MAX * 2 + 1 }, (_, i) => i - DELTA_MAX);
 const clamp = (v: number) => Math.max(SCORE_MIN, Math.min(SCORE_MAX, v));
 const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
