@@ -10,6 +10,7 @@ import {
   Creator,
   Donation,
   FEED_BG_COUNT,
+  FEED_MAX_IMAGES,
   FeedPost,
   Post,
   REPORT_REASON_IDS,
@@ -106,7 +107,7 @@ export async function loadStore(me: DbUser): Promise<CommunityStore> {
     ),
     feed: feed.rows.map(
       (r): FeedPost => ({
-        id: r.id, title: r.title ?? undefined, text: r.text, bg: r.bg, image: r.image ?? undefined, authorId: r.author_id, createdAt: ms(r.created_at)!,
+        id: r.id, title: r.title ?? undefined, text: r.text, bg: r.bg, image: r.image ?? undefined, images: (r.images as string[] | null) ?? (r.image ? [r.image] : []), authorId: r.author_id, createdAt: ms(r.created_at)!,
         cheers: cheerMap.get(`feed:${r.id}`) ?? [], reports: reportMap.get(`feed:${r.id}`) ?? [], saves: saveMap.get(r.id) ?? [],
         hidden: r.hidden || undefined, reviewedAt: ms(r.reviewed_at),
       })
@@ -211,21 +212,23 @@ export async function report(me: DbUser, target: Target, reason: unknown) {
   );
   return loadStore(me);
 }
-export async function createFeedPost(me: DbUser, body: unknown, bg: unknown, title: unknown, image: unknown) {
+export async function createFeedPost(me: DbUser, body: unknown, bg: unknown, title: unknown, images: unknown) {
   assertNotBlocked(me);
   const q = db();
   const bgN = Math.max(0, Math.min(FEED_BG_COUNT - 1, Number(bg) || 0));
-  const img = typeof image === "string" && /^(\/|https?:\/\/)/.test(image.trim()) ? image.trim().slice(0, 500) : null;
+  const ok = (u: unknown): u is string => typeof u === "string" && /^(\/|https?:\/\/)/.test(u.trim());
+  const list = (Array.isArray(images) ? images : typeof images === "string" ? [images] : []).filter(ok).map((u) => u.trim().slice(0, 500)).slice(0, FEED_MAX_IMAGES);
   const t = typeof title === "string" && title.trim() ? title.trim().slice(0, 24) : null;
   await q.query("INSERT INTO creators (user_id, bio) VALUES ($1, '') ON CONFLICT (user_id) DO NOTHING", [me.id]);
-  await q.query("INSERT INTO feed_posts (id, author_id, title, text, bg, image) VALUES ($1, $2, $3, $4, $5, $6)", [uid(), me.id, t, text(body, 280), bgN, img]);
+  await q.query("INSERT INTO feed_posts (id, author_id, title, text, bg, image, images) VALUES ($1, $2, $3, $4, $5, $6, $7)", [uid(), me.id, t, text(body, 280), bgN, list[0] ?? null, list]);
   return loadStore(me);
 }
 export async function deleteFeedPost(me: DbUser, id: string) {
-  const r = await db().query("DELETE FROM feed_posts WHERE id = $1 AND author_id = $2 RETURNING image", [id, me.id]);
+  const r = await db().query("DELETE FROM feed_posts WHERE id = $1 AND author_id = $2 RETURNING image, images", [id, me.id]);
   if (r.rowCount) {
     await db().query("DELETE FROM comments WHERE post_kind = 'feed' AND post_id = $1", [id]);
-    await deleteUploadedImage(r.rows[0]?.image); // 우리 S3에 올린 사진이면 함께 삭제
+    const urls = new Set<string>([...((r.rows[0]?.images as string[] | null) ?? []), r.rows[0]?.image].filter(Boolean));
+    for (const u of urls) await deleteUploadedImage(u); // 우리 S3에 올린 사진이면 함께 삭제
   }
   return loadStore(me);
 }

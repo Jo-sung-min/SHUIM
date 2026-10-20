@@ -52,7 +52,7 @@ export const api = {
   deleteComment: (id: string) => call("/api/community/comment.delete", { id }),
   toggleCheer: (t: Target) => call("/api/community/cheer", t),
   report: (t: Target, reason: ReportReason) => call("/api/community/report", { ...t, reason }),
-  createFeedPost: (text: string, bg: number, title?: string, image?: string) => call("/api/community/feed.create", { text, bg, title, image }),
+  createFeedPost: (text: string, bg: number, title?: string, images: string[] = []) => call("/api/community/feed.create", { text, bg, title, images }),
   deleteFeedPost: (id: string) => call("/api/community/feed.delete", { id }),
   updateBio: (bio: string) => call("/api/community/bio", { bio }),
   toggleFollow: (creatorId: string) => call("/api/community/follow", { creatorId }),

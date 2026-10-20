@@ -37,7 +37,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ action: string
       case "report":
         return NextResponse.json(await C.report(me, target(body), body.reason));
       case "feed.create":
-        return NextResponse.json(await C.createFeedPost(me, body.text, body.bg, body.title, body.image));
+        return NextResponse.json(await C.createFeedPost(me, body.text, body.bg, body.title, body.images ?? body.image));
       case "feed.delete":
         return NextResponse.json(await C.deleteFeedPost(me, str(body.id)));
       case "bio":

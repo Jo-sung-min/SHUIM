@@ -90,9 +90,11 @@ export interface Comment extends Base {
 export interface FeedPost extends Base {
   title?: string;
   bg: number;
-  image?: string;
+  image?: string; // 대표(첫 장)
+  images: string[]; // 사진 여러 장 (가로로 넘겨 봄)
   saves: string[];
 }
+export const FEED_MAX_IMAGES = 10;
 
 export interface Donation {
   id: string;
