@@ -2,11 +2,19 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 import { hasCrisisSignal } from "@/lib/crisis";
-import type { BriefingData, DayRecord, MomentData, MomentMode } from "@/lib/storage";
+import type { BriefingData, DayRecord, MomentData, MomentMode, ReviewData } from "@/lib/storage";
+import { DEFAULT_PROMPTS, PROMPT_MAX_LEN, PromptKey } from "@/lib/prompts";
 
 export const runtime = "nodejs";
 
-type Mode = "briefing" | MomentMode;
+type Mode = "briefing" | MomentMode | "review";
+
+interface DatedMemo {
+  date: string; // YYYY-MM-DD
+  cat: MemoCat;
+  text: string;
+  pinned: boolean;
+}
 
 interface Body {
   mode?: Mode;
@@ -17,68 +25,11 @@ interface Body {
   memos: { cat: MemoCat; text: string; pinned: boolean }[];
   goals: { title: string; cat: MemoCat; why: string; due?: string; steps: { text: string; done: boolean }[] }[];
   schedule: { date: string; time?: string; title: string; cat: MemoCat; done: boolean }[];
+  /** review 모드: 메모 전체 (오래된 순, 날짜 포함) */
+  allMemos?: DatedMemo[];
+  /** 관리자가 덮어쓴 시스템 프롬프트 (키별) */
+  prompts?: Partial<Record<PromptKey, string>>;
 }
-
-const SYSTEM = `너는 "마음 가속도" 앱의 "오늘의 나" 브리핑 작성자야.
-이 앱의 철학: 사람은 감정의 위치가 아니라 변화(가속도)를 느낀다. 불안은 막연한 미래와 지금 위치를 자꾸 재는 데서 온다.
-그래서 브리핑은 "지금 어디 있나"가 아니라 "어느 방향으로 얼마나 움직였고, 오늘 어디로 한 걸음 갈 수 있나"를 보여줘야 해.
-
-입력: 사용자의 최근 기록(카테고리별 -5~+5 점수와 한 줄 메모, 오늘 한 행동), 카테고리별 메모, 진행 중인 목표, 오늘과 다가오는 일정.
-
-반드시 지킬 것:
-- 사용자가 직접 쓴 말을 인용해서 비춰줘. 기록에 없는 원인이나 사실을 지어내지 마.
-- 긍정적인 방향으로 속도를 붙여주되, 과장된 위로·근거 없는 낙관·이모지 남발은 금지. 담백하고 따뜻한 존댓말.
-- 떨어진 날이 있어도 "다시 올라온 순간", "그래도 한 행동", "지켜낸 것"을 먼저 알아봐줘.
-- 메모(특히 고정된 메모)는 사용자가 스스로 정한 원칙이야. 오늘 상황과 연결되는 메모가 있으면 그 말을 그대로 돌려줘.
-- 목표는 "남은 것"보다 "이미 한 단계"를 먼저 말하고, 오늘 할 수 있는 가장 작은 다음 단계 하나만 제안해.
-- 일정은 사실대로 정리하고, 부담 주는 말은 하지 마. 비어 있으면 그것도 괜찮다고 말해.
-- 진단, 병명, 투자 조언, 매수·매도 판단 절대 금지. 주식·돈 얘기가 있으면 "자주 안 보기로 한 원칙" 같은 사용자의 결정을 지지하는 방향으로만.
-- 기록에 스스로를 해치거나 삶을 끝내고 싶다는 표현이 있으면, 비난 없이 그 마음을 먼저 알아주고 자살예방상담전화 109(24시간)를 headline이나 highlights 첫 줄에서 부드럽게 권해.
-
-출력은 아래 JSON 하나만. 코드블록이나 다른 텍스트 없이.
-{
-  "headline": "오늘의 방향을 한 문장으로 (20~40자, 사용자의 말이나 행동을 담아서)",
-  "momentum": { "direction": "up" | "flat" | "down", "text": "어제(직전 기록) 대비 흐름을 1~2문장으로. 어떤 카테고리가 움직였는지 구체적으로" },
-  "highlights": ["기록·메모·행동에서 뽑은 긍정적 포인트 2~3개, 각 1~2문장, 가능하면 사용자의 말 인용"],
-  "today": { "schedule": "오늘 일정 1~2문장", "goals": "목표 진행 1~2문장 (이미 한 단계 먼저)" },
-  "nextStep": "지금 바로 할 수 있는 가장 작은 행동 하나 (한 문장, 명령형 말고 제안형)",
-  "question": "오늘 저녁 기록할 때 스스로에게 물어볼 질문 하나"
-}`;
-
-const COMMON = `입력: 사용자의 최근 기록(카테고리별 -5~+5 점수와 한 줄 메모, 오늘 한 행동), 카테고리별 메모, 진행 중인 목표, 오늘과 다가오는 일정.
-공통 규칙:
-- 사용자가 직접 쓴 말, 실제로 한 행동, 체크한 단계만 근거로 삼아. 기록에 없는 사실을 지어내지 마.
-- 담백하고 따뜻한 한국어 존댓말. 과장, 빈말, 이모지 남발 금지.
-- 진단, 병명, 투자 조언, 매수·매도 판단 절대 금지.
-- 기록에 스스로를 해치거나 삶을 끝내고 싶다는 표현이 있으면, 비난 없이 그 마음을 먼저 알아주고 자살예방상담전화 109(24시간)를 첫 줄에서 부드럽게 권해.
-출력은 아래 JSON 하나만. 코드블록이나 다른 텍스트 없이.`;
-
-const SYSTEM_PRAISE = `너는 "마음 가속도" 앱에서 "나를 칭찬하기" 버튼을 눌렀을 때 답하는 사람이야.
-사용자는 지금 자기가 뭘 잘했는지 스스로는 잘 안 보이는 상태야. 기록을 샅샅이 읽고, 본인이 사소하다고 넘겼을 것들을 구체적으로 짚어서 칭찬해줘.
-${COMMON}
-칭찬 규칙:
-- "대단해요" 같은 막연한 말 금지. 반드시 날짜·행동·메모 속 말을 인용해서 "무엇을" 했는지 짚어.
-- 결과보다 과정과 선택을 칭찬해. 특히 내려간 날에도 기록한 것, 원칙(메모)을 지킨 것, 목표 단계를 하나라도 체크한 것, 일정을 완료한 것.
-- 점수가 낮아도 비교 대상은 어제의 본인뿐. 남과 비교하지 마.
-{
-  "title": "오늘의 칭찬을 한 문장으로 (사용자의 행동이 들어간 20~35자)",
-  "lines": ["구체적인 칭찬 3~4개, 각 1~2문장, 근거가 되는 사용자의 말이나 행동 인용"],
-  "closing": "마지막 한마디 (1문장, 내일의 나에게 건네는 말)"
-}`;
-
-const SYSTEM_LOVE = `너는 "마음 가속도" 앱에서 "나를 사랑하기" 버튼을 눌렀을 때 답하는 사람이야.
-사용자는 자신에게 자주 엄격하고, 불안할 때 자기를 몰아세우는 편이야. 기록을 읽고, 이 사람이 "오늘 자기 자신을 사랑하는 구체적인 방법"을 알려줘.
-${COMMON}
-사랑하기 규칙:
-- 일반론("자신을 아껴주세요") 금지. 기록에서 본 이 사람의 몸 상태(잠, 떨림, 커피), 마음 메모, 관계, 오늘 일정을 바탕으로 이 사람에게만 맞는 방법을 제안해.
-- 각 방법은 오늘 안에 10분 이내로 할 수 있을 만큼 작게. 명령형 말고 제안형.
-- 사용자가 스스로에게 가혹하게 쓴 말이 있으면, 그 말을 친구에게라면 어떻게 바꿔 말할지 보여줘.
-- 메모에 본인이 정한 원칙이 있으면 그걸 "자기를 지키는 방법"으로 다시 돌려줘.
-{
-  "title": "오늘 나를 사랑하는 방향을 한 문장으로 (20~35자)",
-  "lines": ["오늘 할 수 있는 구체적인 방법 3~4개, 각 1~2문장, 기록 속 근거 포함"],
-  "closing": "마지막 한마디 (1문장, 자기 자신에게 해주는 말)"
-}`;
 
 const fmtScore = (s: number) => (s > 0 ? `+${s}` : `${s}`);
 
@@ -314,6 +265,108 @@ function localLove(b: Body): MomentData {
   };
 }
 
+/* ---------- 메모로 나를 점검하기 ---------- */
+
+function reviewText(b: Body): string {
+  const memos = b.allMemos ?? [];
+  const out: string[] = [];
+  out.push(`[메모 전체 · ${memos.length}개 · 오래된 순]`);
+  out.push(
+    memos.length
+      ? memos.map((m) => `[${m.date} · ${memoCatById(m.cat).label}${m.pinned ? " · 고정" : ""}] ${m.text.slice(0, 400)}`).join("\n")
+      : "(없음)"
+  );
+  out.push("", `[오늘 ${b.date}]`);
+  out.push(Object.keys(b.today).length || b.todayDid.length ? dayLine(b.date, b.today, b.todayDid) : "(오늘은 아직 기록 전)");
+  const todayMemos = memos.filter((m) => m.date === b.date);
+  if (todayMemos.length) out.push(`오늘 쓴 메모: ${todayMemos.map((m) => `"${m.text.slice(0, 200)}"`).join(" / ")}`);
+  out.push("", "[최근 7일 기록]");
+  out.push(b.recent.length ? b.recent.map((r) => dayLine(r.date, r.record, r.did)).join("\n") : "(없음)");
+  if (b.goals.length) {
+    out.push("", "[진행 중 목표]");
+    out.push(b.goals.map((g) => `- ${g.title}${g.why ? ` (이유: "${g.why}")` : ""}`).join("\n"));
+  }
+  return out.join("\n");
+}
+
+/** 규칙 기반 점검: 오늘 쓴 글과 과거 메모의 단어 겹침으로 연결되는 다짐을 찾는다 */
+function localReview(b: Body): ReviewData {
+  const memos = (b.allMemos ?? []).slice().sort((a, c) => (a.date < c.date ? -1 : 1));
+  const past = memos.filter((m) => m.date < b.date);
+  const todayTexts = [
+    ...memos.filter((m) => m.date === b.date).map((m) => m.text),
+    ...CATEGORIES.map((c) => b.today[c.id]?.note ?? "").filter(Boolean),
+    ...b.todayDid,
+  ];
+  // 흔한 말은 연결 근거로 삼지 않음
+  const STOP = new Set(["오늘", "내일", "어제", "그때", "지금", "생각", "하루", "다시", "보기", "하기", "말기", "것이", "같은데", "같아도", "그냥", "조금", "많이", "정말", "너무", "오늘은", "오늘도", "나를", "내가", "나는", "있다", "없다", "했다", "한다", "것", "수", "더"]);
+  const tokens = (t: string) =>
+    new Set(
+      t
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 2 && !STOP.has(w))
+    );
+  const todayTok = tokens(todayTexts.join(" "));
+  const cautions: ReviewData["cautions"] = [];
+  for (const m of past) {
+    const common = [...tokens(m.text)].filter((w) => todayTok.has(w));
+    if (common.length >= 2 || (common.length === 1 && m.pinned)) {
+      const now = todayTexts.find((t) => [...tokens(t)].some((w) => common.includes(w))) ?? todayTexts[0] ?? "";
+      cautions.push({
+        past: `${m.date}: "${m.text.slice(0, 120)}"`,
+        now: now ? `오늘: "${now.slice(0, 120)}"` : "오늘 기록",
+        note: `그때 ${josa(`'${common[0]}'`, "을", "를")} 두고 이렇게 적어뒀어요. 오늘의 상황이 그때 정한 기준 안에 있는지 한 번만 확인해 봐요.`,
+      });
+      if (cautions.length >= 3) break;
+    }
+  }
+  const changes: string[] = [];
+  const byCat = new Map<MemoCat, DatedMemo[]>();
+  for (const m of memos) byCat.set(m.cat, [...(byCat.get(m.cat) ?? []), m]);
+  for (const [cat, list] of byCat) {
+    if (list.length < 2) continue;
+    const first = list[0];
+    const last = list[list.length - 1];
+    if (first.date === last.date) continue;
+    changes.push(`${memoCatById(cat).label}: ${first.date}엔 "${first.text.slice(0, 50)}", ${last.date}엔 "${last.text.slice(0, 50)}".`);
+    if (changes.length >= 3) break;
+  }
+  const span = memos.length >= 2 ? `${memos[0].date}부터 ${memos[memos.length - 1].date}까지 ${memos.length}개의 메모` : `${memos.length}개의 메모`;
+  const growth = memos.length
+    ? `${span}가 쌓였어요. ${cautions.length ? "오늘과 맞닿는 과거의 다짐이 있어요. 그 기준을 세운 것도, 오늘 다시 꺼내 본 것도 모두 당신이에요." : "오늘과 직접 맞닿는 과거 메모는 없었어요. 오늘 든 생각을 메모로 남겨두면 다음 점검 때 비교할 수 있어요."}`
+    : "아직 메모가 없어요. 다짐이나 원칙을 메모해 두면, 나중에 오늘의 나가 그때의 나와 대화할 수 있어요.";
+  return {
+    headline: cautions.length ? "그때의 내가 오늘의 나에게 할 말이 있어요" : memos.length ? "오늘은 과거와 충돌하는 게 없어요" : "첫 메모부터 시작해요",
+    cautions,
+    changes,
+    growth,
+    question: "오늘 결정한 것 중, 1년 뒤의 나에게 미리 알려주고 싶은 기준이 있나요?",
+  };
+}
+
+function parseReview(raw: string): ReviewData | null {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start < 0 || end < 0) return null;
+  try {
+    const o = JSON.parse(cleaned.slice(start, end + 1)) as Partial<ReviewData>;
+    if (!o.headline) return null;
+    return {
+      headline: String(o.headline),
+      cautions: Array.isArray(o.cautions)
+        ? o.cautions.slice(0, 5).map((c) => ({ past: String(c?.past ?? ""), now: String(c?.now ?? ""), note: String(c?.note ?? "") }))
+        : [],
+      changes: Array.isArray(o.changes) ? o.changes.map(String).slice(0, 5) : [],
+      growth: String(o.growth ?? ""),
+      question: String(o.question ?? ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function parseMoment(raw: string): MomentData | null {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   const start = cleaned.indexOf("{");
@@ -366,8 +419,10 @@ export async function POST(req: Request) {
   body.goals = (body.goals ?? []).slice(0, 8);
   body.schedule = (body.schedule ?? []).slice(0, 20);
 
-  const mode: Mode = body.mode === "praise" || body.mode === "love" ? body.mode : "briefing";
-  const text = toPlainText(body);
+  body.allMemos = (body.allMemos ?? []).slice(-300);
+
+  const mode: Mode = body.mode === "praise" || body.mode === "love" || body.mode === "review" ? body.mode : "briefing";
+  const text = mode === "review" ? reviewText(body) : toPlainText(body);
   const crisis = hasCrisisSignal(text);
 
   const local = () =>
@@ -375,6 +430,8 @@ export async function POST(req: Request) {
       ? { moment: localPraise(body) }
       : mode === "love"
       ? { moment: localLove(body) }
+      : mode === "review"
+      ? { review: localReview(body) }
       : { briefing: localBriefing(body) };
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -382,14 +439,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ ...local(), source: "local", crisis });
   }
 
-  const system = mode === "praise" ? SYSTEM_PRAISE : mode === "love" ? SYSTEM_LOVE : SYSTEM;
-  const ask = mode === "praise" ? "기록을 읽고 나를 칭찬해줘." : mode === "love" ? "기록을 읽고 오늘 나를 사랑하는 방법을 알려줘." : "오늘의 나 브리핑을 만들어줘.";
+  // 관리자가 덮어쓴 프롬프트가 있으면 사용 (길이 제한)
+  const override = body.prompts?.[mode];
+  const system = typeof override === "string" && override.trim() ? override.slice(0, PROMPT_MAX_LEN) : DEFAULT_PROMPTS[mode];
+  const ask =
+    mode === "praise"
+      ? "기록을 읽고 나를 칭찬해줘."
+      : mode === "love"
+      ? "기록을 읽고 오늘 나를 사랑하는 방법을 알려줘."
+      : mode === "review"
+      ? "메모 전체와 오늘 기록을 읽고, 과거의 다짐과 오늘을 대조해 점검해줘."
+      : "오늘의 나 브리핑을 만들어줘.";
 
   try {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
-      max_tokens: 1000,
+      max_tokens: mode === "review" ? 1600 : 1000,
       system,
       messages: [{ role: "user", content: `${ask}\n\n${text}` }],
     });
@@ -401,6 +467,11 @@ export async function POST(req: Request) {
       const briefing = parseBriefing(raw);
       if (!briefing) throw new Error("JSON 파싱 실패");
       return NextResponse.json({ briefing, source: "ai", crisis });
+    }
+    if (mode === "review") {
+      const review = parseReview(raw);
+      if (!review) throw new Error("JSON 파싱 실패");
+      return NextResponse.json({ review, source: "ai", crisis });
     }
     const moment = parseMoment(raw);
     if (!moment) throw new Error("JSON 파싱 실패");

@@ -9,7 +9,7 @@
  * - 위로 피드: 크리에이터가 올리는 짧은 위로글을 쇼츠처럼 세로로 넘겨 본다. 글을 올리면 누구나 크리에이터가 된다.
  */
 
-import { COMMUNITY_KEY, addDays, read, todayKey, uid, write } from "./storage";
+import { COMMUNITY_KEY, addDays, readShared as read, todayKey, uid, writeShared as write } from "./storage";
 
 export type ShoutCat = "misfortune" | "anxiety" | "money" | "work" | "relation" | "body" | "small-win" | "free";
 

@@ -17,13 +17,44 @@ import {
   resetCommunity,
   shoutCatById,
 } from "@/lib/community";
-import { Empty, Hero, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Hero, Segmented, TopBar, fmtRelative } from "@/components/ui";
 import { IconChevronL } from "@/components/Icons";
+import { currentUser, hasAnyAccount, isAdmin } from "@/lib/auth";
+import { DEFAULT_PROMPTS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
+import { PromptOverrides, loadPrompts, savePrompts } from "@/lib/storage";
+
+type View = "reports" | "prompts";
 
 export default function AdminPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
-  useEffect(() => setS(loadCommunity()), []);
-  if (!s) return <TopBar title="관리자" />;
+  const [view, setView] = useState<View>("reports");
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [demo, setDemo] = useState(false);
+
+  useEffect(() => {
+    setS(loadCommunity());
+    setAllowed(isAdmin());
+    setDemo(!hasAnyAccount());
+  }, []);
+
+  if (!s || allowed === null) return <TopBar title="관리자" />;
+
+  if (!allowed) {
+    const me = currentUser();
+    return (
+      <>
+        <TopBar title="관리자" right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
+        <div className="screen">
+          <Empty icon="🔒" title="관리자만 들어올 수 있어요">
+            {me ? `${me.nick} 님은 일반 회원이에요. 첫 번째로 가입한 계정이 관리자예요.` : "관리자 계정으로 로그인해요."}
+            <div style={{ marginTop: 14 }}>
+              <Link href="/auth" className="btn sm soft">{me ? "내 계정" : "로그인"}</Link>
+            </div>
+          </Empty>
+        </div>
+      </>
+    );
+  }
 
   const flagged = listFlagged(s);
   const blocked = blockedUsers(s);
@@ -31,8 +62,8 @@ export default function AdminPage() {
   return (
     <>
       <TopBar
-        title="관리자 검토"
-        eyebrow="외침 · 신고 누적 글"
+        title="관리자"
+        eyebrow={view === "reports" ? "외침 · 신고 누적 글" : "AI 프롬프트"}
         right={
           <Link href="/shout" className="icon-btn" aria-label="외침으로">
             <IconChevronL />
@@ -40,8 +71,22 @@ export default function AdminPage() {
         }
       />
       <div className="screen">
+        <Segmented
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "reports", label: `신고 검토${flagged.length ? ` ${flagged.length}` : ""}` },
+            { value: "prompts", label: "프롬프트" },
+          ]}
+        />
+        <div style={{ height: 12 }} />
+
+        {view === "prompts" && <PromptAdmin />}
+
+        {view === "reports" && (
+          <>
         <Hero
-          label="프로토타입 · 로그인 없이 누구나 열람"
+          label={demo ? "프로토타입 · 아직 계정이 없어 누구나 열람" : "관리자"}
           title={flagged.length ? `검토할 글 ${flagged.length}개` : "검토할 글이 없어요"}
           sub={`외침·위로 피드·댓글 중 신고가 ${REPORT_THRESHOLD}번 이상 쌓인 것이 여기 모여요. 숨기거나, 작성자를 차단하거나, 문제 없음으로 돌려보낼 수 있어요.`}
           stats={[`대기 ${flagged.length}`, `차단 유저 ${blocked.length}`]}
@@ -85,7 +130,87 @@ export default function AdminPage() {
             외침 샘플 데이터로 초기화
           </button>
         </div>
+          </>
+        )}
       </div>
+    </>
+  );
+}
+
+/* ================= AI 프롬프트 관리 ================= */
+
+function PromptAdmin() {
+  const [overrides, setOverrides] = useState<PromptOverrides>({});
+  const [drafts, setDrafts] = useState<Record<PromptKey, string>>({ ...DEFAULT_PROMPTS });
+  const [savedKey, setSavedKey] = useState<PromptKey | null>(null);
+
+  useEffect(() => {
+    const o = loadPrompts();
+    setOverrides(o);
+    setDrafts({
+      briefing: o.briefing ?? DEFAULT_PROMPTS.briefing,
+      praise: o.praise ?? DEFAULT_PROMPTS.praise,
+      love: o.love ?? DEFAULT_PROMPTS.love,
+      review: o.review ?? DEFAULT_PROMPTS.review,
+    });
+  }, []);
+
+  const save = (key: PromptKey) => {
+    const text = drafts[key].trim().slice(0, PROMPT_MAX_LEN);
+    const next: PromptOverrides = { ...overrides };
+    if (!text || text === DEFAULT_PROMPTS[key]) delete next[key];
+    else next[key] = text;
+    savePrompts(next);
+    setOverrides(next);
+    setSavedKey(key);
+    setTimeout(() => setSavedKey(null), 2000);
+  };
+  const reset = (key: PromptKey) => {
+    setDrafts((d) => ({ ...d, [key]: DEFAULT_PROMPTS[key] }));
+    const next: PromptOverrides = { ...overrides };
+    delete next[key];
+    savePrompts(next);
+    setOverrides(next);
+  };
+
+  const customized = Object.keys(overrides).length;
+
+  return (
+    <>
+      <Hero
+        label="AI 프롬프트"
+        title={customized ? `${customized}개를 직접 고쳤어요` : "기본 프롬프트를 쓰고 있어요"}
+        sub="오늘의 나·칭찬·사랑하기·점검 버튼이 Claude에게 보내는 지시문이에요. 고치면 이 기기에서 보내는 요청에 바로 적용돼요. JSON 출력 형식 부분은 화면이 그 모양을 기대하니 유지해요."
+        stats={[`${PROMPT_META.length}개 프롬프트`, `최대 ${PROMPT_MAX_LEN.toLocaleString()}자`]}
+      />
+      <div className="stack" style={{ marginTop: 12 }}>
+        {PROMPT_META.map((p) => {
+          const dirty = drafts[p.key] !== (overrides[p.key] ?? DEFAULT_PROMPTS[p.key]);
+          const isCustom = Boolean(overrides[p.key]);
+          return (
+            <section key={p.key} className="card prompt-card">
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 2 }}>
+                <b style={{ fontSize: 15 }}>{p.label}</b>
+                {isCustom ? <span className="badge">수정됨</span> : <span className="badge gray">기본값</span>}
+              </div>
+              <div className="meta">
+                <span>{p.desc}</span>
+                <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{drafts[p.key].length.toLocaleString()}자</span>
+              </div>
+              <textarea value={drafts[p.key]} onChange={(e) => setDrafts((d) => ({ ...d, [p.key]: e.target.value }))} spellCheck={false} />
+              <div className="row" style={{ marginTop: 10, gap: 6 }}>
+                <button className="btn sm" disabled={!dirty} onClick={() => save(p.key)}>
+                  {savedKey === p.key ? "저장됨" : "저장"}
+                </button>
+                <button className="btn ghost sm" disabled={!isCustom && !dirty} onClick={() => reset(p.key)}>기본값으로</button>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>
+        프로토타입: 프롬프트는 이 기기에 저장되고 요청마다 서버로 함께 보내요. 서버에 DB가 생기면 거기로 옮기면 돼요.
+      </p>
     </>
   );
 }

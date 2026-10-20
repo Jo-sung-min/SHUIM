@@ -99,6 +99,24 @@ export interface Moment {
   data: MomentData;
 }
 
+/* ---------- 메모로 나를 점검하기 ---------- */
+
+export interface ReviewData {
+  headline: string;
+  cautions: { past: string; now: string; note: string }[];
+  changes: string[];
+  growth: string;
+  question: string;
+}
+
+export interface Review {
+  date: string;
+  generatedAt: number;
+  source: "ai" | "local";
+  crisis: boolean;
+  data: ReviewData;
+}
+
 /* ---------- 키 & 공통 ---------- */
 
 const K = {
@@ -109,12 +127,32 @@ const K = {
   schedule: "maeum-accel:schedule:v1",
   briefing: "maeum-accel:briefing:v1",
   moments: "maeum-accel:moments:v1",
+  review: "maeum-accel:review:v1",
   community: "maeum-accel:community:v1",
 } as const;
 
 export const COMMUNITY_KEY = K.community;
+/** 계정과 무관하게 기기 전체에서 공유하는 키 (커뮤니티 샘플 세계, 프롬프트, 계정 목록, 세션) */
+export const SESSION_KEY = "maeum-accel:session:v1";
+export const PROMPTS_KEY = "maeum-accel:prompts:v1";
 
-export function read<T>(key: string, fallback: T): T {
+/** 로그인한 계정 id (없으면 null = 게스트) */
+export function sessionUserId(): string | null {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    return raw ? ((JSON.parse(raw) as { userId?: string }).userId ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 개인 데이터 키를 계정별로 분리. 게스트는 원래 키 그대로(기존 데이터 유지). */
+function ns(key: string): string {
+  const u = sessionUserId();
+  return u ? `${key}:${u}` : key;
+}
+
+function readRaw<T>(key: string, fallback: T): T {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -122,12 +160,32 @@ export function read<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-
-export function write(key: string, value: unknown) {
+function writeRaw(key: string, value: unknown) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* 저장소 사용 불가 시 무시 (프로토타입) */
+  }
+}
+
+/** 개인 데이터 (계정별) */
+export const read = <T,>(key: string, fallback: T): T => readRaw(ns(key), fallback);
+export const write = (key: string, value: unknown) => writeRaw(ns(key), value);
+/** 기기 공유 데이터 (계정 무관) */
+export const readShared = readRaw;
+export const writeShared = writeRaw;
+
+/** 회원가입 직후: 게스트로 쓰던 개인 데이터를 새 계정으로 복사 (계정 데이터가 비어 있을 때만) */
+export function adoptGuestData(userId: string) {
+  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review];
+  try {
+    for (const key of personal) {
+      const target = `${key}:${userId}`;
+      const guest = window.localStorage.getItem(key);
+      if (guest && !window.localStorage.getItem(target)) window.localStorage.setItem(target, guest);
+    }
+  } catch {
+    /* noop */
   }
 }
 
@@ -226,13 +284,24 @@ export function clearMoments() {
   }
 }
 
+/* ---------- 점검 캐시 (하루 1개) ---------- */
+
+export const loadReview = () => read<Review | null>(K.review, null);
+export const saveReview = (r: Review) => write(K.review, r);
+
+/* ---------- 프롬프트 덮어쓰기 (관리자, 기기 공유) ---------- */
+
+export type PromptOverrides = Partial<Record<"briefing" | "praise" | "love" | "review", string>>;
+export const loadPrompts = () => readShared<PromptOverrides>(PROMPTS_KEY, {});
+export const savePrompts = (p: PromptOverrides) => writeShared(PROMPTS_KEY, p);
+
 /* ---------- 전체 삭제 ---------- */
 
 export function clearAll() {
-  // community 키도 포함 (다음 외침 탭 진입 시 샘플이 다시 생성됨)
+  // 현재 계정(또는 게스트)의 개인 데이터 + 기기 공유 커뮤니티 샘플 (다음 외침 탭 진입 시 다시 생성됨)
   for (const k of Object.values(K)) {
     try {
-      window.localStorage.removeItem(k);
+      window.localStorage.removeItem(k === K.community ? k : ns(k));
     } catch {
       /* noop */
     }
@@ -288,12 +357,21 @@ export function seedSampleData() {
   const DAY = 86400000;
   const today = todayKey();
   saveMemos([
+    // 오래된 다짐들 (되돌아보기·점검용)
+    { id: uid(), cat: "money", text: "주식 수익 100%면 무조건 팔기. 더 오를 것 같아도. 욕심이 수익을 다 먹는다.", pinned: true, createdAt: t - DAY * 365, updatedAt: t - DAY * 365 },
+    { id: uid(), cat: "body", text: "커피 3잔 넘기면 손 떨림. 2잔까지만.", pinned: false, createdAt: t - DAY * 200, updatedAt: t - DAY * 200 },
+    { id: uid(), cat: "work", text: "이력서는 한 일이 아니라 숫자로 말하기. 매출, 시간, 건수.", pinned: false, createdAt: t - DAY * 150, updatedAt: t - DAY * 150 },
+    { id: uid(), cat: "mind", text: "불안할 땐 미래를 재지 말고 오늘 한 걸음만 보기.", pinned: false, createdAt: t - DAY * 90, updatedAt: t - DAY * 90 },
+    { id: uid(), cat: "relation", text: "서운하면 돌려 말하지 말고 그날 말하기.", pinned: false, createdAt: t - DAY * 60, updatedAt: t - DAY * 60 },
+    // 최근
     { id: uid(), cat: "money", text: "주식은 하루 한 번, 저녁 8시에만 본다. 장중엔 앱 삭제한 셈 치기.", pinned: true, createdAt: t - DAY * 6, updatedAt: t - DAY * 6 },
     { id: uid(), cat: "work", text: "이력서 고치다가 깨달음: 내가 한 일 중 숫자로 말할 수 있는 게 생각보다 많다.", pinned: false, createdAt: t - DAY * 4, updatedAt: t - DAY * 4 },
     { id: uid(), cat: "mind", text: "불안은 미래의 위치를 자꾸 재는 데서 온다. 오늘 한 걸음만 보기.", pinned: true, createdAt: t - DAY * 3, updatedAt: t - DAY * 3 },
     { id: uid(), cat: "body", text: "커피 2잔 이하인 날은 손 떨림이 거의 없었음.", pinned: false, createdAt: t - DAY * 2, updatedAt: t - DAY * 2 },
     { id: uid(), cat: "relation", text: "솔직하게 말했더니 오히려 편해졌다. 다음에도 돌려 말하지 말기.", pinned: false, createdAt: t - DAY, updatedAt: t - DAY },
     { id: uid(), cat: "etc", text: "주말에 한강 자전거. 날씨 좋으면.", pinned: false, createdAt: t - 3600000, updatedAt: t - 3600000 },
+    // 오늘 (1년 전 다짐과 맞닿는 상황)
+    { id: uid(), cat: "money", text: "오늘 주식 수익 50% 달성. 더 오를 것 같은데 팔까 말까.", pinned: false, createdAt: t - 600000, updatedAt: t - 600000 },
   ]);
   saveGoals([
     {

@@ -10,6 +10,7 @@ import {
   Memo,
   Moment,
   MomentMode,
+  Review,
   ScheduleItem,
   addDays,
   clearAll,
@@ -20,16 +21,20 @@ import {
   loadLog,
   loadMemos,
   loadMoments,
+  loadPrompts,
+  loadReview,
   loadSchedule,
   saveBriefing,
   saveMoment,
+  saveReview,
   seedSampleData,
   streak,
   todayKey,
 } from "@/lib/storage";
+import { Account, currentUser } from "@/lib/auth";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
-import { IconChevronR, IconRefresh, IconSparkle } from "@/components/Icons";
+import { IconChevronR, IconNote, IconRefresh, IconSparkle } from "@/components/Icons";
 
 interface Data {
   journal: Journal;
@@ -51,6 +56,7 @@ function buildPayload(data: Data, today: string) {
     .sort();
   return {
     date: today,
+    prompts: loadPrompts(),
     today: data.journal[today] ?? {},
     todayDid: data.log[today]?.did ?? [],
     recent: recentKeys.map((k) => ({ date: k, record: data.journal[k], did: data.log[k]?.did ?? [] })),
@@ -74,15 +80,22 @@ export default function HomePage() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [moments, setMoments] = useState<Partial<Record<MomentMode, Moment>>>({});
   const [open, setOpen] = useState<MomentMode | null>(null);
-  const [loading, setLoading] = useState<"briefing" | MomentMode | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [me, setMe] = useState<Account | null>(null);
+  const [loading, setLoading] = useState<"briefing" | MomentMode | "review" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
+    setMe(currentUser());
     setData({ journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() });
     const b = loadBriefing();
     setBriefing(b && b.date === today ? b : null);
     const m = loadMoments();
     setMoments({ praise: m.praise?.date === today ? m.praise : undefined, love: m.love?.date === today ? m.love : undefined });
+    const r = loadReview();
+    setReview(r && r.date === today ? r : null);
+    setReviewOpen(Boolean(r && r.date === today));
   }, [today]);
 
   useEffect(reload, [reload]);
@@ -101,15 +114,23 @@ export default function HomePage() {
     };
   }, [data, today]);
 
-  const call = async (mode: "briefing" | MomentMode) => {
+  const call = async (mode: "briefing" | MomentMode | "review") => {
     if (!data) return;
     setLoading(mode);
     setError(null);
     try {
+      const payload = buildPayload(data, today);
+      // 점검 모드: 메모 전체를 날짜와 함께 (오래된 순)
+      const allMemos =
+        mode === "review"
+          ? [...data.memos]
+              .sort((a, b) => a.createdAt - b.createdAt)
+              .map((m) => ({ date: todayKey(new Date(m.createdAt)), cat: m.cat, text: m.text, pinned: m.pinned }))
+          : undefined;
       const res = await fetch("/api/today", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, ...buildPayload(data, today) }),
+        body: JSON.stringify({ mode, ...payload, allMemos }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
       const json = await res.json();
@@ -117,6 +138,11 @@ export default function HomePage() {
         const b: Briefing = { date: today, generatedAt: Date.now(), source: json.source, crisis: json.crisis, data: json.briefing };
         saveBriefing(b);
         setBriefing(b);
+      } else if (mode === "review") {
+        const r: Review = { date: today, generatedAt: Date.now(), source: json.source, crisis: json.crisis, data: json.review };
+        saveReview(r);
+        setReview(r);
+        setReviewOpen(true);
       } else {
         const m: Moment = { date: today, mode, generatedAt: Date.now(), source: json.source, crisis: json.crisis, data: json.moment };
         saveMoment(m);
@@ -159,11 +185,16 @@ export default function HomePage() {
         title="오늘의 나"
         eyebrow={fmtDate(today)}
         right={
-          briefing && !loading ? (
-            <button className="icon-btn" aria-label="다시 정리" title="다시 정리" onClick={() => { clearBriefing(); call("briefing"); }}>
-              <IconRefresh />
-            </button>
-          ) : undefined
+          <>
+            {briefing && !loading && (
+              <button className="icon-btn" aria-label="다시 정리" title="다시 정리" onClick={() => { clearBriefing(); call("briefing"); }}>
+                <IconRefresh />
+              </button>
+            )}
+            <Link href="/auth" className={`account-btn ${me ? "on" : ""}`} aria-label={me ? "내 계정" : "로그인"}>
+              {me ? me.nick.slice(0, 1) : "로그인"}
+            </Link>
+          </>
         }
       />
       <div className="screen home">
@@ -230,7 +261,7 @@ export default function HomePage() {
 
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
-        {loading && loading !== "briefing" && (
+        {(loading === "praise" || loading === "love") && (
           <section className="card moment" style={{ marginTop: 10 }} aria-busy="true">
             <div className="head"><span className="label">{MOMENTS[loading].heading}</span></div>
             <div className="skeleton" style={{ height: 20, width: "75%", marginBottom: 14 }} />
@@ -262,6 +293,102 @@ export default function HomePage() {
               <span className={`badge ${openMoment.source === "ai" ? "" : "gray"}`}>{openMoment.source === "ai" ? "AI" : "간단 버전 · API 키 없음"}</span>
             </div>
           </section>
+        )}
+
+        {/* 메모로 나를 점검하기 */}
+        {!stats.empty && (
+          <>
+            <button
+              className={`card review-btn ${reviewOpen && review ? "on" : ""}`}
+              style={{ marginTop: 10 }}
+              disabled={loading !== null}
+              onClick={() => {
+                if (loading) return;
+                if (review) setReviewOpen((v) => !v);
+                else call("review");
+              }}
+            >
+              <span className="ico"><IconNote /></span>
+              <span className="grow" style={{ textAlign: "left" }}>
+                <b>메모로 나를 점검하기</b>
+                <small>
+                  {loading === "review"
+                    ? `메모 ${data.memos.length}개를 읽는 중…`
+                    : review
+                    ? reviewOpen
+                      ? "접기"
+                      : "다시 보기"
+                    : `메모 ${data.memos.length}개 전체를 읽고, 예전 다짐과 오늘을 대조해요`}
+                </small>
+              </span>
+              <IconChevronR style={{ width: 18, height: 18, color: "var(--text-3)", transform: reviewOpen && review ? "rotate(90deg)" : "none" }} />
+            </button>
+
+            {loading === "review" && (
+              <section className="card" style={{ marginTop: 10 }} aria-busy="true">
+                <div className="skeleton" style={{ height: 20, width: "70%", marginBottom: 14 }} />
+                <div className="skeleton" style={{ height: 14, width: "100%" }} />
+                <div className="skeleton" style={{ height: 14, width: "88%", marginTop: 8 }} />
+                <div className="skeleton" style={{ height: 14, width: "55%", marginTop: 8 }} />
+              </section>
+            )}
+
+            {reviewOpen && review && loading !== "review" && (
+              <section className="card review" style={{ marginTop: 10 }}>
+                <div className="head">
+                  <span className="label">그때의 나 → 오늘의 나</span>
+                  <span className="row" style={{ gap: 6 }}>
+                    <span className="tiny muted">{fmtRelative(review.generatedAt)}</span>
+                    <button className="icon-btn" style={{ width: 28, height: 28 }} aria-label="다시 점검" title="다시 점검" onClick={() => call("review")}>
+                      <IconRefresh style={{ width: 16, height: 16 }} />
+                    </button>
+                  </span>
+                </div>
+                <h3>{review.data.headline}</h3>
+
+                {review.data.cautions.length > 0 && (
+                  <>
+                    <div className="sub-title">주의할 점</div>
+                    <div className="stack" style={{ gap: 8 }}>
+                      {review.data.cautions.map((c, i) => (
+                        <div key={i} className="caution">
+                          <div className="then"><span className="tag">그때</span>{c.past}</div>
+                          <div className="now"><span className="tag">오늘</span>{c.now}</div>
+                          <p className="note">{c.note}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {review.data.changes.length > 0 && (
+                  <>
+                    <div className="sub-title">그때와 다른 점</div>
+                    <ul className="brief-list">
+                      {review.data.changes.map((h, i) => (
+                        <li key={i}>{h}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {review.data.growth && (
+                  <>
+                    <div className="sub-title">움직인 거리</div>
+                    <p className="brief-text">{review.data.growth}</p>
+                  </>
+                )}
+
+                {review.data.question && (
+                  <p className="closing">{review.data.question}</p>
+                )}
+                <div style={{ marginTop: 10 }} className="row">
+                  <span className={`badge ${review.source === "ai" ? "" : "gray"}`}>{review.source === "ai" ? "AI" : "간단 버전 · API 키 없음"}</span>
+                  <Link href="/memo" className="text-btn" style={{ marginLeft: "auto" }}>메모 되돌아보기 →</Link>
+                </div>
+              </section>
+            )}
+          </>
         )}
 
         {!stats.empty && (
