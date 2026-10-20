@@ -39,7 +39,13 @@ export default function ShoutPage() {
   const [menu, setMenu] = useState<Target | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
-  useEffect(() => setS(loadCommunity()), []);
+  useEffect(() => {
+    const st = loadCommunity();
+    setS(st);
+    // 알림 등에서 ?post=ID 로 들어오면 그 글을 바로 연다
+    const id = new URLSearchParams(window.location.search).get("post");
+    if (id && st.posts.some((p) => p.id === id)) setOpenPost(id);
+  }, []);
 
   const posts = useMemo(() => {
     if (!s) return [];

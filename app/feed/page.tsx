@@ -52,7 +52,11 @@ export default function FeedPage() {
   const touchY = useRef<number | null>(null);
   const wheelAcc = useRef(0);
 
-  useEffect(() => setS(loadCommunity()), []);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
+  useEffect(() => {
+    setS(loadCommunity());
+    setDeepLink(new URLSearchParams(window.location.search).get("post"));
+  }, []);
   useEffect(() => setLimit(PAGE), [filter]);
 
   useEffect(() => {
@@ -65,6 +69,7 @@ export default function FeedPage() {
     io.observe(el);
     return () => io.disconnect();
   }, [s, filter]);
+
 
   const refresh = useCallback(() => {
     if (refreshing) return;
@@ -123,6 +128,20 @@ export default function FeedPage() {
     if (filter === "saved") return all.filter((f) => f.saves.includes(s.me.id));
     return all;
   }, [s, filter]);
+
+  // 알림 등에서 ?post=ID 로 들어오면 그 글까지 불러와 스크롤하고 댓글을 연다
+  useEffect(() => {
+    if (!deepLink || !s) return;
+    const idx = items.findIndex((f) => f.id === deepLink);
+    if (idx < 0) { setDeepLink(null); return; }
+    if (limit < idx + 1) { setLimit(idx + 1); return; }
+    const el = document.getElementById(`reel-${deepLink}`);
+    if (el) {
+      el.scrollIntoView({ block: "start" });
+      setOpenComments(deepLink);
+      setDeepLink(null);
+    }
+  }, [deepLink, s, items, limit]);
 
   if (!s) return null;
 
@@ -275,7 +294,7 @@ function Reel({
   const flagged = isFlagged(post) && !revealed;
 
   return (
-    <section className={`reel bg-${post.bg} ${post.image ? "has-img" : ""}`} style={post.image ? { backgroundImage: `url(${post.image})` } : undefined}>
+    <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${post.image ? "has-img" : ""}`} style={post.image ? { backgroundImage: `url(${post.image})` } : undefined}>
       <div className="reel-body">
         {flagged ? (
           <button className="flagged-box reel-flagged" onClick={onReveal}>

@@ -128,6 +128,8 @@ const K = {
   briefing: "maeum-accel:briefing:v1",
   moments: "maeum-accel:moments:v1",
   review: "maeum-accel:review:v1",
+  profile: "maeum-accel:profile:v1",
+  notif: "maeum-accel:notif:v1",
   community: "maeum-accel:community:v1",
 } as const;
 
@@ -177,7 +179,7 @@ export const writeShared = writeRaw;
 
 /** 회원가입 직후: 게스트로 쓰던 개인 데이터를 새 계정으로 복사 (계정 데이터가 비어 있을 때만) */
 export function adoptGuestData(userId: string) {
-  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review];
+  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review, K.profile, K.notif];
   try {
     for (const key of personal) {
       const target = `${key}:${userId}`;
@@ -288,6 +290,28 @@ export function clearMoments() {
 
 export const loadReview = () => read<Review | null>(K.review, null);
 export const saveReview = (r: Review) => write(K.review, r);
+
+/* ---------- 내 정보 (이름·전화번호) ---------- */
+
+export interface Profile {
+  name: string;
+  phone: string; // 숫자와 - 만
+}
+export const loadProfile = () => read<Profile>(K.profile, { name: "", phone: "" });
+export const saveProfile = (p: Profile) => write(K.profile, { name: p.name.trim().slice(0, 20), phone: p.phone.replace(/[^0-9-]/g, "").slice(0, 14) });
+/** 010-1234-5678 형태로 */
+export function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 11);
+  if (d.length < 4) return d;
+  if (d.length < 8) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  if (d.length < 11) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+}
+
+/* ---------- 알림 읽음 시각 ---------- */
+
+export const loadNotifSeen = () => read<number>(K.notif, 0);
+export const markNotifSeen = () => write(K.notif, Date.now());
 
 /* ---------- 프롬프트 덮어쓰기 (관리자, 기기 공유) ---------- */
 

@@ -9,7 +9,7 @@
  * - 위로 피드: 크리에이터가 올리는 짧은 위로글을 쇼츠처럼 세로로 넘겨 본다. 글을 올리면 누구나 크리에이터가 된다.
  */
 
-import { COMMUNITY_KEY, addDays, readShared as read, todayKey, uid, writeShared as write } from "./storage";
+import { COMMUNITY_KEY, addDays, loadNotifSeen, readShared as read, todayKey, uid, writeShared as write } from "./storage";
 
 export type ShoutCat = "misfortune" | "anxiety" | "money" | "work" | "relation" | "body" | "small-win" | "free";
 
@@ -193,16 +193,24 @@ export function loadCommunity(): CommunityStore {
       weekly: store.weekly ?? {},
     };
   }
-  // 새로 추가된 샘플 피드 글·크리에이터 보충 (id 기준, 이미 있으면 건드리지 않음)
+  // 새로 추가된 샘플(피드 글·외침 글·댓글·크리에이터) 보충 (id 기준, 이미 있으면 건드리지 않음)
   {
     const seeded = seedCommunity();
-    const missing = seeded.feed.filter((f) => !store.feed.some((x) => x.id === f.id));
-    const missingComments = seeded.comments.filter((c) => missing.some((f) => f.id === c.postId) && !store.comments.some((x) => x.id === c.id));
-    if (missing.length) {
-      store = { ...store, feed: [...store.feed, ...missing], comments: [...store.comments, ...missingComments], creators: { ...seeded.creators, ...store.creators } };
+    const missingFeed = seeded.feed.filter((f) => !store.feed.some((x) => x.id === f.id));
+    const missingPosts = seeded.posts.filter((p) => !store.posts.some((x) => x.id === p.id));
+    const missingComments = seeded.comments.filter((c) => !store.comments.some((x) => x.id === c.id));
+    if (missingFeed.length || missingPosts.length || missingComments.length) {
+      store = {
+        ...store,
+        feed: [...store.feed, ...missingFeed],
+        posts: [...store.posts, ...missingPosts],
+        comments: [...store.comments, ...missingComments],
+        creators: { ...seeded.creators, ...store.creators },
+      };
       write(COMMUNITY_KEY, store);
     }
   }
+  store = simulateReplies(store);
   const ensured = ensureWeeklyBatches(store);
   if (ensured !== store || !s.feed || !s.donations || !s.weekly) write(COMMUNITY_KEY, ensured);
   return ensured;
@@ -494,6 +502,101 @@ export function report(s: CommunityStore, target: Target, reason: ReportReason):
   );
 }
 
+/* ---------- 알림: 내 글의 새 댓글, 내가 댓글 단 글의 새 댓글 ---------- */
+
+export interface Notification {
+  id: string; // 댓글 id
+  kind: "comment_on_post" | "reply_on_thread";
+  postKind: "post" | "feed";
+  postId: string;
+  postText: string;
+  actorId: string;
+  actorNick: string;
+  text: string;
+  at: number;
+  read: boolean;
+}
+
+export function listNotifications(s: CommunityStore, seenAt = loadNotifSeen()): Notification[] {
+  const me = s.me.id;
+  const out: Notification[] = [];
+  const postOf = (id: string): { kind: "post" | "feed"; text: string; authorId: string } | null => {
+    const p = s.posts.find((x) => x.id === id);
+    if (p) return { kind: "post", text: p.text, authorId: p.authorId };
+    const f = s.feed.find((x) => x.id === id);
+    if (f) return { kind: "feed", text: f.title ? `${f.title} · ${f.text}` : f.text, authorId: f.authorId };
+    return null;
+  };
+  // 내가 댓글 단 글: 글별 내 첫 댓글 시각
+  const myFirstComment = new Map<string, number>();
+  for (const c of s.comments) if (c.authorId === me) myFirstComment.set(c.postId, Math.min(c.createdAt, myFirstComment.get(c.postId) ?? Infinity));
+  for (const c of s.comments) {
+    if (c.authorId === me || !isVisible(s, c)) continue;
+    const p = postOf(c.postId);
+    if (!p) continue;
+    if (p.authorId === me) {
+      out.push({ id: c.id, kind: "comment_on_post", postKind: p.kind, postId: c.postId, postText: p.text, actorId: c.authorId, actorNick: userById(s, c.authorId).nick, text: c.text, at: c.createdAt, read: c.createdAt <= seenAt });
+    } else {
+      const mine = myFirstComment.get(c.postId);
+      if (mine !== undefined && c.createdAt > mine) {
+        out.push({ id: c.id, kind: "reply_on_thread", postKind: p.kind, postId: c.postId, postText: p.text, actorId: c.authorId, actorNick: userById(s, c.authorId).nick, text: c.text, at: c.createdAt, read: c.createdAt <= seenAt });
+      }
+    }
+  }
+  return out.sort((a, b) => b.at - a.at).slice(0, 50);
+}
+
+export const unreadCount = (s: CommunityStore) => listNotifications(s).filter((n) => !n.read).length;
+
+/* ---------- 프로토타입: 샘플 유저가 잠시 후 위로 댓글을 남김 (서버가 생기면 삭제) ---------- */
+
+const REPLY_POOL = [
+  "그 말을 여기 적어둔 것만으로도 오늘 한 걸음이에요.",
+  "저도 비슷한 날이 있었어요. 지나가더라고요. 지금은 그냥 지나가는 중이에요.",
+  "힘내라는 말 대신, 오늘은 그냥 여기 있어줘서 고마워요.",
+  "읽고 한참 멈춰 있었어요. 혼자 아니에요.",
+  "오늘 밤은 아무것도 결정하지 말고 그냥 자요. 내일의 당신이 알아서 할 거예요.",
+  "이렇게 솔직하게 쓰는 사람은 이미 반은 괜찮아지는 중이에요.",
+];
+const THREAD_REPLY_POOL = [
+  "댓글 읽고 저도 힘이 났어요. 고마워요.",
+  "그 말 덕분에 오늘 조금 괜찮아졌어요.",
+  "저장해 두고 다시 읽을게요.",
+  "맞아요, 그렇게 생각하니 좀 가벼워지네요.",
+];
+const SIM_DELAY = 30 * 1000; // 내 글·댓글이 올라간 뒤 이 시간이 지나면 답글이 달림
+
+export function simulateReplies(s: CommunityStore): CommunityStore {
+  const me = s.me.id;
+  const now = Date.now();
+  const samples = s.users.filter((u) => !isBlocked(u));
+  if (!samples.length) return s;
+  const pick = <T,>(arr: T[], seed: string) => arr[seed.split("").reduce((n, ch) => n + ch.charCodeAt(0), 0) % arr.length];
+  const added: Comment[] = [];
+  // 1) 내가 쓴 외침 글에 샘플 유저의 위로 댓글 (글마다 1개)
+  for (const p of s.posts) {
+    if (p.authorId !== me || p.hidden || now - p.createdAt < SIM_DELAY) continue;
+    const hasOther = s.comments.some((c) => c.postId === p.id && c.authorId !== me);
+    if (hasOther) continue;
+    const actor = pick(samples, p.id);
+    added.push({ id: `sim-${p.id}`, postId: p.id, authorId: actor.id, text: pick(REPLY_POOL, p.id + actor.id), createdAt: now, cheers: [], reports: [] });
+  }
+  // 2) 내가 댓글 단 남의 글에 답글 (글마다 1개, 내 댓글 이후)
+  for (const c of s.comments) {
+    if (c.authorId !== me || now - c.createdAt < SIM_DELAY) continue;
+    const owner = s.posts.find((p) => p.id === c.postId)?.authorId ?? s.feed.find((f) => f.id === c.postId)?.authorId;
+    if (!owner || owner === me) continue;
+    const already = s.comments.some((x) => x.postId === c.postId && x.authorId !== me && x.createdAt > c.createdAt) || added.some((x) => x.postId === c.postId);
+    if (already) continue;
+    const actor = s.users.find((u) => u.id === owner && !isBlocked(u)) ?? pick(samples, c.id);
+    added.push({ id: `sim-${c.id}`, postId: c.postId, authorId: actor.id, text: pick(THREAD_REPLY_POOL, c.id), createdAt: now, cheers: [], reports: [] });
+  }
+  if (!added.length) return s;
+  const next = { ...s, comments: [...s.comments, ...added] };
+  saveCommunity(next);
+  return next;
+}
+
 /* ---------- 관리자 ---------- */
 
 export interface FlaggedItem {
@@ -596,6 +699,8 @@ export function seedCommunity(): CommunityStore {
     P("p12", "misfortune", "u1", "전 회사에서 받을 돈 못 받았어요. 노동청 가는 길에 비 맞았고요.", 9 * 24 * H, ["u2", "u3", "u4", "u5"]),
     P("p13", "misfortune", "u6", "강아지가 떠났어요. 12년. 집에 오면 아직 현관에서 기다리는 것 같아요.", 10 * 24 * H, ["u1", "u2", "u3", "u4", "u5", "u7"]),
     P("p14", "misfortune", "u4", "통장에 4만원. 월급은 열흘 뒤. 라면을 샀는데 계산대에서 카드가 안 됐어요.", 11 * 24 * H, ["u2", "u3"]),
+    // 내가 쓴 글 (알림 샘플용)
+    P("p15", "misfortune", "me", "오늘 주식 수익 50%인데 1년 전 '100%면 팔자'고 적어둔 메모가 자꾸 생각나요. 팔지도 못하고 들고 있지도 못하겠어요.", 3 * H, ["u2", "u3", "u5"]),
   ];
   const donations: Donation[] = [
     { id: "d1", by: "u2", amount: 5000, message: "지난주 글 읽고 울었어요. 조금이라도.", at: t - 6 * H },
@@ -616,6 +721,12 @@ export function seedCommunity(): CommunityStore {
     C("c6", "p4", "u2", "이유가 없어도 무서울 수 있어요. 내일이 오면 내일의 당신이 알아서 할 거예요.", 10 * H, ["u5"]),
     C("c7", "p5", "u4", "지금 '미안'이라는 두 글자만 문자로 보내도 돼요. 통화는 그다음에.", 25 * H, ["u3", "u1"]),
     C("c8", "p6", "u5", "저는 누워서 숨을 4초 들이쉬고 6초 내쉬는 걸 10번 해요. 잠이 안 와도 심장은 좀 느려져요.", 29 * H, ["u6"]),
+    // 내 글 p15에 달린 위로 댓글 (알림 샘플)
+    C("c_me1", "p15", "u2", "1년 전의 당신이 오늘의 당신을 위해 써둔 메모잖아요. 그 사람 말을 한 번만 들어봐요.", 2 * H, ["u3", "u5"]),
+    C("c_me2", "p15", "u6", "팔든 안 팔든, 앱을 닫고 산책 한 번 다녀와서 정해도 늦지 않아요.", 1 * H, ["u2"]),
+    // 내가 p3에 남긴 댓글과 그 뒤에 달린 답글 (알림 샘플)
+    C("c_me3", "p3", "me", "3주 만의 30분, 저도 오늘 20분 걸었어요. 같이 가요.", 5 * H, ["u2"]),
+    C("c_me4", "p3", "u2", "같이 가요. 내일은 25분 어때요.", 4 * H, ["me"]),
     // 피드 댓글
     C("fc1", "f1", "u1", "이 글 보고 오늘 처음으로 울었어요. 고마워요.", 1.2 * H, ["u2", "u4"]),
     C("fc2", "f1", "u5", "저장해두고 매일 아침 읽을게요.", 0.9 * H, ["u2"]),
