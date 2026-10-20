@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 import { hasCrisisSignal } from "@/lib/crisis";
 import type { BriefingData, DayRecord, MomentData, MomentMode, ReviewData } from "@/lib/storage";
-import { DEFAULT_PROMPTS, PROMPT_MAX_LEN, PromptKey } from "@/lib/prompts";
+import { DEFAULT_MODEL, DEFAULT_PROMPTS, PROMPT_MAX_LEN, PromptKey, isAllowedModel } from "@/lib/prompts";
 
 export const runtime = "nodejs";
 
@@ -28,7 +28,7 @@ interface Body {
   /** review 모드: 메모 전체 (오래된 순, 날짜 포함) */
   allMemos?: DatedMemo[];
   /** 관리자가 덮어쓴 시스템 프롬프트 (키별) */
-  prompts?: Partial<Record<PromptKey, string>>;
+  prompts?: Partial<Record<PromptKey | "model", string>>;
 }
 
 const fmtScore = (s: number) => (s > 0 ? `+${s}` : `${s}`);
@@ -482,7 +482,7 @@ export async function POST(req: Request) {
   try {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
+      model: isAllowedModel(body.prompts?.model) ? body.prompts.model : isAllowedModel(process.env.ANTHROPIC_MODEL) ? process.env.ANTHROPIC_MODEL : DEFAULT_MODEL,
       max_tokens: mode === "review" ? 3000 : 2000,
       system,
       messages: [{ role: "user", content: `${ask}\n\n${text}` }],

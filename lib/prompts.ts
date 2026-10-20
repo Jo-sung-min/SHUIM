@@ -102,3 +102,12 @@ ${COMMON}
 };
 
 export const PROMPT_MAX_LEN = 8000;
+
+/** 사용할 Claude 모델. 관리자 화면에서 바꿀 수 있고, 서버는 이 목록에 있는 값만 받는다. */
+export const DEFAULT_MODEL = "claude-haiku-5-5";
+export const MODEL_OPTIONS: { id: string; label: string; desc: string }[] = [
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", desc: "빠르고 저렴 · 기본" },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", desc: "균형" },
+  { id: "claude-opus-5-5", label: "Opus 5.5", desc: "가장 깊이 읽음 · 느리고 비쌈" },
+];
+export const isAllowedModel = (m: unknown): m is string => typeof m === "string" && MODEL_OPTIONS.some((o) => o.id === m);

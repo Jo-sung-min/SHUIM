@@ -291,7 +291,8 @@ export const saveReview = (r: Review) => write(K.review, r);
 
 /* ---------- 프롬프트 덮어쓰기 (관리자, 기기 공유) ---------- */
 
-export type PromptOverrides = Partial<Record<"briefing" | "praise" | "love" | "review", string>>;
+/** 관리자 설정: 프롬프트 덮어쓰기 4종 + 사용할 모델(model) */
+export type PromptOverrides = Partial<Record<"briefing" | "praise" | "love" | "review" | "model", string>>;
 export const loadPrompts = () => readShared<PromptOverrides>(PROMPTS_KEY, {});
 export const savePrompts = (p: PromptOverrides) => writeShared(PROMPTS_KEY, p);
 

@@ -20,7 +20,7 @@ import {
 import { Empty, Hero, Segmented, TopBar, fmtRelative } from "@/components/ui";
 import { IconChevronL } from "@/components/Icons";
 import { currentUser, hasAnyAccount, isAdmin } from "@/lib/auth";
-import { DEFAULT_PROMPTS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
+import { DEFAULT_MODEL, DEFAULT_PROMPTS, MODEL_OPTIONS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
 import { PromptOverrides, loadPrompts, savePrompts } from "@/lib/storage";
 
 type View = "reports" | "prompts";
@@ -172,7 +172,15 @@ function PromptAdmin() {
     setOverrides(next);
   };
 
-  const customized = Object.keys(overrides).length;
+  const customized = Object.keys(overrides).filter((k) => k !== "model").length;
+  const model = overrides.model ?? DEFAULT_MODEL;
+  const pickModel = (id: string) => {
+    const next: PromptOverrides = { ...overrides };
+    if (id === DEFAULT_MODEL) delete next.model;
+    else next.model = id;
+    savePrompts(next);
+    setOverrides(next);
+  };
 
   return (
     <>
@@ -182,7 +190,21 @@ function PromptAdmin() {
         sub="JSON 출력 형식 부분은 유지해요."
         stats={[`${PROMPT_META.length}개 프롬프트`, `최대 ${PROMPT_MAX_LEN.toLocaleString()}자`]}
       />
-      <div className="stack" style={{ marginTop: 12 }}>
+      <div className="section-title"><span>모델</span><span className="tiny muted">{MODEL_OPTIONS.find((o) => o.id === model)?.label}</span></div>
+      <div className="stack" style={{ gap: 8 }}>
+        {MODEL_OPTIONS.map((o) => (
+          <button key={o.id} type="button" className={`reason glass ${model === o.id ? "on" : ""}`} onClick={() => pickModel(o.id)}>
+            <span className="radio" />
+            <span>
+              <b>{o.label} <span className="tiny muted" style={{ fontWeight: 500 }}>{o.id}</span></b>
+              <small>{o.desc}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="section-title"><span>프롬프트</span></div>
+      <div className="stack">
         {PROMPT_META.map((p) => {
           const dirty = drafts[p.key] !== (overrides[p.key] ?? DEFAULT_PROMPTS[p.key]);
           const isCustom = Boolean(overrides[p.key]);

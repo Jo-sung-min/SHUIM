@@ -13,7 +13,6 @@ import {
   Review,
   ScheduleItem,
   addDays,
-  clearBriefing,
   loadBriefing,
   loadGoals,
   loadJournal,
@@ -32,7 +31,7 @@ import {
 import { Account, currentUser } from "@/lib/auth";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
-import { IconNote, IconRefresh, IconSparkle, IconUser } from "@/components/Icons";
+import { IconCheck, IconNote, IconSparkle, IconUser } from "@/components/Icons";
 
 interface Data {
   journal: Journal;
@@ -45,8 +44,8 @@ interface Data {
 type Mode = "briefing" | MomentMode | "review";
 
 const MOMENTS: Record<MomentMode, { emoji: string; label: string; heading: string }> = {
-  praise: { emoji: "🌟", label: "칭찬", heading: "오늘의 칭찬" },
-  love: { emoji: "💗", label: "사랑", heading: "나를 사랑하는 법" },
+  praise: { emoji: "🌟", label: "칭찬받기", heading: "오늘의 칭찬" },
+  love: { emoji: "💗", label: "사랑받기", heading: "나를 사랑하는 법" },
 };
 
 /** API로 보낼 재료: 최근 기록, 오늘 한 일, 메모, 목표, 일정 */
@@ -153,8 +152,7 @@ export default function HomePage() {
   const press = (mode: Mode) => {
     if (loading) return;
     if (mode === "briefing") {
-      if (briefing) clearBriefing();
-      call("briefing");
+      if (!briefing) call("briefing");
     } else if (mode === "review") {
       if (review) {
         setReviewOpen((v) => !v);
@@ -221,9 +219,9 @@ export default function HomePage() {
         {/* 액션 4개 */}
         {!empty && (
           <div className="actions-row">
-            <button className={`action ${briefing ? "done" : ""} ${loading === "briefing" ? "busy" : ""}`} disabled={loading !== null} onClick={() => press("briefing")} aria-label="오늘의 나 정리">
-              <span className="ring">{briefing ? <IconRefresh /> : <IconSparkle />}</span>
-              <span className="lbl">{briefing ? "다시" : "정리"}</span>
+            <button className={`action ${briefing ? "done" : ""} ${loading === "briefing" ? "busy" : ""}`} disabled={loading !== null || Boolean(briefing)} onClick={() => press("briefing")} aria-label="오늘의 나 정리" title={briefing ? "오늘 정리 완료 · 하루 한 번" : undefined}>
+              <span className="ring">{briefing ? <IconCheck /> : <IconSparkle />}</span>
+              <span className="lbl">{briefing ? "정리됨" : "정리하기"}</span>
             </button>
             {(Object.keys(MOMENTS) as MomentMode[]).map((mode) => (
               <button
@@ -238,9 +236,9 @@ export default function HomePage() {
                 <span className="lbl">{MOMENTS[mode].label}</span>
               </button>
             ))}
-            <button className={`action ${reviewOpen ? "on" : ""} ${review ? "done" : ""} ${loading === "review" ? "busy" : ""}`} disabled={loading !== null} onClick={() => press("review")} aria-pressed={reviewOpen} aria-label="메모로 나를 점검">
+            <button className={`action ${reviewOpen ? "on" : ""} ${review ? "done" : ""} ${loading === "review" ? "busy" : ""}`} disabled={loading !== null} onClick={() => press("review")} aria-pressed={reviewOpen} aria-label="메모로 나를 분석">
               <span className="ring"><IconNote /></span>
-              <span className="lbl">점검</span>
+              <span className="lbl">분석하기</span>
             </button>
           </div>
         )}
@@ -254,12 +252,7 @@ export default function HomePage() {
           <section className="card moment" style={{ marginTop: 12 }}>
             <div className="head">
               <span className="label">{MOMENTS[open].emoji} {MOMENTS[open].heading}</span>
-              <span className="row" style={{ gap: 6 }}>
-                <span className="tiny muted">{fmtRelative(openMoment.generatedAt)}</span>
-                <button className="icon-btn" style={{ width: 28, height: 28 }} aria-label="다시 받기" onClick={() => call(open)}>
-                  <IconRefresh style={{ width: 16, height: 16 }} />
-                </button>
-              </span>
+              <span className="tiny muted">{fmtRelative(openMoment.generatedAt)}</span>
             </div>
             <h3>{openMoment.data.title}</h3>
             <ul className="brief-list">
@@ -278,12 +271,7 @@ export default function HomePage() {
           <section className="card review" style={{ marginTop: 12 }}>
             <div className="head">
               <span className="label">그때의 나 → 오늘의 나</span>
-              <span className="row" style={{ gap: 6 }}>
-                <span className="tiny muted">{fmtRelative(review.generatedAt)}</span>
-                <button className="icon-btn" style={{ width: 28, height: 28 }} aria-label="다시 점검" onClick={() => call("review")}>
-                  <IconRefresh style={{ width: 16, height: 16 }} />
-                </button>
-              </span>
+              <span className="tiny muted">{fmtRelative(review.generatedAt)}</span>
             </div>
             <h3>{review.data.headline}</h3>
             {review.data.cautions.length > 0 && (

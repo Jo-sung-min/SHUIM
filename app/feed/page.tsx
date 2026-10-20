@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CommunityStore,
   FEED_BG_COUNT,
@@ -41,8 +41,80 @@ export default function FeedPage() {
   const [writing, setWriting] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  // 무한 스크롤: 한 번에 PAGE개씩, 바닥 근처에서 더 불러옴
+  const PAGE = 5;
+  const [limit, setLimit] = useState(PAGE);
+  const sentinel = useRef<HTMLDivElement | null>(null);
+  const feedRef = useRef<HTMLDivElement | null>(null);
+  // 당겨서 새로고침
+  const [pull, setPull] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const touchY = useRef<number | null>(null);
+  const wheelAcc = useRef(0);
 
   useEffect(() => setS(loadCommunity()), []);
+  useEffect(() => setLimit(PAGE), [filter]);
+
+  useEffect(() => {
+    const el = sentinel.current;
+    const root = feedRef.current;
+    if (!el || !root) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setLimit((l) => l + PAGE);
+    }, { root, rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [s, filter]);
+
+  const refresh = useCallback(() => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setPull(0);
+    window.setTimeout(() => {
+      setS(loadCommunity());
+      setLimit(PAGE);
+      setRefreshing(false);
+      feedRef.current?.scrollTo({ top: 0 });
+    }, 650);
+  }, [refreshing]);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchY.current = feedRef.current && feedRef.current.scrollTop <= 0 ? e.touches[0].clientY : null;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (touchY.current === null) return;
+    const dy = e.touches[0].clientY - touchY.current;
+    setPull(dy > 0 ? Math.min(96, dy * 0.5) : 0);
+  };
+  const onTouchEnd = () => {
+    if (pull >= 64) refresh();
+    else setPull(0);
+    touchY.current = null;
+  };
+  // 데스크톱: 맨 위에서 위로 더 굴리면 새로고침
+  const wheelTimer = useRef<number | null>(null);
+  const onWheel = (e: React.WheelEvent) => {
+    const el = feedRef.current;
+    if (!el) return;
+    if (wheelTimer.current) window.clearTimeout(wheelTimer.current);
+    if (el.scrollTop <= 0 && e.deltaY < 0 && !refreshing) {
+      wheelAcc.current += -e.deltaY;
+      setPull(Math.min(96, wheelAcc.current * 0.35));
+      if (wheelAcc.current > 260) {
+        wheelAcc.current = 0;
+        refresh();
+        return;
+      }
+      // 휠이 멈추면 당김 표시를 되돌림
+      wheelTimer.current = window.setTimeout(() => {
+        wheelAcc.current = 0;
+        setPull(0);
+      }, 450);
+    } else {
+      wheelAcc.current = 0;
+      if (pull) setPull(0);
+    }
+  };
 
   const items = useMemo(() => {
     if (!s) return [];
@@ -81,7 +153,10 @@ export default function FeedPage() {
         )}
       </div>
 
-      <div className="feed" role="feed">
+      <div className={`ptr ${refreshing ? "spin" : ""}`} style={{ opacity: refreshing ? 1 : Math.min(1, pull / 64), transform: `translate(-50%, ${refreshing ? 0 : Math.min(0, pull - 64)}px)` }} aria-hidden={!refreshing && pull === 0}>
+        {refreshing ? "새로고침 중…" : pull >= 64 ? "놓으면 새로고침" : "당겨서 새로고침"}
+      </div>
+      <div className="feed" role="feed" ref={feedRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onWheel={onWheel} style={{ transform: pull ? `translateY(${pull * 0.4}px)` : undefined, transition: pull ? "none" : "transform 0.25s" }}>
         {items.length === 0 ? (
           <section className="reel bg-1">
             <div className="reel-body">
@@ -92,7 +167,7 @@ export default function FeedPage() {
             </div>
           </section>
         ) : (
-          items.map((f) => (
+          items.slice(0, limit).map((f) => (
             <Reel
               key={f.id}
               s={s}
@@ -107,6 +182,13 @@ export default function FeedPage() {
               onProfile={() => setProfile(f.authorId)}
             />
           ))
+        )}
+        <div ref={sentinel} style={{ height: 1 }} />
+        {items.length > 0 && limit >= items.length && (
+          <div className="feed-end">
+            <span>다 봤어요</span>
+            <button className="btn sm soft" onClick={refresh}>새로고침</button>
+          </div>
         )}
       </div>
 

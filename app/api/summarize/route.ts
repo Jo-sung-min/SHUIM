@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     const client = new Anthropic({ apiKey });
     const scope = body.category === "all" ? "전체 카테고리" : `${categoryById(body.category).label} 카테고리`;
     const msg = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
+      model: process.env.ANTHROPIC_MODEL || "claude-haiku-5-5",
       max_tokens: 1200,
       system: SYSTEM,
       messages: [

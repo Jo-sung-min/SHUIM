@@ -35,7 +35,7 @@
 
 ```bash
 npm install
-cp .env.example .env.local   # ANTHROPIC_API_KEY 입력 (없어도 동작, 규칙 기반 정리로 대체)
+cp .env.example .env         # ANTHROPIC_API_KEY, DB_URL 입력 (키 없어도 동작, 규칙 기반 정리로 대체). 기본 모델 Haiku 5.5, 관리자 › 프롬프트에서 변경
 npm run dev
 ```
 
