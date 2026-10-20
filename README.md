@@ -32,6 +32,7 @@
 `.env`의 `DB_URL`로 연결한다. Spring 스타일 `jdbc:postgresql://host:port/db?user=..&password=..`도, Node 스타일 `postgresql://user:pass@host:port/db`도 받는다 ([lib/db.ts](lib/db.ts)). 외부 호스트는 SSL로 붙는다.
 
 - Supabase 는 **6543(트랜잭션 모드)** 포트를 쓴다. 5432(세션 모드)는 동시 접속 15개 한도라 개발 서버 핫리로드만으로도 `max clients reached` 가 난다. 풀은 globalThis 에 하나만 두고(핫리로드에도 재생성 안 됨) 기본 3개, 10초 유휴 반환(`DB_POOL_MAX`로 조정)
+- **Vercel 배포**: Settings › Environment Variables 에 `DB_URL`(6543 포트), `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`을 넣고 **다시 배포**해야 적용된다. 5432로 넣으면 서버리스 함수가 늘어날 때 `max clients reached`가 나므로, 앱이 Supabase 풀러 주소의 5432를 6543으로 자동 바꿔 연결한다(`DB_KEEP_SESSION_MODE=1`이면 그대로). 배포 후 `https://<도메인>/api/db`로 확인
 - 연결 확인: 서버 실행 후 `GET /api/db` → `{ ok, latencyMs, host, database, user, version }` (비밀번호는 반환하지 않음)
 - 스키마·시드는 **Flyway 규칙**의 SQL로 관리: `db/migration/V1__init_schema.sql`(테이블 21개), `V2__seed_sample_community.sql`(외침·피드·댓글·힘내요·신고·모금 샘플)
 - 적용: `npm run db:migrate` (Java 없이 Node로 실행, 각 파일을 트랜잭션으로 적용). 상태: `npm run db:status`, 검증: `npm run db:validate`
