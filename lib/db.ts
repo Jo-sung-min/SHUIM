@@ -3,6 +3,9 @@
  * - jdbc:postgresql://host:port/db?user=..&password=..  (Spring 스타일)
  * - postgresql://user:password@host:port/db             (Node 스타일)
  * 둘 다 받아서 pg Pool 설정으로 바꾼다. 비밀번호에 특수문자가 있어도 객체로 넘기므로 안전하다.
+ *
+ * 풀은 globalThis 에 하나만 둔다. Next.js 개발 서버는 파일이 바뀔 때마다 모듈을 다시 평가하는데,
+ * 모듈 변수에 두면 그때마다 새 풀이 생기고 예전 풀의 연결은 반환되지 않아 Supabase 풀러 한도(세션 모드 15개)에 걸린다.
  */
 import pg, { Pool, type PoolConfig } from "pg";
 
@@ -34,20 +37,32 @@ export function parseDbUrl(raw: string | undefined): PoolConfig | null {
     password,
     // Supabase 등 외부 DB는 SSL 필수. 로컬이거나 sslmode=disable이면 끔.
     ssl: isLocal || sslParam === "disable" ? undefined : { rejectUnauthorized: false },
-    max: 4,
+    // 풀러(세션 모드 15개 한도)를 고려해 작게. 트랜잭션 모드(6543)면 더 넉넉하지만 그래도 소수로 충분
+    max: Number(process.env.DB_POOL_MAX ?? 3),
     connectionTimeoutMillis: 8000,
-    idleTimeoutMillis: 30000,
+    idleTimeoutMillis: 10000, // 놀고 있는 연결은 10초 뒤 반환
+    allowExitOnIdle: true,
   };
 }
 
-let pool: Pool | null = null;
+const g = globalThis as unknown as { __shuimPool?: Pool; __shuimPoolKey?: string };
 
 export function getPool(): Pool | null {
-  if (pool) return pool;
-  const cfg = parseDbUrl(process.env.DB_URL ?? process.env.DATABASE_URL);
+  const raw = process.env.DB_URL ?? process.env.DATABASE_URL;
+  const cfg = parseDbUrl(raw);
   if (!cfg) return null;
-  pool = new Pool(cfg);
-  return pool;
+  // DB_URL 이 바뀌면 예전 풀을 닫고 새로 만든다
+  if (g.__shuimPool && g.__shuimPoolKey !== raw) {
+    g.__shuimPool.end().catch(() => {});
+    g.__shuimPool = undefined;
+  }
+  if (!g.__shuimPool) {
+    const pool = new Pool(cfg);
+    pool.on("error", (e) => console.error("pg pool error", e.message));
+    g.__shuimPool = pool;
+    g.__shuimPoolKey = raw;
+  }
+  return g.__shuimPool;
 }
 
 export const dbConfigured = () => Boolean(process.env.DB_URL ?? process.env.DATABASE_URL);
