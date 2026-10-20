@@ -89,8 +89,18 @@ export interface Comment extends Base {
 export interface FeedPost extends Base {
   title?: string;
   bg: number; // 0 ~ FEED_BG_COUNT-1
+  image?: string; // 배경 그림 (public 경로 또는 URL). 있으면 bg 위에 덮음
   saves: string[]; // 저장한 userId 목록
 }
+
+/** 기본 제공 그림 (public/feed). 글을 올릴 때 고를 수 있다. */
+export const FEED_IMAGES: { src: string; label: string; dark: boolean }[] = [
+  { src: "/feed/moon-wave.svg", label: "달과 파도", dark: true },
+  { src: "/feed/mountain-fog.svg", label: "안개 낀 산", dark: false },
+  { src: "/feed/rain-window.svg", label: "비 오는 창", dark: true },
+  { src: "/feed/dawn-stars.svg", label: "새벽 별", dark: true },
+  { src: "/feed/one-tree.svg", label: "나무 한 그루", dark: false },
+];
 
 /* ---------- 불행 랭킹 · 주간 집계 테이블 · 불행 모금 ---------- */
 
@@ -182,6 +192,16 @@ export function loadCommunity(): CommunityStore {
       donations: store.donations ?? seeded.donations,
       weekly: store.weekly ?? {},
     };
+  }
+  // 새로 추가된 샘플 피드 글·크리에이터 보충 (id 기준, 이미 있으면 건드리지 않음)
+  {
+    const seeded = seedCommunity();
+    const missing = seeded.feed.filter((f) => !store.feed.some((x) => x.id === f.id));
+    const missingComments = seeded.comments.filter((c) => missing.some((f) => f.id === c.postId) && !store.comments.some((x) => x.id === c.id));
+    if (missing.length) {
+      store = { ...store, feed: [...store.feed, ...missing], comments: [...store.comments, ...missingComments], creators: { ...seeded.creators, ...store.creators } };
+      write(COMMUNITY_KEY, store);
+    }
   }
   const ensured = ensureWeeklyBatches(store);
   if (ensured !== store || !s.feed || !s.donations || !s.weekly) write(COMMUNITY_KEY, ensured);
@@ -401,13 +421,15 @@ export function creatorOf(s: CommunityStore, userId: string): Creator {
 /** 보이는 피드 글, 최신순. 팔로우한 크리에이터 글은 앞쪽에 섞이지 않고 순서 그대로 (쇼츠처럼 시간순) */
 export const listFeed = (s: CommunityStore) => s.feed.filter((f) => isVisible(s, f)).sort((a, b) => b.createdAt - a.createdAt);
 
-export function createFeedPost(s: CommunityStore, text: string, bg: number, title?: string): CommunityStore {
+export function createFeedPost(s: CommunityStore, text: string, bg: number, title?: string, image?: string): CommunityStore {
   if (isBlocked(s.me)) return s;
   const t = text.trim();
   if (!t) return s;
+  const img = image?.trim();
   const f: FeedPost = {
     id: uid(), authorId: s.me.id, text: t, title: title?.trim() || undefined,
-    bg: Math.max(0, Math.min(FEED_BG_COUNT - 1, bg)), createdAt: Date.now(), cheers: [], reports: [], saves: [],
+    bg: Math.max(0, Math.min(FEED_BG_COUNT - 1, bg)), image: img && /^(\/|https?:\/\/)/.test(img) ? img.slice(0, 500) : undefined,
+    createdAt: Date.now(), cheers: [], reports: [], saves: [],
   };
   const creators = { ...s.creators };
   if (!creators[s.me.id]) creators[s.me.id] = { bio: "", followers: [], since: Date.now() };
@@ -606,11 +628,25 @@ export function seedCommunity(): CommunityStore {
     F("f4", "u5", 1, "잠이 안 오는 밤엔\n잠을 쫓지 말고\n숨만 세어요.\n넷 들이쉬고, 여섯 내쉬고.\n\n잠은 오지 않아도\n심장은 느려져요.", 15 * H, ["u3", "u6"], ["u6"], "잠이 안 오는 밤"),
     F("f5", "u3", 4, "괜히 짜증낸 날,\n미안하다는 말은\n두 글자면 충분해요.\n\n길게 쓰려다 못 보내는 것보다\n두 글자가 먼저예요.", 27 * H, ["u1", "u2", "u4"], [], undefined),
     F("f6", "u2", 5, "오늘 30분 걸은 사람에게.\n\n3주 만의 30분은\n30분이 아니라 3주예요.", 31 * H, ["u1", "u3", "u4", "u5", "u6", "u7"], ["u3", "u5"], "작은 승리에게"),
+    // 그림이 있는 위로 시 5편
+    { ...F("f7", "u3", 3, "달은 매일 조금씩 사라지고\n매일 조금씩 돌아와요.\n\n오늘 반쯤 깎인 당신도\n사라지는 중이 아니라\n돌아오는 중이에요.", 36 * H, ["u1", "u2", "u4", "u5", "u6", "u7", "me"], ["u1", "u4"], "반달에게"), image: "/feed/moon-wave.svg" },
+    { ...F("f8", "u2", 1, "안개는 산을 지우지 않아요.\n잠깐 가릴 뿐.\n\n길이 안 보이는 아침에도\n산은 거기 그대로 있어요.\n당신이 걸어온 길도요.", 44 * H, ["u1", "u3", "u5", "u6"], ["u5"], "안개 낀 아침"), image: "/feed/mountain-fog.svg" },
+    { ...F("f9", "u5", 0, "비 오는 날 창가에 앉아\n아무것도 안 해도 돼요.\n\n빗방울은 유리를 타고\n알아서 내려가요.\n오늘 눈물도 그렇게 두세요.", 52 * H, ["u2", "u3", "u4", "u7"], ["u2", "u3"], "창가에서"), image: "/feed/rain-window.svg" },
+    { ...F("f10", "u1", 3, "가장 어두운 건\n새벽 네 시예요.\n\n그 시간을 지나본 사람만\n하늘이 보라색으로\n변하는 걸 알아요.\n\n조금만 더 깨어 있어요.\n곧 보여요.", 60 * H, ["u2", "u3", "u4", "u5", "u6"], ["u3", "u6"], "새벽 네 시"), image: "/feed/dawn-stars.svg" },
+    { ...F("f11", "u4", 4, "나무는 잎을 떨어뜨린 걸\n실패라고 부르지 않아요.\n\n내려놓은 만큼\n뿌리를 깊게 내릴 뿐.\n\n올해 많이 떨어뜨린 당신,\n지금 뿌리를 내리는 중이에요.", 70 * H, ["u1", "u2", "u3", "u5", "u6", "u7"], ["u2", "u7"], "잎을 떨어뜨린 나무"), image: "/feed/one-tree.svg" },
+    // 동기부여 · 위로 글 5편
+    F("f12", "u2", 0, "어제의 나를 이기려 하지 말고\n어제의 나를 데리고 가요.\n\n그 사람도 오늘까지 오느라\n애썼으니까.", 80 * H, ["u1", "u3", "u4", "u5"], ["u1"], "어제의 나에게"),
+    F("f13", "u5", 2, "시작이 반이라는 말은 틀렸어요.\n시작은 시작이에요.\n\n대신 그 시작을\n오늘 한 번 더 하면\n그게 반이에요.", 92 * H, ["u2", "u3", "u6", "u7"], ["u4"], "두 번째 시작"),
+    F("f14", "u3", 5, "잘하고 있냐고 묻지 말고\n하고 있냐고 물어요.\n\n하고 있으면\n잘은 나중에 따라와요.", 100 * H, ["u1", "u2", "u4", "u5", "u6"], ["u1", "u2"], "하고 있나요"),
+    F("f15", "u1", 1, "오늘 아무것도 못 한 날엔\n숨을 쉰 걸로 해요.\n\n그것도 하루치 일이에요.\n몸은 알아요.", 110 * H, ["u2", "u3", "u4", "u6", "u7"], ["u3"], "아무것도 못 한 날"),
+    F("f16", "u4", 3, "불안은 미래에서 빌려온 고통이에요.\n이자가 비싸요.\n\n오늘 갚을 건\n오늘 몫만.", 120 * H, ["u1", "u2", "u3", "u5", "u6", "u7"], ["u2", "u5", "u6"], "오늘 몫만"),
   ];
   const creators: Record<string, Creator> = {
     u2: { bio: "떨어진 날의 사람들에게 쓰는 짧은 글", followers: ["u1", "u3", "u4", "u5", "u6"], since: t - 40 * 24 * H },
     u3: { bio: "불안을 작게 만드는 문장들", followers: ["u1", "u2", "u5"], since: t - 25 * 24 * H },
     u5: { bio: "잠 못 드는 밤을 위한 글", followers: ["u2", "u6"], since: t - 12 * 24 * H },
+    u1: { bio: "새벽에 쓰는 시", followers: ["u2", "u3", "u4"], since: t - 20 * 24 * H },
+    u4: { bio: "떨어뜨린 것들에 대하여", followers: ["u1", "u5", "u6"], since: t - 15 * 24 * H },
   };
   return { me, users, posts, comments, feed, creators, following: [], donations, weekly: {} };
 }

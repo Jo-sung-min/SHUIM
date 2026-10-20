@@ -346,12 +346,10 @@ function localReview(b: Body): ReviewData {
 }
 
 function parseReview(raw: string): ReviewData | null {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start < 0 || end < 0) return null;
+  const json = extractJson(raw);
+  if (!json) return null;
   try {
-    const o = JSON.parse(cleaned.slice(start, end + 1)) as Partial<ReviewData>;
+    const o = JSON.parse(json) as Partial<ReviewData>;
     if (!o.headline) return null;
     return {
       headline: String(o.headline),
@@ -367,13 +365,45 @@ function parseReview(raw: string): ReviewData | null {
   }
 }
 
-function parseMoment(raw: string): MomentData | null {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+/** 응답에서 JSON 객체 하나를 최대한 관대하게 꺼낸다 (설명문·코드블록·앞뒤 잡음 허용, 잘린 꼬리는 복구 시도) */
+function extractJson(raw: string): string | null {
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
   const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start < 0 || end < 0) return null;
+  if (start < 0) return null;
+  // 괄호 균형으로 끝 찾기
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return cleaned.slice(start, i + 1);
+    }
+  }
+  // 잘린 경우: 열린 문자열·괄호를 닫아서 시도
+  let tail = cleaned.slice(start);
+  if (inStr) tail += '"';
+  tail = tail.replace(/,\s*$/, "");
+  const opens = (tail.match(/\[/g) ?? []).length - (tail.match(/\]/g) ?? []).length;
+  tail += "]".repeat(Math.max(0, opens));
+  tail += "}".repeat(Math.max(0, depth));
+  return tail;
+}
+
+function parseMoment(raw: string): MomentData | null {
+  const json = extractJson(raw);
+  if (!json) return null;
   try {
-    const o = JSON.parse(cleaned.slice(start, end + 1)) as Partial<MomentData>;
+    const o = JSON.parse(json) as Partial<MomentData>;
     if (!o.title || !Array.isArray(o.lines) || !o.lines.length) return null;
     return { title: String(o.title), lines: o.lines.map(String).slice(0, 5), closing: String(o.closing ?? "") };
   } catch {
@@ -384,12 +414,10 @@ function parseMoment(raw: string): MomentData | null {
 /* ---------- 응답 검증 ---------- */
 
 function parseBriefing(raw: string): BriefingData | null {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start < 0 || end < 0) return null;
+  const json = extractJson(raw);
+  if (!json) return null;
   try {
-    const o = JSON.parse(cleaned.slice(start, end + 1)) as Partial<BriefingData>;
+    const o = JSON.parse(json) as Partial<BriefingData>;
     if (!o.headline || !o.momentum?.text || !Array.isArray(o.highlights)) return null;
     const dir = o.momentum.direction;
     return {
@@ -455,7 +483,7 @@ export async function POST(req: Request) {
     const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
-      max_tokens: mode === "review" ? 1600 : 1000,
+      max_tokens: mode === "review" ? 3000 : 2000,
       system,
       messages: [{ role: "user", content: `${ask}\n\n${text}` }],
     });
@@ -465,16 +493,16 @@ export async function POST(req: Request) {
       .join("\n");
     if (mode === "briefing") {
       const briefing = parseBriefing(raw);
-      if (!briefing) throw new Error("JSON 파싱 실패");
+      if (!briefing) throw new Error(`JSON 파싱 실패: ${raw.slice(0, 200)}`);
       return NextResponse.json({ briefing, source: "ai", crisis });
     }
     if (mode === "review") {
       const review = parseReview(raw);
-      if (!review) throw new Error("JSON 파싱 실패");
+      if (!review) throw new Error(`JSON 파싱 실패: ${raw.slice(0, 200)}`);
       return NextResponse.json({ review, source: "ai", crisis });
     }
     const moment = parseMoment(raw);
-    if (!moment) throw new Error("JSON 파싱 실패");
+    if (!moment) throw new Error(`JSON 파싱 실패: ${raw.slice(0, 200)}`);
     return NextResponse.json({ moment, source: "ai", crisis });
   } catch (e) {
     console.error(`today ${mode} failed`, e);

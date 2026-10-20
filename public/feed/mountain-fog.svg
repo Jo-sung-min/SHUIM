@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f4f2"/><stop offset="1" stop-color="#d9dbd8"/></linearGradient>
+    <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.95"/></linearGradient>
+  </defs>
+  <rect width="720" height="1280" fill="url(#bg)"/>
+  <circle cx="200" cy="260" r="70" fill="#ffffff" opacity="0.9"/>
+  <path d="M-40 980 L 160 640 L 300 820 L 420 560 L 560 760 L 760 520 L 760 1280 L -40 1280 Z" fill="#8a8d8a" opacity="0.85"/>
+  <path d="M-40 1060 L 120 820 L 260 960 L 380 760 L 520 930 L 640 800 L 760 920 L 760 1280 L -40 1280 Z" fill="#5f625f"/>
+  <path d="M-40 1140 L 100 980 L 230 1080 L 360 940 L 500 1060 L 620 980 L 760 1080 L 760 1280 L -40 1280 Z" fill="#3a3c3a"/>
+  <rect y="880" width="720" height="400" fill="url(#fog)"/>
+</svg>

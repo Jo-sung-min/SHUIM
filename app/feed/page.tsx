@@ -5,6 +5,7 @@ import {
   CommunityStore,
   FEED_BG_COUNT,
   FEED_BG_LABELS,
+  FEED_IMAGES,
   FeedPost,
   REPORT_THRESHOLD,
   Target,
@@ -132,8 +133,8 @@ export default function FeedPage() {
         open={writing}
         firstTime={!isCreator(s, me)}
         onClose={() => setWriting(false)}
-        onSubmit={(text, bg, title, bio) => {
-          let next = createFeedPost(s, text, bg, title);
+        onSubmit={(text, bg, title, bio, image) => {
+          let next = createFeedPost(s, text, bg, title, image);
           if (bio !== undefined && bio.trim()) next = updateCreatorBio(next, bio);
           setS(next);
           setWriting(false);
@@ -192,7 +193,7 @@ function Reel({
   const flagged = isFlagged(post) && !revealed;
 
   return (
-    <section className={`reel bg-${post.bg}`}>
+    <section className={`reel bg-${post.bg} ${post.image ? "has-img" : ""}`} style={post.image ? { backgroundImage: `url(${post.image})` } : undefined}>
       <div className="reel-body">
         {flagged ? (
           <button className="flagged-box reel-flagged" onClick={onReveal}>
@@ -308,11 +309,14 @@ function WriteSheet({
   open: boolean;
   firstTime: boolean;
   onClose: () => void;
-  onSubmit: (text: string, bg: number, title: string, bio?: string) => void;
+  onSubmit: (text: string, bg: number, title: string, bio?: string, image?: string) => void;
 }) {
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [bg, setBg] = useState(0);
+  const [image, setImage] = useState<string>("");
+  const [imageUrl, setImageUrl] = useState("");
+  const picked = imageUrl.trim() || image;
   const [bio, setBio] = useState("");
   return (
     <Sheet open={open} onClose={onClose} title={firstTime ? "크리에이터 되기" : "위로글 쓰기"}>
@@ -347,7 +351,17 @@ function WriteSheet({
             <input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" />
           </div>
         )}
-        <div className={`reel preview bg-${bg}`}>
+        <div className="field">
+          <label>그림 (선택)</label>
+          <div className="img-picks">
+            <button type="button" className={`img-pick none ${!image ? "on" : ""}`} onClick={() => setImage("")} aria-label="그림 없음">없음</button>
+            {FEED_IMAGES.map((im) => (
+              <button key={im.src} type="button" className={`img-pick ${image === im.src ? "on" : ""}`} style={{ backgroundImage: `url(${im.src})` }} onClick={() => { setImage(im.src); setImageUrl(""); }} aria-label={im.label} title={im.label} />
+            ))}
+          </div>
+          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="또는 이미지 주소 (https://…)" />
+        </div>
+        <div className={`reel preview bg-${bg} ${picked ? "has-img" : ""}`} style={picked ? { backgroundImage: `url(${picked})` } : undefined}>
           <div className="reel-body">
             {title && <div className="reel-title">{title}</div>}
             <p className="reel-text">{text || "미리보기"}</p>
@@ -357,7 +371,7 @@ function WriteSheet({
       </div>
       <div className="sheet-actions">
         <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" onClick={() => onSubmit(text, bg, title, firstTime ? bio : undefined)} disabled={!text.trim()}>올리기</button>
+        <button className="btn" onClick={() => onSubmit(text, bg, title, firstTime ? bio : undefined, picked || undefined)} disabled={!text.trim()}>올리기</button>
       </div>
     </Sheet>
   );

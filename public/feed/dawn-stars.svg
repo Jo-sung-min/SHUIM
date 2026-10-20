@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a1633"/><stop offset="0.55" stop-color="#4a3a6e"/><stop offset="1" stop-color="#f2b58a"/></linearGradient>
+  </defs>
+  <rect width="720" height="1280" fill="url(#bg)"/>
+  <g fill="#ffffff">
+    <circle cx="90" cy="120" r="2.5" opacity="0.9"/><circle cx="230" cy="70" r="1.8" opacity="0.7"/><circle cx="380" cy="160" r="2.2" opacity="0.8"/><circle cx="520" cy="60" r="1.5" opacity="0.6"/><circle cx="650" cy="200" r="2.4" opacity="0.9"/>
+    <circle cx="150" cy="300" r="1.6" opacity="0.6"/><circle cx="300" cy="360" r="2" opacity="0.7"/><circle cx="460" cy="290" r="1.4" opacity="0.5"/><circle cx="600" cy="400" r="1.8" opacity="0.6"/><circle cx="60" cy="480" r="1.5" opacity="0.5"/>
+    <circle cx="330" cy="520" r="1.2" opacity="0.4"/><circle cx="560" cy="560" r="1.6" opacity="0.4"/>
+  </g>
+  <ellipse cx="360" cy="1180" rx="520" ry="260" fill="#ffd9b0" opacity="0.5"/>
+  <ellipse cx="360" cy="1240" rx="600" ry="200" fill="#1f1a2e"/>
+  <g fill="#1f1a2e">
+    <rect x="80" y="1010" width="26" height="90"/><rect x="140" y="980" width="40" height="120"/><rect x="230" y="1020" width="30" height="80"/><rect x="520" y="1000" width="36" height="100"/><rect x="600" y="1030" width="22" height="70"/>
+  </g>
+</svg>
