@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconMegaphone, IconPen, IconReels, IconSun, IconUser } from "./Icons";
-import { loadCommunity, unreadCount } from "@/lib/community";
+import { fetchCommunity, unreadCount } from "@/lib/community";
 
 /** 하단 탭 5개, 아이콘만 (인스타그램처럼). 나머지 기능은 "나" 페이지에서 */
 const TABS = [
@@ -19,13 +19,15 @@ export default function TabBar() {
   const path = usePathname();
   const [unread, setUnread] = useState(0);
 
-  // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (나 페이지의 알림 탭을 열면 0이 됨)
+  // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (서버 상태는 30초 캐시)
   useEffect(() => {
-    try {
-      setUnread(unreadCount(loadCommunity()));
-    } catch {
-      setUnread(0);
-    }
+    let alive = true;
+    fetchCommunity()
+      .then((s) => alive && setUnread(unreadCount(s)))
+      .catch(() => alive && setUnread(0));
+    return () => {
+      alive = false;
+    };
   }, [path]);
 
   return (

@@ -1,30 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  CommunityStore,
-  DONATION_PRESETS,
-  RANK_SHARES,
-  currentWeekKey,
-  donate,
-  fmtWon,
-  loadCommunity,
-  myPayouts,
-  pastWeeks,
-  userById,
-  weekLabel,
-  weeklyOf,
-} from "@/lib/community";
+import { CommunityStore, DONATION_PRESETS, RANK_SHARES, api, currentWeekKey, fetchCommunity, fmtWon, myPayouts, pastWeeks, userById, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
 import { Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import { LoadError, run } from "@/components/CommunityUI";
 
 export default function FundPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => setS(loadCommunity()), []);
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      setS(await fetchCommunity());
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "연결 실패");
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loadError) return <><TopBar title="불행 모금" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
   if (!s) return <TopBar title="불행 모금" />;
 
   const cur = currentWeekKey();
@@ -43,16 +44,8 @@ export default function FundPage() {
       <div className="screen">
         <ShoutTabs />
         <div style={{ height: 12 }} />
-        <Hero
-          label={`${weekLabel(cur)} · 이번 주 모금`}
-          title={fmtWon(batch?.fund.total ?? 0)}
-          stats={[`후원 ${batch?.fund.count ?? 0}건`, `후원자 ${batch?.fund.donors ?? 0}명`, `분배 대상 ${top10.length}명`]}
-        />
-
-        <div className="notice" style={{ marginTop: 12 }}>
-          프로토타입이라 실제 결제는 일어나지 않아요. 실서비스에선 결제사 연동과 기부금 모집 신고가 필요해요.
-        </div>
-
+        <Hero label={`${weekLabel(cur)} · 이번 주 모금`} title={fmtWon(batch?.fund.total ?? 0)} stats={[`후원 ${batch?.fund.count ?? 0}건`, `후원자 ${batch?.fund.donors ?? 0}명`, `분배 대상 ${top10.length}명`]} />
+        <div className="notice" style={{ marginTop: 12 }}>프로토타입이라 실제 결제는 일어나지 않아요. 실서비스에선 결제사 연동과 기부금 모집 신고가 필요해요.</div>
         <button className="btn block" style={{ marginTop: 12 }} onClick={() => setOpen(true)}>모금하기</button>
         {toast && <p className="toast" style={{ textAlign: "center", margin: "8px 0 0" }}>{toast}</p>}
 
@@ -71,10 +64,7 @@ export default function FundPage() {
             {top10.map((r) => (
               <div key={r.userId} className="share-row">
                 <span className="rank-no sm">{r.rank}</span>
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <b>{r.nick}{r.userId === s.me.id ? " (나)" : ""}</b>
-                  <small className="muted"> · 힘내요 {r.cheers}</small>
-                </span>
+                <span className="grow" style={{ minWidth: 0 }}><b>{r.nick}{r.userId === s.me.id ? " (나)" : ""}</b><small className="muted"> · 힘내요 {r.cheers}</small></span>
                 <span className="tiny muted">{r.share}%</span>
                 <b className="share-amt">{fmtWon(r.payout)}</b>
               </div>
@@ -92,10 +82,7 @@ export default function FundPage() {
             {last.rows.slice(0, 10).map((r) => (
               <div key={r.userId} className="share-row">
                 <span className="rank-no sm">{r.rank}</span>
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <b>{r.nick}{r.userId === s.me.id ? " (나)" : ""}</b>
-                  <small className="muted"> · 힘내요 {r.cheers}</small>
-                </span>
+                <span className="grow" style={{ minWidth: 0 }}><b>{r.nick}{r.userId === s.me.id ? " (나)" : ""}</b><small className="muted"> · 힘내요 {r.cheers}</small></span>
                 <b className="share-amt">{fmtWon(r.payout)}</b>
               </div>
             ))}
@@ -123,9 +110,7 @@ export default function FundPage() {
         <div className="section-title"><span>분배 비율</span></div>
         <section className="card tint">
           <div className="share-grid">
-            {RANK_SHARES.map((p, i) => (
-              <span key={i}><b>{i + 1}위</b> {p}%</span>
-            ))}
+            {RANK_SHARES.map((p, i) => <span key={i}><b>{i + 1}위</b> {p}%</span>)}
           </div>
         </section>
       </div>
@@ -134,8 +119,8 @@ export default function FundPage() {
         key={open ? "open" : "closed"}
         open={open}
         onClose={() => setOpen(false)}
-        onSubmit={(amount, message) => {
-          setS(donate(s, amount, message));
+        onSubmit={async (amount, message) => {
+          await run(setS, () => api.donate(amount, message));
           setOpen(false);
           setToast(`${fmtWon(amount)}을 이번 주 모금에 보탰어요 (모의)`);
           setTimeout(() => setToast(null), 3000);
@@ -145,10 +130,11 @@ export default function FundPage() {
   );
 }
 
-function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () => void; onSubmit: (amount: number, message: string) => void }) {
+function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () => void; onSubmit: (amount: number, message: string) => Promise<void> }) {
   const [amount, setAmount] = useState<number>(3000);
   const [custom, setCustom] = useState("");
   const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
   const value = custom ? Number(custom.replace(/[^0-9]/g, "")) : amount;
   const valid = Number.isFinite(value) && value >= 100 && value <= 1_000_000;
   return (
@@ -158,9 +144,7 @@ function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () =
           <label>금액</label>
           <div className="chips wrap">
             {DONATION_PRESETS.map((p) => (
-              <button key={p} type="button" className={`chip ${!custom && amount === p ? "on" : ""}`} onClick={() => { setAmount(p); setCustom(""); }}>
-                {fmtWon(p)}
-              </button>
+              <button key={p} type="button" className={`chip ${!custom && amount === p ? "on" : ""}`} onClick={() => { setAmount(p); setCustom(""); }}>{fmtWon(p)}</button>
             ))}
           </div>
           <input inputMode="numeric" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="직접 입력 (100원 ~ 1,000,000원)" />
@@ -173,7 +157,9 @@ function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () =
       </div>
       <div className="sheet-actions">
         <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" disabled={!valid} onClick={() => onSubmit(value, message)}>{valid ? `${fmtWon(value)} 보태기` : "금액을 확인해요"}</button>
+        <button className="btn" disabled={!valid || busy} onClick={async () => { setBusy(true); await onSubmit(value, message); setBusy(false); }}>
+          {busy ? "보내는 중…" : valid ? `${fmtWon(value)} 보태기` : "금액을 확인해요"}
+        </button>
       </div>
     </Sheet>
   );

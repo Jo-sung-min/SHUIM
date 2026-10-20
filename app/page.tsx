@@ -28,7 +28,7 @@ import {
   seedSampleData,
   todayKey,
 } from "@/lib/storage";
-import { Account, currentUser } from "@/lib/auth";
+import { Account, fetchMe } from "@/lib/auth";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
 import { IconCheck, IconNote, IconSparkle, IconUser } from "@/components/Icons";
@@ -86,7 +86,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    setMe(currentUser());
+    fetchMe().then((m) => setMe(m.user)).catch(() => setMe(null));
     setData({ journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() });
     const b = loadBriefing();
     setBriefing(b && b.date === today ? b : null);

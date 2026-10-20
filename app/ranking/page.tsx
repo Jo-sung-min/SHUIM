@@ -1,36 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  CommunityStore,
-  RankRow,
-  WeeklyBatch,
-  currentWeekKey,
-  fmtWon,
-  loadCommunity,
-  pastWeeks,
-  refreshCurrentWeek,
-  weekLabel,
-  weeklyOf,
-} from "@/lib/community";
+import { CommunityStore, RankRow, WeeklyBatch, api, currentWeekKey, fetchCommunity, fmtWon, pastWeeks, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
 import { Empty, Hero, Segmented, TopBar, fmtRelative } from "@/components/ui";
+import { LoadError, run } from "@/components/CommunityUI";
 import { IconRefresh } from "@/components/Icons";
 
 type View = "current" | "past";
 
 export default function RankingPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("current");
   const [pastWeek, setPastWeek] = useState<string | null>(null);
 
-  useEffect(() => {
-    const st = loadCommunity();
-    setS(st);
-    setPastWeek(pastWeeks(st)[0] ?? null);
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const st = await fetchCommunity();
+      setS(st);
+      setPastWeek(pastWeeks(st)[0] ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "연결 실패");
+    }
   }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
+  if (loadError) return <><TopBar title="불행 랭킹" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
   if (!s) return <TopBar title="불행 랭킹" />;
 
   const cur = currentWeekKey();
@@ -42,13 +42,7 @@ export default function RankingPage() {
     <>
       <TopBar
         title="불행 랭킹"
-        right={
-          view === "current" ? (
-            <button className="icon-btn" aria-label="지금 집계" title="지금 집계" onClick={() => setS(refreshCurrentWeek(s))}>
-              <IconRefresh />
-            </button>
-          ) : undefined
-        }
+        right={view === "current" ? <button className="icon-btn" aria-label="지금 집계" title="지금 집계" onClick={() => run(setS, () => api.refreshCurrentWeek())}><IconRefresh /></button> : undefined}
       />
       <div className="screen">
         <ShoutTabs />
@@ -58,28 +52,16 @@ export default function RankingPage() {
           title={batch?.rows.length ? `1위 ${batch.rows[0].nick}, 힘내요 ${batch.rows[0].cheers}` : "아직 불행 털어내기 글이 없어요"}
           stats={batch ? [`순위 ${batch.rows.length}명`, `모금 ${fmtWon(batch.fund.total)}`, myRow ? `나 ${myRow.rank}위` : "나 순위 밖"] : []}
         />
-
         <div style={{ marginTop: 12 }}>
-          <Segmented
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "current", label: "이번 주 (잠정)" },
-              { value: "past", label: "지난 주 (확정)" },
-            ]}
-          />
+          <Segmented value={view} onChange={setView} options={[{ value: "current", label: "이번 주 (잠정)" }, { value: "past", label: "지난 주 (확정)" }]} />
         </div>
-
         {view === "past" && past.length > 1 && (
           <div className="chips" style={{ marginTop: 10 }}>
             {past.map((w) => (
-              <button key={w} className={`chip ${pastWeek === w ? "on" : ""}`} onClick={() => setPastWeek(w)}>
-                {weekLabel(w)}
-              </button>
+              <button key={w} className={`chip ${pastWeek === w ? "on" : ""}`} onClick={() => setPastWeek(w)}>{weekLabel(w)}</button>
             ))}
           </div>
         )}
-
         {!batch || batch.rows.length === 0 ? (
           <Empty icon="🏔️" title={view === "past" ? "확정된 지난 주 집계가 없어요" : "이번 주엔 아직 순위가 없어요"}>
             <Link href="/shout" style={{ textDecoration: "underline" }}>외침</Link>의 불행 털어내기에 글을 쓰면 여기 올라와요.
@@ -91,7 +73,6 @@ export default function RankingPage() {
             ))}
           </div>
         )}
-
         <p className="tiny muted" style={{ textAlign: "center", marginTop: 20 }}>
           1~10위는 그 주 <Link href="/fund" style={{ textDecoration: "underline" }}>불행 모금</Link>을 나눠 받아요.
         </p>
@@ -101,9 +82,8 @@ export default function RankingPage() {
 }
 
 function RankCard({ row, me, hasFund, finalized }: { row: RankRow; me: boolean; hasFund: boolean; finalized: boolean }) {
-  const top3 = row.rank <= 3;
   return (
-    <section className={`card rank ${top3 ? "top" : ""} ${me ? "me" : ""}`}>
+    <section className={`card rank ${row.rank <= 3 ? "top" : ""} ${me ? "me" : ""}`}>
       <div className="rank-no">{row.rank <= 3 ? ["🥇", "🥈", "🥉"][row.rank - 1] : row.rank}</div>
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="row" style={{ gap: 6 }}>
@@ -117,10 +97,7 @@ function RankCard({ row, me, hasFund, finalized }: { row: RankRow; me: boolean; 
           </div>
         )}
       </div>
-      <div className="rank-cheers">
-        <b>{row.cheers}</b>
-        <small>힘내요</small>
-      </div>
+      <div className="rank-cheers"><b>{row.cheers}</b><small>힘내요</small></div>
     </section>
   );
 }

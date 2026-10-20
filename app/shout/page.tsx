@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CommunityStore,
@@ -9,29 +9,28 @@ import {
   SHOUT_CATEGORIES,
   ShoutCat,
   Target,
+  api,
   commentsOf,
-  createPost,
+  fetchCommunity,
   isBlocked,
   isFlagged,
   isVisible,
   listFlagged,
-  loadCommunity,
-  report,
   shoutCatById,
-  toggleCheer,
   userById,
 } from "@/lib/community";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import ShoutTabs from "@/components/ShoutTabs";
-import { CheerButton, CommentThread, ReportSheet, TargetMenuSheet } from "@/components/CommunityUI";
+import { CheerButton, CommentThread, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconMessage, IconMore, IconPlus, IconShield } from "@/components/Icons";
 
 type Filter = ShoutCat | "all";
 
 export default function ShoutPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [writing, setWriting] = useState(false);
   const [openPost, setOpenPost] = useState<string | null>(null);
@@ -39,19 +38,34 @@ export default function ShoutPage() {
   const [menu, setMenu] = useState<Target | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const st = loadCommunity();
-    setS(st);
-    // 알림 등에서 ?post=ID 로 들어오면 그 글을 바로 연다
-    const id = new URLSearchParams(window.location.search).get("post");
-    if (id && st.posts.some((p) => p.id === id)) setOpenPost(id);
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const st = await fetchCommunity(true);
+      setS(st);
+      const id = new URLSearchParams(window.location.search).get("post");
+      if (id && st.posts.some((p) => p.id === id)) setOpenPost(id);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "연결 실패");
+    }
   }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const posts = useMemo(() => {
     if (!s) return [];
     return s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter)).sort((a, b) => b.createdAt - a.createdAt);
   }, [s, filter]);
 
+  if (loadError) {
+    return (
+      <>
+        <TopBar title="외침" />
+        <div className="screen"><LoadError message={loadError} onRetry={load} /></div>
+      </>
+    );
+  }
   if (!s) return <TopBar title="외침" />;
 
   const blocked = isBlocked(s.me);
@@ -74,11 +88,7 @@ export default function ShoutPage() {
       <div className="screen">
         <ShoutTabs />
         <div style={{ height: 12 }} />
-        <Hero
-          label={`나는 ${s.me.nick}`}
-          title="오늘의 불행을 털어내요"
-          stats={[`외침 ${s.posts.filter((p) => isVisible(s, p)).length}개`, `힘내요 ${totalCheers}개`]}
-        />
+        <Hero label={`나는 ${s.me.nick}`} title="오늘의 불행을 털어내요" stats={[`외침 ${s.posts.filter((p) => isVisible(s, p)).length}개`, `힘내요 ${totalCheers}개`]} />
 
         {blocked && <div className="notice warn">이 계정은 신고 누적으로 차단되어 글과 댓글을 쓸 수 없어요. 읽는 건 가능해요.</div>}
 
@@ -108,7 +118,7 @@ export default function ShoutPage() {
                   s={s}
                   post={p}
                   commentCount={commentsOf(s, p.id).length}
-                  onCheer={() => setS(toggleCheer(s, { kind: "post", id: p.id }))}
+                  onCheer={() => run(setS, () => api.toggleCheer({ kind: "post", id: p.id }))}
                   onOpen={() => setOpenPost(p.id)}
                   onMenu={() => setMenu({ kind: "post", id: p.id })}
                 />
@@ -131,8 +141,8 @@ export default function ShoutPage() {
         open={writing}
         defaultCat={filter === "all" ? "misfortune" : filter}
         onClose={() => setWriting(false)}
-        onSubmit={(cat, text) => {
-          setS(createPost(s, cat, text));
+        onSubmit={async (cat, text) => {
+          await run(setS, () => api.createPost(cat, text));
           setWriting(false);
           setFilter("all");
         }}
@@ -148,7 +158,7 @@ export default function ShoutPage() {
             </div>
             <p className="post-text" style={{ fontSize: 16 }}>{current.text}</p>
             <div className="post-foot" style={{ marginBottom: 6 }}>
-              <CheerButton count={current.cheers.length} on={current.cheers.includes(s.me.id)} onClick={() => setS(toggleCheer(s, { kind: "post", id: current.id }))} />
+              <CheerButton count={current.cheers.length} on={current.cheers.includes(s.me.id)} onClick={() => run(setS, () => api.toggleCheer({ kind: "post", id: current.id }))} />
               <span className="tiny muted">위로 {commentsOf(s, current.id).length}개</span>
             </div>
             <CommentThread s={s} postId={current.id} onChange={setS} onMenu={(t) => setMenu(t)} />
@@ -169,9 +179,10 @@ export default function ShoutPage() {
         key={reporting ? `report-${reporting.kind}-${reporting.id}` : "report-closed"}
         open={Boolean(reporting)}
         onClose={() => setReporting(null)}
-        onSubmit={(reason) => {
-          if (reporting) setS(report(s, reporting, reason));
+        onSubmit={async (reason) => {
+          const t = reporting;
           setReporting(null);
+          if (t) await run(setS, () => api.report(t, reason));
         }}
       />
     </>
@@ -203,9 +214,10 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
   );
 }
 
-function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; defaultCat: ShoutCat; onClose: () => void; onSubmit: (cat: ShoutCat, text: string) => void }) {
+function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; defaultCat: ShoutCat; onClose: () => void; onSubmit: (cat: ShoutCat, text: string) => Promise<void> }) {
   const [cat, setCat] = useState<ShoutCat>(defaultCat);
   const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
   const c = shoutCatById(cat);
   return (
     <Sheet open={open} onClose={onClose} title="외치기">
@@ -230,7 +242,17 @@ function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; de
       </div>
       <div className="sheet-actions">
         <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" onClick={() => onSubmit(cat, text)} disabled={!text.trim()}>외치기</button>
+        <button
+          className="btn"
+          disabled={!text.trim() || busy}
+          onClick={async () => {
+            setBusy(true);
+            await onSubmit(cat, text);
+            setBusy(false);
+          }}
+        >
+          {busy ? "올리는 중…" : "외치기"}
+        </button>
       </div>
     </Sheet>
   );

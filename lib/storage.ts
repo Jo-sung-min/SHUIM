@@ -130,10 +130,7 @@ const K = {
   review: "maeum-accel:review:v1",
   profile: "maeum-accel:profile:v1",
   notif: "maeum-accel:notif:v1",
-  community: "maeum-accel:community:v1",
 } as const;
-
-export const COMMUNITY_KEY = K.community;
 /** 계정과 무관하게 기기 전체에서 공유하는 키 (커뮤니티 샘플 세계, 프롬프트, 계정 목록, 세션) */
 export const SESSION_KEY = "maeum-accel:session:v1";
 export const PROMPTS_KEY = "maeum-accel:prompts:v1";
@@ -191,19 +188,8 @@ export function adoptGuestData(userId: string) {
   }
 }
 
-export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-
-export function todayKey(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function addDays(key: string, n: number): string {
-  const [y, m, d] = key.split("-").map(Number);
-  return todayKey(new Date(y, m - 1, d + n));
-}
+export { uid, todayKey, addDays } from "./dates";
+import { uid, todayKey, addDays } from "./dates";
 
 /* ---------- 기록 ---------- */
 
@@ -323,10 +309,10 @@ export const savePrompts = (p: PromptOverrides) => writeShared(PROMPTS_KEY, p);
 /* ---------- 전체 삭제 ---------- */
 
 export function clearAll() {
-  // 현재 계정(또는 게스트)의 개인 데이터 + 기기 공유 커뮤니티 샘플 (다음 외침 탭 진입 시 다시 생성됨)
+  // 현재 계정(또는 게스트)의 개인 데이터만 (커뮤니티는 서버 DB)
   for (const k of Object.values(K)) {
     try {
-      window.localStorage.removeItem(k === K.community ? k : ns(k));
+      window.localStorage.removeItem(ns(k));
     } catch {
       /* noop */
     }

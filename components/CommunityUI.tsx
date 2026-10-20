@@ -8,20 +8,27 @@ import {
   REPORT_THRESHOLD,
   ReportReason,
   Target,
-  addComment,
+  api,
   commentsOf,
-  deleteComment,
-  deleteFeedPost,
-  deletePost,
   findTarget,
   hasReported,
   isBlocked,
   isFlagged,
-  toggleCheer,
   userById,
 } from "@/lib/community";
 import { Sheet, fmtRelative } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
+
+/** 변경 결과(최신 store)를 화면에 반영하고, 실패하면 알림 */
+export async function run(onChange: (s: CommunityStore) => void, fn: () => Promise<CommunityStore>, onError?: (m: string) => void) {
+  try {
+    onChange(await fn());
+  } catch (e) {
+    const m = e instanceof Error ? e.message : "잠시 후 다시 시도해요";
+    if (onError) onError(m);
+    else window.alert(m);
+  }
+}
 
 /* ---------- 힘내요 버튼 ---------- */
 export function CheerButton({ count, on, onClick, small }: { count: number; on: boolean; onClick: () => void; small?: boolean }) {
@@ -61,7 +68,7 @@ function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; commen
   );
 }
 
-/* ---------- 댓글 스레드 (목록 + 입력) : 외침 글과 피드 글 공용 ---------- */
+/* ---------- 댓글 스레드 (목록 + 입력) ---------- */
 export function CommentThread({
   s,
   postId,
@@ -76,12 +83,15 @@ export function CommentThread({
   placeholder?: string;
 }) {
   const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
   const comments = commentsOf(s, postId);
   const blocked = isBlocked(s.me);
-  const submit = () => {
+  const submit = async () => {
     const t = text.trim();
-    if (!t) return;
-    onChange(addComment(s, postId, t));
+    if (!t || busy) return;
+    setBusy(true);
+    await run(onChange, () => api.addComment(postId, t));
+    setBusy(false);
     setText("");
   };
   return (
@@ -93,7 +103,7 @@ export function CommentThread({
             key={cm.id}
             s={s}
             comment={cm}
-            onCheer={() => onChange(toggleCheer(s, { kind: "comment", id: cm.id }))}
+            onCheer={() => run(onChange, () => api.toggleCheer({ kind: "comment", id: cm.id }))}
             onMenu={() => onMenu({ kind: "comment", id: cm.id })}
           />
         ))}
@@ -120,7 +130,7 @@ export function CommentThread({
               t.style.height = `${Math.min(t.scrollHeight, 140)}px`;
             }}
           />
-          <button type="submit" className="btn" disabled={!text.trim()} aria-label="보내기">
+          <button type="submit" className="btn" disabled={!text.trim() || busy} aria-label="보내기">
             <IconSend style={{ width: 18, height: 18 }} />
           </button>
         </form>
@@ -154,8 +164,10 @@ export function TargetMenuSheet({
           {item.authorId === s.me.id ? (
             <button
               className="btn ghost"
-              onClick={() => {
-                onChange(target.kind === "post" ? deletePost(s, target.id) : target.kind === "feed" ? deleteFeedPost(s, target.id) : deleteComment(s, target.id));
+              onClick={async () => {
+                await run(onChange, () =>
+                  target.kind === "post" ? api.deletePost(target.id) : target.kind === "feed" ? api.deleteFeedPost(target.id) : api.deleteComment(target.id)
+                );
                 onDeleted?.(target);
                 onClose();
               }}
@@ -206,5 +218,19 @@ export function ReportSheet({ open, onClose, onSubmit }: { open: boolean; onClos
         <button className="btn" onClick={() => onSubmit(reason)}>신고하기</button>
       </div>
     </Sheet>
+  );
+}
+
+/* ---------- 서버 연결 실패 안내 ---------- */
+export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="empty">
+      <div className="ico">☁️</div>
+      <b>서버에 연결하지 못했어요</b>
+      {message}
+      <div style={{ marginTop: 14 }}>
+        <button className="btn sm soft" onClick={onRetry}>다시 시도</button>
+      </div>
+    </div>
   );
 }

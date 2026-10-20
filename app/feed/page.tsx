@@ -9,31 +9,28 @@ import {
   FeedPost,
   REPORT_THRESHOLD,
   Target,
+  api,
   commentsOf,
-  createFeedPost,
   creatorOf,
+  fetchCommunity,
   isBlocked,
   isCreator,
   isFlagged,
   listFeed,
-  loadCommunity,
-  report,
-  toggleCheer,
-  toggleFollow,
-  toggleSave,
-  updateCreatorBio,
   userById,
 } from "@/lib/community";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Sheet, fmtRelative } from "@/components/ui";
-import { CommentThread, ReportSheet, TargetMenuSheet } from "@/components/CommunityUI";
+import { CommentThread, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconMessage, IconMore, IconPen } from "@/components/Icons";
 
 type Filter = "all" | "following" | "saved";
+const PAGE = 5;
 
 export default function FeedPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [openComments, setOpenComments] = useState<string | null>(null);
   const [menu, setMenu] = useState<Target | null>(null);
@@ -41,22 +38,28 @@ export default function FeedPage() {
   const [writing, setWriting] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
-  // 무한 스크롤: 한 번에 PAGE개씩, 바닥 근처에서 더 불러옴
-  const PAGE = 5;
   const [limit, setLimit] = useState(PAGE);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
-  // 당겨서 새로고침
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const touchY = useRef<number | null>(null);
   const wheelAcc = useRef(0);
+  const wheelTimer = useRef<number | null>(null);
 
-  const [deepLink, setDeepLink] = useState<string | null>(null);
-  useEffect(() => {
-    setS(loadCommunity());
-    setDeepLink(new URLSearchParams(window.location.search).get("post"));
+  const load = useCallback(async (force = true) => {
+    setLoadError(null);
+    try {
+      setS(await fetchCommunity(force));
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "연결 실패");
+    }
   }, []);
+  useEffect(() => {
+    load(true);
+    setDeepLink(new URLSearchParams(window.location.search).get("post"));
+  }, [load]);
   useEffect(() => setLimit(PAGE), [filter]);
 
   useEffect(() => {
@@ -70,18 +73,44 @@ export default function FeedPage() {
     return () => io.disconnect();
   }, [s, filter]);
 
+  const items = useMemo(() => {
+    if (!s) return [];
+    const all = listFeed(s);
+    if (filter === "following") return all.filter((f) => s.following.includes(f.authorId) || f.authorId === s.me.id);
+    if (filter === "saved") return all.filter((f) => f.saves.includes(s.me.id));
+    return all;
+  }, [s, filter]);
+
+  // ?post=ID 로 들어오면 그 글까지 불러와 스크롤하고 댓글을 연다
+  useEffect(() => {
+    if (!deepLink || !s) return;
+    const idx = items.findIndex((f) => f.id === deepLink);
+    if (idx < 0) {
+      setDeepLink(null);
+      return;
+    }
+    if (limit < idx + 1) {
+      setLimit(idx + 1);
+      return;
+    }
+    const el = document.getElementById(`reel-${deepLink}`);
+    if (el) {
+      el.scrollIntoView({ block: "start" });
+      setOpenComments(deepLink);
+      setDeepLink(null);
+    }
+  }, [deepLink, s, items, limit]);
 
   const refresh = useCallback(() => {
     if (refreshing) return;
     setRefreshing(true);
     setPull(0);
-    window.setTimeout(() => {
-      setS(loadCommunity());
+    load(true).finally(() => {
       setLimit(PAGE);
       setRefreshing(false);
       feedRef.current?.scrollTo({ top: 0 });
-    }, 650);
-  }, [refreshing]);
+    });
+  }, [refreshing, load]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     touchY.current = feedRef.current && feedRef.current.scrollTop <= 0 ? e.touches[0].clientY : null;
@@ -96,8 +125,6 @@ export default function FeedPage() {
     else setPull(0);
     touchY.current = null;
   };
-  // 데스크톱: 맨 위에서 위로 더 굴리면 새로고침
-  const wheelTimer = useRef<number | null>(null);
   const onWheel = (e: React.WheelEvent) => {
     const el = feedRef.current;
     if (!el) return;
@@ -110,7 +137,6 @@ export default function FeedPage() {
         refresh();
         return;
       }
-      // 휠이 멈추면 당김 표시를 되돌림
       wheelTimer.current = window.setTimeout(() => {
         wheelAcc.current = 0;
         setPull(0);
@@ -121,28 +147,7 @@ export default function FeedPage() {
     }
   };
 
-  const items = useMemo(() => {
-    if (!s) return [];
-    const all = listFeed(s);
-    if (filter === "following") return all.filter((f) => s.following.includes(f.authorId) || f.authorId === s.me.id);
-    if (filter === "saved") return all.filter((f) => f.saves.includes(s.me.id));
-    return all;
-  }, [s, filter]);
-
-  // 알림 등에서 ?post=ID 로 들어오면 그 글까지 불러와 스크롤하고 댓글을 연다
-  useEffect(() => {
-    if (!deepLink || !s) return;
-    const idx = items.findIndex((f) => f.id === deepLink);
-    if (idx < 0) { setDeepLink(null); return; }
-    if (limit < idx + 1) { setLimit(idx + 1); return; }
-    const el = document.getElementById(`reel-${deepLink}`);
-    if (el) {
-      el.scrollIntoView({ block: "start" });
-      setOpenComments(deepLink);
-      setDeepLink(null);
-    }
-  }, [deepLink, s, items, limit]);
-
+  if (loadError) return <div className="screen" style={{ paddingTop: 80 }}><LoadError message={loadError} onRetry={() => load(true)} /></div>;
   if (!s) return null;
 
   const me = s.me.id;
@@ -153,16 +158,8 @@ export default function FeedPage() {
     <>
       <div className="feed-top">
         <div className="segmented feed-seg" role="tablist">
-          {(
-            [
-              ["all", "전체"],
-              ["following", "팔로잉"],
-              ["saved", "저장함"],
-            ] as [Filter, string][]
-          ).map(([v, l]) => (
-            <button key={v} role="tab" aria-selected={filter === v} className={filter === v ? "on" : ""} onClick={() => setFilter(v)}>
-              {l}
-            </button>
+          {([["all", "전체"], ["following", "팔로잉"], ["saved", "저장함"]] as [Filter, string][]).map(([v, l]) => (
+            <button key={v} role="tab" aria-selected={filter === v} className={filter === v ? "on" : ""} onClick={() => setFilter(v)}>{l}</button>
           ))}
         </div>
         {!blocked && (
@@ -193,11 +190,11 @@ export default function FeedPage() {
               post={f}
               revealed={revealed.has(f.id)}
               onReveal={() => setRevealed((r) => new Set(r).add(f.id))}
-              onCheer={() => setS(toggleCheer(s, { kind: "feed", id: f.id }))}
-              onSave={() => setS(toggleSave(s, f.id))}
+              onCheer={() => run(setS, () => api.toggleCheer({ kind: "feed", id: f.id }))}
+              onSave={() => run(setS, () => api.toggleSave(f.id))}
               onComments={() => setOpenComments(f.id)}
               onMenu={() => setMenu({ kind: "feed", id: f.id })}
-              onFollow={() => setS(toggleFollow(s, f.authorId))}
+              onFollow={() => run(setS, () => api.toggleFollow(f.authorId))}
               onProfile={() => setProfile(f.authorId)}
             />
           ))
@@ -211,7 +208,6 @@ export default function FeedPage() {
         )}
       </div>
 
-      {/* 댓글 */}
       <Sheet open={Boolean(currentComments)} onClose={() => setOpenComments(null)} title={`위로 ${currentComments ? commentsOf(s, currentComments.id).length : 0}개`}>
         {currentComments && (
           <>
@@ -223,24 +219,24 @@ export default function FeedPage() {
         )}
       </Sheet>
 
-      {/* 크리에이터 프로필 */}
       <Sheet open={Boolean(profile)} onClose={() => setProfile(null)} title="크리에이터">
-        {profile && <CreatorProfile s={s} userId={profile} onFollow={() => setS(toggleFollow(s, profile))} onBio={(b) => setS(updateCreatorBio(s, b))} />}
+        {profile && <CreatorProfile s={s} userId={profile} onFollow={() => run(setS, () => api.toggleFollow(profile))} onBio={(b) => run(setS, () => api.updateBio(b))} />}
       </Sheet>
 
-      {/* 글쓰기 */}
       <WriteSheet
         key={writing ? "write-open" : "write-closed"}
         open={writing}
         firstTime={!isCreator(s, me)}
         onClose={() => setWriting(false)}
-        onSubmit={(text, bg, title, bio, image) => {
-          let next = createFeedPost(s, text, bg, title, image);
-          if (bio !== undefined && bio.trim()) next = updateCreatorBio(next, bio);
-          setS(next);
+        onSubmit={async (text, bg, title, bio, image) => {
+          await run(setS, async () => {
+            let next = await api.createFeedPost(text, bg, title, image);
+            if (bio !== undefined && bio.trim()) next = await api.updateBio(bio);
+            return next;
+          });
           setWriting(false);
           setFilter("all");
-          document.querySelector(".feed")?.scrollTo({ top: 0, behavior: "smooth" });
+          feedRef.current?.scrollTo({ top: 0, behavior: "smooth" });
         }}
       />
 
@@ -249,9 +245,10 @@ export default function FeedPage() {
         key={reporting ? `report-${reporting.kind}-${reporting.id}` : "report-closed"}
         open={Boolean(reporting)}
         onClose={() => setReporting(null)}
-        onSubmit={(reason) => {
-          if (reporting) setS(report(s, reporting, reason));
+        onSubmit={async (reason) => {
+          const t = reporting;
           setReporting(null);
+          if (t) await run(setS, () => api.report(t, reason));
         }}
       />
     </>
@@ -260,28 +257,9 @@ export default function FeedPage() {
 
 /* ================= 한 장 ================= */
 
-function Reel({
-  s,
-  post,
-  revealed,
-  onReveal,
-  onCheer,
-  onSave,
-  onComments,
-  onMenu,
-  onFollow,
-  onProfile,
-}: {
-  s: CommunityStore;
-  post: FeedPost;
-  revealed: boolean;
-  onReveal: () => void;
-  onCheer: () => void;
-  onSave: () => void;
-  onComments: () => void;
-  onMenu: () => void;
-  onFollow: () => void;
-  onProfile: () => void;
+function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile }: {
+  s: CommunityStore; post: FeedPost; revealed: boolean; onReveal: () => void; onCheer: () => void; onSave: () => void;
+  onComments: () => void; onMenu: () => void; onFollow: () => void; onProfile: () => void;
 }) {
   const me = s.me.id;
   const author = userById(s, post.authorId);
@@ -308,7 +286,6 @@ function Reel({
           </>
         )}
       </div>
-
       <div className="reel-meta">
         <button className="reel-author" onClick={onProfile}>
           <span className="avatar">{author.nick.slice(0, 1)}</span>
@@ -323,19 +300,15 @@ function Reel({
           </button>
         )}
       </div>
-
       <div className="reel-actions">
         <button className={`ract ${cheered ? "on" : ""}`} onClick={onCheer} aria-pressed={cheered} aria-label="힘내요">
-          <span className="ico">💪</span>
-          <span className="lbl">{post.cheers.length}</span>
+          <span className="ico">💪</span><span className="lbl">{post.cheers.length}</span>
         </button>
         <button className="ract" onClick={onComments} aria-label="위로 댓글">
-          <span className="ico"><IconMessage /></span>
-          <span className="lbl">{comments}</span>
+          <span className="ico"><IconMessage /></span><span className="lbl">{comments}</span>
         </button>
         <button className={`ract ${saved ? "on" : ""}`} onClick={onSave} aria-pressed={saved} aria-label="저장">
-          <span className="ico">{saved ? "🔖" : "🏷️"}</span>
-          <span className="lbl">{saved ? "저장됨" : "저장"}</span>
+          <span className="ico">{saved ? "🔖" : "🏷️"}</span><span className="lbl">{saved ? "저장됨" : "저장"}</span>
         </button>
         <button className="ract" onClick={onMenu} aria-label="더보기">
           <span className="ico"><IconMore /></span>
@@ -401,32 +374,22 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
 
 /* ================= 글쓰기 ================= */
 
-function WriteSheet({
-  open,
-  firstTime,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  firstTime: boolean;
-  onClose: () => void;
-  onSubmit: (text: string, bg: number, title: string, bio?: string, image?: string) => void;
+function WriteSheet({ open, firstTime, onClose, onSubmit }: {
+  open: boolean; firstTime: boolean; onClose: () => void;
+  onSubmit: (text: string, bg: number, title: string, bio?: string, image?: string) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [bg, setBg] = useState(0);
-  const [image, setImage] = useState<string>("");
-  const [imageUrl, setImageUrl] = useState("");
-  const picked = imageUrl.trim() || image;
   const [bio, setBio] = useState("");
+  const [image, setImage] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const picked = imageUrl.trim() || image;
   return (
     <Sheet open={open} onClose={onClose} title={firstTime ? "크리에이터 되기" : "위로글 쓰기"}>
       <div className="stack">
-        {firstTime && (
-          <div className="notice">
-            위로글을 하나 올리면 크리에이터가 돼요. 짧게, 한 사람에게 말하듯 써요. 조언보다 알아주는 말이 먼저예요.
-          </div>
-        )}
+        {firstTime && <div className="notice">위로글을 하나 올리면 크리에이터가 돼요. 짧게, 한 사람에게 말하듯 써요. 조언보다 알아주는 말이 먼저예요.</div>}
         <div className="field">
           <label>제목 (선택)</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={24} placeholder="예: 떨어진 날에게" />
@@ -446,12 +409,6 @@ function WriteSheet({
             ))}
           </div>
         </div>
-        {firstTime && (
-          <div className="field">
-            <label>크리에이터 소개 (선택)</label>
-            <input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" />
-          </div>
-        )}
         <div className="field">
           <label>그림 (선택)</label>
           <div className="img-picks">
@@ -462,6 +419,12 @@ function WriteSheet({
           </div>
           <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="또는 이미지 주소 (https://…)" />
         </div>
+        {firstTime && (
+          <div className="field">
+            <label>크리에이터 소개 (선택)</label>
+            <input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" />
+          </div>
+        )}
         <div className={`reel preview bg-${bg} ${picked ? "has-img" : ""}`} style={picked ? { backgroundImage: `url(${picked})` } : undefined}>
           <div className="reel-body">
             {title && <div className="reel-title">{title}</div>}
@@ -472,7 +435,17 @@ function WriteSheet({
       </div>
       <div className="sheet-actions">
         <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" onClick={() => onSubmit(text, bg, title, firstTime ? bio : undefined, picked || undefined)} disabled={!text.trim()}>올리기</button>
+        <button
+          className="btn"
+          disabled={!text.trim() || busy}
+          onClick={async () => {
+            setBusy(true);
+            await onSubmit(text, bg, title, firstTime ? bio : undefined, picked || undefined);
+            setBusy(false);
+          }}
+        >
+          {busy ? "올리는 중…" : "올리기"}
+        </button>
       </div>
     </Sheet>
   );
