@@ -198,7 +198,7 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
       <div className="post-head">
         <span className="cat">{c.emoji} {c.label}</span>
         <span>·</span>
-        <span className="nick">{mine ? "나" : author.nick}</span>
+        <Link href={`/u/${post.authorId}`} className="nick" style={{ textDecoration: "underline", textDecorationColor: "var(--border)" }}>{mine ? "나" : author.nick}</Link>
         <span>·</span>
         <span>{fmtRelative(post.createdAt)}</span>
         <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 16, height: 16 }} /></button>

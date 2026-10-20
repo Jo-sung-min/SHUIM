@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconMegaphone, IconPen, IconReels, IconSun, IconUser } from "./Icons";
 import { fetchCommunity, unreadCount } from "@/lib/community";
+import { unreadMessages } from "@/lib/social";
 
 /** 하단 탭 5개, 아이콘만 (인스타그램처럼). 나머지 기능은 "나" 페이지에서 */
 const TABS = [
@@ -12,7 +13,7 @@ const TABS = [
   { href: "/log", label: "기록", Icon: IconPen },
   { href: "/shout", label: "외침", Icon: IconMegaphone, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
   { href: "/feed", label: "위로", Icon: IconReels },
-  { href: "/me", label: "나", Icon: IconUser, match: (p: string) => ["/me", "/memo", "/goals", "/schedule", "/auth"].some((x) => p.startsWith(x)) },
+  { href: "/me", label: "나", Icon: IconUser, match: (p: string) => ["/me", "/memo", "/goals", "/schedule", "/auth", "/messages", "/u/"].some((x) => p.startsWith(x)) },
 ];
 
 export default function TabBar() {
@@ -22,8 +23,8 @@ export default function TabBar() {
   // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (서버 상태는 30초 캐시)
   useEffect(() => {
     let alive = true;
-    fetchCommunity()
-      .then((s) => alive && setUnread(unreadCount(s)))
+    Promise.all([fetchCommunity().then(unreadCount).catch(() => 0), unreadMessages()])
+      .then(([a, b]) => alive && setUnread(a + b))
       .catch(() => alive && setUnread(0));
     return () => {
       alive = false;

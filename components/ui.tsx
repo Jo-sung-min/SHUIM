@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 
 /* ---------- 상단 바 ---------- */
-export function TopBar({ title, eyebrow, right }: { title: string; eyebrow?: string; right?: ReactNode }) {
+export function TopBar({ title, eyebrow, right }: { title: string; eyebrow?: ReactNode; right?: ReactNode }) {
   return (
     <header className="topbar">
       <h1>

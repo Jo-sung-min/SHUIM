@@ -16,6 +16,7 @@ import {
   isFlagged,
   userById,
 } from "@/lib/community";
+import Link from "next/link";
 import { Sheet, fmtRelative } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
 
@@ -57,7 +58,7 @@ function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; commen
   return (
     <div className="comment">
       <div className="meta">
-        <span style={{ color: "var(--text)", fontWeight: 600 }}>{comment.authorId === me ? "나" : author.nick}</span>
+        <Link href={`/u/${comment.authorId}`} style={{ color: "var(--text)", fontWeight: 600 }}>{comment.authorId === me ? "나" : author.nick}</Link>
         <span>·</span>
         <span>{fmtRelative(comment.createdAt)}</span>
         <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 15, height: 15 }} /></button>

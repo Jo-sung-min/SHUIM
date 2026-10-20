@@ -23,6 +23,7 @@ import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Sheet, fmtRelative } from "@/components/ui";
 import { CommentThread, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
+import Link from "next/link";
 import { IconMessage, IconMore, IconPen } from "@/components/Icons";
 import { uploadAvailable, uploadImage } from "@/lib/upload";
 
@@ -358,6 +359,7 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
           {mine && <button className="text-btn" style={{ marginLeft: 6 }} onClick={() => setEditing(true)}>수정</button>}
         </p>
       )}
+      <Link href={`/u/${userId}`} className="btn ghost block sm">프로필 전체 보기 · 메시지 보내기</Link>
       {posts.length > 0 && (
         <div className="stack" style={{ gap: 6 }}>
           {posts.slice(0, 5).map((f) => (
