@@ -38,6 +38,21 @@
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches`에 저장(지난 주 확정, 이번 주 5분 잠정). 샘플 유저 자동 답글은 개발 모드에서만(`COMMUNITY_SIMULATE=0`으로 끔)
 - 기록·메모·목표·일정과 AI 프롬프트 설정은 아직 localStorage(계정별 키 분리). DB 테이블은 준비되어 있고 옮기는 건 다음 단계
 
+## 피드 사진 업로드 (S3 + CloudFront)
+
+브라우저가 파일을 서버로 보내지 않고, 서버([lib/server/s3.ts](lib/server/s3.ts))가 발급한 **프리사인 PUT URL**로 S3에 직접 올린다. 올리기 전에 브라우저에서 긴 변 1600px·WebP로 줄인다([lib/upload.ts](lib/upload.ts)). 글에는 CDN 주소가 저장되고, 글을 지우면 S3 객체도 지운다.
+
+1. `.env`에 `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, (선택) `S3_PREFIX`, `CDN_BASE_URL` 입력 (`.env.example` 참고). 비어 있으면 업로드 버튼이 숨겨진다.
+2. **버킷 CORS** (브라우저가 PUT 하려면 필수). S3 콘솔 › 권한 › CORS:
+   ```json
+   [{ "AllowedOrigins": ["http://localhost:3000", "https://<배포 도메인>"],
+      "AllowedMethods": ["PUT"], "AllowedHeaders": ["Content-Type", "Cache-Control"], "MaxAgeSeconds": 3000 }]
+   ```
+3. **IAM 정책** (최소 권한): `s3:PutObject`, `s3:DeleteObject` on `arn:aws:s3:::<bucket>/feed/*`
+4. **CloudFront**: 원본 = S3 버킷, 원본 액세스 = OAC(Origin Access Control)로 두고 버킷은 퍼블릭 차단 유지. 버킷 정책에 CloudFront 서비스 주체 `s3:GetObject` 허용. 캐시 정책은 CachingOptimized. 배포 도메인을 `CDN_BASE_URL`에.
+   - 업로드 시 `Cache-Control: public, max-age=31536000, immutable`을 붙이므로 CDN·브라우저가 1년 캐시한다(키가 매번 새로 생겨 안전).
+5. 확인: `GET /api/upload/presign` → `{ configured: true }`, 피드 › 위로글 쓰기 › 📷 내 사진 올리기.
+
 ## 실행
 
 ```bash

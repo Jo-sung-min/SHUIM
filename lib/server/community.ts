@@ -26,6 +26,7 @@ import {
   weeksNeedingCompute,
 } from "../community-core";
 import type { DbUser } from "./auth";
+import { deleteUploadedImage } from "./s3";
 
 const SAMPLE_USER_IDS = ["u1", "u2", "u3", "u4", "u5", "u6", "u7"];
 const SIMULATE = process.env.COMMUNITY_SIMULATE !== "0" && process.env.NODE_ENV !== "production";
@@ -221,8 +222,11 @@ export async function createFeedPost(me: DbUser, body: unknown, bg: unknown, tit
   return loadStore(me);
 }
 export async function deleteFeedPost(me: DbUser, id: string) {
-  const r = await db().query("DELETE FROM feed_posts WHERE id = $1 AND author_id = $2", [id, me.id]);
-  if (r.rowCount) await db().query("DELETE FROM comments WHERE post_kind = 'feed' AND post_id = $1", [id]);
+  const r = await db().query("DELETE FROM feed_posts WHERE id = $1 AND author_id = $2 RETURNING image", [id, me.id]);
+  if (r.rowCount) {
+    await db().query("DELETE FROM comments WHERE post_kind = 'feed' AND post_id = $1", [id]);
+    await deleteUploadedImage(r.rows[0]?.image); // 우리 S3에 올린 사진이면 함께 삭제
+  }
   return loadStore(me);
 }
 export async function updateBio(me: DbUser, bio: unknown) {

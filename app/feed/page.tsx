@@ -24,6 +24,7 @@ import HelpBanner from "@/components/HelpBanner";
 import { Sheet, fmtRelative } from "@/components/ui";
 import { CommentThread, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconMessage, IconMore, IconPen } from "@/components/Icons";
+import { uploadAvailable, uploadImage } from "@/lib/upload";
 
 type Filter = "all" | "following" | "saved";
 const PAGE = 5;
@@ -385,7 +386,27 @@ function WriteSheet({ open, firstTime, onClose, onSubmit }: {
   const [image, setImage] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [canUpload, setCanUpload] = useState(false);
+  const [uploading, setUploading] = useState<number | null>(null); // 진행률 %
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const picked = imageUrl.trim() || image;
+  useEffect(() => {
+    if (open) uploadAvailable().then(setCanUpload);
+  }, [open]);
+  const onPickFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadError(null);
+    setUploading(0);
+    try {
+      const r = await uploadImage(file, setUploading);
+      setImage("");
+      setImageUrl(r.url);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "업로드하지 못했어요");
+    } finally {
+      setUploading(null);
+    }
+  };
   return (
     <Sheet open={open} onClose={onClose} title={firstTime ? "크리에이터 되기" : "위로글 쓰기"}>
       <div className="stack">
@@ -417,7 +438,14 @@ function WriteSheet({ open, firstTime, onClose, onSubmit }: {
               <button key={im.src} type="button" className={`img-pick ${image === im.src ? "on" : ""}`} style={{ backgroundImage: `url(${im.src})` }} onClick={() => { setImage(im.src); setImageUrl(""); }} aria-label={im.label} title={im.label} />
             ))}
           </div>
-          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="또는 이미지 주소 (https://…)" />
+          {canUpload && (
+            <label className={`btn ghost sm upload-btn ${uploading !== null ? "busy" : ""}`}>
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden disabled={uploading !== null} onChange={(e) => onPickFile(e.target.files?.[0])} />
+              {uploading === null ? "📷 내 사진 올리기" : `올리는 중… ${uploading}%`}
+            </label>
+          )}
+          {uploadError && <span className="tiny" style={{ color: "var(--down)" }}>{uploadError}</span>}
+          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder={canUpload ? "또는 이미지 주소 (https://…)" : "이미지 주소 (https://…) · S3 설정 시 사진 업로드 가능"} />
         </div>
         {firstTime && (
           <div className="field">
