@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat, memoCatById } from "@/lib/categories";
-import { ScheduleItem, addDays, loadSchedule, saveSchedule, todayKey, uid } from "@/lib/storage";
+import { ScheduleItem, addDays, loadSchedule, saveSchedule, syncRecords, todayKey, uid } from "@/lib/storage";
 import { CatChips, DOW_LABELS, Empty, Hero, Sheet, TopBar, fmtDate } from "@/components/ui";
 import { IconCheck, IconChevronL, IconChevronR, IconPlus } from "@/components/Icons";
 
@@ -18,7 +18,7 @@ export default function SchedulePage() {
   const [sel, setSel] = useState(today);
   const [editing, setEditing] = useState<ScheduleItem | "new" | null>(null);
 
-  useEffect(() => setItems(loadSchedule()), []);
+  useEffect(() => { syncRecords().then(() => setItems(loadSchedule())); }, []);
 
   const commit = (next: ScheduleItem[]) => {
     setItems(next);

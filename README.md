@@ -7,7 +7,7 @@
 - `frontend`: Next.js 16, React 19, TypeScript — 화면. `/api/*` 는 백엔드로 프록시
 - `backend`: Spring Boot 3.5.16, Java 21, Gradle 8.14.3, PostgreSQL(Supabase), Flyway — 외침·위로 피드·랭킹·모금·계정·프로필·메시지·사진 업로드(S3 프리사인)·AI 브리핑 API
 - AI: Claude API (Anthropic Messages API, 기본 모델 Haiku 5.5, 관리자 화면에서 변경). 키가 없으면 규칙 기반 결과
-- 개인 기록(기록·메모·목표·일정)은 아직 브라우저 localStorage(계정별 키 분리). AI 요청 때만 본문으로 보내고 서버는 저장하지 않음
+- 개인 기록(기록·메모·목표·일정·내 카테고리)은 **로그인 계정이면 서버 DB**(`/api/records`, 기기 간 동기화), 익명이면 브라우저 localStorage. 브라우저는 계정별 localStorage 를 캐시로 두고 화면을 열 때 서버에서 받아 덮어쓰며, 쓸 때마다 서버로 보낸다. 가입·로그인하면 그 기기의 게스트 기록이 계정의 비어 있는 부분에 한 번 들어간다. AI 요청은 브라우저가 들고 있는 데이터를 본문으로 보낸다
 
 ## 로컬 실행
 
@@ -86,11 +86,16 @@ npm run dev
 | `GET/POST /api/messages`, `GET/POST /api/messages/{id}` | 대화 목록·보내기 / 대화 내용·읽음 |
 | `GET/POST /api/upload/presign` | 사진 업로드 프리사인 URL |
 | `POST /api/today`, `POST /api/summarize` | AI 브리핑·칭찬·사랑하기·점검 / 흐름 정리 |
+| `GET /api/records` | 로그인 계정의 개인 기록 전체 (journal·log·memos·goals·schedule·categories·order). 익명은 401 |
+| `PUT /api/records/journal/{date}` | 하루 기록 `{ record, did }` |
+| `PUT /api/records/{memos,goals,schedule}` | 목록 통째로 교체 |
+| `PUT /api/records/categories` | 내 카테고리 `{ categories?, order? }` |
+| `PUT /api/records`, `POST /api/records/import`, `DELETE /api/records` | 부분 교체(샘플 채우기·재전송) / 게스트 데이터 가져오기(비어 있는 부분만) / 전체 삭제 |
 
 ## DB (PostgreSQL)
 
-- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V6__feed_pages.sql`. 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
-- 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지는 DB. 기록·메모·목표·일정과 프롬프트 설정은 localStorage
+- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
+- 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
 - 로그인 전에도 익명 유저가 자동 생성되어(세션 쿠키 `shuim_session`, DB 에는 SHA-256 해시만) 글·힘내요를 쓸 수 있고, 가입하면 승격된다. 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1) 라 기존 계정이 그대로 로그인된다
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches` 에 저장. 샘플 유저 자동 답글은 `COMMUNITY_SIMULATE=true` 일 때만
 
@@ -115,7 +120,8 @@ frontend/
   app/                   화면 (page.tsx 홈, log, memo, goals, schedule, shout, feed, ranking, fund, admin, auth, summary, me, u/[id], messages)
   components/            TabBar, ui, Icons, CommunityUI(선 아이콘 액션·힘내요), Fist3D, FeedComposer, useLongPressReorder, AccelChart, HelpBanner
   lib/
-    storage.ts           localStorage (기록/메모/목표/일정/카테고리·순서/브리핑 캐시), 계정별 키, 샘플 데이터
+    storage.ts           기록/메모/목표/일정/카테고리·순서 읽기·쓰기 (localStorage 계정별 키 + 로그인 시 서버 전송), 브리핑 캐시, 샘플 데이터
+    records-sync.ts      서버 동기화: 화면 열 때 /api/records 받기, 쓸 때마다 보내기(키별 합침·순서 보장), 못 보낸 부분 다음에 재전송
     categories.ts        기본 카테고리(마음·몸·관계·돈·일) + 사용자 카테고리·순서 도우미
     community-core.ts    외침·피드 타입과 순수 계산 (클라이언트용; 서버는 Java 로 같은 로직)
     community.ts / social.ts / auth.ts / upload.ts   API 호출
@@ -128,17 +134,18 @@ backend/
     auth/                AuthService(세션 쿠키·scrypt), AuthController
     community/           Model(Store 레코드), CommunityLogic(가시성·주간 집계·자동 답글), CommunityService(SQL), CommunityController
     profile/ message/ upload/   프로필 · 1:1 메시지 · S3 프리사인
+    records/             RecordsService(개인 기록 SQL), RecordsLogic(저장 전 정리), RecordsController(/api/records)
     ai/                  ClaudeClient, Prompts, TodayService(브리핑·칭찬·사랑·점검 + 규칙 기반 대체), SummarizeService, AiController
   src/main/resources/
     application.yml      설정 (환경 변수 → app.*)
-    db/migration/        Flyway SQL V1~V6
+    db/migration/        Flyway SQL V1~V7
 ```
 
 ## 설계 메모
 
 - 브리핑은 하루 한 번 캐시해서 "새로운 주식창"처럼 자꾸 열어보게 만들지 않음
 - 브리핑 프롬프트: 사용자의 말을 인용, 떨어진 날에도 "다시 올라온 순간·지켜낸 것"을 먼저, 진단·투자 조언 금지
-- 개인 기록은 민감 정보라 서버 저장 시 암호화·동의 필요 (지금은 localStorage)
+- 개인 기록은 민감 정보라 로그인 계정만 서버에 저장하고 익명은 기기에만 둔다. 저장 데이터 암호화·동의 문구는 아직
 
 ## 불행 모금을 실제로 하려면
 
@@ -149,6 +156,6 @@ backend/
 
 ## 다음 단계 아이디어
 
-- 기록·메모·목표·일정을 DB 테이블(journal_entries 등)로 옮겨 기기 간 동기화
+- 브리핑·칭찬·점검 캐시도 서버에 두어 기기 간 하루 1회를 지키기
 - AI 프롬프트·모델 설정을 app_settings 테이블로
 - 메시지 웹소켓, 아침 알림 1회, PWA 홈 화면 설치

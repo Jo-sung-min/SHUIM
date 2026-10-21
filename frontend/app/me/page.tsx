@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Me, fetchMe, signOut } from "@/lib/auth";
-import { clearAll, formatPhone, loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, seedSampleData, streak, todayKey } from "@/lib/storage";
+import { clearAll, formatPhone, loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, seedSampleData, streak, syncRecords, todayKey } from "@/lib/storage";
 import { Notification, fetchCommunity, listNotifications } from "@/lib/community";
 import { MyProfile, fetchMyProfile, unreadMessages, updateMyProfile } from "@/lib/social";
 import { uploadAvailable, uploadImage } from "@/lib/upload";
@@ -27,6 +27,7 @@ export default function MePage() {
     setError(null);
     const m = await fetchMe(true);
     setMe(m);
+    await syncRecords();
     const j = loadJournal();
     const t = todayKey();
     setStats({ streak: streak(j), memos: loadMemos().length, goals: loadGoals().filter((g) => !g.doneAt).length, today: loadSchedule().filter((s) => s.date === t && !s.done).length });
@@ -114,7 +115,7 @@ export default function MePage() {
             <div className="row" style={{ justifyContent: "center", gap: 14, marginTop: 24 }}>
               <button className="text-btn muted" onClick={() => { seedSampleData(); reload(); }}>샘플 채우기</button>
               <span className="tiny" style={{ color: "var(--border)" }}>|</span>
-              <button className="text-btn muted" onClick={() => { if (!window.confirm("이 기기의 기록·메모·목표·일정을 지울까요? 되돌릴 수 없어요.")) return; clearAll(); reload(); }}>전체 삭제</button>
+              <button className="text-btn muted" onClick={() => { if (!window.confirm(user ? "이 계정의 기록·메모·목표·일정을 서버에서도 지울까요? 되돌릴 수 없어요." : "이 기기의 기록·메모·목표·일정을 지울까요? 되돌릴 수 없어요.")) return; clearAll(); reload(); }}>전체 삭제</button>
               {user && (<><span className="tiny" style={{ color: "var(--border)" }}>|</span><button className="text-btn muted" onClick={async () => { await signOut(); reload(); }}>로그아웃</button></>)}
             </div>
           </>

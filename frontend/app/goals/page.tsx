@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat, memoCatById } from "@/lib/categories";
-import { Goal, GoalStep, goalProgress, loadGoals, saveGoals, todayKey, uid } from "@/lib/storage";
+import { Goal, GoalStep, goalProgress, loadGoals, saveGoals, syncRecords, todayKey, uid } from "@/lib/storage";
 import { CatChips, CatTag, Empty, Hero, Sheet, TopBar, fmtDate } from "@/components/ui";
 import { IconCheck, IconPlus } from "@/components/Icons";
 
@@ -11,7 +11,7 @@ export default function GoalsPage() {
   const [editing, setEditing] = useState<Goal | "new" | null>(null);
   const [showDone, setShowDone] = useState(false);
 
-  useEffect(() => setGoals(loadGoals()), []);
+  useEffect(() => { syncRecords().then(() => setGoals(loadGoals())); }, []);
 
   const commit = (next: Goal[]) => {
     setGoals(next);

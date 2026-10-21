@@ -28,7 +28,9 @@ import {
   saveMoment,
   saveReview,
   seedSampleData,
+  sessionUserId,
   streak,
+  syncRecords,
   todayKey,
 } from "@/lib/storage";
 import { Account, fetchMe } from "@/lib/auth";
@@ -91,16 +93,25 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    fetchMe().then((m) => setMe(m.user)).catch(() => setMe(null));
-    setData({ journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() });
-    const b = loadBriefing();
-    setBriefing(b && b.date === today ? b : null);
-    const m = loadMoments();
-    setMoments({ praise: m.praise?.date === today ? m.praise : undefined, love: m.love?.date === today ? m.love : undefined });
-    const r = loadReview();
-    setReview(r && r.date === today ? r : null);
-    setReviewOpen(false);
-    setOpen(null);
+    const apply = () => {
+      setData({ journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() });
+      const b = loadBriefing();
+      setBriefing(b && b.date === today ? b : null);
+      const m = loadMoments();
+      setMoments({ praise: m.praise?.date === today ? m.praise : undefined, love: m.love?.date === today ? m.love : undefined });
+      const r = loadReview();
+      setReview(r && r.date === today ? r : null);
+      setReviewOpen(false);
+      setOpen(null);
+    };
+    // 익명이면 이 기기의 데이터를 바로. 로그인 계정이면 서버에서 받은 뒤에 (빈 화면이 잠깐 비치지 않게)
+    const guest = !sessionUserId();
+    if (guest) apply();
+    fetchMe()
+      .then((m) => setMe(m.user))
+      .catch(() => setMe(null))
+      .then(() => syncRecords())
+      .then((pulled) => { if (!guest || pulled) apply(); });
   }, [today]);
 
   useEffect(reload, [reload]);

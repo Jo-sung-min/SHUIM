@@ -1,6 +1,14 @@
 "use client";
 
 import { CATEGORIES, CUSTOM_MAX, Category, CategoryId, MemoCat, isCustomCategory } from "./categories";
+import { Section, installSyncHooks, pushRecords } from "./records-sync";
+
+/**
+ * 저장 위치: 화면은 언제나 localStorage(계정별 키)를 동기적으로 읽고 쓴다.
+ * 로그인한 계정이면 그 위에 서버(/api/records)를 얹는다 — 페이지를 열 때 서버에서 받아 덮어쓰고(syncRecords), 쓸 때마다 서버로 보낸다.
+ * 익명 상태는 예전처럼 이 기기에만 남는다. 브리핑·칭찬·점검 캐시와 알림 읽음 시각은 기기별 캐시라 서버로 보내지 않는다.
+ */
+export { syncRecords, flushRecords, resetRecordsSync } from "./records-sync";
 
 /* ---------- 기록(점수+메모) ---------- */
 
@@ -176,9 +184,13 @@ export const write = (key: string, value: unknown) => writeRaw(ns(key), value);
 export const readShared = readRaw;
 export const writeShared = writeRaw;
 
-/** 회원가입 직후: 게스트로 쓰던 개인 데이터를 새 계정으로 복사 (계정 데이터가 비어 있을 때만) */
+/**
+ * 가입·로그인 직후: 게스트로 쓰던 개인 데이터를 계정으로 복사 (이 기기의 계정 데이터가 비어 있을 때만)
+ * 하고, 같은 내용을 서버에도 한 번 올린다 (서버에서도 계정에 아직 없는 부분만 채운다 — POST /api/records/import).
+ * 세션 키(SESSION_KEY)가 이미 새 계정으로 바뀐 뒤에 불러야 서버로 보내진다.
+ */
 export function adoptGuestData(userId: string) {
-  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review, K.profile, K.notif];
+  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review, K.profile, K.notif, K.cats, K.catOrder];
   try {
     for (const key of personal) {
       const target = `${key}:${userId}`;
@@ -188,7 +200,54 @@ export function adoptGuestData(userId: string) {
   } catch {
     /* noop */
   }
+  const guest: Snapshot = {
+    journal: readRaw<Journal>(K.journal, {}),
+    log: readRaw<LogBook>(K.log, {}),
+    memos: readRaw<Memo[]>(K.memos, []),
+    goals: readRaw<Goal[]>(K.goals, []),
+    schedule: readRaw<ScheduleItem[]>(K.schedule, []),
+    categories: readRaw<Category[]>(K.cats, []),
+    order: readRaw<string[]>(K.catOrder, []),
+  };
+  const has = Object.keys(guest.journal).length || Object.keys(guest.log).length || guest.memos.length || guest.goals.length || guest.schedule.length || guest.categories.length || guest.order.length;
+  if (has) pushRecords([], "import", "POST", "/api/records/import", guest); // 한 번만: 실패해도 다시 보내지 않는다
 }
+
+/* ---------- 서버 동기화 연결 ---------- */
+
+/** GET /api/records 응답 = 개인 데이터 전체 (브리핑 캐시 같은 기기 캐시는 제외) */
+interface Snapshot {
+  journal: Journal;
+  log: LogBook;
+  memos: Memo[];
+  goals: Goal[];
+  schedule: ScheduleItem[];
+  categories: Category[];
+  order: string[];
+}
+
+installSyncHooks({
+  userId: sessionUserId,
+  sectionBody: (section: Section) => {
+    switch (section) {
+      case "journal": return { journal: loadJournal(), log: loadLog() };
+      case "memos": return { memos: loadMemos() };
+      case "goals": return { goals: loadGoals() };
+      case "schedule": return { schedule: loadSchedule() };
+      case "categories": return { categories: loadCustomCategories(), order: loadCategoryOrder() };
+    }
+  },
+  apply: (raw: unknown) => {
+    const s = (raw ?? {}) as Partial<Snapshot>;
+    write(K.journal, s.journal ?? {});
+    write(K.log, s.log ?? {});
+    write(K.memos, s.memos ?? []);
+    write(K.goals, s.goals ?? []);
+    write(K.schedule, s.schedule ?? []);
+    write(K.cats, s.categories ?? []);
+    write(K.catOrder, s.order ?? []);
+  },
+});
 
 export { uid, todayKey, addDays } from "./dates";
 import { uid, todayKey, addDays } from "./dates";
@@ -196,13 +255,19 @@ import { uid, todayKey, addDays } from "./dates";
 /* ---------- 기록 ---------- */
 
 export const loadJournal = () => read<Journal>(K.journal, {});
-export const saveJournal = (j: Journal) => write(K.journal, j);
+/** 기록 전체 교체 (샘플 채우기). 서버에는 오늘 한 행동(log)도 함께 보낸다 */
+export function saveJournal(j: Journal) {
+  write(K.journal, j);
+  pushRecords(["journal"], "journal", "PUT", "/api/records", { journal: j, log: loadLog() });
+}
 
+/** 하루치 기록. 서버에는 그 날의 기록과 한 행동을 함께 보낸다 (saveDayLog 와 같은 키라 연달아 불러도 한 번만 간다) */
 export function saveDay(date: string, day: DayRecord) {
   const j = loadJournal();
   if (Object.keys(day).length === 0) delete j[date];
   else j[date] = day;
-  saveJournal(j);
+  write(K.journal, j);
+  pushRecords(["journal"], `journal:${date}`, "PUT", `/api/records/journal/${date}`, { record: day, did: loadLog()[date]?.did ?? [] });
 }
 
 /** 연속 기록 일수 (오늘 또는 어제부터 거꾸로) */
@@ -224,17 +289,24 @@ export function saveDayLog(date: string, log: DayLog) {
   if (log.did.length === 0) delete b[date];
   else b[date] = log;
   write(K.log, b);
+  pushRecords(["journal"], `journal:${date}`, "PUT", `/api/records/journal/${date}`, { record: loadJournal()[date] ?? {}, did: log.did });
 }
 
 /* ---------- 메모 ---------- */
 
 export const loadMemos = () => read<Memo[]>(K.memos, []);
-export const saveMemos = (m: Memo[]) => write(K.memos, m);
+export function saveMemos(m: Memo[]) {
+  write(K.memos, m);
+  pushRecords(["memos"], "memos", "PUT", "/api/records/memos", m);
+}
 
 /* ---------- 목표 ---------- */
 
 export const loadGoals = () => read<Goal[]>(K.goals, []);
-export const saveGoals = (g: Goal[]) => write(K.goals, g);
+export function saveGoals(g: Goal[]) {
+  write(K.goals, g);
+  pushRecords(["goals"], "goals", "PUT", "/api/records/goals", g);
+}
 
 export function goalProgress(g: Goal): number {
   if (g.doneAt) return 1;
@@ -245,15 +317,18 @@ export function goalProgress(g: Goal): number {
 /* ---------- 일정 ---------- */
 
 export const loadSchedule = () => read<ScheduleItem[]>(K.schedule, []);
-export const saveSchedule = (s: ScheduleItem[]) => write(K.schedule, s);
+export function saveSchedule(s: ScheduleItem[]) {
+  write(K.schedule, s);
+  pushRecords(["schedule"], "schedule", "PUT", "/api/records/schedule", s);
+}
 
-/* ---------- 브리핑 캐시 (하루 1개) ---------- */
+/* ---------- 브리핑 캐시 (하루 1개, 기기별) ---------- */
 
 export const loadBriefing = () => read<Briefing | null>(K.briefing, null);
 export const saveBriefing = (b: Briefing) => write(K.briefing, b);
 export function clearBriefing() {
   try {
-    window.localStorage.removeItem(K.briefing);
+    window.localStorage.removeItem(ns(K.briefing));
   } catch {
     /* noop */
   }
@@ -268,7 +343,7 @@ export function saveMoment(m: Moment) {
 }
 export function clearMoments() {
   try {
-    window.localStorage.removeItem(K.moments);
+    window.localStorage.removeItem(ns(K.moments));
   } catch {
     /* noop */
   }
@@ -300,10 +375,17 @@ export function formatPhone(raw: string): string {
 
 /* ---------- 사용자 카테고리 (기록 점수용, 계정별) ---------- */
 export const loadCustomCategories = () => read<Category[]>(K.cats, []).filter((c) => c && isCustomCategory(c.id));
-export const saveCustomCategories = (cats: Category[]) => write(K.cats, cats.filter((c) => isCustomCategory(c.id)).slice(0, CUSTOM_MAX));
+export function saveCustomCategories(cats: Category[]) {
+  const next = cats.filter((c) => isCustomCategory(c.id)).slice(0, CUSTOM_MAX);
+  write(K.cats, next);
+  pushRecords(["categories"], "categories", "PUT", "/api/records/categories", { categories: next });
+}
 /** 기록 카드 순서 (카테고리 id 배열, 계정별) */
 export const loadCategoryOrder = () => read<string[]>(K.catOrder, []).filter((x) => typeof x === "string");
-export const saveCategoryOrder = (ids: string[]) => write(K.catOrder, ids);
+export function saveCategoryOrder(ids: string[]) {
+  write(K.catOrder, ids);
+  pushRecords(["categories"], "category-order", "PUT", "/api/records/categories", { order: ids });
+}
 
 export const loadNotifSeen = () => read<number>(K.notif, 0);
 export const markNotifSeen = () => write(K.notif, Date.now());
@@ -318,7 +400,7 @@ export const savePrompts = (p: PromptOverrides) => writeShared(PROMPTS_KEY, p);
 /* ---------- 전체 삭제 ---------- */
 
 export function clearAll() {
-  // 현재 계정(또는 게스트)의 개인 데이터만 (커뮤니티는 서버 DB)
+  // 현재 계정(또는 게스트)의 개인 데이터만 (커뮤니티는 서버 DB). 로그인 계정이면 서버의 기록도 지운다
   for (const k of Object.values(K)) {
     try {
       window.localStorage.removeItem(ns(k));
@@ -326,6 +408,7 @@ export function clearAll() {
       /* noop */
     }
   }
+  pushRecords(["journal", "memos", "goals", "schedule", "categories"], "clear", "DELETE", "/api/records");
 }
 
 /* ---------- 데모용 샘플 ---------- */
@@ -370,8 +453,8 @@ export function seedSampleData() {
     j[key] = day;
     log[key] = { did: didPool[idx % didPool.length] };
   }
-  saveJournal(j);
   write(K.log, log);
+  saveJournal(j); // 서버에는 기록과 한 행동이 함께 간다
 
   const t = Date.now();
   const DAY = 86400000;
