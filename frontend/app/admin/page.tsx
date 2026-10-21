@@ -9,8 +9,10 @@ import { Me, fetchMe } from "@/lib/auth";
 import { DEFAULT_MODEL, DEFAULT_PROMPTS, MODEL_OPTIONS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
 import { PromptOverrides, loadPrompts, savePrompts } from "@/lib/storage";
 import { LoadError, run } from "@/components/CommunityUI";
+import SiteAdmin from "./SiteAdmin";
 
-type View = "reports" | "prompts";
+type View = "reports" | "prompts" | "site";
+const VIEW_EYEBROW: Record<View, string> = { reports: "외침 · 신고 누적 글", prompts: "AI 프롬프트", site: "사이트 설정 · SEO" };
 
 export default function AdminPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
@@ -54,12 +56,13 @@ export default function AdminPage() {
 
   return (
     <>
-      <TopBar title="관리자" eyebrow={view === "reports" ? "외침 · 신고 누적 글" : "AI 프롬프트"} right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
+      <TopBar title="관리자" eyebrow={VIEW_EYEBROW[view]} right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
       <div className="screen">
-        <Segmented value={view} onChange={setView} options={[{ value: "reports", label: `신고 검토${flagged.length ? ` ${flagged.length}` : ""}` }, { value: "prompts", label: "프롬프트" }]} />
+        <Segmented value={view} onChange={setView} options={[{ value: "reports", label: `신고 검토${flagged.length ? ` ${flagged.length}` : ""}` }, { value: "prompts", label: "프롬프트" }, { value: "site", label: "사이트" }]} />
         <div style={{ height: 12 }} />
 
         {view === "prompts" && <PromptAdmin />}
+        {view === "site" && <SiteAdmin />}
 
         {view === "reports" && (
           <>

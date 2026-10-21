@@ -59,7 +59,14 @@ npm run dev
 ## 배포
 
 - **백엔드**: Java 21 이 도는 곳 어디든 (Railway, Fly.io, EC2, Cloud Run…). `cd backend && ./gradlew bootJar` → `build/libs/shuim-backend-0.0.1-SNAPSHOT.jar` 를 `java -jar` 로 실행하고 위 환경 변수를 넣는다. 풀은 인스턴스마다 하나(`DB_POOL_MAX` 만큼)만 열리므로 서버리스 때처럼 Supabase 연결 한도에 걸리지 않는다
-- **프론트**: Vercel. 환경 변수는 `BACKEND_ORIGIN=https://<백엔드 주소>` 하나. `/api/*` 가 같은 출처로 프록시되므로 세션 쿠키가 그대로 오간다. HTTPS 면 백엔드에 `AUTH_SECURE_COOKIE=true`
+- **프론트**: Vercel. 필수 환경 변수는 `BACKEND_ORIGIN=https://<백엔드 주소>` 하나. `/api/*` 가 같은 출처로 프록시되므로 세션 쿠키가 그대로 오간다. HTTPS 면 백엔드에 `AUTH_SECURE_COOKIE=true`. 선택: `NEXT_PUBLIC_SITE_URL`(기본 `https://sorow.co.kr`, canonical·sitemap·OG 절대 주소), `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`, `NEXT_PUBLIC_NAVER_SITE_VERIFICATION`(서치 콘솔·서치어드바이저 소유 확인 메타)
+
+## SEO · 사이트 설정
+
+- 메타 태그는 `frontend/app/layout.tsx` 의 `generateMetadata` 가 한곳에서 만든다: 제목 템플릿(`%s · 소로우`), 설명, 키워드, canonical, Open Graph(ko_KR, 1200×630 이미지), Twitter 카드, robots, 파비콘·애플 아이콘, 매니페스트, 소유 확인 메타, JSON-LD(WebSite). 기본 설명은 **“소로우 · 슬픔을 나누면, 우리는 가까워진다.”** (`frontend/lib/site.ts` 의 `SITE`)
+- 라우트별 `layout.tsx` 가 제목·설명·canonical 을 붙이고, 개인 화면(기록·메모·목표·일정·흐름·나·메시지·관리자)은 `noindex`. `robots.txt`·`sitemap.xml`·`manifest.webmanifest` 는 `app/robots.ts`·`app/sitemap.ts`·`app/manifest.ts` 가 만든다
+- 기본 파비콘·앱 아이콘은 `public/favicon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`, `apple-icon.png`. 기본 공유 이미지는 `GET /og` 가 Pretendard 로 제목·한 줄 소개를 그려 준다
+- **관리자 › 사이트** 탭에서 사이트 제목·설명을 고치고 **파비콘(이미지 첨부 → 256×256 PNG)·공유 이미지(1200×630 JPEG)** 를 올릴 수 있다. 브라우저가 줄여서 data URL 로 보내고 서버가 `site_settings`(V10) 에 base64 로 저장, `GET /api/site/favicon`·`/api/site/og` 가 내려준다 (S3 불필요). 메타는 1분 캐시 뒤 반영
 - 프론트와 백엔드를 다른 도메인에서 **직접** 호출하려면 백엔드 `APP_ALLOWED_ORIGINS` 에 프론트 주소를 넣고 `fetch` 에 `credentials: "include"` 가 필요하다 (지금 코드는 프록시 전제)
 
 ## 탭
@@ -95,6 +102,7 @@ npm run dev
 | `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필 / 공개 프로필 |
 | `GET/POST /api/messages`, `GET/POST /api/messages/{id}` | 대화 목록·보내기 / 대화 내용·읽음 |
 | `GET/POST /api/upload/presign` | 사진 업로드 프리사인 URL |
+| `GET/PUT /api/site`, `GET /api/site/{favicon,og}` | 사이트 설정(제목·설명·이미지 바뀐 시각) 읽기 / 관리자 변경 `{ title?, description?, favicon?: dataUrl\|null, og?: dataUrl\|null }` / 올린 파비콘·공유 이미지 바이트 |
 | `POST /api/today`, `POST /api/summarize` | AI 브리핑·칭찬·사랑하기·점검 / 흐름 정리 |
 | `GET /api/records` | 로그인 계정의 개인 기록 전체 (journal·log·memos·goals·schedule·categories·order). 익명은 401 |
 | `PUT /api/records/journal/{date}` | 하루 기록 `{ record, did }` |
@@ -104,7 +112,7 @@ npm run dev
 
 ## DB (PostgreSQL)
 
-- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
+- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
 - 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
 - 로그인 전에도 익명 유저가 자동 생성되어(세션 쿠키 `shuim_session`, DB 에는 SHA-256 해시만) 글·힘내요를 쓸 수 있고, 가입하면 승격된다. 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1) 라 기존 계정이 그대로 로그인된다
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches` 에 저장. 샘플 유저 자동 답글은 `COMMUNITY_SIMULATE=true` 일 때만
