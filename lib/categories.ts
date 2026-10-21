@@ -27,6 +27,15 @@ export const CUSTOM_COLORS = ["var(--c-mind)", "var(--c-body)", "var(--c-relatio
 export const CUSTOM_MAX = 5;
 export const isCustomCategory = (id: string) => id.startsWith("c_");
 export const newCategoryId = () => `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+/** 사용자가 정한 순서(id 배열)대로 정렬. 순서에 없는 카테고리는 기본 순서로 뒤에 붙는다 */
+export function orderCategories(cats: Category[], order: string[]): Category[] {
+  if (!order.length) return cats;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return cats
+    .map((c, i) => ({ c, key: rank.has(c.id) ? rank.get(c.id)! : order.length + i }))
+    .sort((a, b) => a.key - b.key)
+    .map((x) => x.c);
+}
 /** 기본 + 사용자 카테고리 */
 export const allCategories = (custom: Category[] = []): Category[] => [...CATEGORIES, ...custom.filter((c) => isCustomCategory(c.id))];
 

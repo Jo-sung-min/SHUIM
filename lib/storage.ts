@@ -131,6 +131,7 @@ const K = {
   profile: "maeum-accel:profile:v1",
   notif: "maeum-accel:notif:v1",
   cats: "maeum-accel:cats:v1",
+  catOrder: "maeum-accel:cat-order:v1",
 } as const;
 /** 계정과 무관하게 기기 전체에서 공유하는 키 (커뮤니티 샘플 세계, 프롬프트, 계정 목록, 세션) */
 export const SESSION_KEY = "maeum-accel:session:v1";
@@ -300,6 +301,9 @@ export function formatPhone(raw: string): string {
 /* ---------- 사용자 카테고리 (기록 점수용, 계정별) ---------- */
 export const loadCustomCategories = () => read<Category[]>(K.cats, []).filter((c) => c && isCustomCategory(c.id));
 export const saveCustomCategories = (cats: Category[]) => write(K.cats, cats.filter((c) => isCustomCategory(c.id)).slice(0, CUSTOM_MAX));
+/** 기록 카드 순서 (카테고리 id 배열, 계정별) */
+export const loadCategoryOrder = () => read<string[]>(K.catOrder, []).filter((x) => typeof x === "string");
+export const saveCategoryOrder = (ids: string[]) => write(K.catOrder, ids);
 
 export const loadNotifSeen = () => read<number>(K.notif, 0);
 export const markNotifSeen = () => write(K.notif, Date.now());

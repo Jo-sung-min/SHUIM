@@ -1083,3 +1083,13 @@ textarea.lined {
 .cat-del:active { background: var(--glass-bg-hover); color: var(--text); }
 .emoji-pick .chip { padding: 6px 9px; font-size: 16px; }
 .cat-form .inline-input .btn.ghost { flex: none; }
+
+/* ===== 꾹 눌러 끌기 (기록 카드 순서) ===== */
+.card.draggable { -webkit-touch-callout: none; user-select: none; will-change: transform; }
+.card.draggable .note { user-select: text; }
+.card.draggable.dragging {
+  position: relative; z-index: 5; transition: none; transform-origin: center;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--glass-strong-border);
+  background: var(--glass-strong-bg);
+}
+.card.draggable.shifting { transition: transform 0.18s ease; }

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ACTION_PRESETS, CATEGORIES, CUSTOM_COLORS, CUSTOM_EMOJIS, CUSTOM_MAX, Category, CategoryId, SCORE_MAX, SCORE_MIN, allCategories, categoryById, isCustomCategory, newCategoryId } from "@/lib/categories";
-import { DayRecord, Journal, loadCustomCategories, loadJournal, loadLog, saveCustomCategories, saveDay, saveDayLog, streak, todayKey } from "@/lib/storage";
+import { ACTION_PRESETS, CATEGORIES, CUSTOM_COLORS, CUSTOM_EMOJIS, CUSTOM_MAX, Category, CategoryId, SCORE_MAX, SCORE_MIN, allCategories, isCustomCategory, newCategoryId, orderCategories } from "@/lib/categories";
+import { DayRecord, Journal, loadCategoryOrder, loadCustomCategories, loadJournal, loadLog, saveCategoryOrder, saveCustomCategories, saveDay, saveDayLog, streak, todayKey } from "@/lib/storage";
+import { useLongPressReorder } from "@/components/useLongPressReorder";
 import { hasCrisisSignal } from "@/lib/crisis";
 import { biggestShifts, lastNDays, series, volatility } from "@/lib/accel";
 import AccelChart from "@/components/AccelChart";
@@ -83,14 +84,24 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number, tota
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newEmoji, setNewEmoji] = useState(CUSTOM_EMOJIS[0]);
+  const [order, setOrder] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cats = useMemo(() => allCategories(customCats), [customCats]);
+  const cats = useMemo(() => orderCategories(allCategories(customCats), order), [customCats, order]);
+  /** 카드를 꾹 눌렀다가 끌어서 순서 바꾸기 (사용자별 저장) */
+  const reorder = useLongPressReorder(
+    cats.map((c) => c.id),
+    (ids) => {
+      setOrder(ids);
+      saveCategoryOrder(ids);
+    }
+  );
 
   useEffect(() => {
     const j = loadJournal();
     setDay(j[date] ?? {});
     setDid(loadLog()[date]?.did ?? []);
     setCustomCats(loadCustomCategories());
+    setOrder(loadCategoryOrder());
     const prevKeys = Object.keys(j).filter((k) => k < date).sort();
     setPrev(prevKeys.length ? j[prevKeys[prevKeys.length - 1]] : null);
     setReady(true);
@@ -204,13 +215,13 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number, tota
 
       {crisis && <HelpBanner alert />}
 
-      <div className="stack">
+      <div className="stack" ref={reorder.listRef}>
         {cats.map((c) => {
           const e = day[c.id];
           const p = prevScoreOf(c.id);
           const delta = e ? e.delta ?? e.score - p : null;
           return (
-            <section key={c.id} className="card">
+            <section key={c.id} {...reorder.bind(c.id)} className={`card draggable ${reorder.draggingId === c.id ? "dragging" : ""}`}>
               <div className="entry-head">
                 <div className="entry-title">
                   {c.emoji} {c.label}
@@ -297,25 +308,19 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number, tota
 
 /* ================= 흐름 ================= */
 
-type Sel = CategoryId | "all";
-
+/** 흐름은 항상 전체 평균(기본 + 내가 추가한 카테고리 점수를 모두 합산) */
 function Flow() {
   const [journal, setJournal] = useState<Journal | null>(null);
-  const [sel, setSel] = useState<Sel>("all");
   const [range, setRange] = useState<7 | 14 | 30>(14);
-  const [cats, setCats] = useState<Category[]>(CATEGORIES);
 
-  useEffect(() => {
-    setJournal(loadJournal());
-    setCats(allCategories(loadCustomCategories()));
-  }, []);
+  useEffect(() => setJournal(loadJournal()), []);
 
   const dates = useMemo(() => lastNDays(range), [range]);
-  const points = useMemo(() => (journal ? series(journal, dates, sel) : []), [journal, dates, sel]);
+  const points = useMemo(() => (journal ? series(journal, dates, "all") : []), [journal, dates]);
   const recorded = points.filter((p) => p.level !== null).length;
   const { drops, rises } = biggestShifts(points);
   const vol = volatility(points);
-  const color = sel === "all" ? "var(--text)" : categoryById(sel, cats).color;
+  const color = "var(--text)";
 
   if (!journal) return null;
 
@@ -329,23 +334,9 @@ function Flow() {
 
   return (
     <>
-      <div className="chips" style={{ marginTop: 14 }} role="radiogroup">
-        <button className={`chip ${sel === "all" ? "on" : ""}`} onClick={() => setSel("all")}>전체 평균</button>
-        {cats.map((c) => (
-          <button
-            key={c.id}
-            className={`chip cat ${sel === c.id ? "on" : ""}`}
-            style={{ ["--chip" as string]: c.color }}
-            onClick={() => setSel(c.id)}
-          >
-            {c.emoji} {c.label}
-          </button>
-        ))}
-      </div>
-
-      <section className="card" style={{ marginTop: 6 }}>
+      <section className="card" style={{ marginTop: 14 }}>
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-          <span className="tiny muted">위는 그날 위치, 아래는 직전 대비 변화</span>
+          <span className="tiny muted">전체 평균 · 위는 그날 위치, 아래는 직전 대비 변화</span>
           <div className="segmented" style={{ padding: 3 }}>
             {[7, 14, 30].map((r) => (
               <button key={r} className={range === r ? "on" : ""} style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setRange(r as 7 | 14 | 30)}>
@@ -356,7 +347,7 @@ function Flow() {
         </div>
         <AccelChart points={points} color={color} />
         <div className="legend">
-          <span><i className="dot" style={{ background: color }} /> 위치</span>
+          <span><i className="dot" style={{ background: color }} /> 전체 평균 위치</span>
           <span><i className="dot" style={{ background: "var(--up)" }} /> 올라간 날</span>
           <span><i className="dot" style={{ background: "var(--down)" }} /> 내려간 날</span>
         </div>

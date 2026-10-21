@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CATEGORIES, Category, CategoryId, allCategories } from "@/lib/categories";
-import { Journal, loadCustomCategories, loadJournal } from "@/lib/storage";
+import { CATEGORIES, Category, CategoryId, allCategories, orderCategories } from "@/lib/categories";
+import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal } from "@/lib/storage";
 import { lastNDays } from "@/lib/accel";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar } from "@/components/ui";
@@ -28,7 +28,7 @@ export default function SummaryPage() {
 
   useEffect(() => {
     setJournal(loadJournal());
-    setCats(allCategories(loadCustomCategories()));
+    setCats(orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()));
   }, []);
 
   const dates = lastNDays(range);
