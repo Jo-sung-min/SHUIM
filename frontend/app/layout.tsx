@@ -3,9 +3,9 @@ import "./globals.css";
 import TabBar from "@/components/TabBar";
 
 export const metadata: Metadata = {
-  title: "마음 가속도",
-  description: "위치가 아니라 변화를 기록하고, 매일 긍정적인 방향으로 속도를 붙이는 메모 앱",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "마음 가속도" },
+  title: "소로우 (SOROW)",
+  description: "소로우 — 슬픔을 나란히 나누는 공간. 위치가 아니라 변화를 기록하고, 매일 긍정적인 방향으로 속도를 붙이는 메모 앱",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "소로우" },
 };
 
 export const viewport: Viewport = {

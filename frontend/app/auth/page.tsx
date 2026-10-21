@@ -126,7 +126,7 @@ export default function AuthPage() {
 
   return (
     <>
-      <TopBar title={mode === "signup" ? "회원가입" : "로그인"} eyebrow="마음 가속도" right={<Link href="/" className="icon-btn" aria-label="홈으로"><IconChevronL /></Link>} />
+      <TopBar title={mode === "signup" ? "회원가입" : "로그인"} eyebrow="소로우 (SOROW) · 슬픔을 나란히 나누는 공간" right={<Link href="/" className="icon-btn" aria-label="홈으로"><IconChevronL /></Link>} />
       <div className="screen">
         <Hero label="계정" title={mode === "signup" ? "나만의 기록을 시작해요" : "다시 돌아왔어요"} sub={mode === "signup" ? "가입하면 지금까지 이 기기에 쓴 기록을 그대로 가져와요. 첫 번째 계정은 관리자가 돼요." : undefined} />
         <div style={{ marginTop: 12 }}>
