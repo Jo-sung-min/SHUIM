@@ -28,13 +28,14 @@ import {
   saveMoment,
   saveReview,
   seedSampleData,
+  streak,
   todayKey,
 } from "@/lib/storage";
 import { Account, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
-import { IconCheck, IconNote, IconSparkle, IconUser } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser } from "@/components/Icons";
 
 interface Data {
   journal: Journal;
@@ -173,6 +174,12 @@ export default function HomePage() {
   if (!data) return <TopBar title="오늘의 나" eyebrow={fmtDate(today)} />;
 
   const d = briefing?.data;
+  /** 오늘 기록 현황: 다 채우면 버튼 대신 문구 */
+  const total = orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()).length;
+  const filled = Object.keys(data.journal[today] ?? {}).length;
+  const didCount = data.log[today]?.did.length ?? 0;
+  const days = streak(data.journal);
+  const logDone = filled >= total && total > 0;
   const dirLabel = { up: "▲ 올라오는 중", flat: "→ 유지 중", down: "▼ 내려간 날" } as const;
   const crisis = briefing?.crisis || moments.praise?.crisis || moments.love?.crisis || review?.crisis;
   const openMoment = open ? moments[open] : undefined;
@@ -218,6 +225,22 @@ export default function HomePage() {
             <div className="label">오늘</div>
             <h2>어제보다 어디로 움직였을까요</h2>
           </section>
+        )}
+
+        {/* 오늘 기록 현황: 채우기 전엔 버튼, 다 채우면 문구만 */}
+        {logDone ? (
+          <p className="log-done">
+            <b>고생했어요, 오늘도 화이팅</b>
+            <small>연속 {days}일째 · 기분 {filled}/{total}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
+          </p>
+        ) : (
+          <Link href="/log" className="card log-cta">
+            <span>
+              <b>오늘 기록을 채워주세요</b>
+              <small>{days > 0 ? `연속 ${days}일째 · ` : ""}기분 {filled}/{total}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
+            </span>
+            <IconChevronR />
+          </Link>
         )}
 
         {/* 액션 4개 */}
