@@ -12,6 +12,12 @@ const base = (p: P): P => ({
   ...p,
 });
 
+/** 카카오 말풍선 (카카오로 시작하기 버튼용, 채움) */
+export const IconKakao = (p: P) => (
+  <svg {...base({ width: 18, height: 18, fill: "currentColor", stroke: "none", ...p })}>
+    <path d="M12 3C6.5 3 2 6.5 2 10.8c0 2.7 1.8 5.1 4.5 6.5l-1 3.7c-.1.3.2.5.5.4l4.4-2.9c.5.1 1 .1 1.6.1 5.5 0 10-3.5 10-7.8S17.5 3 12 3Z" />
+  </svg>
+);
 export const IconSun = (p: P) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="4" />

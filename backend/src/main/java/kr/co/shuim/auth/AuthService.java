@@ -54,8 +54,16 @@ public class AuthService {
         return null;
     }
 
-    /** 세션을 새로 만들고 쿠키를 내려준다 (가입·로그인·카카오 로그인 공용) */
+    /** 세션을 새로 만들고 쿠키를 내려준다 */
     public void issueSession(HttpServletResponse res, String userId) { setSessionCookie(res, userId); }
+
+    /** 다른 유저로 세션을 바꾼다 (카카오 로그인): 지금(익명) 세션 행은 지우고 새 토큰을 발급 */
+    @Transactional
+    public void switchSession(HttpServletRequest req, HttpServletResponse res, String userId) {
+        String token = cookieToken(req);
+        if (token != null) jdbc.sql("DELETE FROM auth_sessions WHERE token_hash = ?").param(sha256(token)).update();
+        setSessionCookie(res, userId);
+    }
 
     private void setSessionCookie(HttpServletResponse res, String userId) {
         String token = Ids.randomHex(32);
@@ -127,10 +135,14 @@ public class AuthService {
     @Transactional
     public DbUser signIn(HttpServletRequest req, HttpServletResponse res, String email, String password) {
         String e = email.strip().toLowerCase();
-        record Row(DbUser user, String hash, String salt) {}
+        record Row(DbUser user, String hash, String salt, String kakaoId) {}
         Optional<Row> row = jdbc.sql("SELECT * FROM users WHERE email = ?").param(e)
-            .query((rs, i) -> new Row(DbUser.MAPPER.mapRow(rs, i), rs.getString("password_hash"), rs.getString("password_salt"))).optional();
-        if (row.isEmpty() || row.get().hash() == null) throw ApiException.badRequest("가입되지 않은 이메일이에요.");
+            .query((rs, i) -> new Row(DbUser.MAPPER.mapRow(rs, i), rs.getString("password_hash"), rs.getString("password_salt"), rs.getString("kakao_id"))).optional();
+        if (row.isEmpty()) throw ApiException.badRequest("가입되지 않은 이메일이에요.");
+        // 카카오로 만든 계정은 비밀번호가 없다 (password_hash NULL 이지만 익명은 아님)
+        if (row.get().hash() == null) {
+            throw ApiException.badRequest(row.get().kakaoId() != null ? "카카오로 가입한 계정이에요. 카카오로 시작하기를 눌러요." : "가입되지 않은 이메일이에요.");
+        }
         String hash = hashPassword(password, row.get().salt());
         if (!MessageDigest.isEqual(hash.getBytes(StandardCharsets.UTF_8), row.get().hash().getBytes(StandardCharsets.UTF_8))) throw ApiException.badRequest("비밀번호가 맞지 않아요.");
         signOut(req, res);

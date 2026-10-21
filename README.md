@@ -46,14 +46,15 @@ npm run dev
 | `APP_ALLOWED_ORIGINS` | 프론트를 프록시 없이 직접 붙일 때의 CORS 허용 출처 |
 | `AUTH_SECURE_COOKIE` | HTTPS 운영에서 `true` (세션 쿠키 Secure) |
 | `COMMUNITY_SIMULATE` | 개발용 샘플 유저 자동 답글 (운영 `false`) |
-| `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` | 카카오 로그인 (아래 참고). 비우면 카카오 버튼 숨김 |
+| `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET` | 카카오 로그인 (아래 참고). `KAKAO_CLIENT_ID` 가 비면 `GET /api/auth/me` 가 `kakao: false` 를 내려 카카오 버튼 숨김 |
 
 ### 카카오 로그인 설정
 
-1. [Kakao Developers](https://developers.kakao.com) › 내 애플리케이션 › 앱 추가. **앱 키 › REST API 키**를 `KAKAO_REST_API_KEY` 에
-2. 카카오 로그인 › 활성화 ON. **Redirect URI** 에 `http://localhost:3000/api/auth/oauth/kakao/callback` (운영은 `https://<프론트 도메인>/api/auth/oauth/kakao/callback`) 등록. 같은 값을 `KAKAO_REDIRECT_URI` 에
-3. 동의항목: 닉네임(필수), 카카오계정(이메일)은 선택. 보안 › Client Secret 을 켰으면 `KAKAO_CLIENT_SECRET` 에
-4. 흐름: 계정 화면 "카카오로 시작하기" → `/api/auth/oauth/kakao` → 카카오 동의 → `…/callback` 이 프론트 프록시를 거쳐 백엔드로 들어가 세션 쿠키를 프론트 출처에 남기고 `/auth?oauth=kakao` 로 돌아옴 → 이 기기의 게스트 기록을 계정으로 옮기고 홈으로. 로그인 전 익명 유저로 쓴 글·힘내요는 그 계정으로 이어진다 (`users.kakao_id`, V8)
+1. [Kakao Developers](https://developers.kakao.com) › 내 애플리케이션 › 앱 추가. **앱 키 › REST API 키**를 `KAKAO_CLIENT_ID` 에
+2. 플랫폼 › Web › **사이트 도메인**: `https://sorow.co.kr` (개발은 `http://localhost:3000`)
+3. 카카오 로그인 › 활성화 ON. **Redirect URI** 에 `https://sorow.co.kr/api/auth/kakao/callback` 과 `http://localhost:3000/api/auth/kakao/callback` 둘 다 등록. 서버는 `APP_ORIGIN + /api/auth/kakao/callback` 을 쓰므로 따로 설정할 값은 없다
+4. 동의항목: 닉네임(필수), 카카오계정(이메일)은 선택. 보안 › Client Secret 을 "사용함"으로 켰으면 `KAKAO_CLIENT_SECRET` 에
+5. 흐름: 계정 화면 "카카오로 시작하기" → `GET /api/auth/kakao` 가 state 를 httpOnly 쿠키(5분)에 두고 카카오 동의 화면으로 → `…/api/auth/kakao/callback?code&state` 가 프론트 프록시를 거쳐 백엔드로 들어가 state 검증 → 토큰 교환 → 프로필 조회 → `users.kakao_id` 로 찾거나 만들고 세션 쿠키를 프론트 출처에 남긴 뒤 `/?kakao=1` 로 → 홈이 이 기기의 게스트 기록을 계정으로 옮긴다. 실패하면 `/auth?error=kakao`. 로그인 전 익명 유저로 쓴 글·힘내요는 그 계정으로 이어진다 (`users.kakao_id`, V8·V9). 카카오 계정은 비밀번호가 없어 이메일 로그인 폼에서는 "카카오로 가입한 계정이에요"
 
 ## 배포
 
@@ -78,7 +79,7 @@ npm run dev
 | **공개 프로필** (`/u/아이디`) | 사진·닉네임·소개·크리에이터 배지, 활동 수, 위로글/외침 목록, 팔로우·메시지 보내기 |
 | **메시지** (`/messages`) | 1:1 대화함과 대화 화면(5초 폴링, 읽음 표시) |
 | **나** (`/me`) | 프로필 편집(사진 업로드/주소, 닉네임, 소개 = 공개 / 이름·전화 = 나만), 내 공간 그리드, 알림(내 글의 댓글·내가 위로한 글의 새 댓글) |
-| **계정** | 회원가입·로그인(세션 쿠키, scrypt). 로그인 전엔 익명 유저로 활동하고 가입 시 그 유저가 승격. **비밀번호를 가진 첫 계정이 관리자** |
+| **계정** | 회원가입·로그인(세션 쿠키, scrypt)과 **카카오로 시작하기**(서버 사이드 인가 코드, `KAKAO_CLIENT_ID` 가 있을 때만 보임). 로그인 전엔 익명 유저로 활동하고 가입·카카오 로그인 시 그 유저가 승격. **비밀번호를 가진 첫 계정이 관리자** |
 | **관리자 › 프롬프트** | 브리핑·칭찬·사랑하기·점검 4개 시스템 프롬프트와 모델을 화면에서 변경. 요청마다 서버로 전달되어 기본값 대신 사용 |
 
 기록에 많이 힘든 표현이 보이면 109 등 도움 받을 곳을 먼저 띄웁니다.
@@ -88,7 +89,8 @@ npm run dev
 | 경로 | 설명 |
 | --- | --- |
 | `GET /api/db` | DB 연결 상태 |
-| `GET /api/auth/me`, `POST /api/auth/{signup,login,logout,nick}` | 계정 |
+| `GET /api/auth/me`, `POST /api/auth/{signup,login,logout,nick}` | 계정 (`me` 에 `kakao`: 카카오 로그인 켜짐 여부) |
+| `GET /api/auth/kakao`, `GET /api/auth/kakao/callback` | 카카오 로그인 시작(동의 화면으로 302) / 카카오 콜백(세션 쿠키 발급 후 `/?kakao=1` 로 302, 실패 시 `/auth?error=kakao`) |
 | `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
 | `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필 / 공개 프로필 |
 | `GET/POST /api/messages`, `GET/POST /api/messages/{id}` | 대화 목록·보내기 / 대화 내용·읽음 |

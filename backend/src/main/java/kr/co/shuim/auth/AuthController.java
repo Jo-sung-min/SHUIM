@@ -12,8 +12,12 @@ import java.util.Optional;
 @RestController
 public class AuthController {
     private final AuthService auth;
+    private final KakaoLoginService kakao;
 
-    public AuthController(AuthService auth) { this.auth = auth; }
+    public AuthController(AuthService auth, KakaoLoginService kakao) {
+        this.auth = auth;
+        this.kakao = kakao;
+    }
 
     static Map<String, Object> publicUser(DbUser u) {
         if (u == null || u.anonymous()) return null;
@@ -26,7 +30,7 @@ public class AuthController {
         return m;
     }
 
-    /** GET /api/auth/me — 로그인한 계정(익명 제외)과 관리자 여부 */
+    /** GET /api/auth/me — 로그인한 계정(익명 제외), 관리자 여부, 카카오 로그인이 켜져 있는지 */
     @GetMapping("/api/auth/me")
     public Map<String, Object> me(HttpServletRequest req) {
         Optional<DbUser> u = auth.currentUser(req);
@@ -34,6 +38,7 @@ public class AuthController {
         out.put("user", publicUser(u.orElse(null)));
         out.put("admin", auth.isAdmin(u.orElse(null)));
         out.put("configured", true);
+        out.put("kakao", kakao.configured()); // KAKAO_CLIENT_ID 가 비어 있으면 false → 프론트가 버튼을 숨긴다
         out.put("anonymousId", u.filter(DbUser::anonymous).map(DbUser::id).orElse(null));
         return out;
     }

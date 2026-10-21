@@ -32,7 +32,7 @@ import {
   syncRecords,
   todayKey,
 } from "@/lib/storage";
-import { Account, fetchMe } from "@/lib/auth";
+import { Account, completeKakaoLogin, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
@@ -106,7 +106,10 @@ export default function HomePage() {
     // 익명이면 이 기기의 데이터를 바로. 로그인 계정이면 서버에서 받은 뒤에 (빈 화면이 잠깐 비치지 않게)
     const guest = !sessionUserId();
     if (guest) apply();
-    fetchMe()
+    // 카카오 로그인 콜백은 /?kakao=1 로 돌아온다: 세션 쿠키는 이미 있으니 가입 때처럼 게스트 기록을 계정으로 옮긴 뒤 진행
+    const fromKakao = new URLSearchParams(window.location.search).get("kakao") === "1";
+    if (fromKakao) window.history.replaceState(null, "", "/");
+    (fromKakao ? completeKakaoLogin() : fetchMe())
       .then((m) => setMe(m.user))
       .catch(() => setMe(null))
       .then(() => syncRecords())

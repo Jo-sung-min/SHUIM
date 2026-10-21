@@ -1,143 +1,180 @@
 package kr.co.shuim.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.common.Ids;
+import kr.co.shuim.community.CommunityLogic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
- * 카카오 로그인 (OAuth 2.0 인가 코드). 흐름:
- *   /api/auth/oauth/kakao → kauth.kakao.com 동의 화면 → redirect-uri(/api/auth/oauth/kakao/callback?code&state)
- *   → 토큰 교환 → kapi.kakao.com/v2/user/me → users.kakao_id 로 찾거나 만들고 세션 쿠키 발급 → 앱으로 돌아감.
+ * 카카오 로그인 (OAuth 2.0 인가 코드, 서버 사이드). 흐름:
+ *   GET /api/auth/kakao → state 를 httpOnly 쿠키(5분)에 두고 kauth.kakao.com 동의 화면으로 302
+ *   → 카카오가 <app.origin>/api/auth/kakao/callback?code&state 로 돌려보냄 (프론트 프록시를 거쳐 백엔드로)
+ *   → state 검증 → 토큰 교환 → kapi.kakao.com/v2/user/me → users.kakao_id 로 찾거나 만들고 세션 쿠키 발급 → 앱 홈으로.
  * 로그인 전 익명 유저로 활동하던 중이면 그 행을 카카오 계정으로 승격해 외침·힘내요가 이어진다.
+ * KAKAO_CLIENT_ID 가 비어 있으면 configured() 가 false 이고 /api/auth/me 가 kakao: false 를 내려 버튼이 숨겨진다.
+ * HTTP 는 ai/ClaudeClient 와 같이 JDK HttpClient 위의 RestClient 를 쓴다.
  */
 @Service
 public class KakaoLoginService {
     private static final Logger log = LoggerFactory.getLogger(KakaoLoginService.class);
-    private static final int STATE_TTL_MIN = 10;
+    static final String STATE_COOKIE = "shuim_kakao_state";
+    static final String CALLBACK_PATH = "/api/auth/kakao/callback";
+    private static final Duration STATE_TTL = Duration.ofMinutes(5);
+    private static final String AUTHORIZE_URL = "https://kauth.kakao.com/oauth/authorize";
+    private static final String TOKEN_URL = "https://kauth.kakao.com/oauth/token";
+    private static final String ME_URL = "https://kapi.kakao.com/v2/user/me";
 
     private final JdbcClient jdbc;
     private final AuthService auth;
+    private final TransactionTemplate tx;
     private final RestClient http;
     private final String appOrigin;
     private final String clientId;
     private final String clientSecret;
-    private final String redirectUri;
+    private final boolean secureCookie;
 
-    public KakaoLoginService(JdbcClient jdbc, AuthService auth, RestClient.Builder builder,
+    public KakaoLoginService(JdbcClient jdbc, AuthService auth, TransactionTemplate tx, RestClient.Builder builder,
                              @Value("${app.origin}") String appOrigin,
-                             @Value("${app.oauth.kakao.client-id:}") String clientId,
-                             @Value("${app.oauth.kakao.client-secret:}") String clientSecret,
-                             @Value("${app.oauth.kakao.redirect-uri:}") String redirectUri) {
+                             @Value("${app.kakao.client-id:}") String clientId,
+                             @Value("${app.kakao.client-secret:}") String clientSecret,
+                             @Value("${app.auth.secure-cookie:false}") boolean secureCookie) {
         this.jdbc = jdbc;
         this.auth = auth;
-        this.http = builder.build();
+        this.tx = tx;
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory();
+        factory.setReadTimeout(Duration.ofSeconds(15));
+        this.http = builder.requestFactory(factory).build();
         this.appOrigin = appOrigin.replaceAll("/+$", "");
         this.clientId = clientId == null ? "" : clientId.strip();
         this.clientSecret = clientSecret == null ? "" : clientSecret.strip();
-        this.redirectUri = redirectUri == null ? "" : redirectUri.strip();
+        this.secureCookie = secureCookie;
     }
 
-    public boolean configured() { return !clientId.isBlank() && !redirectUri.isBlank(); }
+    /** REST API 키가 있어야 켜진다. Client Secret 은 콘솔에서 "사용함"으로 켠 경우에만 넣는다 */
+    public boolean configured() { return !clientId.isBlank(); }
 
-    /** 돌아갈 경로는 앱 안의 경로만 (열린 리다이렉트 방지) */
-    static String safeReturnTo(String v) {
-        if (v == null || v.isBlank() || !v.startsWith("/") || v.startsWith("//") || v.length() > 500) return "/";
-        return v;
-    }
+    /** 카카오 콘솔에 등록하는 Redirect URI. 프론트 도메인(app.origin) 기준이라 콜백이 프록시를 거쳐 세션 쿠키가 프론트 출처에 남는다 */
+    public String redirectUri() { return appOrigin + CALLBACK_PATH; }
 
     public URI appUri(String path) { return URI.create(appOrigin + path); }
 
-    public URI failureUri(String reason) {
-        return UriComponentsBuilder.fromUriString(appOrigin + "/auth").queryParam("oauthError", reason).build().encode().toUri();
+    public URI failureUri() { return appUri("/auth?error=kakao"); }
+
+    /* ---------- 1단계: 동의 화면으로 ---------- */
+
+    /** state 를 만들어 쿠키에 두고 동의 화면 주소를 돌려준다 */
+    public URI begin(HttpServletResponse res) {
+        String state = Ids.randomHex(24);
+        res.addHeader(HttpHeaders.SET_COOKIE, stateCookie(state, STATE_TTL).toString());
+        return authorizationUri(state);
     }
 
-    /** 동의 화면 주소. state 를 DB 에 남겨 콜백에서 검증한다 */
-    @Transactional
-    public URI authorizationUri(String returnTo, String anonUserId) {
-        String state = Ids.randomHex(24);
-        jdbc.sql("INSERT INTO oauth_states (state, provider, return_to, anon_user_id, expires_at) VALUES (?, 'kakao', ?, ?, ?)")
-            .param(state).param(safeReturnTo(returnTo)).param(anonUserId).param(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(STATE_TTL_MIN)).update();
-        return UriComponentsBuilder.fromUriString("https://kauth.kakao.com/oauth/authorize")
-            .queryParam("response_type", "code")
+    URI authorizationUri(String state) {
+        return UriComponentsBuilder.fromUriString(AUTHORIZE_URL)
             .queryParam("client_id", clientId)
-            .queryParam("redirect_uri", redirectUri)
+            .queryParam("redirect_uri", redirectUri())
+            .queryParam("response_type", "code")
             .queryParam("state", state)
             .build().encode().toUri();
     }
 
-    private record State(String returnTo, String anonUserId) {}
-
-    private Optional<State> consumeState(String state) {
-        if (state == null || state.isBlank()) return Optional.empty();
-        Optional<State> s = jdbc.sql("DELETE FROM oauth_states WHERE state = ? AND provider = 'kakao' AND expires_at > ? RETURNING return_to, anon_user_id")
-            .param(state).param(LocalDateTime.now(ZoneOffset.UTC))
-            .query((rs, i) -> new State(rs.getString("return_to"), rs.getString("anon_user_id"))).optional();
-        jdbc.sql("DELETE FROM oauth_states WHERE expires_at < ?").param(LocalDateTime.now(ZoneOffset.UTC).minusHours(1)).update();
-        return s;
+    /** 경로를 /api/auth/kakao 로 좁혀 콜백에만 따라간다. 콜백은 카카오에서 오는 최상위 이동이라 SameSite=Lax 로도 전달된다 */
+    private ResponseCookie stateCookie(String value, Duration maxAge) {
+        return ResponseCookie.from(STATE_COOKIE, value).httpOnly(true).sameSite("Lax").secure(secureCookie).path("/api/auth/kakao").maxAge(maxAge).build();
     }
 
-    private record Profile(String kakaoId, String email, String nick) {}
+    /* ---------- 2단계: 콜백 ---------- */
+
+    /** 콜백 처리. 성공하면 세션 쿠키를 내려주고 앱 홈(/?kakao=1)을, 실패하면 /auth?error=kakao 를 돌려준다 */
+    public URI complete(HttpServletRequest req, HttpServletResponse res, String code, String state, String providerError) {
+        String expected = readStateCookie(req);
+        res.addHeader(HttpHeaders.SET_COOKIE, stateCookie("", Duration.ZERO).toString()); // 한 번 쓴 state 는 지운다
+        if (expected == null || state == null
+            || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), state.getBytes(StandardCharsets.UTF_8))) {
+            log.warn("kakao login: state 불일치");
+            return failureUri();
+        }
+        if (providerError != null || code == null || code.isBlank()) {
+            log.info("kakao login: 동의 화면에서 돌아오지 못함 ({})", providerError);
+            return failureUri();
+        }
+        try {
+            Profile p = fetchProfile(code);
+            String anonId = auth.currentUser(req).filter(DbUser::anonymous).map(DbUser::id).orElse(null);
+            String userId = tx.execute(status -> findOrCreateUser(p, anonId));
+            auth.switchSession(req, res, userId);
+            return appUri("/?kakao=1");
+        } catch (Exception e) {
+            log.warn("kakao login failed: {}", e.toString());
+            return failureUri();
+        }
+    }
+
+    private static String readStateCookie(HttpServletRequest req) {
+        Cookie[] cs = req.getCookies();
+        if (cs == null) return null;
+        for (Cookie c : cs) if (STATE_COOKIE.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) return c.getValue();
+        return null;
+    }
+
+    /** 카카오 프로필: 회원번호(필수), 이메일(동의했고 인증된 경우만), 닉네임 */
+    record Profile(String kakaoId, String email, String nick) {}
 
     private Profile fetchProfile(String code) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "authorization_code");
         form.add("client_id", clientId);
-        form.add("redirect_uri", redirectUri);
+        form.add("redirect_uri", redirectUri());
         form.add("code", code);
         if (!clientSecret.isBlank()) form.add("client_secret", clientSecret);
-        JsonNode token = http.post().uri("https://kauth.kakao.com/oauth/token")
-            .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(form).retrieve().body(JsonNode.class);
+        JsonNode token = http.post().uri(TOKEN_URL).contentType(MediaType.APPLICATION_FORM_URLENCODED).body(form).retrieve().body(JsonNode.class);
         String accessToken = text(token, "access_token");
         if (accessToken == null) throw new IllegalStateException("카카오 액세스 토큰을 받지 못했어요");
-        JsonNode me = http.get().uri("https://kapi.kakao.com/v2/user/me")
-            .headers(h -> h.setBearerAuth(accessToken)).retrieve().body(JsonNode.class);
+        JsonNode me = http.get().uri(ME_URL).headers(h -> h.setBearerAuth(accessToken)).retrieve().body(JsonNode.class);
+        return parseProfile(me);
+    }
+
+    /** /v2/user/me 응답에서 필요한 것만. 이메일은 is_email_valid·is_email_verified 가 모두 true 일 때만 믿는다 (남의 이메일을 선점하지 못하게) */
+    static Profile parseProfile(JsonNode me) {
         String id = text(me, "id");
         if (id == null || id.isBlank()) throw new IllegalStateException("카카오 회원번호를 받지 못했어요");
         JsonNode account = me.path("kakao_account");
         String email = text(account, "email");
+        if (email != null && !(account.path("is_email_valid").asBoolean(false) && account.path("is_email_verified").asBoolean(false))) email = null;
         String nick = text(me.path("properties"), "nickname");
         if (nick == null) nick = text(account.path("profile"), "nickname");
-        return new Profile(id, email == null ? null : email.strip().toLowerCase(), nick == null ? null : nick.strip());
+        return new Profile(id, email == null ? null : email.strip().toLowerCase(), nick == null || nick.isBlank() ? null : nick.strip());
     }
 
-    /** 콜백 처리. 성공하면 세션 쿠키를 내려주고 돌아갈 앱 주소를, 실패하면 /auth?oauthError=… 를 돌려준다 */
-    public URI complete(String code, String state, String providerError, jakarta.servlet.http.HttpServletResponse res) {
-        Optional<State> st = consumeState(state);
-        if (st.isEmpty()) return failureUri("invalid_state");
-        if (providerError != null || code == null || code.isBlank()) return failureUri("cancelled");
-        try {
-            Profile p = fetchProfile(code);
-            String userId = findOrCreateUser(p, st.get().anonUserId());
-            auth.issueSession(res, userId);
-            return appUri(st.get().returnTo());
-        } catch (Exception e) {
-            log.warn("kakao login failed: {}", e.toString());
-            return failureUri("provider_failed");
-        }
-    }
-
-    @Transactional
-    protected String findOrCreateUser(Profile p, String anonUserId) {
+    /** kakao_id 로 찾고, 없으면 현재 익명 유저가 있으면 그 행을 승격, 아니면 새 행 (트랜잭션 안에서 부른다) */
+    String findOrCreateUser(Profile p, String anonUserId) {
         Optional<String> existing = jdbc.sql("SELECT id FROM users WHERE kakao_id = ?").param(p.kakaoId()).query(String.class).optional();
         if (existing.isPresent()) return existing.get();
         String nick = p.nick() == null || p.nick().length() < 2 ? null : (p.nick().length() > 12 ? p.nick().substring(0, 12) : p.nick());
+        // 이미 이메일 계정이 쓰는 주소면 비워 둔다 (users.email UNIQUE)
         String email = p.email() != null && jdbc.sql("SELECT count(*) FROM users WHERE email = ?").param(p.email()).query(Long.class).single() == 0 ? p.email() : null;
-        // 로그인 전 익명 유저로 쓰던 글·힘내요를 이어받도록 그 행을 승격
         if (anonUserId != null) {
             int n = jdbc.sql("UPDATE users SET kakao_id = ?, email = COALESCE(?, email), nick = COALESCE(?, nick), is_anonymous = FALSE WHERE id = ? AND is_anonymous = TRUE")
                 .param(p.kakaoId()).param(email).param(nick).param(anonUserId).update();
@@ -145,7 +182,7 @@ public class KakaoLoginService {
         }
         String id = Ids.uid();
         jdbc.sql("INSERT INTO users (id, email, nick, role, is_anonymous, kakao_id) VALUES (?, ?, ?, 'user', FALSE, ?)")
-            .param(id).param(email).param(nick == null ? kr.co.shuim.community.CommunityLogic.randomNick() : nick).param(p.kakaoId()).update();
+            .param(id).param(email).param(nick == null ? CommunityLogic.randomNick() : nick).param(p.kakaoId()).update();
         return id;
     }
 
