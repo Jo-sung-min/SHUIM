@@ -206,6 +206,7 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
                 </div>
               </div>
               <div className="score-row" role="radiogroup" aria-label={`${c.label}, 어제보다 얼마나`}>
+                {delta !== null && <span className="score-thumb" aria-hidden="true" style={{ transform: `translateX(${(delta + DELTA_MAX) * 100}%)` }} />}
                 {DELTAS.map((d) => (
                   <button
                     key={d}
