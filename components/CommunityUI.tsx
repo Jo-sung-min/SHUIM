@@ -19,7 +19,7 @@ import {
 import Link from "next/link";
 import { Sheet, fmtRelative } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
-import Heart3D from "./Heart3D";
+import Fist3D from "./Fist3D";
 
 /** 변경 결과(최신 store)를 화면에 반영하고, 실패하면 알림 */
 export async function run(onChange: (s: CommunityStore) => void, fn: () => Promise<CommunityStore>, onError?: (m: string) => void) {
@@ -55,7 +55,7 @@ export function CheerButton({ count, on, onClick, small, vertical }: { count: nu
       vertical={vertical}
       on={on}
       ariaLabel="힘내요"
-      icon={<Heart3D on={on} burst={burst} size={vertical ? 30 : small ? 18 : 22} />}
+      icon={<Fist3D on={on} burst={burst} size={vertical ? 30 : small ? 18 : 22} />}
       label={count}
       onClick={() => {
         if (!on) setBurst(true);

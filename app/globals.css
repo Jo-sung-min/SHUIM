@@ -1037,33 +1037,33 @@ textarea.lined {
 .comment .lact .ico svg { width: 18px; height: 18px; }
 .reel-actions { gap: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); }
 
-/* ===== 3D 하트 ===== */
-.heart3d { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 0; perspective: 120px; }
-.heart3d svg { filter: drop-shadow(0 3px 4px rgba(190, 20, 50, 0.45)); animation: heart-bob 3s ease-in-out 0.9s infinite; transform-origin: 50% 55%; }
-.heart3d.burst svg { animation: heart-pop 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both, heart-bob 3s ease-in-out 0.9s infinite; }
-@keyframes heart-pop {
+/* ===== 3D 주먹 (힘내요) ===== */
+.cheer3d { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 0; perspective: 120px; }
+.cheer3d svg { filter: drop-shadow(0 3px 4px rgba(200, 110, 20, 0.45)); animation: cheer-bob 3s ease-in-out 0.9s infinite; transform-origin: 50% 55%; }
+.cheer3d.burst svg { animation: cheer-pop 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both, cheer-bob 3s ease-in-out 0.9s infinite; }
+@keyframes cheer-pop {
   0% { transform: scale(0.3) rotateY(0deg); }
   35% { transform: scale(1.35) rotateY(180deg); }
   60% { transform: scale(0.92) rotateY(360deg); }
   100% { transform: scale(1) rotateY(360deg); }
 }
-@keyframes heart-bob {
+@keyframes cheer-bob {
   0%, 100% { transform: translateY(0) rotateY(0deg) scale(1); }
   50% { transform: translateY(-1.5px) rotateY(18deg) scale(1.04); }
 }
-.heart3d-sparks { position: absolute; inset: 0; pointer-events: none; }
-.heart3d-sparks i {
+.cheer3d-sparks { position: absolute; inset: 0; pointer-events: none; }
+.cheer3d-sparks i {
   position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #ffd1d8, #ff2d55 60%, #b8102e); opacity: 0;
+  background: radial-gradient(circle at 35% 35%, #fff1b8, #f9a826 60%, #c65d12); opacity: 0;
   transform: rotate(var(--a)) translateY(0) scale(0.4);
-  animation: heart-spark 0.8s ease-out var(--d) both;
+  animation: cheer-spark 0.8s ease-out var(--d) both;
 }
-@keyframes heart-spark {
+@keyframes cheer-spark {
   0% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(0.4); }
   25% { opacity: 1; }
   100% { opacity: 0; transform: rotate(var(--a)) translateY(-26px) scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .heart3d svg, .heart3d.burst svg, .heart3d-sparks i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cheer3d svg, .cheer3d.burst svg, .cheer3d-sparks i { animation: none; } }
 
 /* ===== 피드 상단: 제목 + ⋯ 만 ===== */
 .feed-title { font-size: 15px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); letter-spacing: -0.01em; }
