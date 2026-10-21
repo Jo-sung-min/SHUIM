@@ -92,6 +92,28 @@ export async function signOut() {
   syncSessionKey(null);
 }
 
+/** 켜져 있는 소셜 로그인 */
+export async function fetchProviders(): Promise<{ kakao: boolean }> {
+  try {
+    const res = await fetch("/api/auth/providers", { cache: "no-store" });
+    const json = (await res.json()) as { kakao?: boolean };
+    return { kakao: Boolean(json.kakao) };
+  } catch {
+    return { kakao: false };
+  }
+}
+
+/** 카카오 로그인 콜백에서 돌아왔을 때: 서버가 이미 세션 쿠키를 줬으니 계정을 읽고 이 기기의 게스트 기록을 계정으로 옮긴다 */
+export async function completeOAuthLogin(): Promise<Me> {
+  const m = await fetchMe(true);
+  if (m.user) {
+    resetRecordsSync();
+    syncSessionKey(m.user);
+    adoptGuestData(m.user.id);
+  }
+  return m;
+}
+
 export async function updateNick(nick: string): Promise<string | null> {
   const r = await post<{ user?: Account }>("/api/auth/nick", { nick });
   if (r.error) return r.error;

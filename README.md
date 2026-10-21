@@ -46,6 +46,14 @@ npm run dev
 | `APP_ALLOWED_ORIGINS` | 프론트를 프록시 없이 직접 붙일 때의 CORS 허용 출처 |
 | `AUTH_SECURE_COOKIE` | HTTPS 운영에서 `true` (세션 쿠키 Secure) |
 | `COMMUNITY_SIMULATE` | 개발용 샘플 유저 자동 답글 (운영 `false`) |
+| `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI` | 카카오 로그인 (아래 참고). 비우면 카카오 버튼 숨김 |
+
+### 카카오 로그인 설정
+
+1. [Kakao Developers](https://developers.kakao.com) › 내 애플리케이션 › 앱 추가. **앱 키 › REST API 키**를 `KAKAO_REST_API_KEY` 에
+2. 카카오 로그인 › 활성화 ON. **Redirect URI** 에 `http://localhost:3000/api/auth/oauth/kakao/callback` (운영은 `https://<프론트 도메인>/api/auth/oauth/kakao/callback`) 등록. 같은 값을 `KAKAO_REDIRECT_URI` 에
+3. 동의항목: 닉네임(필수), 카카오계정(이메일)은 선택. 보안 › Client Secret 을 켰으면 `KAKAO_CLIENT_SECRET` 에
+4. 흐름: 계정 화면 "카카오로 시작하기" → `/api/auth/oauth/kakao` → 카카오 동의 → `…/callback` 이 프론트 프록시를 거쳐 백엔드로 들어가 세션 쿠키를 프론트 출처에 남기고 `/auth?oauth=kakao` 로 돌아옴 → 이 기기의 게스트 기록을 계정으로 옮기고 홈으로. 로그인 전 익명 유저로 쓴 글·힘내요는 그 계정으로 이어진다 (`users.kakao_id`, V8)
 
 ## 배포
 

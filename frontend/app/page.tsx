@@ -27,7 +27,6 @@ import {
   saveBriefing,
   saveMoment,
   saveReview,
-  seedSampleData,
   sessionUserId,
   streak,
   syncRecords,
@@ -214,7 +213,6 @@ export default function HomePage() {
           <section className="hero">
             <div className="label">시작</div>
             <h2>위치가 아니라, 변화를 기록해요</h2>
-            <button className="btn" onClick={() => { seedSampleData(); reload(); }}>샘플로 둘러보기</button>
           </section>
         ) : loading === "briefing" ? (
           <section className="hero" aria-busy="true">

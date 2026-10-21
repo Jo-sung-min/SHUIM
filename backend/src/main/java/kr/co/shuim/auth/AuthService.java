@@ -54,6 +54,9 @@ public class AuthService {
         return null;
     }
 
+    /** 세션을 새로 만들고 쿠키를 내려준다 (가입·로그인·카카오 로그인 공용) */
+    public void issueSession(HttpServletResponse res, String userId) { setSessionCookie(res, userId); }
+
     private void setSessionCookie(HttpServletResponse res, String userId) {
         String token = Ids.randomHex(32);
         LocalDateTime expires = LocalDateTime.now(ZoneOffset.UTC).plus(ttl);

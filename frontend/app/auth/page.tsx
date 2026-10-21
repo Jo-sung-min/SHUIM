@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Me, fetchMe, signIn, signOut, signUp, updateNick } from "@/lib/auth";
+import { Me, completeOAuthLogin, fetchMe, fetchProviders, signIn, signOut, signUp, updateNick } from "@/lib/auth";
 import { Hero, Segmented, TopBar, fmtDate } from "@/components/ui";
 import { todayKey } from "@/lib/storage";
 import { IconChevronL } from "@/components/Icons";
@@ -20,13 +20,36 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editNick, setEditNick] = useState<string | null>(null);
+  const [kakao, setKakao] = useState(false);
 
   useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("oauth") === "kakao") {
+      // 카카오에서 돌아온 직후: 세션은 이미 있고, 게스트 기록만 계정으로 옮긴 뒤 홈으로
+      completeOAuthLogin().then((m) => {
+        if (m.user) router.replace("/");
+        else {
+          setMe(m);
+          setError("카카오 로그인을 완료하지 못했어요. 다시 시도해요.");
+        }
+      });
+      return;
+    }
+    const oauthError = q.get("oauthError");
+    if (oauthError) {
+      setError(
+        oauthError === "cancelled" ? "카카오 로그인을 취소했어요." :
+        oauthError === "not_configured" ? "카카오 로그인이 아직 설정되지 않았어요." :
+        "카카오 로그인에 실패했어요. 잠시 후 다시 시도해요."
+      );
+      window.history.replaceState(null, "", "/auth");
+    }
+    fetchProviders().then((p) => setKakao(p.kakao));
     fetchMe(true).then((m) => {
       setMe(m);
       if (!m.user && m.admin) setMode("signup"); // 아직 계정이 없는 데모 상태면 가입부터
     });
-  }, []);
+  }, [router]);
 
   const submit = async () => {
     setBusy(true);
@@ -94,7 +117,7 @@ export default function AuthPage() {
               </Link>
             </>
           )}
-          <div className="notice" style={{ marginTop: 20 }}>계정은 서버 DB에 저장돼요. 기록·메모·목표·일정은 아직 이 기기에만 있어요.</div>
+          <div className="notice" style={{ marginTop: 20 }}>로그인한 동안의 기록·메모·목표·일정은 서버에 저장되어 다른 기기에서도 이어져요.</div>
           <button className="btn ghost block" style={{ marginTop: 16 }} onClick={async () => { await signOut(); router.push("/"); }}>로그아웃</button>
         </div>
       </>
@@ -109,6 +132,15 @@ export default function AuthPage() {
         <div style={{ marginTop: 12 }}>
           <Segmented value={mode} onChange={(m) => { setMode(m); setError(null); }} options={[{ value: "login", label: "로그인" }, { value: "signup", label: "회원가입" }]} />
         </div>
+        {kakao && (
+          <div style={{ marginTop: 12 }}>
+            <a className="btn block kakao" href={`/api/auth/oauth/kakao?return=${encodeURIComponent("/auth?oauth=kakao")}`}>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path fill="currentColor" d="M12 3C6.5 3 2 6.5 2 10.8c0 2.7 1.8 5.1 4.5 6.5l-1 3.7c-.1.3.2.5.5.4l4.4-2.9c.5.1 1 .1 1.6.1 5.5 0 10-3.5 10-7.8S17.5 3 12 3Z" /></svg>
+              카카오로 시작하기
+            </a>
+            <div className="or-line"><span>또는 이메일로</span></div>
+          </div>
+        )}
         <form className="card stack" style={{ marginTop: 12, gap: 14 }} onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <div className="field"><label>이메일</label><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required /></div>
           {mode === "signup" && <div className="field"><label>닉네임</label><input value={nick} onChange={(e) => setNick(e.target.value)} placeholder="2~12자" maxLength={12} required /></div>}

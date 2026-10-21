@@ -34,6 +34,14 @@ app:
   community:
     # 개발용 샘플 유저 자동 답글 (운영에서는 false)
     simulate: ${COMMUNITY_SIMULATE:true}
+  oauth:
+    kakao:
+      # Kakao Developers › 앱 › 앱 키의 REST API 키. 비우면 카카오 버튼이 숨겨진다
+      client-id: ${KAKAO_REST_API_KEY:}
+      # 카카오 로그인 › 보안에서 Client Secret 을 켠 경우만
+      client-secret: ${KAKAO_CLIENT_SECRET:}
+      # Kakao Developers 에 등록하는 Redirect URI. 프론트 주소 기준(프록시를 거쳐야 세션 쿠키가 프론트 출처에 남는다)
+      redirect-uri: ${KAKAO_REDIRECT_URI:${app.origin}/api/auth/oauth/kakao/callback}
   s3:
     region: ${AWS_REGION:ap-northeast-2}
     bucket: ${S3_BUCKET:}
