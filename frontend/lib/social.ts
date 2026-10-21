@@ -1,4 +1,5 @@
 "use client";
+import { requireCommunityConsent } from "./consent";
 
 /** 프로필·메시지 클라이언트 (서버 API 호출) */
 
@@ -60,15 +61,19 @@ const opts = (method: string, body?: unknown): RequestInit => ({
 });
 
 export const fetchMyProfile = () => fetch("/api/profile", opts("GET")).then((r) => j<MyProfile>(r));
-export const updateMyProfile = (input: { nick?: string; bio?: string; avatarUrl?: string | null; name?: string; phone?: string }) =>
-  fetch("/api/profile", opts("PUT", input)).then((r) => j<MyProfile>(r));
+export const updateMyProfile = async (input: { nick?: string; bio?: string; avatarUrl?: string | null; name?: string; phone?: string }) => {
+  await requireCommunityConsent();
+  return fetch("/api/profile", opts("PUT", input)).then((r) => j<MyProfile>(r));
+};
 export const fetchProfilePage = (id: string) => fetch(`/api/profile/${encodeURIComponent(id)}`, opts("GET")).then((r) => j<ProfilePage>(r));
 
 export const fetchConversations = () => fetch("/api/messages", opts("GET")).then((r) => j<{ conversations: ConversationSummary[]; unread: number }>(r));
 export const fetchThread = (id: string, after?: number) =>
   fetch(`/api/messages/${encodeURIComponent(id)}${after ? `?after=${after}` : ""}`, opts("GET")).then((r) => j<Thread>(r));
-export const sendMessage = (toUserId: string, text: string) =>
-  fetch("/api/messages", opts("POST", { toUserId, text })).then((r) => j<{ conversationId: string; message: Message }>(r));
+export const sendMessage = async (toUserId: string, text: string) => {
+  await requireCommunityConsent();
+  return fetch("/api/messages", opts("POST", { toUserId, text })).then((r) => j<{ conversationId: string; message: Message }>(r));
+};
 export const markThreadRead = (id: string) => fetch(`/api/messages/${encodeURIComponent(id)}`, opts("POST", {})).then((r) => j<{ ok: boolean }>(r));
 
 /** 읽지 않은 메시지 수 (탭바 배지용, 실패 시 0) */

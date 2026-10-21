@@ -2,6 +2,7 @@ package kr.co.shuim.profile;
 
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
+import kr.co.shuim.community.BlockService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -15,8 +16,9 @@ import java.util.regex.Pattern;
 public class ProfileService {
     private static final Pattern URL = Pattern.compile("^(/|https?://)");
     private final JdbcClient jdbc;
+    private final BlockService blocks;
 
-    public ProfileService(JdbcClient jdbc) { this.jdbc = jdbc; }
+    public ProfileService(JdbcClient jdbc, BlockService blocks) { this.jdbc = jdbc; this.blocks = blocks; }
 
     public record Stats(int followers, int following, int feedPosts, int shoutPosts, int cheers) {}
 
@@ -26,6 +28,7 @@ public class ProfileService {
     public record ProfileInput(String nick, String bio, String avatarUrl, String name, String phone) {}
 
     public Optional<PublicProfile> getPublicProfile(String viewerId, String userId) {
+        if (viewerId != null && blocks.excludedIds(viewerId).contains(userId)) return Optional.empty();
         record U(String id, String nick, Long blockedAt, long createdAt) {}
         Optional<U> u = jdbc.sql("SELECT id, nick, blocked_at, created_at FROM users WHERE id = ?").param(userId)
             .query((rs, i) -> new U(rs.getString("id"), rs.getString("nick"), Db.ms(rs, "blocked_at"), Db.msReq(rs, "created_at"))).optional();

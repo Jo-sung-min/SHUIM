@@ -155,6 +155,21 @@ export function sessionUserId(): string | null {
   }
 }
 
+/** Called only after successful server account deletion; never enqueues a new server write. */
+export function clearAccountCache(userId: string | null) {
+  try {
+    for (const key of Object.values(K)) {
+      const accountKey = userId ? `${key}:${userId}` : key;
+      const cached = window.localStorage.getItem(accountKey);
+      // Remove matching guest source copies, but preserve unrelated guest records on shared devices.
+      if (userId && cached !== null && cached === window.localStorage.getItem(key)) window.localStorage.removeItem(key);
+      window.localStorage.removeItem(accountKey);
+    }
+    if (userId) window.localStorage.removeItem(`maeum-accel:dirty:v1:${userId}`);
+    window.localStorage.removeItem(PROMPTS_KEY);
+  } catch { /* Browser storage may be unavailable. */ }
+}
+
 /** 개인 데이터 키를 계정별로 분리. 게스트는 원래 키 그대로(기존 데이터 유지). */
 function ns(key: string): string {
   const u = sessionUserId();

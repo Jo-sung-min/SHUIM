@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.community.CommunityConsentService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,10 +15,12 @@ import java.util.Map;
 public class UploadController {
     private final AuthService auth;
     private final S3Service s3;
+    private final CommunityConsentService consent;
 
-    public UploadController(AuthService auth, S3Service s3) {
+    public UploadController(AuthService auth, S3Service s3, CommunityConsentService consent) {
         this.auth = auth;
         this.s3 = s3;
+        this.consent = consent;
     }
 
     /** GET /api/upload/presign — 업로드 가능 여부와 제한 */
@@ -31,6 +34,7 @@ public class UploadController {
     public S3Service.Presigned presign(@RequestBody(required = false) Map<String, Object> body, HttpServletRequest req, HttpServletResponse res) {
         if (!s3.configured()) throw ApiException.unavailable("S3 설정이 없어 사진 업로드는 꺼져 있어요");
         DbUser me = auth.requireUser(req, res);
+        consent.requireAccepted(me);
         if (me.blocked()) throw ApiException.forbidden("차단된 계정은 올릴 수 없어요");
         Map<String, Object> b = body == null ? Map.of() : body;
         long size = b.get("size") instanceof Number n ? n.longValue() : 0;

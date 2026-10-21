@@ -7,6 +7,8 @@ import { Message, Thread, fetchThread, markThreadRead, sendMessage } from "@/lib
 import { TopBar } from "@/components/ui";
 import { LoadError } from "@/components/CommunityUI";
 import { IconChevronL, IconSend } from "@/components/Icons";
+import BlockUser from "@/components/BlockUser";
+import SafetyReport from "@/components/SafetyReport";
 
 /** 1:1 대화. 5초마다 새 메시지를 가져온다. */
 export default function ThreadPage() {
@@ -86,6 +88,7 @@ export default function ThreadPage() {
         right={<Link href="/messages" className="icon-btn" aria-label="메시지함"><IconChevronL /></Link>}
       />
       <div className="screen thread">
+        <div className="row" style={{ gap: 20, marginBottom: 16 }}><BlockUser userId={thread.otherId} /><SafetyReport kind="user" targetId={thread.otherId} /></div>
         {thread.messages.length === 0 && <p className="tiny muted" style={{ textAlign: "center", margin: "30px 0" }}>첫 메시지를 보내 봐요.</p>}
         {thread.messages.map((m) => {
           const d = new Date(m.at);
@@ -97,6 +100,7 @@ export default function ThreadPage() {
               {showDay && <div className="day-sep">{day}</div>}
               <div className={`bubble-row ${me(m) ? "me" : ""}`}>
                 <div className="bubble">{m.text}</div>
+                {!me(m) && <SafetyReport kind="message" targetId={m.id} />}
                 <small className="time">{`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`}{me(m) && m.readAt ? " · 읽음" : ""}</small>
               </div>
             </div>

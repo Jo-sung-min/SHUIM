@@ -110,17 +110,16 @@ public class AuthService {
         return null;
     }
 
-    /** 가입: 현재 익명 유저가 있으면 그 행을 승격, 아니면 새로 만든다. 비밀번호를 가진 첫 계정이 관리자. */
+    /** 가입: 현재 익명 유저가 있으면 그 행을 승격, 아니면 새로 만든다. 관리자는 운영자가 별도로 지정한다. */
     @Transactional
     public DbUser signUp(HttpServletRequest req, HttpServletResponse res, String email, String nick, String password) {
         String err = validateSignup(email, nick, password);
         if (err != null) throw ApiException.badRequest(err);
         String e = email.strip().toLowerCase();
         if (jdbc.sql("SELECT count(*) FROM users WHERE email = ?").param(e).query(Long.class).single() > 0) throw ApiException.badRequest("이미 가입한 이메일이에요.");
-        boolean firstReal = jdbc.sql("SELECT count(*) FROM users WHERE password_hash IS NOT NULL").query(Long.class).single() == 0;
         String salt = Ids.randomHex(16);
         String hash = hashPassword(password, salt);
-        String role = firstReal ? "admin" : "user";
+        String role = "user";
         Optional<DbUser> cur = currentUser(req);
         if (cur.isPresent() && cur.get().anonymous()) {
             return jdbc.sql("UPDATE users SET email = ?, nick = ?, password_hash = ?, password_salt = ?, role = ?, is_anonymous = FALSE WHERE id = ? RETURNING *")
@@ -164,10 +163,9 @@ public class AuthService {
         return null;
     }
 
-    /** 관리자 여부. 비밀번호를 가진 계정이 하나도 없으면(순수 데모) 누구나 관리자 화면을 볼 수 있다. */
+    /** 공개 가입이나 계정 수와 관계없이 명시적으로 부여된 관리자 권한만 인정한다. */
     public boolean isAdmin(DbUser user) {
-        if (user != null && "admin".equals(user.role()) && !user.anonymous()) return true;
-        return jdbc.sql("SELECT count(*) FROM users WHERE password_hash IS NOT NULL").query(Long.class).single() == 0;
+        return user != null && "admin".equals(user.role()) && !user.anonymous() && !user.blocked();
     }
 
     /* ---------- 해시 ---------- */

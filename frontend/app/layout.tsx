@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import TabBar from "@/components/TabBar";
+import AppRuntime from "@/components/AppRuntime";
+import CommunityConsent from "@/components/CommunityConsent";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
 
 /**
@@ -96,6 +98,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body>
+        <AppRuntime />
+        <CommunityConsent />
         <div className="app">
           {children}
           <TabBar />

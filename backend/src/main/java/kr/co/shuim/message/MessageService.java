@@ -4,6 +4,8 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.community.BlockService;
+import kr.co.shuim.community.CommunityConsentService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,8 +17,10 @@ import java.util.Optional;
 @Service
 public class MessageService {
     private final JdbcClient jdbc;
+    private final BlockService blocks;
+    private final CommunityConsentService consent;
 
-    public MessageService(JdbcClient jdbc) { this.jdbc = jdbc; }
+    public MessageService(JdbcClient jdbc, BlockService blocks, CommunityConsentService consent) { this.jdbc = jdbc; this.blocks = blocks; this.consent = consent; }
 
     public record Other(String id, String nick, String avatarUrl, Boolean blocked) {}
 
@@ -38,7 +42,9 @@ public class MessageService {
               JOIN users u ON u.id = CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END
               LEFT JOIN profiles p ON p.user_id = u.id
               LEFT JOIN LATERAL (SELECT text, sender_id FROM messages m WHERE m.conversation_id = c.id ORDER BY created_at DESC LIMIT 1) lm ON TRUE
-             WHERE c.user_a = ? OR c.user_b = ?
+             WHERE (c.user_a = ? OR c.user_b = ?)
+               AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                   (b.blocker_id = c.user_a AND b.blocked_id = c.user_b) OR (b.blocker_id = c.user_b AND b.blocked_id = c.user_a))
              ORDER BY c.last_message_at DESC NULLS LAST
             """).param(me.id()).param(me.id()).param(me.id()).param(me.id())
             .query((rs, i) -> new ConversationSummary(
@@ -51,6 +57,8 @@ public class MessageService {
         return jdbc.sql("""
             SELECT count(*)::int FROM messages m JOIN conversations c ON c.id = m.conversation_id
              WHERE (c.user_a = ? OR c.user_b = ?) AND m.sender_id <> ? AND m.read_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                   (b.blocker_id = c.user_a AND b.blocked_id = c.user_b) OR (b.blocker_id = c.user_b AND b.blocked_id = c.user_a))
             """).param(me.id()).param(me.id()).param(me.id()).query(Integer.class).single();
     }
 
@@ -68,7 +76,9 @@ public class MessageService {
         Optional<C> c = jdbc.sql("SELECT user_a, user_b FROM conversations WHERE id = ?").param(conversationId)
             .query((rs, i) -> new C(rs.getString("user_a"), rs.getString("user_b"))).optional();
         if (c.isEmpty() || (!c.get().a().equals(me.id()) && !c.get().b().equals(me.id()))) throw ApiException.notFound("대화를 찾을 수 없어요");
-        return c.get().a().equals(me.id()) ? c.get().b() : c.get().a();
+        String otherId = c.get().a().equals(me.id()) ? c.get().b() : c.get().a();
+        blocks.assertInteractionAllowed(me.id(), otherId);
+        return otherId;
     }
 
     public Thread getThread(DbUser me, String conversationId, Long after) {
@@ -93,8 +103,10 @@ public class MessageService {
 
     @Transactional
     public Sent sendMessage(DbUser me, String toUserId, String text) {
+        consent.requireAccepted(me);
         if (me.blocked()) throw ApiException.badRequest("차단된 계정은 메시지를 보낼 수 없어요.");
         if (toUserId.equals(me.id())) throw ApiException.badRequest("자기 자신에게는 보낼 수 없어요.");
+        blocks.assertInteractionAllowed(me.id(), toUserId);
         String t = text == null ? "" : text.strip();
         if (t.isEmpty()) throw ApiException.badRequest("내용이 비어 있어요");
         if (t.length() > 1000) t = t.substring(0, 1000);

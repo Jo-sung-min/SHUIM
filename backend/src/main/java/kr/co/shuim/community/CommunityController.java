@@ -15,10 +15,12 @@ import java.util.Map;
 public class CommunityController {
     private final AuthService auth;
     private final CommunityService community;
+    private final CommunityConsentService consent;
 
-    public CommunityController(AuthService auth, CommunityService community) {
+    public CommunityController(AuthService auth, CommunityService community, CommunityConsentService consent) {
         this.auth = auth;
         this.community = community;
+        this.consent = consent;
     }
 
     /** GET /api/community — 현재 유저(없으면 익명 유저 생성) 기준의 커뮤니티 전체 상태 */
@@ -42,6 +44,7 @@ public class CommunityController {
                       HttpServletRequest req, HttpServletResponse res) {
         Map<String, Object> b = body == null ? Map.of() : body;
         DbUser me = auth.requireUser(req, res);
+        if (java.util.Set.of("post.create", "comment.create", "feed.create", "bio", "donate").contains(action)) consent.requireAccepted(me);
         return switch (action) {
             case "post.create" -> community.createPost(me, b.get("cat"), b.get("text"));
             case "post.delete" -> community.deletePost(me, str(b, "id"));

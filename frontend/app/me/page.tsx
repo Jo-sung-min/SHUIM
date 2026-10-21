@@ -113,9 +113,10 @@ export default function MePage() {
             </div>
             <div className="help-mini">{HELP_LINES.map((h) => <a key={h.tel} href={`tel:${h.tel}`}>{h.name} <b>{h.tel}</b></a>)}</div>
             <div className="row" style={{ justifyContent: "center", gap: 14, marginTop: 24 }}>
-              <button className="text-btn muted" onClick={() => { if (!window.confirm(user ? "이 계정의 기록·메모·목표·일정을 서버에서도 지울까요? 되돌릴 수 없어요." : "이 기기의 기록·메모·목표·일정을 지울까요? 되돌릴 수 없어요.")) return; clearAll(); reload(); }}>전체 삭제</button>
+              <button className="text-btn muted" onClick={() => { if (!window.confirm(user ? "이 계정의 기록·메모·목표·일정을 서버에서도 지울까요? 되돌릴 수 없어요." : "이 기기의 기록·메모·목표·일정을 지울까요? 되돌릴 수 없어요.")) return; clearAll(); reload(); }}>기록 전체 삭제</button>
               {user && (<><span className="tiny" style={{ color: "var(--border)" }}>|</span><button className="text-btn muted" onClick={async () => { await signOut(); reload(); }}>로그아웃</button></>)}
             </div>
+            <nav className="legal-links" aria-label="서비스 안내"><Link href="/privacy">개인정보 처리방침</Link><Link href="/terms">이용약관·커뮤니티 기준</Link><Link href="/account-deletion">계정 및 데이터 삭제</Link><Link href="/blocks">차단한 사용자</Link></nav>
           </>
         )}
 

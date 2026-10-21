@@ -1,4 +1,5 @@
 "use client";
+import { requireCommunityConsent } from "./consent";
 
 /**
  * 브라우저 → S3 직접 업로드.
@@ -52,6 +53,7 @@ export async function shrinkImage(file: File): Promise<Blob> {
 }
 
 export async function uploadImage(file: File, onProgress?: (pct: number) => void): Promise<UploadResult> {
+  await requireCommunityConsent();
   const blob = await shrinkImage(file);
   const contentType = blob.type || file.type;
   const res = await fetch("/api/upload/presign", {

@@ -43,7 +43,7 @@ export default function AuthPage() {
       setError(r.error);
       return;
     }
-    router.push("/");
+    router.push(new URLSearchParams(window.location.search).get("next") === "delete" ? "/account-deletion" : "/");
   };
 
   if (!me) return <TopBar title="계정" />;
@@ -102,6 +102,7 @@ export default function AuthPage() {
           )}
           <div className="notice" style={{ marginTop: 20 }}>로그인한 동안의 기록·메모·목표·일정은 서버에 저장되어 다른 기기에서도 이어져요.</div>
           <button className="btn ghost block" style={{ marginTop: 16 }} onClick={async () => { await signOut(); router.push("/"); }}>로그아웃</button>
+          <nav className="legal-links" aria-label="계정 관리"><Link href="/account-deletion">계정 및 데이터 삭제</Link><Link href="/blocks">차단한 사용자</Link><Link href="/privacy">개인정보 처리방침</Link><Link href="/terms">이용약관</Link></nav>
         </div>
       </>
     );
@@ -111,7 +112,7 @@ export default function AuthPage() {
     <>
       <TopBar title={mode === "signup" ? "회원가입" : "로그인"} eyebrow="소로우 (SOROW) · 슬픔을 나란히 나누는 공간" right={<Link href="/" className="icon-btn" aria-label="홈으로"><IconChevronL /></Link>} />
       <div className="screen">
-        <Hero label="계정" title={mode === "signup" ? "나만의 기록을 시작해요" : "다시 돌아왔어요"} sub={mode === "signup" ? "가입하면 지금까지 이 기기에 쓴 기록을 그대로 가져와요. 첫 번째 계정은 관리자가 돼요." : undefined} />
+        <Hero label="계정" title={mode === "signup" ? "나만의 기록을 시작해요" : "다시 돌아왔어요"} sub={mode === "signup" ? "가입하면 지금까지 이 기기에 쓴 기록을 그대로 가져와요." : undefined} />
         <div style={{ marginTop: 12 }}>
           <Segmented value={mode} onChange={(m) => { setMode(m); setError(null); }} options={[{ value: "login", label: "로그인" }, { value: "signup", label: "회원가입" }]} />
         </div>
@@ -131,6 +132,7 @@ export default function AuthPage() {
             </button>
           </>
         )}
+        <nav className="legal-links" aria-label="서비스 안내"><Link href="/privacy">개인정보 처리방침</Link><Link href="/terms">이용약관·커뮤니티 기준</Link><Link href="/account-deletion">계정 삭제 안내</Link></nav>
       </div>
     </>
   );

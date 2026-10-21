@@ -4,7 +4,8 @@
  * 계정 클라이언트. 세션은 httpOnly 쿠키, 계정 정보는 /api/auth 에서 온다.
  * 로그인한 계정 id를 localStorage(SESSION_KEY)에도 적어 두어 기록·메모 같은 개인 데이터가 계정별로 분리되게 한다.
  */
-import { SESSION_KEY, adoptGuestData, flushRecords, resetRecordsSync } from "./storage";
+import { SESSION_KEY, adoptGuestData, clearAccountCache, flushRecords, resetRecordsSync, sessionUserId } from "./storage";
+import { resetCommunityCache } from "./community";
 
 export type Role = "admin" | "user";
 
@@ -26,6 +27,14 @@ export interface Me {
 
 function syncSessionKey(user: Account | null) {
   try {
+    const before = sessionUserId();
+    if (before !== (user?.id ?? null)) {
+      resetCommunityCache();
+      for (let index = window.localStorage.length - 1; index >= 0; index--) {
+        const key = window.localStorage.key(index);
+        if (key?.startsWith("sorow:community-terms:")) window.localStorage.removeItem(key);
+      }
+    }
     if (user) window.localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, at: Date.now() }));
     else window.localStorage.removeItem(SESSION_KEY);
   } catch {
@@ -92,6 +101,23 @@ export async function signOut() {
   meCache = null;
   resetRecordsSync();
   syncSessionKey(null);
+}
+
+export async function deleteAccount(confirmation: string, expectedUserId: string): Promise<void> {
+  if (sessionUserId() !== expectedUserId) throw new Error("다른 탭에서 계정이 변경되었어요. 이 페이지를 새로고침한 뒤 다시 확인해 주세요.");
+  // A destructive request must be bound to the account the person actually reviewed.
+  // Discard queued writes; deletion removes existing server data without uploading extra private records first.
+  resetRecordsSync();
+  const response = await fetch("/api/auth/account", {
+    method: "DELETE", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmation, expectedUserId }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.ok !== true) throw new Error(result.error || "삭제 결과를 확인하지 못했어요. 계정 상태를 다시 확인해 주세요.");
+  resetRecordsSync();
+  clearAccountCache(expectedUserId);
+  syncSessionKey(null);
+  meCache = null;
 }
 
 /** "카카오로 시작하기": 서버가 state 쿠키를 심고 카카오 동의 화면으로 보낸다. 끝나면 /?kakao=1 로 돌아온다 */

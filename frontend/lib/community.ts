@@ -9,8 +9,11 @@ export * from "./community-core";
 import type { CommunityStore, FeedPage, ReportReason, ShoutCat, Target } from "./community-core";
 import { listNotifications } from "./community-core";
 import { loadNotifSeen } from "./storage";
+import { requireCommunityConsent } from "./consent";
 
 async function call<T = CommunityStore>(path: string, body?: unknown, method = "POST"): Promise<T> {
+  if (method === "POST" && /\/(post\.create|comment\.create|feed\.create|bio|donate)$/.test(path)) await requireCommunityConsent();
+  const generation = cacheGeneration;
   const res = await fetch(path, {
     method,
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
@@ -19,6 +22,7 @@ async function call<T = CommunityStore>(path: string, body?: unknown, method = "
     cache: "no-store",
   });
   const json = await res.json().catch(() => ({}));
+  if (generation !== cacheGeneration) throw new Error("계정이 변경되었어요. 화면을 다시 열어 주세요.");
   if (!res.ok) throw new Error((json as { error?: string }).error ?? `요청 실패 (${res.status})`);
   cached = method === "GET" || isStore(json) ? (json as CommunityStore) : cached;
   return json as T;
@@ -28,18 +32,28 @@ const isStore = (x: unknown): x is CommunityStore => Boolean(x && typeof x === "
 let cached: CommunityStore | null = null;
 let cachedAt = 0;
 let inflight: Promise<CommunityStore> | null = null;
+let cacheGeneration = 0;
+
+/** Prevent a previous session's private save/report state from surviving an account switch. */
+export function resetCommunityCache() {
+  cacheGeneration++;
+  cached = null;
+  cachedAt = 0;
+  inflight = null;
+}
 
 /** 전체 상태 읽기 (30초 캐시, force=true 면 다시 받음). 동시에 여러 곳에서 불러도 요청은 하나만 나간다(첫 방문 익명 유저 중복 생성 방지). */
 export async function fetchCommunity(force = false): Promise<CommunityStore> {
   if (!force && cached && Date.now() - cachedAt < 30_000) return cached;
   if (inflight) return inflight;
+  const generation = cacheGeneration;
   inflight = call<CommunityStore>("/api/community", undefined, "GET")
     .then((s) => {
       cachedAt = Date.now();
       return s;
     })
     .finally(() => {
-      inflight = null;
+      if (generation === cacheGeneration) inflight = null;
     });
   return inflight;
 }

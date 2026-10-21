@@ -1,4 +1,6 @@
 "use client";
+import { confirmAiProcessing } from "@/lib/safety";
+import SafetyReport from "@/components/SafetyReport";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -37,6 +39,7 @@ export default function SummaryPage() {
   const entries = dates.filter((d) => journal[d]).map((d) => ({ date: d, record: journal[d] }));
 
   const run = async () => {
+    if (!confirmAiProcessing()) return;
     setLoading(true);
     setError(null);
     setResult(null);
@@ -104,6 +107,7 @@ export default function SummaryPage() {
               <span className={`badge ${result.source === "ai" ? "" : "gray"}`}>{result.source === "ai" ? "AI 정리" : "간단 정리 · API 키 없음"}</span>
             </div>
             <div className="summary-body">{result.summary}</div>
+            <SafetyReport kind="ai" context={result.summary} />
           </section>
         )}
 

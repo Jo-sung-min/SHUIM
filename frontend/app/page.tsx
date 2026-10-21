@@ -1,4 +1,6 @@
 "use client";
+import { confirmAiProcessing } from "@/lib/safety";
+import SafetyReport from "@/components/SafetyReport";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -125,6 +127,7 @@ export default function HomePage() {
 
   const call = async (mode: Mode) => {
     if (!data) return;
+    if (!confirmAiProcessing()) return;
     setLoading(mode);
     setError(null);
     try {
@@ -283,6 +286,8 @@ export default function HomePage() {
         )}
 
         {error && <p className="tiny" style={{ color: "var(--down)", margin: "10px 2px 0", textAlign: "center" }}>{error}</p>}
+        {!empty && <p className="tiny muted" style={{ textAlign: "center" }}>AI 응답은 의료 진단·치료가 아닙니다. <Link href="/privacy">개인정보 안내</Link></p>}
+        {(briefing || openMoment || review) && <SafetyReport kind="ai" />}
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
         {/* 칭찬 / 사랑 */}

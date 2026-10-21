@@ -1,0 +1,84 @@
+plugins {
+    id 'com.android.application'
+}
+
+def signingProperties = new Properties()
+def signingPropertiesFile = rootProject.file('keystore.properties')
+if (signingPropertiesFile.isFile()) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+}
+def signingValue = { String name, String environmentName ->
+    providers.environmentVariable(environmentName).orNull ?: signingProperties.getProperty(name)
+}
+def releaseStoreFile = signingValue('storeFile', 'SOROW_UPLOAD_STORE_FILE')
+def releaseStorePassword = signingValue('storePassword', 'SOROW_UPLOAD_STORE_PASSWORD')
+def releaseKeyAlias = signingValue('keyAlias', 'SOROW_UPLOAD_KEY_ALIAS')
+def releaseKeyPassword = signingValue('keyPassword', 'SOROW_UPLOAD_KEY_PASSWORD')
+def hasReleaseSigning = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword]
+        .every { it != null && !it.trim().isEmpty() }
+
+android {
+    namespace 'kr.co.sorow.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'kr.co.sorow.app'
+        minSdk 23
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+        resValue 'string', 'app_name', '소로우'
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Keep the production package to test exactly the same App Link. Never upload debug builds.
+            versionNameSuffix '-debug'
+            resValue 'string', 'app_name', '소로우 테스트'
+        }
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+}
+
+// Fail closed: an unsigned bundle must never look like a Play-ready deliverable.
+def verifyReleaseSigning = tasks.register('verifyReleaseSigning') {
+    doLast {
+        if (!hasReleaseSigning) {
+            throw new GradleException('Release signing is missing. Copy keystore.properties.example to keystore.properties and enter your upload key details. See android/README.md.')
+        }
+        if (!rootProject.file(releaseStoreFile).isFile()) {
+            throw new GradleException('The configured upload keystore file does not exist.')
+        }
+    }
+}
+tasks.configureEach { task ->
+    if (task.name == 'preReleaseBuild') {
+        task.dependsOn(verifyReleaseSigning)
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.3'
+}
+

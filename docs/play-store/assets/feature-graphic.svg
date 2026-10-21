@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500" role="img" aria-labelledby="title desc">
+  <title id="title">소로우 — 슬픔을 나누면, 우리는 가까워진다.</title>
+  <desc id="desc">보라색 그라데이션 위에 소로우의 소개 문구와 나란히 겹치는 두 원.</desc>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4b5fe0"/>
+      <stop offset="1" stop-color="#8a5cd6"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="500" fill="url(#brand)"/>
+  <ellipse cx="814" cy="270" rx="270" ry="245" fill="url(#glow)"/>
+  <g fill="#ffffff" font-family="Malgun Gothic, 맑은 고딕, sans-serif">
+    <text x="64" y="104" font-size="29" font-weight="700">소로우</text>
+    <text x="165" y="103" font-family="Segoe UI, sans-serif" font-size="16" letter-spacing="3" opacity="0.76">SOROW</text>
+    <text x="64" y="234" font-size="52" font-weight="700" letter-spacing="-1.6">슬픔을 나누면,</text>
+    <text x="64" y="309" font-size="52" font-weight="700" letter-spacing="-1.6">우리는 가까워진다.</text>
+    <text x="66" y="405" font-size="21" opacity="0.82">마음을 기록하고, 서로에게 위로를.</text>
+  </g>
+  <circle cx="778" cy="268" r="100" fill="#ffffff" fill-opacity="0.94"/>
+  <circle cx="866" cy="268" r="100" fill="#ffffff" fill-opacity="0.55"/>
+</svg>

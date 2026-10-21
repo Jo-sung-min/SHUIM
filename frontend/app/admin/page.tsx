@@ -10,6 +10,7 @@ import { DEFAULT_MODEL, DEFAULT_PROMPTS, MODEL_OPTIONS, PROMPT_MAX_LEN, PROMPT_M
 import { PromptOverrides, loadPrompts, savePrompts } from "@/lib/storage";
 import { LoadError, run } from "@/components/CommunityUI";
 import SiteAdmin from "./SiteAdmin";
+import SafetyAdmin from "@/components/SafetyAdmin";
 
 type View = "reports" | "prompts" | "site";
 const VIEW_EYEBROW: Record<View, string> = { reports: "외침 · 신고 누적 글", prompts: "AI 프롬프트", site: "사이트 설정 · SEO" };
@@ -43,7 +44,7 @@ export default function AdminPage() {
         <TopBar title="관리자" right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
         <div className="screen">
           <Empty icon="🔒" title="관리자만 들어올 수 있어요">
-            {me.user ? `${me.user.nick} 님은 일반 회원이에요. 첫 번째로 가입한 계정이 관리자예요.` : "관리자 계정으로 로그인해요."}
+            {me.user ? `${me.user.nick} 님은 일반 회원이에요.` : "관리자 계정으로 로그인해요."}
             <div style={{ marginTop: 14 }}><Link href="/auth" className="btn sm soft">{me.user ? "내 계정" : "로그인"}</Link></div>
           </Empty>
         </div>
@@ -66,7 +67,8 @@ export default function AdminPage() {
 
         {view === "reports" && (
           <>
-            <Hero label={me.user ? "관리자" : "프로토타입 · 아직 계정이 없어 누구나 열람"} title={flagged.length ? `검토할 글 ${flagged.length}개` : "검토할 글이 없어요"} stats={[`대기 ${flagged.length}`, `차단 유저 ${blocked.length}`]} />
+            <SafetyAdmin />
+            <Hero label="관리자" title={flagged.length ? `검토할 글 ${flagged.length}개` : "검토할 글이 없어요"} stats={[`대기 ${flagged.length}`, `차단 유저 ${blocked.length}`]} />
             <div className="section-title"><span>검토 대기</span></div>
             {flagged.length === 0 ? (
               <Empty icon="🛡️" title="깨끗해요">지금은 신고가 쌓인 글이 없어요.</Empty>

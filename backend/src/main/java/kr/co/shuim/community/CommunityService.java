@@ -30,19 +30,30 @@ public class CommunityService {
     private final ObjectMapper json;
     private final S3Service s3;
     private final boolean simulate;
+    private final BlockService blocks;
 
     public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env,
-                            @Value("${app.community.simulate:true}") boolean simulate) {
+                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks) {
         this.jdbc = jdbc;
         this.json = json;
         this.s3 = s3;
         this.simulate = simulate && !Arrays.asList(env.getActiveProfiles()).contains("prod");
+        this.blocks = blocks;
     }
 
     /* ---------- 읽기 ---------- */
 
     @Transactional
     public Store loadStore(DbUser me) {
+        return forViewer(loadUnfilteredStore(me), me);
+    }
+
+    private Store forViewer(Store store, DbUser me) {
+        return visibleStore(store, blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked());
+    }
+
+    private Store loadUnfilteredStore(DbUser me) {
+        Db.lockCommunity(jdbc);
         Map<String, List<String>> cheerMap = new HashMap<>();
         jdbc.sql("SELECT user_id, target_kind, target_id FROM cheers ORDER BY created_at").query(rs -> {
             cheerMap.computeIfAbsent(rs.getString("target_kind") + ":" + rs.getString("target_id"), k -> new ArrayList<>()).add(rs.getString("user_id"));
@@ -118,6 +129,41 @@ public class CommunityService {
             store.weekly().put(w.week(), b);
         }
         return store;
+    }
+
+    /** Filter only after global ranking computation, so personal blocks cannot change shared rankings. */
+    static Store visibleStore(Store store, Set<String> excluded, boolean admin) {
+        String viewer = store.me().id();
+        List<Post> posts = store.posts().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
+            .map(p -> new Post(p.id(), p.cat(), p.text(), p.authorId(), p.createdAt(), p.cheers(), publicReports(p, viewer, admin), p.hidden(), p.reviewedAt())).toList();
+        List<FeedPost> feed = store.feed().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
+            .map(p -> new FeedPost(p.id(), p.title(), p.text(), p.bg(), p.image(), p.images(), p.pages(), p.authorId(), p.createdAt(), p.cheers(),
+                publicReports(p, viewer, admin), p.saves().stream().filter(viewer::equals).toList(), p.hidden(), p.reviewedAt())).toList();
+        Set<String> visiblePostIds = new HashSet<>();
+        posts.forEach(p -> visiblePostIds.add(p.id()));
+        feed.forEach(p -> visiblePostIds.add(p.id()));
+        Map<String, Creator> creators = new LinkedHashMap<>(store.creators());
+        excluded.forEach(creators::remove);
+        Map<String, WeeklyBatch> weekly = new LinkedHashMap<>();
+        // A finalized snapshot must never resurrect a deleted/hidden/suspended/flagged post.
+        Set<String> rankablePostIds = new HashSet<>();
+        store.posts().stream().filter(p -> !excluded.contains(p.authorId()) && CommunityLogic.isVisible(store, p) && !CommunityLogic.isFlagged(p))
+            .forEach(p -> rankablePostIds.add(p.id()));
+        store.weekly().forEach((key, w) -> weekly.put(key, new WeeklyBatch(w.week(), w.computedAt(), w.finalized(),
+            w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund())));
+        return new Store(store.me(), store.users().stream().filter(u -> !excluded.contains(u.id())).toList(), posts,
+            store.comments().stream().filter(c -> !excluded.contains(c.authorId()) && visiblePostIds.contains(c.postId()) && (admin || CommunityLogic.isVisible(store, c)))
+                .map(c -> new Comment(c.id(), c.postId(), c.text(), c.authorId(), c.createdAt(), c.cheers(), publicReports(c, viewer, admin), c.hidden(), c.reviewedAt())).toList(),
+            feed, creators, store.following().stream().filter(id -> !excluded.contains(id)).toList(),
+            store.donations().stream().filter(d -> !excluded.contains(d.by())).toList(), weekly);
+    }
+
+    private static List<Report> publicReports(Item item, String viewer, boolean admin) {
+        if (admin) return item.reports();
+        // Keep the existing count-based flagging contract without revealing other reporters.
+        // Sentinel timestamps encode only active/inactive status, never the real report time.
+        return item.reports().stream().map(r -> viewer.equals(r.by()) ? r : new Report("", "other",
+            item.reviewedAt() == null || r.at() > item.reviewedAt() ? (item.reviewedAt() == null ? 1 : item.reviewedAt() + 1) : 0)).toList();
     }
 
     private static List<String> listOf(Map<String, List<String>> m, String k) {
@@ -199,6 +245,7 @@ public class CommunityService {
 
     @Transactional
     public Store createPost(DbUser me, Object cat, Object body) {
+        Db.lockCommunity(jdbc);
         assertNotBlocked(me);
         if (!(cat instanceof String c) || !CommunityLogic.SHOUT_CAT_IDS.contains(c)) throw ApiException.badRequest("카테고리가 올바르지 않아요");
         jdbc.sql("INSERT INTO shout_posts (id, author_id, cat, text) VALUES (?, ?, ?, ?)").param(Ids.uid()).param(me.id()).param(c).param(text(body, 600)).update();
@@ -207,6 +254,7 @@ public class CommunityService {
 
     @Transactional
     public Store deletePost(DbUser me, String id) {
+        Db.lockCommunity(jdbc);
         int n = jdbc.sql("DELETE FROM shout_posts WHERE id = ? AND author_id = ?").param(id).param(me.id()).update();
         if (n > 0) jdbc.sql("DELETE FROM comments WHERE post_kind = 'post' AND post_id = ?").param(id).update();
         return loadStore(me);
@@ -214,10 +262,12 @@ public class CommunityService {
 
     @Transactional
     public Store addComment(DbUser me, String postId, Object body) {
+        Db.lockCommunity(jdbc);
         assertNotBlocked(me);
         String kind = jdbc.sql("SELECT count(*) FROM shout_posts WHERE id = ?").param(postId).query(Long.class).single() > 0 ? "post"
             : jdbc.sql("SELECT count(*) FROM feed_posts WHERE id = ?").param(postId).query(Long.class).single() > 0 ? "feed" : null;
         if (kind == null) throw ApiException.notFound("글을 찾을 수 없어요");
+        assertTargetAccessible(me, kind, postId);
         jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text) VALUES (?, ?, ?, ?, ?)")
             .param(Ids.uid()).param(kind).param(postId).param(me.id()).param(text(body, 300)).update();
         return loadStore(me);
@@ -225,13 +275,16 @@ public class CommunityService {
 
     @Transactional
     public Store deleteComment(DbUser me, String id) {
+        Db.lockCommunity(jdbc);
         jdbc.sql("DELETE FROM comments WHERE id = ? AND author_id = ?").param(id).param(me.id()).update();
         return loadStore(me);
     }
 
     @Transactional
     public Store toggleCheer(DbUser me, Target target) {
+        Db.lockCommunity(jdbc);
         String kind = assertKind(target.kind());
+        assertTargetAccessible(me, kind, target.id());
         int del = jdbc.sql("DELETE FROM cheers WHERE user_id = ? AND target_kind = ? AND target_id = ?").param(me.id()).param(kind).param(target.id()).update();
         if (del == 0) jdbc.sql("INSERT INTO cheers (user_id, target_kind, target_id) VALUES (?, ?, ?)").param(me.id()).param(kind).param(target.id()).update();
         return loadStore(me);
@@ -239,6 +292,7 @@ public class CommunityService {
 
     @Transactional
     public Store report(DbUser me, Target target, Object reason) {
+        Db.lockCommunity(jdbc);
         String kind = assertKind(target.kind());
         if (!(reason instanceof String r) || !CommunityLogic.REPORT_REASON_IDS.contains(r)) throw ApiException.badRequest("신고 사유가 올바르지 않아요");
         jdbc.sql("INSERT INTO reports (id, reporter_id, target_kind, target_id, reason) VALUES (?, ?, ?, ?, ?) ON CONFLICT (reporter_id, target_kind, target_id) DO NOTHING")
@@ -253,6 +307,7 @@ public class CommunityService {
     @Transactional
     @SuppressWarnings("unchecked")
     public Store createFeedPost(DbUser me, Object body, Object bg, Object title, Object images, Object pages) {
+        Db.lockCommunity(jdbc);
         assertNotBlocked(me);
         int bgN = 0;
         if (bg instanceof Number n) bgN = n.intValue();
@@ -299,6 +354,7 @@ public class CommunityService {
 
     @Transactional
     public Store deleteFeedPost(DbUser me, String id) {
+        Db.lockCommunity(jdbc);
         record Img(String image, List<String> images) {}
         Optional<Img> r = jdbc.sql("DELETE FROM feed_posts WHERE id = ? AND author_id = ? RETURNING image, images").param(id).param(me.id())
             .query((rs, i) -> new Img(rs.getString("image"), Db.textArray(rs, "images"))).optional();
@@ -306,13 +362,14 @@ public class CommunityService {
             jdbc.sql("DELETE FROM comments WHERE post_kind = 'feed' AND post_id = ?").param(id).update();
             Set<String> urls = new LinkedHashSet<>(r.get().images());
             if (r.get().image() != null) urls.add(r.get().image());
-            for (String u : urls) s3.deleteUploadedImage(u); // 우리 S3 에 올린 사진이면 함께 삭제
+            for (String u : urls) if (s3.ownedKeyFromUrl(u, me.id()) != null) s3.deleteUploadedImage(u);
         }
         return loadStore(me);
     }
 
     @Transactional
     public Store updateBio(DbUser me, Object bio) {
+        Db.lockCommunity(jdbc);
         String b = bio instanceof String s ? s.strip() : "";
         if (b.length() > 80) b = b.substring(0, 80);
         jdbc.sql("INSERT INTO creators (user_id, bio) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET bio = EXCLUDED.bio").param(me.id()).param(b).update();
@@ -321,7 +378,9 @@ public class CommunityService {
 
     @Transactional
     public Store toggleFollow(DbUser me, String creatorId) {
+        Db.lockCommunity(jdbc);
         if (creatorId.equals(me.id())) throw ApiException.badRequest("자기 자신은 팔로우할 수 없어요");
+        blocks.assertInteractionAllowed(me.id(), creatorId);
         int del = jdbc.sql("DELETE FROM follows WHERE follower_id = ? AND creator_id = ?").param(me.id()).param(creatorId).update();
         if (del == 0) jdbc.sql("INSERT INTO follows (follower_id, creator_id) VALUES (?, ?)").param(me.id()).param(creatorId).update();
         return loadStore(me);
@@ -329,6 +388,8 @@ public class CommunityService {
 
     @Transactional
     public Store toggleSave(DbUser me, String feedId) {
+        Db.lockCommunity(jdbc);
+        assertTargetAccessible(me, "feed", feedId);
         int del = jdbc.sql("DELETE FROM saves WHERE user_id = ? AND feed_post_id = ?").param(me.id()).param(feedId).update();
         if (del == 0) jdbc.sql("INSERT INTO saves (user_id, feed_post_id) VALUES (?, ?)").param(me.id()).param(feedId).update();
         return loadStore(me);
@@ -336,6 +397,7 @@ public class CommunityService {
 
     @Transactional
     public Store donate(DbUser me, Object amount, Object message) {
+        Db.lockCommunity(jdbc);
         long amt;
         if (amount instanceof Number n) amt = (long) Math.floor(n.doubleValue());
         else {
@@ -345,26 +407,27 @@ public class CommunityService {
         String msg = str(message, 60);
         jdbc.sql("INSERT INTO donations (id, user_id, amount, message) VALUES (?, ?, ?, ?)").param(Ids.uid()).param(me.id()).param((int) amt).param(msg).update();
         // 이번 주 잠정 집계를 바로 갱신
-        Store store = loadStore(me);
+        Store store = loadUnfilteredStore(me);
         String week = store.weekly().keySet().stream().max(Comparator.naturalOrder()).orElse(null);
         if (week != null && !store.weekly().get(week).finalized()) {
             WeeklyBatch cur = CommunityLogic.computeWeekly(store, week, false);
             upsertWeekly(cur);
             store.weekly().put(week, cur);
         }
-        return store;
+        return forViewer(store, me);
     }
 
     @Transactional
     public Store refreshCurrentWeek(DbUser me) {
-        Store store = loadStore(me);
+        Db.lockCommunity(jdbc);
+        Store store = loadUnfilteredStore(me);
         String week = store.weekly().keySet().stream().max(Comparator.naturalOrder()).orElse(null);
         if (week != null && !store.weekly().get(week).finalized()) {
             WeeklyBatch b = CommunityLogic.computeWeekly(store, week, false);
             upsertWeekly(b);
             store.weekly().put(week, b);
         }
-        return store;
+        return forViewer(store, me);
     }
 
     /* ---------- 관리자 ---------- */
@@ -377,20 +440,29 @@ public class CommunityService {
         };
     }
 
+    private void assertTargetAccessible(DbUser me, String kind, String id) {
+        String author = jdbc.sql("SELECT author_id FROM " + tableOf(kind) + " WHERE id = ? AND hidden = FALSE").param(id)
+            .query(String.class).optional().orElseThrow(() -> ApiException.notFound("글을 찾을 수 없어요"));
+        blocks.assertInteractionAllowed(me.id(), author);
+    }
+
     @Transactional
     public Store adminHide(DbUser me, Target target) {
+        Db.lockCommunity(jdbc);
         jdbc.sql("UPDATE " + tableOf(assertKind(target.kind())) + " SET hidden = TRUE WHERE id = ?").param(target.id()).update();
         return loadStore(me);
     }
 
     @Transactional
     public Store adminDismiss(DbUser me, Target target) {
+        Db.lockCommunity(jdbc);
         jdbc.sql("UPDATE " + tableOf(assertKind(target.kind())) + " SET reviewed_at = now() WHERE id = ?").param(target.id()).update();
         return loadStore(me);
     }
 
     @Transactional
     public Store adminBlock(DbUser me, String userId, Object reason) {
+        Db.lockCommunity(jdbc);
         String r = reason instanceof String s ? (s.length() > 200 ? s.substring(0, 200) : s) : "";
         jdbc.sql("UPDATE users SET blocked_at = now(), blocked_reason = ? WHERE id = ?").param(r).param(userId).update();
         return loadStore(me);
@@ -398,6 +470,7 @@ public class CommunityService {
 
     @Transactional
     public Store adminUnblock(DbUser me, String userId) {
+        Db.lockCommunity(jdbc);
         jdbc.sql("UPDATE users SET blocked_at = NULL, blocked_reason = NULL WHERE id = ?").param(userId).update();
         return loadStore(me);
     }

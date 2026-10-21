@@ -1,0 +1,5 @@
+CREATE TABLE community_consents (
+    user_id VARCHAR(36) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    version VARCHAR(32) NOT NULL,
+    accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

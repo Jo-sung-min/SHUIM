@@ -9,10 +9,16 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 /** ResultSet 도우미. TIMESTAMP(시간대 없음) 컬럼은 DB 가 UTC 로 저장하므로 UTC 로 읽어 epoch ms 로 바꾼다 */
 public final class Db {
     private Db() {}
+
+    /** Serialize community snapshots with erasure; callers hold a Spring transaction. */
+    public static void lockCommunity(JdbcClient jdbc) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(1936683629, 1)").query(rs -> {});
+    }
 
     public static Long ms(ResultSet rs, String col) throws SQLException {
         LocalDateTime t = rs.getObject(col, LocalDateTime.class);

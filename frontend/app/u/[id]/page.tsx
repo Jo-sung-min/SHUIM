@@ -9,6 +9,8 @@ import type { ShoutCat } from "@/lib/community-core";
 import { Empty, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import { LoadError } from "@/components/CommunityUI";
 import { IconChevronL, IconMessage, IconUser } from "@/components/Icons";
+import BlockUser from "@/components/BlockUser";
+import SafetyReport from "@/components/SafetyReport";
 
 type Tab = "feed" | "shout";
 
@@ -79,6 +81,7 @@ export default function PublicProfilePage() {
         )}
 
         <div style={{ marginTop: 14 }}>
+          {!isMe && <div className="row" style={{ gap: 20, marginBottom: 14 }}><BlockUser userId={p.id} /><SafetyReport kind="user" targetId={p.id} /></div>}
           <Segmented value={tab} onChange={setTab} options={[{ value: "feed", label: `위로글 ${data.feed.length}` }, { value: "shout", label: `외침 ${data.shout.length}` }]} />
         </div>
 

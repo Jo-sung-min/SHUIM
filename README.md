@@ -2,6 +2,19 @@
 
 **Sorrow + Row — 슬픔을 나란히 나누는 공간.** 기분의 **위치**가 아니라 **변화(가속도)** 를 기록하고, 매일 "오늘의 나"가 쌓인 기록을 모아 긍정적인 방향으로 속도를 붙여주는 메모 앱. 모바일 앱 UI (하단 탭 5개).
 
+## Android · Google Play 출시 준비
+
+운영자 **루체**, 지원 연락처 **developer@lucelab.co.kr**. 기존 웹을 사용하는 Android TWA 앱을 `android/`에 추가했습니다. 앱 ID는 `kr.co.sorow.app`, 대상 Android API는 36입니다. **아직 운영 웹 배포·Play 업로드·심사 제출은 하지 않았습니다.**
+
+- 처음 시작하는 순서: [Google Play 준비 안내](docs/play-store/README.md)
+- 앱 실행·서명 키·AAB 빌드·도메인 연결: [Android 안내](android/README.md)
+- [스토어 소개 초안](docs/play-store/store-listing-ko.md), [데이터 보안 확인표](docs/play-store/data-safety-worksheet.md), [실기기 테스트](docs/play-store/device-test-plan.md)
+- 웹 공개 경로: `/privacy`, `/terms`, `/account-deletion`. 회사·이메일은 반영했으며 보유기간·위탁/국외 이전·시행일을 확정하기 전에는 준비용 안내가 표시됩니다. `frontend/.env.example`의 `LEGAL_*` 설정을 참고하세요.
+- Play 앱 서명 인증서 SHA-256을 프런트엔드의 `ANDROID_SHA256_FINGERPRINTS`에 설정하면 `/.well-known/assetlinks.json`으로 앱과 도메인을 연결합니다. 인증서 미설정 시 503을 반환합니다.
+- 웹 배포 후 `cd frontend`에서 `npm run check:release`로 공개 안내·매니페스트·앱 연결을 검사합니다. 코드 검증은 `npm run typecheck`, `npm run test:offline`, `npm run test:records`, `npm run test:privacy`, `npm run build`입니다.
+
+운영 서버에는 신규 DB 마이그레이션도 함께 적용해야 합니다. 계정 삭제·사용자 차단·사용자/메시지/AI 신고와 운영자 검토 경로를 추가했습니다. 새 가입자가 자동으로 관리자가 되지 않으므로 신뢰할 수 있는 계정을 별도 DB 관리 절차로 지정해야 합니다. 운영 DB의 역할을 자동으로 바꾸는 작업은 수행하지 않았습니다.
+
 ## 구성
 
 - `frontend`: Next.js 16, React 19, TypeScript — 화면. `/api/*` 는 백엔드로 프록시
@@ -86,7 +99,7 @@ npm run dev
 | **공개 프로필** (`/u/아이디`) | 사진·닉네임·소개·크리에이터 배지, 활동 수, 위로글/외침 목록, 팔로우·메시지 보내기 |
 | **메시지** (`/messages`) | 1:1 대화함과 대화 화면(5초 폴링, 읽음 표시) |
 | **나** (`/me`) | 프로필 편집(사진 업로드/주소, 닉네임, 소개 = 공개 / 이름·전화 = 나만), 내 공간 그리드, 알림(내 글의 댓글·내가 위로한 글의 새 댓글) |
-| **계정** | 회원가입·로그인(세션 쿠키, scrypt)과 **카카오로 시작하기**(서버 사이드 인가 코드, `KAKAO_CLIENT_ID` 가 있을 때만 보임). 로그인 전엔 익명 유저로 활동하고 가입·카카오 로그인 시 그 유저가 승격. **비밀번호를 가진 첫 계정이 관리자** |
+| **계정** | 회원가입·로그인(세션 쿠키, scrypt)과 **카카오로 시작하기**(서버 사이드 인가 코드, `KAKAO_CLIENT_ID` 가 있을 때만 보임). 로그인 전엔 익명 유저로 활동하고 가입·카카오 로그인 시 그 유저가 승격. 계정 삭제와 차단 관리 제공. 관리자는 별도 지정 |
 | **관리자 › 프롬프트** | 브리핑·칭찬·사랑하기·점검 4개 시스템 프롬프트와 모델을 화면에서 변경. 요청마다 서버로 전달되어 기본값 대신 사용 |
 
 기록에 많이 힘든 표현이 보이면 109 등 도움 받을 곳을 먼저 띄웁니다.
@@ -98,6 +111,10 @@ npm run dev
 | `GET /api/db` | DB 연결 상태 |
 | `GET /api/auth/me`, `POST /api/auth/{signup,login,logout,nick}` | 계정 (`me` 에 `kakao`: 카카오 로그인 켜짐 여부) |
 | `GET /api/auth/kakao`, `GET /api/auth/kakao/callback` | 카카오 로그인 시작(동의 화면으로 302) / 카카오 콜백(세션 쿠키 발급 후 `/?kakao=1` 로 302, 실패 시 `/auth?error=kakao`) |
+| `DELETE /api/auth/account` | 현재 계정 및 연결 데이터 삭제. `{ confirmation: "계정 삭제", expectedUserId: "화면에서 확인한 계정 ID" }`. 계정 불일치는 거절, 파일 삭제는 재시도 큐 처리 |
+| `GET/POST /api/blocks`, `DELETE /api/blocks/{id}` | 사용자별 차단 목록·차단·해제 |
+| `POST /api/community/consent` | 커뮤니티 약관 동의 버전·시각 저장. 게시·사진 업로드·메시지 전송 전 필요 |
+| `POST/GET /api/safety-reports`, `POST /api/safety-reports/{id}/review` | 사용자·메시지·AI 신고 / 관리자 조회 / 관리자 검토 |
 | `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
 | `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필 / 공개 프로필 |
 | `GET/POST /api/messages`, `GET/POST /api/messages/{id}` | 대화 목록·보내기 / 대화 내용·읽음 |
@@ -163,7 +180,7 @@ backend/
 
 - 브리핑은 하루 한 번 캐시해서 "새로운 주식창"처럼 자꾸 열어보게 만들지 않음
 - 브리핑 프롬프트: 사용자의 말을 인용, 떨어진 날에도 "다시 올라온 순간·지켜낸 것"을 먼저, 진단·투자 조언 금지
-- 개인 기록은 민감 정보라 로그인 계정만 서버에 저장하고 익명은 기기에만 둔다. 저장 데이터 암호화·동의 문구는 아직
+- 로그인 계정의 개인 기록은 서버에 저장하고 익명 기록은 기본적으로 기기에 둡니다. 단, 익명도 AI 기능을 실행하면 관련 기록이 서버·설정된 AI 제공자에 전송될 수 있어 실행 전 안내를 표시합니다. DB/백업 암호화·실제 보유기간·위탁 설정은 운영자가 확인해야 합니다.
 
 ## 불행 모금을 실제로 하려면
 
@@ -176,4 +193,4 @@ backend/
 
 - 브리핑·칭찬·점검 캐시도 서버에 두어 기기 간 하루 1회를 지키기
 - AI 프롬프트·모델 설정을 app_settings 테이블로
-- 메시지 웹소켓, 아침 알림 1회, PWA 홈 화면 설치
+- 메시지 웹소켓, 아침 알림 1회. PWA 설치용 매니페스트와 공개 오프라인 안내는 구현되어 있습니다(개인 페이지·API 응답은 서비스워커 캐시에 저장하지 않음).

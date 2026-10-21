@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -39,6 +40,7 @@ public class S3Service {
     private final String accessKeyId;
     private final String secretAccessKey;
     private final String cdn;
+    private final JdbcClient jdbc;
     private S3Client client;
     private S3Presigner presigner;
 
@@ -47,13 +49,14 @@ public class S3Service {
                      @Value("${app.s3.prefix:feed}") String prefix,
                      @Value("${app.s3.access-key-id:}") String accessKeyId,
                      @Value("${app.s3.secret-access-key:}") String secretAccessKey,
-                     @Value("${app.s3.cdn-base-url:}") String cdn) {
+                     @Value("${app.s3.cdn-base-url:}") String cdn, JdbcClient jdbc) {
         this.region = region;
         this.bucket = bucket;
         this.prefix = prefix.replaceAll("^/+|/+$", "");
         this.accessKeyId = accessKeyId;
         this.secretAccessKey = secretAccessKey;
         this.cdn = cdn.replaceAll("/+$", "");
+        this.jdbc = jdbc;
     }
 
     public boolean configured() {
@@ -91,6 +94,14 @@ public class S3Service {
 
     public record Presigned(String uploadUrl, String key, String publicUrl, long expiresIn, Map<String, String> headers) {}
 
+    /** A user may reference another person's public URL; never delete its underlying object. */
+    public String ownedKeyFromUrl(String url, String userId) {
+        String key = keyFromUrl(url);
+        if (key == null || userId == null) return null;
+        String file = key.substring(key.lastIndexOf('/') + 1);
+        return key.startsWith(prefix + "/") && file.startsWith(userId + "-") ? key : null;
+    }
+
     /** 프리사인 PUT URL 발급. Content-Type·Content-Length·Cache-Control 을 서명에 넣어 그 조건으로만 올릴 수 있게 한다. */
     public Presigned presignUpload(String userId, String contentType, long size) {
         if (!configured()) throw ApiException.unavailable("S3 설정이 없어 사진 업로드는 꺼져 있어요");
@@ -99,9 +110,10 @@ public class S3Service {
         if (size <= 0 || size > MAX_UPLOAD_BYTES) throw ApiException.badRequest("파일은 " + (MAX_UPLOAD_BYTES / 1024 / 1024) + "MB 이하여야 해요");
         String day = LocalDate.now(java.time.ZoneOffset.UTC).toString().replace('-', '/');
         String key = prefix + "/" + day + "/" + userId + "-" + Ids.randomHex(8) + "." + ext;
-        String cacheControl = "public, max-age=31536000, immutable";
+        String cacheControl = "public, max-age=300";
         PutObjectRequest put = PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).contentLength(size).cacheControl(cacheControl).build();
         PresignedPutObjectRequest p = presigner().presignPutObject(PutObjectPresignRequest.builder().signatureDuration(PRESIGN_TTL).putObjectRequest(put).build());
+        jdbc.sql("INSERT INTO uploaded_objects (object_key, user_id) VALUES (?, ?)").param(key).param(userId).update();
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Content-Type", contentType);
         headers.put("Cache-Control", cacheControl);
@@ -117,5 +129,11 @@ public class S3Service {
         } catch (Exception e) {
             log.warn("S3 delete failed {}: {}", key, e.getMessage());
         }
+    }
+
+    /** Durable cleanup jobs call this method; failures must propagate so the job is retried. */
+    public void deleteObject(String key) {
+        if (!configured()) throw ApiException.unavailable("S3 삭제 설정을 확인해 주세요");
+        client().deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
     }
 }

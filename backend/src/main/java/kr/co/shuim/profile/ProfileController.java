@@ -6,6 +6,7 @@ import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.community.CommunityConsentService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,11 +20,13 @@ public class ProfileController {
     private final AuthService auth;
     private final ProfileService profiles;
     private final JdbcClient jdbc;
+    private final CommunityConsentService consent;
 
-    public ProfileController(AuthService auth, ProfileService profiles, JdbcClient jdbc) {
+    public ProfileController(AuthService auth, ProfileService profiles, JdbcClient jdbc, CommunityConsentService consent) {
         this.auth = auth;
         this.profiles = profiles;
         this.jdbc = jdbc;
+        this.consent = consent;
     }
 
     /** GET /api/profile — 내 프로필(비공개 필드 포함) */
@@ -37,6 +40,7 @@ public class ProfileController {
     public Map<String, Object> update(@RequestBody(required = false) Map<String, Object> body, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
         Map<String, Object> b = body == null ? Map.of() : body;
+        if (b.containsKey("nick") || b.containsKey("bio") || b.containsKey("avatarUrl")) consent.requireAccepted(me);
         String err = profiles.updateMyProfile(me, new ProfileService.ProfileInput(
             s(b.get("nick")), s(b.get("bio")), s(b.get("avatarUrl")), s(b.get("name")), s(b.get("phone"))));
         if (err != null) throw ApiException.badRequest(err);

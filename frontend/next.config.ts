@@ -8,6 +8,9 @@ const backendOrigin = (process.env.BACKEND_ORIGIN ?? "http://localhost:8080").re
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [{ source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }] }];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backendOrigin}/api/:path*` }];
   },

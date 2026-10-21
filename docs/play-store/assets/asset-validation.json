@@ -1,0 +1,26 @@
+{
+  "feature-graphic-1024x500.png": {
+    "width": 1024,
+    "height": 500,
+    "format": "png",
+    "channels": 3,
+    "hasAlpha": false,
+    "bytes": 51949
+  },
+  "store-icon-512.png": {
+    "width": 512,
+    "height": 512,
+    "format": "png",
+    "channels": 4,
+    "hasAlpha": true,
+    "bytes": 17842
+  },
+  "icon-512-original.png": {
+    "width": 512,
+    "height": 512,
+    "format": "png",
+    "channels": 4,
+    "hasAlpha": true,
+    "bytes": 22074
+  }
+}

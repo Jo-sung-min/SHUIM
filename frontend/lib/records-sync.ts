@@ -101,6 +101,7 @@ export function pushRecords(sections: Section[], key: string, method: Push["meth
 /** 큐를 비운다. 전부 보냈으면 true. 401(로그아웃됨)이면 버리고 false, 네트워크 실패면 남겨 두고 false */
 export function flushRecords(): Promise<boolean> {
   if (flushing) return flushing;
+  let completed = false;
   flushing = (async () => {
     const uid = hooks?.userId() ?? null;
     while (outbox.length) {
@@ -121,10 +122,13 @@ export function flushRecords(): Promise<boolean> {
       if (outbox[0] === p) outbox.shift();
     }
     if (uid) clearDirty(uid);
+    completed = true;
     return true;
   })().finally(() => {
     flushing = null;
-    if (outbox.length) void flushRecords(); // 비우는 사이에 들어온 것
+    // A failed send stays queued until the next write/sync or explicit retry.
+    // Retrying here after failure would spin continuously while offline.
+    if (completed && outbox.length) void flushRecords(); // 성공 직후 새로 들어온 것만
   });
   return flushing;
 }

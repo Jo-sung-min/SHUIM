@@ -35,7 +35,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(Exception.class)
     ResponseEntity<Map<String, String>> other(Exception e) {
         log.error("unhandled", e);
-        String m = e.getMessage() == null ? "잠시 후 다시 시도해요" : e.getMessage();
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", m));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "처리하지 못했어요. 잠시 후 다시 시도해요."));
     }
 }
