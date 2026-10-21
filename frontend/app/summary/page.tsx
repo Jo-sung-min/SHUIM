@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CATEGORIES, Category, CategoryId, allCategories, orderCategories } from "@/lib/categories";
-import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal } from "@/lib/storage";
+import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal, syncRecords } from "@/lib/storage";
 import { lastNDays } from "@/lib/accel";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar } from "@/components/ui";
@@ -27,8 +27,10 @@ export default function SummaryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setJournal(loadJournal());
-    setCats(orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()));
+    syncRecords().then(() => {
+      setJournal(loadJournal());
+      setCats(orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()));
+    });
   }, []);
 
   const dates = lastNDays(range);

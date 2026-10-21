@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
-import { Memo, loadMemos, saveMemos, todayKey, uid } from "@/lib/storage";
+import { Memo, loadMemos, saveMemos, syncRecords, todayKey, uid } from "@/lib/storage";
 import { CatChips, CatTag, Empty, Hero, Segmented, Sheet, TopBar, fmtDate, fmtRelative } from "@/components/ui";
 import { IconPin, IconPlus } from "@/components/Icons";
 
@@ -16,7 +16,7 @@ export default function MemoPage() {
   const [view, setView] = useState<View>("list");
   const [editing, setEditing] = useState<Memo | "new" | null>(null);
 
-  useEffect(() => setMemos(loadMemos()), []);
+  useEffect(() => { syncRecords().then(() => setMemos(loadMemos())); }, []);
 
   const commit = (next: Memo[]) => {
     setMemos(next);

@@ -4,7 +4,7 @@
  * 계정 클라이언트. 세션은 httpOnly 쿠키, 계정 정보는 /api/auth 에서 온다.
  * 로그인한 계정 id를 localStorage(SESSION_KEY)에도 적어 두어 기록·메모 같은 개인 데이터가 계정별로 분리되게 한다.
  */
-import { SESSION_KEY, adoptGuestData } from "./storage";
+import { SESSION_KEY, adoptGuestData, flushRecords, resetRecordsSync } from "./storage";
 
 export type Role = "admin" | "user";
 
@@ -67,9 +67,10 @@ export async function signUp(email: string, nick: string, password: string): Pro
   if (err) return { ok: false, error: err };
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/signup", { email, nick, password });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "가입하지 못했어요" };
-  adoptGuestData(r.user.id); // 가입 전 이 기기에서 쓰던 기록을 새 계정으로
   meCache = { user: r.user, admin: Boolean(r.admin), configured: true };
+  resetRecordsSync();
   syncSessionKey(r.user);
+  adoptGuestData(r.user.id); // 가입 전 이 기기에서 쓰던 기록을 새 계정으로 (서버에도 한 번 올린다)
   return { ok: true, account: r.user };
 }
 
@@ -77,13 +78,17 @@ export async function signIn(email: string, password: string): Promise<{ ok: tru
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/login", { email, password });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "로그인하지 못했어요" };
   meCache = { user: r.user, admin: Boolean(r.admin), configured: true };
+  resetRecordsSync();
   syncSessionKey(r.user);
+  adoptGuestData(r.user.id); // 게스트 기록은 계정(서버)에 아직 없는 부분에만 들어간다
   return { ok: true, account: r.user };
 }
 
 export async function signOut() {
+  await flushRecords(); // 아직 서버로 못 보낸 기록이 있으면 먼저
   await post("/api/auth/logout", {});
   meCache = null;
+  resetRecordsSync();
   syncSessionKey(null);
 }
 

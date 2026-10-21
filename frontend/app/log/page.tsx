@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ACTION_PRESETS, CUSTOM_COLORS, CUSTOM_EMOJIS, CUSTOM_MAX, Category, CategoryId, SCORE_MAX, SCORE_MIN, allCategories, isCustomCategory, newCategoryId, orderCategories } from "@/lib/categories";
-import { DayRecord, Journal, loadCategoryOrder, loadCustomCategories, loadJournal, loadLog, saveCategoryOrder, saveCustomCategories, saveDay, saveDayLog, todayKey } from "@/lib/storage";
+import { DayRecord, Journal, loadCategoryOrder, loadCustomCategories, loadJournal, loadLog, saveCategoryOrder, saveCustomCategories, saveDay, saveDayLog, syncRecords, todayKey } from "@/lib/storage";
 import { useLongPressReorder } from "@/components/useLongPressReorder";
 import { hasCrisisSignal } from "@/lib/crisis";
 import { biggestShifts, lastNDays, series, volatility } from "@/lib/accel";
@@ -74,14 +74,19 @@ function TodayWrite() {
   );
 
   useEffect(() => {
-    const j = loadJournal();
-    setDay(j[date] ?? {});
-    setDid(loadLog()[date]?.did ?? []);
-    setCustomCats(loadCustomCategories());
-    setOrder(loadCategoryOrder());
-    const prevKeys = Object.keys(j).filter((k) => k < date).sort();
-    setPrev(prevKeys.length ? j[prevKeys[prevKeys.length - 1]] : null);
-    setReady(true);
+    let alive = true;
+    syncRecords().then(() => {
+      if (!alive) return;
+      const j = loadJournal();
+      setDay(j[date] ?? {});
+      setDid(loadLog()[date]?.did ?? []);
+      setCustomCats(loadCustomCategories());
+      setOrder(loadCategoryOrder());
+      const prevKeys = Object.keys(j).filter((k) => k < date).sort();
+      setPrev(prevKeys.length ? j[prevKeys[prevKeys.length - 1]] : null);
+      setReady(true);
+    });
+    return () => { alive = false; };
   }, [date]);
 
   // 자동 저장 (입력 후 500ms)
@@ -286,7 +291,7 @@ function Flow() {
   const [journal, setJournal] = useState<Journal | null>(null);
   const [range, setRange] = useState<7 | 14 | 30>(14);
 
-  useEffect(() => setJournal(loadJournal()), []);
+  useEffect(() => { syncRecords().then(() => setJournal(loadJournal())); }, []);
 
   const dates = useMemo(() => lastNDays(range), [range]);
   const points = useMemo(() => (journal ? series(journal, dates, "all") : []), [journal, dates]);
