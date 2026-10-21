@@ -1,6 +1,6 @@
 "use client";
 
-import { CATEGORIES, CategoryId, MemoCat } from "./categories";
+import { CATEGORIES, CUSTOM_MAX, Category, CategoryId, MemoCat, isCustomCategory } from "./categories";
 
 /* ---------- 기록(점수+메모) ---------- */
 
@@ -130,6 +130,7 @@ const K = {
   review: "maeum-accel:review:v1",
   profile: "maeum-accel:profile:v1",
   notif: "maeum-accel:notif:v1",
+  cats: "maeum-accel:cats:v1",
 } as const;
 /** 계정과 무관하게 기기 전체에서 공유하는 키 (커뮤니티 샘플 세계, 프롬프트, 계정 목록, 세션) */
 export const SESSION_KEY = "maeum-accel:session:v1";
@@ -296,6 +297,10 @@ export function formatPhone(raw: string): string {
 
 /* ---------- 알림 읽음 시각 ---------- */
 
+/* ---------- 사용자 카테고리 (기록 점수용, 계정별) ---------- */
+export const loadCustomCategories = () => read<Category[]>(K.cats, []).filter((c) => c && isCustomCategory(c.id));
+export const saveCustomCategories = (cats: Category[]) => write(K.cats, cats.filter((c) => isCustomCategory(c.id)).slice(0, CUSTOM_MAX));
+
 export const loadNotifSeen = () => read<number>(K.notif, 0);
 export const markNotifSeen = () => write(K.notif, Date.now());
 
@@ -322,14 +327,14 @@ export function clearAll() {
 /* ---------- 데모용 샘플 ---------- */
 
 export function seedSampleData() {
-  const notes: Record<CategoryId, string[]> = {
+  const notes: Record<string, string[]> = {
     money: ["계좌 안 봄", "하이닉스 또 빠짐", "전세금 얘기 들음", "지출 줄이기 시작", "앱 하루 한 번만 확인"],
     work: ["일 평소대로", "이력서 한 줄 고침", "공고 3개 저장", "사이드 프로젝트 아이디어", "코드 리뷰 칭찬 받음"],
     relation: ["그 사람이랑 통화", "부모님께 전화", "연락 없음", "만나서 밥 먹음", "솔직하게 얘기함"],
     body: ["잠 4시간", "손 떨림", "산책 20분", "푹 잠", "커피 줄임"],
     mind: ["불안함", "조금 괜찮아짐", "막막함", "할 수 있겠다는 생각", "나를 칭찬해줌"],
   };
-  const base: Record<CategoryId, number[]> = {
+  const base: Record<string, number[]> = {
     money:    [-1, -2, -4, -5, -4, -3, -3, -2, -3, -2, -1, -1, 0, 0],
     work:     [0, 0, -1, -1, 0, 0, 1, 1, 0, 1, 1, 2, 2, 2],
     relation: [1, 0, 0, -1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 4],

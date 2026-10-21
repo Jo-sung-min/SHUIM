@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { CATEGORIES, CategoryId, categoryById } from "@/lib/categories";
+import { CATEGORIES, Category, CategoryId, categoryById } from "@/lib/categories";
 import { hasCrisisSignal } from "@/lib/crisis";
 import type { DayRecord } from "@/lib/storage";
 
@@ -10,7 +10,10 @@ interface Body {
   entries: { date: string; record: DayRecord }[];
   category: CategoryId | "all";
   days: number;
+  /** 기본 + 사용자 카테고리 (없으면 기본 5개) */
+  categories?: Category[];
 }
+const catsOf = (b: Body): Category[] => (b.category === "all" ? (b.categories?.length ? b.categories : CATEGORIES) : [categoryById(b.category, b.categories)]);
 
 const SYSTEM = `너는 "마음 가속도"라는 기록 앱의 정리 도우미야.
 사용자는 매일 카테고리(돈, 일·커리어, 관계, 몸, 마음)마다 -5~+5 점수와 한 줄 메모를 남겨.
@@ -27,7 +30,7 @@ const SYSTEM = `너는 "마음 가속도"라는 기록 앱의 정리 도우미�
 - 기록에 스스로를 해치거나 삶을 끝내고 싶다는 표현이 있으면, 비난 없이 그 마음을 먼저 알아주고 자살예방상담전화 109(24시간)에 연락해보길 부드럽게 권해.`;
 
 function toPlainText(body: Body): string {
-  const cats = body.category === "all" ? CATEGORIES : [categoryById(body.category)];
+  const cats = catsOf(body);
   const lines: string[] = [];
   for (const { date, record } of body.entries) {
     const parts = cats
@@ -45,7 +48,7 @@ function toPlainText(body: Body): string {
 
 /** API 키가 없을 때 쓰는 간단한 규칙 기반 정리 */
 function localSummary(body: Body): string {
-  const cats = body.category === "all" ? CATEGORIES : [categoryById(body.category)];
+  const cats = catsOf(body);
   const out: string[] = [];
   for (const c of cats) {
     const pts = body.entries

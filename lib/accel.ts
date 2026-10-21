@@ -1,4 +1,4 @@
-import { CATEGORIES, CategoryId } from "./categories";
+import type { CategoryId } from "./categories";
 import type { Journal } from "./storage";
 
 export interface Point {
@@ -25,7 +25,7 @@ function levelOf(j: Journal, date: string, cat: CategoryId | "all"): number | nu
   const day = j[date];
   if (!day) return null;
   if (cat !== "all") return day[cat]?.score ?? null;
-  const scores = CATEGORIES.map((c) => day[c.id]?.score).filter((s): s is number => typeof s === "number");
+  const scores = Object.values(day).map((e) => e?.score).filter((s): s is number => typeof s === "number");
   if (!scores.length) return null;
   return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
 }

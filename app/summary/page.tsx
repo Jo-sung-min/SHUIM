@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CATEGORIES, CategoryId } from "@/lib/categories";
-import { Journal, loadJournal } from "@/lib/storage";
+import { CATEGORIES, Category, CategoryId, allCategories } from "@/lib/categories";
+import { Journal, loadCustomCategories, loadJournal } from "@/lib/storage";
 import { lastNDays } from "@/lib/accel";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar } from "@/components/ui";
@@ -19,13 +19,17 @@ interface Result {
 
 export default function SummaryPage() {
   const [journal, setJournal] = useState<Journal>({});
+  const [cats, setCats] = useState<Category[]>(CATEGORIES);
   const [sel, setSel] = useState<Sel>("all");
   const [range, setRange] = useState<7 | 14 | 30>(7);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => setJournal(loadJournal()), []);
+  useEffect(() => {
+    setJournal(loadJournal());
+    setCats(allCategories(loadCustomCategories()));
+  }, []);
 
   const dates = lastNDays(range);
   const entries = dates.filter((d) => journal[d]).map((d) => ({ date: d, record: journal[d] }));
@@ -38,7 +42,7 @@ export default function SummaryPage() {
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries, category: sel, days: range }),
+        body: JSON.stringify({ entries, category: sel, days: range, categories: cats }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
       setResult(await res.json());
@@ -65,7 +69,7 @@ export default function SummaryPage() {
             <div className="tiny muted" style={{ fontWeight: 700, marginBottom: 6 }}>카테고리</div>
             <div className="chips">
               <button className={`chip ${sel === "all" ? "on" : ""}`} onClick={() => setSel("all")}>전체</button>
-              {CATEGORIES.map((c) => (
+              {cats.map((c) => (
                 <button key={c.id} className={`chip cat ${sel === c.id ? "on" : ""}`} style={{ ["--chip" as string]: c.color }} onClick={() => setSel(c.id)}>
                   {c.emoji} {c.label}
                 </button>

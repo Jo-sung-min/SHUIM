@@ -14,6 +14,7 @@ import {
   ScheduleItem,
   addDays,
   loadBriefing,
+  loadCustomCategories,
   loadGoals,
   loadJournal,
   loadLog,
@@ -29,6 +30,7 @@ import {
   todayKey,
 } from "@/lib/storage";
 import { Account, fetchMe } from "@/lib/auth";
+import { allCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
 import { IconCheck, IconNote, IconSparkle, IconUser } from "@/components/Icons";
@@ -55,6 +57,7 @@ function buildPayload(data: Data, today: string) {
     .sort();
   return {
     date: today,
+    categories: allCategories(loadCustomCategories()),
     prompts: loadPrompts(),
     today: data.journal[today] ?? {},
     todayDid: data.log[today]?.did ?? [],

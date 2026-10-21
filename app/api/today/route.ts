@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
+import { CATEGORIES, Category, MemoCat, memoCatById } from "@/lib/categories";
 import { hasCrisisSignal } from "@/lib/crisis";
 import type { BriefingData, DayRecord, MomentData, MomentMode, ReviewData } from "@/lib/storage";
 import { DEFAULT_MODEL, DEFAULT_PROMPTS, PROMPT_MAX_LEN, PromptKey, isAllowedModel } from "@/lib/prompts";
@@ -18,6 +18,8 @@ interface DatedMemo {
 
 interface Body {
   mode?: Mode;
+  /** 기본 + 사용자 카테고리 (없으면 기본 5개) */
+  categories?: Category[];
   date: string;
   today: DayRecord;
   todayDid: string[];
@@ -42,8 +44,10 @@ function josa(word: string, withBatchim: string, without: string): string {
   return word + (has ? withBatchim : without);
 }
 
-function dayLine(date: string, record: DayRecord, did: string[]): string {
-  const parts = CATEGORIES.map((c) => {
+const catsOf = (b: Body): Category[] => (b.categories?.length ? b.categories : CATEGORIES);
+
+function dayLine(date: string, record: DayRecord, did: string[], cats: Category[] = CATEGORIES): string {
+  const parts = cats.map((c) => {
     const e = record[c.id];
     if (!e) return null;
     return `${c.label} ${fmtScore(e.score)}${e.note ? ` "${e.note.slice(0, 200)}"` : ""}`;
@@ -55,9 +59,9 @@ function dayLine(date: string, record: DayRecord, did: string[]): string {
 function toPlainText(b: Body): string {
   const out: string[] = [];
   out.push(`[오늘 ${b.date}]`);
-  out.push(Object.keys(b.today).length || b.todayDid.length ? dayLine(b.date, b.today, b.todayDid) : "(오늘은 아직 기록 전)");
+  out.push(Object.keys(b.today).length || b.todayDid.length ? dayLine(b.date, b.today, b.todayDid, catsOf(b)) : "(오늘은 아직 기록 전)");
   out.push("", "[최근 기록 (오래된 순)]");
-  out.push(b.recent.length ? b.recent.map((r) => dayLine(r.date, r.record, r.did)).join("\n") : "(없음)");
+  out.push(b.recent.length ? b.recent.map((r) => dayLine(r.date, r.record, r.did, catsOf(b))).join("\n") : "(없음)");
   out.push("", "[메모 (고정 먼저)]");
   out.push(
     b.memos.length
@@ -90,7 +94,7 @@ function toPlainText(b: Body): string {
 /* ---------- API 키 없을 때: 규칙 기반 브리핑 ---------- */
 
 function avg(r: DayRecord): number | null {
-  const s = CATEGORIES.map((c) => r[c.id]?.score).filter((v): v is number => typeof v === "number");
+  const s = Object.values(r).map((e) => e?.score).filter((v): v is number => typeof v === "number");
   return s.length ? s.reduce((a, b) => a + b, 0) / s.length : null;
 }
 
@@ -118,7 +122,7 @@ function localBriefing(b: Body): BriefingData {
     const ref = todayAvg !== null ? last.record : recent.length > 1 ? recent[recent.length - 2].record : null;
     if (src && ref) {
       let best: { label: string; d: number } | null = null;
-      for (const c of CATEGORIES) {
+      for (const c of catsOf(b)) {
         const a = src[c.id]?.score;
         const p = ref[c.id]?.score;
         if (typeof a === "number" && typeof p === "number" && (!best || Math.abs(a - p) > Math.abs(best.d))) best = { label: c.label, d: a - p };
@@ -154,7 +158,7 @@ function localBriefing(b: Body): BriefingData {
   if (didAll.length) highlights.push(`최근 한 행동: ${Array.from(new Set(didAll)).slice(0, 4).join(", ")}. 작은 행동이 쌓이면 방향이 바뀌어요.`);
   const rises: { label: string; d: number; note: string }[] = [];
   for (let i = 1; i < recent.length; i++) {
-    for (const c of CATEGORIES) {
+    for (const c of catsOf(b)) {
       const a = recent[i].record[c.id]?.score;
       const p = recent[i - 1].record[c.id]?.score;
       if (typeof a === "number" && typeof p === "number" && a - p >= 2) rises.push({ label: c.label, d: a - p, note: recent[i].record[c.id]?.note ?? "" });
@@ -210,12 +214,12 @@ function localPraise(b: Body): MomentData {
   // 내려간 날에도 기록
   const lowDay = recent.find((r) => (avg(r.record) ?? 0) <= -2);
   if (lowDay) {
-    const note = CATEGORIES.map((c) => lowDay.record[c.id]?.note).find(Boolean);
+    const note = catsOf(b).map((c) => lowDay.record[c.id]?.note).find(Boolean);
     lines.push(`${lowDay.date.slice(5).replace("-", "/")}처럼 힘든 날에도 기록을 남겼어요${note ? `: "${note}"` : "."} 내려간 날을 적어두는 건 쉬운 일이 아니에요.`);
   }
   // 올라온 날
   for (let i = 1; i < recent.length; i++) {
-    for (const c of CATEGORIES) {
+    for (const c of catsOf(b)) {
       const a = recent[i].record[c.id]?.score;
       const p = recent[i - 1].record[c.id]?.score;
       if (typeof a === "number" && typeof p === "number" && a - p >= 2) {
@@ -295,7 +299,7 @@ function localReview(b: Body): ReviewData {
   const past = memos.filter((m) => m.date < b.date);
   const todayTexts = [
     ...memos.filter((m) => m.date === b.date).map((m) => m.text),
-    ...CATEGORIES.map((c) => b.today[c.id]?.note ?? "").filter(Boolean),
+    ...catsOf(b).map((c) => b.today[c.id]?.note ?? "").filter(Boolean),
     ...b.todayDid,
   ];
   // 흔한 말은 연결 근거로 삼지 않음

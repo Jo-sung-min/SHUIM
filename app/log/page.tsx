@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ACTION_PRESETS, CATEGORIES, CategoryId, SCORE_MAX, SCORE_MIN, categoryById } from "@/lib/categories";
-import { DayRecord, Journal, loadJournal, loadLog, saveDay, saveDayLog, streak, todayKey } from "@/lib/storage";
+import { ACTION_PRESETS, CATEGORIES, CUSTOM_COLORS, CUSTOM_EMOJIS, CUSTOM_MAX, Category, CategoryId, SCORE_MAX, SCORE_MIN, allCategories, categoryById, isCustomCategory, newCategoryId } from "@/lib/categories";
+import { DayRecord, Journal, loadCustomCategories, loadJournal, loadLog, saveCustomCategories, saveDay, saveDayLog, streak, todayKey } from "@/lib/storage";
 import { hasCrisisSignal } from "@/lib/crisis";
 import { biggestShifts, lastNDays, series, volatility } from "@/lib/accel";
 import AccelChart from "@/components/AccelChart";
 import HelpBanner from "@/components/HelpBanner";
 import { Empty, Hero, Segmented, TopBar, fmtDate } from "@/components/ui";
-import { IconPlus, IconSparkle } from "@/components/Icons";
+import { IconClose, IconPlus, IconSparkle } from "@/components/Icons";
 
 /** 어제 대비 변화 선택지: -DELTA_MAX(많이 내려감) ~ +DELTA_MAX(많이 올라옴) */
 const DELTA_MAX = 5;
@@ -20,22 +20,23 @@ type View = "today" | "flow";
 
 export default function LogPage() {
   const [view, setView] = useState<View>("today");
-  const [stat, setStat] = useState({ streak: 0, filled: 0, did: 0 });
+  const [stat, setStat] = useState({ streak: 0, filled: 0, did: 0, total: CATEGORIES.length });
   const onWriteChange = useCallback(
-    (filled: number, did: number) => setStat((s) => (s.filled === filled && s.did === did ? s : { ...s, filled, did })),
+    (filled: number, did: number, total: number) =>
+      setStat((s) => (s.filled === filled && s.did === did && s.total === total ? s : { ...s, filled, did, total })),
     []
   );
 
   useEffect(() => {
     const j = loadJournal();
     const t = todayKey();
-    setStat({ streak: streak(j), filled: Object.keys(j[t] ?? {}).length, did: loadLog()[t]?.did.length ?? 0 });
+    setStat({ streak: streak(j), filled: Object.keys(j[t] ?? {}).length, did: loadLog()[t]?.did.length ?? 0, total: allCategories(loadCustomCategories()).length });
   }, []);
 
   const title =
     stat.filled === 0 && stat.did === 0
       ? "오늘 한 걸음만 적어요"
-      : stat.filled >= CATEGORIES.length
+      : stat.filled >= stat.total
       ? "오늘 기록을 다 채웠어요"
       : "이어서 한 줄만 더";
 
@@ -46,7 +47,7 @@ export default function LogPage() {
         <Hero
           label={stat.streak > 0 ? `연속 ${stat.streak}일째` : "첫 기록"}
           title={title}
-          stats={[`행동 ${stat.did}개`, `기분 ${stat.filled}/${CATEGORIES.length}`]}
+          stats={[`행동 ${stat.did}개`, `기분 ${stat.filled}/${stat.total}`]}
         />
         <div style={{ marginTop: 12 }}>
           <Segmented
@@ -70,7 +71,7 @@ export default function LogPage() {
 
 /* ================= 오늘 쓰기 ================= */
 
-function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => void }) {
+function TodayWrite({ onChange }: { onChange: (filled: number, did: number, total: number) => void }) {
   const date = todayKey();
   const [day, setDay] = useState<DayRecord>({});
   const [did, setDid] = useState<string[]>([]);
@@ -78,12 +79,18 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(true);
   const [custom, setCustom] = useState("");
+  const [customCats, setCustomCats] = useState<Category[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newEmoji, setNewEmoji] = useState(CUSTOM_EMOJIS[0]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cats = useMemo(() => allCategories(customCats), [customCats]);
 
   useEffect(() => {
     const j = loadJournal();
     setDay(j[date] ?? {});
     setDid(loadLog()[date]?.did ?? []);
+    setCustomCats(loadCustomCategories());
     const prevKeys = Object.keys(j).filter((k) => k < date).sort();
     setPrev(prevKeys.length ? j[prevKeys[prevKeys.length - 1]] : null);
     setReady(true);
@@ -117,6 +124,25 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
   /** "어제보다 d만큼" 선택 → 오늘 위치 = 어제 위치 + d */
   const pickDelta = (id: CategoryId, d: number) => update(id, { delta: d, score: clamp(prevScoreOf(id) + d) });
 
+  /** 사용자 카테고리 추가 (최대 CUSTOM_MAX개) */
+  const addCategory = () => {
+    const label = newLabel.trim().slice(0, 12);
+    if (!label || customCats.length >= CUSTOM_MAX) return;
+    const next = [...customCats, { id: newCategoryId(), label, emoji: newEmoji, hint: `오늘의 ${label}, 한 줄로`, color: CUSTOM_COLORS[customCats.length % CUSTOM_COLORS.length] }];
+    setCustomCats(next);
+    saveCustomCategories(next);
+    setNewLabel("");
+    setNewEmoji(CUSTOM_EMOJIS[(customCats.length + 1) % CUSTOM_EMOJIS.length]);
+    setAdding(false);
+  };
+  /** 사용자 카테고리 삭제. 지난 기록은 그대로 두고 카드만 사라진다 */
+  const removeCategory = (id: CategoryId) => {
+    if (!window.confirm("이 카테고리를 지울까요? 지난 기록은 남고 카드만 사라져요.")) return;
+    const next = customCats.filter((c) => c.id !== id);
+    setCustomCats(next);
+    saveCustomCategories(next);
+  };
+
   const toggleDid = (text: string) => {
     const t = text.trim();
     if (!t) return;
@@ -131,8 +157,8 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
   const filled = Object.keys(day).length;
 
   useEffect(() => {
-    if (ready) onChange(filled, did.length);
-  }, [ready, filled, did.length, onChange]);
+    if (ready) onChange(filled, did.length, cats.length);
+  }, [ready, filled, did.length, cats.length, onChange]);
 
   if (!ready) return null;
 
@@ -179,7 +205,7 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
       {crisis && <HelpBanner alert />}
 
       <div className="stack">
-        {CATEGORIES.map((c) => {
+        {cats.map((c) => {
           const e = day[c.id];
           const p = prevScoreOf(c.id);
           const delta = e ? e.delta ?? e.score - p : null;
@@ -188,6 +214,11 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
               <div className="entry-head">
                 <div className="entry-title">
                   {c.emoji} {c.label}
+                  {isCustomCategory(c.id) && (
+                    <button type="button" className="cat-del" aria-label={`${c.label} 카테고리 삭제`} onClick={() => removeCategory(c.id)}>
+                      <IconClose />
+                    </button>
+                  )}
                 </div>
                 <div className="score-val" aria-live="polite">
                   {delta === null ? (
@@ -229,6 +260,35 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
             </section>
           );
         })}
+
+        {customCats.length < CUSTOM_MAX && (
+          adding ? (
+            <section className="card cat-form">
+              <div className="entry-title" style={{ marginBottom: 10 }}>새 카테고리</div>
+              <div className="chips wrap emoji-pick" role="radiogroup" aria-label="이모지">
+                {CUSTOM_EMOJIS.map((e) => (
+                  <button key={e} type="button" role="radio" aria-checked={newEmoji === e} className={`chip ${newEmoji === e ? "on" : ""}`} onClick={() => setNewEmoji(e)}>{e}</button>
+                ))}
+              </div>
+              <form
+                className="inline-input"
+                style={{ marginTop: 8 }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  addCategory();
+                }}
+              >
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="이름 (예: 공부, 취미)" maxLength={12} autoFocus />
+                <button type="submit" className="btn sm" disabled={!newLabel.trim()}>추가</button>
+                <button type="button" className="btn sm ghost" onClick={() => setAdding(false)}>취소</button>
+              </form>
+            </section>
+          ) : (
+            <button type="button" className="add-cat" onClick={() => setAdding(true)}>
+              <IconPlus /> 카테고리 추가
+            </button>
+          )
+        )}
       </div>
 
     </>
@@ -243,15 +303,19 @@ function Flow() {
   const [journal, setJournal] = useState<Journal | null>(null);
   const [sel, setSel] = useState<Sel>("all");
   const [range, setRange] = useState<7 | 14 | 30>(14);
+  const [cats, setCats] = useState<Category[]>(CATEGORIES);
 
-  useEffect(() => setJournal(loadJournal()), []);
+  useEffect(() => {
+    setJournal(loadJournal());
+    setCats(allCategories(loadCustomCategories()));
+  }, []);
 
   const dates = useMemo(() => lastNDays(range), [range]);
   const points = useMemo(() => (journal ? series(journal, dates, sel) : []), [journal, dates, sel]);
   const recorded = points.filter((p) => p.level !== null).length;
   const { drops, rises } = biggestShifts(points);
   const vol = volatility(points);
-  const color = sel === "all" ? "var(--text)" : categoryById(sel).color;
+  const color = sel === "all" ? "var(--text)" : categoryById(sel, cats).color;
 
   if (!journal) return null;
 
@@ -267,7 +331,7 @@ function Flow() {
     <>
       <div className="chips" style={{ marginTop: 14 }} role="radiogroup">
         <button className={`chip ${sel === "all" ? "on" : ""}`} onClick={() => setSel("all")}>전체 평균</button>
-        {CATEGORIES.map((c) => (
+        {cats.map((c) => (
           <button
             key={c.id}
             className={`chip cat ${sel === c.id ? "on" : ""}`}
