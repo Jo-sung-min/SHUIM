@@ -87,14 +87,27 @@ export interface Comment extends Base {
   postId: string;
 }
 
-export interface FeedPost extends Base {
+/** 피드 글 안의 콘텐츠 하나: 사진(선택) + 제목(선택) + 글. 가로로 넘기면 사진과 글이 함께 바뀐다 */
+export interface FeedPage {
+  image?: string;
   title?: string;
+  text: string;
+}
+
+export interface FeedPost extends Base {
+  title?: string; // 첫 콘텐츠 제목 (대표)
   bg: number;
-  image?: string; // 대표(첫 장)
-  images: string[]; // 사진 여러 장 (가로로 넘겨 봄)
+  image?: string; // 첫 콘텐츠 사진 (대표)
+  images: string[]; // 모든 콘텐츠 사진
+  pages: FeedPage[]; // 콘텐츠 목록 (최소 1개)
   saves: string[];
 }
 export const FEED_MAX_IMAGES = 10;
+export const FEED_MAX_PAGES = 10;
+
+/** 글의 콘텐츠 목록 (옛 데이터는 글 하나로) */
+export const pagesOf = (f: FeedPost): FeedPage[] =>
+  f.pages?.length ? f.pages : [{ image: f.image, title: f.title, text: f.text }];
 
 export interface Donation {
   id: string;

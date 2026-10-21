@@ -11,6 +11,8 @@ import {
   Donation,
   FEED_BG_COUNT,
   FEED_MAX_IMAGES,
+  FEED_MAX_PAGES,
+  FeedPage,
   FeedPost,
   Post,
   REPORT_REASON_IDS,
@@ -107,7 +109,9 @@ export async function loadStore(me: DbUser): Promise<CommunityStore> {
     ),
     feed: feed.rows.map(
       (r): FeedPost => ({
-        id: r.id, title: r.title ?? undefined, text: r.text, bg: r.bg, image: r.image ?? undefined, images: (r.images as string[] | null) ?? (r.image ? [r.image] : []), authorId: r.author_id, createdAt: ms(r.created_at)!,
+        id: r.id, title: r.title ?? undefined, text: r.text, bg: r.bg, image: r.image ?? undefined, images: (r.images as string[] | null) ?? (r.image ? [r.image] : []),
+        pages: Array.isArray(r.pages) && r.pages.length ? (r.pages as FeedPage[]).map((p) => ({ image: p.image ?? undefined, title: p.title ?? undefined, text: String(p.text ?? "") })) : [{ image: r.image ?? undefined, title: r.title ?? undefined, text: r.text }],
+        authorId: r.author_id, createdAt: ms(r.created_at)!,
         cheers: cheerMap.get(`feed:${r.id}`) ?? [], reports: reportMap.get(`feed:${r.id}`) ?? [], saves: saveMap.get(r.id) ?? [],
         hidden: r.hidden || undefined, reviewedAt: ms(r.reviewed_at),
       })
@@ -212,15 +216,36 @@ export async function report(me: DbUser, target: Target, reason: unknown) {
   );
   return loadStore(me);
 }
-export async function createFeedPost(me: DbUser, body: unknown, bg: unknown, title: unknown, images: unknown) {
+/**
+ * 피드 글 작성. pages = [{ image?, title?, text }] 콘텐츠 목록(1~10개).
+ * 옛 호출(text/title/images)도 받아서 콘텐츠 하나(또는 사진마다 같은 글)로 바꾼다.
+ */
+export async function createFeedPost(me: DbUser, body: unknown, bg: unknown, title: unknown, images: unknown, pages?: unknown) {
   assertNotBlocked(me);
   const q = db();
   const bgN = Math.max(0, Math.min(FEED_BG_COUNT - 1, Number(bg) || 0));
-  const ok = (u: unknown): u is string => typeof u === "string" && /^(\/|https?:\/\/)/.test(u.trim());
-  const list = (Array.isArray(images) ? images : typeof images === "string" ? [images] : []).filter(ok).map((u) => u.trim().slice(0, 500)).slice(0, FEED_MAX_IMAGES);
-  const t = typeof title === "string" && title.trim() ? title.trim().slice(0, 24) : null;
+  const okUrl = (u: unknown): u is string => typeof u === "string" && /^(\/|https?:\/\/)/.test(u.trim());
+  const clean = (p: Record<string, unknown>): FeedPage | null => {
+    const t = typeof p.text === "string" ? p.text.trim().slice(0, 280) : "";
+    if (!t) return null;
+    return { text: t, title: typeof p.title === "string" && p.title.trim() ? p.title.trim().slice(0, 24) : undefined, image: okUrl(p.image) ? p.image.trim().slice(0, 500) : undefined };
+  };
+  let list: FeedPage[] = [];
+  if (Array.isArray(pages)) list = pages.filter((p): p is Record<string, unknown> => Boolean(p && typeof p === "object")).map(clean).filter((p): p is FeedPage => p !== null);
+  if (!list.length) {
+    const t = text(body, 280);
+    const imgs = (Array.isArray(images) ? images : typeof images === "string" ? [images] : []).filter(okUrl).map((u) => u.trim().slice(0, 500));
+    const tt = typeof title === "string" && title.trim() ? title.trim().slice(0, 24) : undefined;
+    list = imgs.length ? imgs.map((image) => ({ image, title: tt, text: t })) : [{ title: tt, text: t }];
+  }
+  list = list.slice(0, FEED_MAX_PAGES);
+  const first = list[0];
+  const allImages = list.map((p) => p.image).filter((u): u is string => Boolean(u));
   await q.query("INSERT INTO creators (user_id, bio) VALUES ($1, '') ON CONFLICT (user_id) DO NOTHING", [me.id]);
-  await q.query("INSERT INTO feed_posts (id, author_id, title, text, bg, image, images) VALUES ($1, $2, $3, $4, $5, $6, $7)", [uid(), me.id, t, text(body, 280), bgN, list[0] ?? null, list]);
+  await q.query(
+    "INSERT INTO feed_posts (id, author_id, title, text, bg, image, images, pages) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    [uid(), me.id, first.title ?? null, first.text, bgN, first.image ?? null, allImages, JSON.stringify(list)]
+  );
   return loadStore(me);
 }
 export async function deleteFeedPost(me: DbUser, id: string) {

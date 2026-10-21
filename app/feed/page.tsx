@@ -6,7 +6,7 @@ import {
   FEED_BG_COUNT,
   FEED_BG_LABELS,
   FEED_IMAGES,
-  FEED_MAX_IMAGES,
+  FEED_MAX_PAGES,
   FeedPost,
   REPORT_THRESHOLD,
   Target,
@@ -18,8 +18,10 @@ import {
   isCreator,
   isFlagged,
   listFeed,
+  pagesOf,
   userById,
 } from "@/lib/community";
+import type { FeedPage as FeedContent } from "@/lib/community-core";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Sheet, fmtRelative } from "@/components/ui";
@@ -231,9 +233,9 @@ export default function FeedPage() {
         open={writing}
         firstTime={!isCreator(s, me)}
         onClose={() => setWriting(false)}
-        onSubmit={async (text, bg, title, bio, images) => {
+        onSubmit={async (pages, bg, bio) => {
           await run(setS, async () => {
-            let next = await api.createFeedPost(text, bg, title, images);
+            let next = await api.createFeedPost(pages, bg);
             if (bio !== undefined && bio.trim()) next = await api.updateBio(bio);
             return next;
           });
@@ -258,7 +260,7 @@ export default function FeedPage() {
   );
 }
 
-/* ================= 한 장 (사진 여러 장이면 가로로 넘겨 봄) ================= */
+/* ================= 한 장: 콘텐츠(사진+글) 여러 개면 가로로 넘겨 봄 ================= */
 
 function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile }: {
   s: CommunityStore; post: FeedPost; revealed: boolean; onReveal: () => void; onCheer: () => void; onSave: () => void;
@@ -273,42 +275,42 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
   const saved = post.saves.includes(me);
   const comments = commentsOf(s, post.id).length;
   const flagged = isFlagged(post) && !revealed;
-  const imgs = post.images?.length ? post.images : post.image ? [post.image] : [];
+  const pages = pagesOf(post);
   const [idx, setIdx] = useState(0);
   const slides = useRef<HTMLDivElement | null>(null);
   const onSlidesScroll = () => {
     const el = slides.current;
     if (el) setIdx(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
   };
+  const anyImage = pages.some((p) => p.image);
 
   return (
-    <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${imgs.length ? "has-img" : ""}`}>
-      {imgs.length > 0 && (
-        <div className="reel-slides" ref={slides} onScroll={onSlidesScroll} aria-label={`사진 ${imgs.length}장`}>
-          {imgs.map((src, i) => (
-            <div key={i} className="slide" style={{ backgroundImage: `url(${src})` }} role="img" aria-label={`${i + 1}번째 사진`} />
-          ))}
-        </div>
-      )}
-      {imgs.length > 1 && (
-        <>
-          <div className="reel-dots" aria-hidden="true">{imgs.map((_, i) => <i key={i} className={i === idx ? "on" : ""} />)}</div>
-          <div className="reel-count">{idx + 1}/{imgs.length}</div>
-        </>
-      )}
-      <div className="reel-body">
-        {flagged ? (
+    <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${anyImage ? "has-img" : ""}`}>
+      {flagged ? (
+        <div className="reel-body" style={{ pointerEvents: "auto" }}>
           <button className="flagged-box reel-flagged" onClick={onReveal}>
             <b>신고가 누적되어 검토 중인 글이에요</b>
             위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 · 눌러서 보기
           </button>
-        ) : (
-          <>
-            {post.title && <div className="reel-title">{post.title}</div>}
-            <p className="reel-text">{post.text}</p>
-          </>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="reel-slides" ref={slides} onScroll={onSlidesScroll} aria-label={`콘텐츠 ${pages.length}개`}>
+          {pages.map((p, i) => (
+            <article key={i} className={`slide ${p.image ? "has-img" : ""}`} style={p.image ? { backgroundImage: `url(${p.image})` } : undefined} aria-label={`${i + 1}번째 콘텐츠`}>
+              <div className="slide-body">
+                {p.title && <div className="reel-title">{p.title}</div>}
+                <p className="reel-text">{p.text}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {!flagged && pages.length > 1 && (
+        <>
+          <div className="reel-dots" aria-hidden="true">{pages.map((_, i) => <i key={i} className={i === idx ? "on" : ""} />)}</div>
+          <div className="reel-count">{idx + 1}/{pages.length}</div>
+        </>
+      )}
       <div className="reel-meta">
         <button className="reel-author" onClick={onProfile}>
           <span className="avatar">{author.nick.slice(0, 1)}</span>
@@ -396,37 +398,77 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
   );
 }
 
-/* ================= 글쓰기 (사진 최대 FEED_MAX_IMAGES장, 가로로 넘겨 봄) ================= */
+/* ================= 글쓰기: 콘텐츠(사진+제목+글) 1~FEED_MAX_PAGES개 ================= */
+
+type Draft = { image: string; title: string; text: string };
+const emptyDraft = (): Draft => ({ image: "", title: "", text: "" });
 
 function WriteSheet({ open, firstTime, onClose, onSubmit }: {
   open: boolean; firstTime: boolean; onClose: () => void;
-  onSubmit: (text: string, bg: number, title: string, bio: string | undefined, images: string[]) => Promise<void>;
+  onSubmit: (pages: FeedContent[], bg: number, bio: string | undefined) => Promise<void>;
 }) {
-  const [title, setTitle] = useState("");
-  const [text, setText] = useState("");
+  const [pages, setPages] = useState<Draft[]>([emptyDraft()]);
+  const [cur, setCur] = useState(0);
   const [bg, setBg] = useState(0);
   const [bio, setBio] = useState("");
-  const [images, setImages] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [canUpload, setCanUpload] = useState(false);
-  const [uploading, setUploading] = useState<string | null>(null); // "2/5 · 40%"
+  const [uploading, setUploading] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   useEffect(() => {
     if (open) uploadAvailable().then(setCanUpload);
   }, [open]);
-  const full = images.length >= FEED_MAX_IMAGES;
-  const add = (u: string) => setImages((cur) => (cur.includes(u) || cur.length >= FEED_MAX_IMAGES ? cur : [...cur, u]));
-  const remove = (u: string) => setImages((cur) => cur.filter((x) => x !== u));
+
+  const page = pages[cur];
+  const update = (patch: Partial<Draft>, at = cur) => setPages((ps) => ps.map((p, i) => (i === at ? { ...p, ...patch } : p)));
+  const addPage = () => {
+    if (pages.length >= FEED_MAX_PAGES) return;
+    setPages((ps) => [...ps, emptyDraft()]);
+    setCur(pages.length);
+  };
+  const removePage = () => {
+    if (pages.length <= 1) {
+      setPages([emptyDraft()]);
+      return;
+    }
+    setPages((ps) => ps.filter((_, i) => i !== cur));
+    setCur((c) => Math.max(0, c - 1));
+  };
+  const move = (dir: -1 | 1) => {
+    const to = cur + dir;
+    if (to < 0 || to >= pages.length) return;
+    setPages((ps) => {
+      const next = [...ps];
+      [next[cur], next[to]] = [next[to], next[cur]];
+      return next;
+    });
+    setCur(to);
+  };
+  const okUrl = (u: string) => /^(\/|https?:\/\/)/.test(u.trim());
+
+  // 사진 여러 장을 한 번에 고르면: 현재 콘텐츠부터 채우고, 남는 사진은 새 콘텐츠로 (글은 나중에 적음)
   const onPickFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
     setUploadError(null);
-    const list = Array.from(files).slice(0, FEED_MAX_IMAGES - images.length);
+    const list = Array.from(files);
     try {
+      let at = cur;
       for (let i = 0; i < list.length; i++) {
         setUploading(`${i + 1}/${list.length} · 0%`);
         const r = await uploadImage(list[i], (pct) => setUploading(`${i + 1}/${list.length} · ${pct}%`));
-        add(r.url);
+        if (i === 0) update({ image: r.url }, at);
+        else {
+          at = Math.min(at + 1, FEED_MAX_PAGES - 1);
+          setPages((ps) => {
+            if (ps.length >= FEED_MAX_PAGES && at >= ps.length) return ps;
+            const next = [...ps];
+            if (at >= next.length) next.push({ ...emptyDraft(), image: r.url });
+            else if (!next[at].image) next[at] = { ...next[at], image: r.url };
+            else next.splice(at, 0, { ...emptyDraft(), image: r.url });
+            return next.slice(0, FEED_MAX_PAGES);
+          });
+        }
       }
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "업로드하지 못했어요");
@@ -434,27 +476,75 @@ function WriteSheet({ open, firstTime, onClose, onSubmit }: {
       setUploading(null);
     }
   };
-  const addUrl = () => {
-    const u = imageUrl.trim();
-    if (!/^(\/|https?:\/\/)/.test(u)) return;
-    add(u);
-    setImageUrl("");
-  };
+
+  const ready = pages.every((p) => p.text.trim()) && !busy && !uploading;
+  const emptyCount = pages.filter((p) => !p.text.trim()).length;
+
   return (
     <Sheet open={open} onClose={onClose} title={firstTime ? "크리에이터 되기" : "위로글 쓰기"}>
       <div className="stack">
         {firstTime && <div className="notice">위로글을 하나 올리면 크리에이터가 돼요. 짧게, 한 사람에게 말하듯 써요. 조언보다 알아주는 말이 먼저예요.</div>}
+
+        {/* 콘텐츠 탭 */}
         <div className="field">
-          <label>제목 (선택)</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={24} placeholder="예: 떨어진 날에게" />
+          <label>콘텐츠 {pages.length}/{FEED_MAX_PAGES}{pages.length > 1 ? " · 가로로 넘기면 사진과 글이 함께 바뀌어요" : ""}</label>
+          <div className="page-tabs">
+            {pages.map((p, i) => (
+              <button key={i} type="button" className={`page-tab ${i === cur ? "on" : ""} ${p.text.trim() ? "" : "empty"}`} style={p.image ? { backgroundImage: `url(${p.image})` } : undefined} onClick={() => setCur(i)} aria-label={`${i + 1}번째 콘텐츠`}>
+                <span>{i + 1}</span>
+              </button>
+            ))}
+            {pages.length < FEED_MAX_PAGES && (
+              <button type="button" className="page-tab add" onClick={addPage} aria-label="콘텐츠 추가">+</button>
+            )}
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <button type="button" className="text-btn muted" onClick={() => move(-1)} disabled={cur === 0}>← 앞으로</button>
+            <button type="button" className="text-btn muted" onClick={() => move(1)} disabled={cur >= pages.length - 1}>뒤로 →</button>
+            <button type="button" className="text-btn danger" style={{ marginLeft: "auto" }} onClick={removePage}>이 콘텐츠 삭제</button>
+          </div>
+        </div>
+
+        {/* 현재 콘텐츠 편집 */}
+        <div className="field">
+          <label>{cur + 1}번째 사진 (선택)</label>
+          {page.image ? (
+            <div className="thumbs">
+              <div className="thumb" style={{ backgroundImage: `url(${page.image})` }}>
+                <button type="button" className="x" aria-label="사진 빼기" onClick={() => update({ image: "" })}>×</button>
+              </div>
+            </div>
+          ) : null}
+          {canUpload && (
+            <label className={`btn ghost sm upload-btn ${uploading ? "busy" : ""}`}>
+              <input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" hidden disabled={Boolean(uploading)} onChange={(e) => onPickFiles(e.target.files)} />
+              {uploading ? `올리는 중… ${uploading}` : "📷 내 사진 올리기 (여러 장이면 콘텐츠가 늘어나요)"}
+            </label>
+          )}
+          {uploadError && <span className="tiny" style={{ color: "var(--down)" }}>{uploadError}</span>}
+          <div className="img-picks">
+            <button type="button" className={`img-pick none ${!page.image ? "on" : ""}`} onClick={() => update({ image: "" })} aria-label="그림 없음">없음</button>
+            {FEED_IMAGES.map((im) => (
+              <button key={im.src} type="button" className={`img-pick ${page.image === im.src ? "on" : ""}`} style={{ backgroundImage: `url(${im.src})` }} onClick={() => update({ image: im.src })} aria-label={im.label} title={im.label} />
+            ))}
+          </div>
+          <div className="inline-input">
+            <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder={canUpload ? "또는 이미지 주소 (https://…)" : "이미지 주소 (https://…) · S3 설정 시 사진 업로드 가능"} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (okUrl(imageUrl)) { update({ image: imageUrl.trim() }); setImageUrl(""); } } }} />
+            <button type="button" className="btn sm soft" disabled={!okUrl(imageUrl)} onClick={() => { update({ image: imageUrl.trim() }); setImageUrl(""); }}>적용</button>
+          </div>
         </div>
         <div className="field">
-          <label>위로글</label>
-          <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={280} placeholder={"줄바꿈으로 호흡을 나눠요.\n\n예)\n떨어진 날은\n내가 모자란 날이 아니라\n거기까지 걸어간 날이에요."} style={{ minHeight: 140 }} />
-          <span className="tiny muted" style={{ textAlign: "right" }}>{text.length}/280</span>
+          <label>{cur + 1}번째 제목 (선택)</label>
+          <input value={page.title} onChange={(e) => update({ title: e.target.value })} maxLength={24} placeholder="예: 떨어진 날에게" />
         </div>
         <div className="field">
-          <label>배경 (사진이 없을 때)</label>
+          <label>{cur + 1}번째 글</label>
+          <textarea value={page.text} onChange={(e) => update({ text: e.target.value })} maxLength={280} placeholder={"줄바꿈으로 호흡을 나눠요.\n\n예)\n떨어진 날은\n내가 모자란 날이 아니라\n거기까지 걸어간 날이에요."} style={{ minHeight: 120 }} />
+          <span className="tiny muted" style={{ textAlign: "right" }}>{page.text.length}/280</span>
+        </div>
+
+        <div className="field">
+          <label>배경 (사진이 없는 콘텐츠에)</label>
           <div className="swatches">
             {Array.from({ length: FEED_BG_COUNT }, (_, i) => (
               <button key={i} type="button" className={`swatch bg-${i} ${bg === i ? "on" : ""}`} onClick={() => setBg(i)} aria-label={FEED_BG_LABELS[i]} title={FEED_BG_LABELS[i]}>
@@ -463,61 +553,40 @@ function WriteSheet({ open, firstTime, onClose, onSubmit }: {
             ))}
           </div>
         </div>
-        <div className="field">
-          <label>사진 · {images.length}/{FEED_MAX_IMAGES}{images.length > 1 ? " · 가로로 넘겨 봐요" : ""}</label>
-          {images.length > 0 && (
-            <div className="thumbs">
-              {images.map((u, i) => (
-                <div key={u} className="thumb" style={{ backgroundImage: `url(${u})` }}>
-                  <span className="no">{i + 1}</span>
-                  <button type="button" className="x" aria-label="빼기" onClick={() => remove(u)}>×</button>
-                </div>
-              ))}
-            </div>
-          )}
-          {canUpload && (
-            <label className={`btn ghost sm upload-btn ${uploading ? "busy" : ""}`}>
-              <input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" hidden disabled={Boolean(uploading) || full} onChange={(e) => onPickFiles(e.target.files)} />
-              {uploading ? `올리는 중… ${uploading}` : full ? "최대 장수예요" : "📷 내 사진 올리기 (여러 장)"}
-            </label>
-          )}
-          {uploadError && <span className="tiny" style={{ color: "var(--down)" }}>{uploadError}</span>}
-          <div className="img-picks">
-            {FEED_IMAGES.map((im) => (
-              <button key={im.src} type="button" className={`img-pick ${images.includes(im.src) ? "on" : ""}`} style={{ backgroundImage: `url(${im.src})` }} onClick={() => (images.includes(im.src) ? remove(im.src) : add(im.src))} aria-label={im.label} title={im.label} disabled={full && !images.includes(im.src)} />
-            ))}
-          </div>
-          <div className="inline-input">
-            <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder={canUpload ? "또는 이미지 주소 (https://…)" : "이미지 주소 (https://…) · S3 설정 시 사진 업로드 가능"} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }} />
-            <button type="button" className="btn sm soft" onClick={addUrl} disabled={!imageUrl.trim() || full}>추가</button>
-          </div>
-        </div>
         {firstTime && (
           <div className="field">
             <label>크리에이터 소개 (선택)</label>
             <input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" />
           </div>
         )}
-        <div className={`reel preview bg-${bg} ${images.length ? "has-img" : ""}`} style={images.length ? { backgroundImage: `url(${images[0]})` } : undefined}>
+
+        {/* 현재 콘텐츠 미리보기 */}
+        <div className={`reel preview bg-${bg} ${page.image ? "has-img" : ""}`} style={page.image ? { backgroundImage: `url(${page.image})` } : undefined}>
           <div className="reel-body">
-            {title && <div className="reel-title">{title}</div>}
-            <p className="reel-text">{text || "미리보기"}</p>
+            {page.title && <div className="reel-title">{page.title}</div>}
+            <p className="reel-text">{page.text || "미리보기"}</p>
           </div>
+          {pages.length > 1 && <div className="reel-count" style={{ top: 10, right: 10 }}>{cur + 1}/{pages.length}</div>}
         </div>
-        {hasCrisisSignal(text) && <HelpBanner alert />}
+        {pages.some((p) => hasCrisisSignal(p.text)) && <HelpBanner alert />}
+        {emptyCount > 0 && pages.length > 1 && <p className="tiny muted" style={{ margin: 0 }}>글이 비어 있는 콘텐츠가 {emptyCount}개 있어요. 채우거나 삭제해야 올릴 수 있어요.</p>}
       </div>
       <div className="sheet-actions">
         <button className="btn ghost" onClick={onClose}>취소</button>
         <button
           className="btn"
-          disabled={!text.trim() || busy || Boolean(uploading)}
+          disabled={!ready}
           onClick={async () => {
             setBusy(true);
-            await onSubmit(text, bg, title, firstTime ? bio : undefined, images);
+            await onSubmit(
+              pages.map((p) => ({ image: p.image.trim() || undefined, title: p.title.trim() || undefined, text: p.text.trim() })),
+              bg,
+              firstTime ? bio : undefined
+            );
             setBusy(false);
           }}
         >
-          {busy ? "올리는 중…" : "올리기"}
+          {busy ? "올리는 중…" : pages.length > 1 ? `콘텐츠 ${pages.length}개 올리기` : "올리기"}
         </button>
       </div>
     </Sheet>
