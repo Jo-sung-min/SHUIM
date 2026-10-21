@@ -1105,7 +1105,8 @@ textarea.lined {
 .log-done small { display: block; font-size: 12px; color: var(--text-3); margin-top: 3px; }
 
 /* ===== 카카오 로그인 ===== */
-.btn.kakao { background: #fee500; color: #191919; border-color: transparent; box-shadow: none; gap: 8px; text-decoration: none; }
-.btn.kakao:active { background: #f3db00; }
+/* .btn:not(.ghost):not(.soft) 의 글라스 배경보다 우선하도록 같은 :not 체인을 붙인다 (카카오 가이드: #FEE500 배경, 검정 글자) */
+.btn.kakao:not(.ghost):not(.soft) { background: #fee500; color: #191919; border-color: transparent; box-shadow: none; backdrop-filter: none; gap: 8px; text-decoration: none; }
+.btn.kakao:not(.ghost):not(.soft):active { background: #f3db00; }
 .or-line { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; color: var(--text-3); font-size: 12px; }
 .or-line::before, .or-line::after { content: ""; flex: 1; height: 1px; background: var(--border); }
