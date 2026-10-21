@@ -558,15 +558,15 @@ input, textarea, select { font: inherit; color: inherit; }
 /* ---------- 기록 ---------- */
 .entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .entry-title { font-weight: 700; display: flex; align-items: center; gap: 8px; font-size: 15px; }
-.score-val { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 40px; text-align: right; font-size: 16px; display: grid; justify-items: end; line-height: 1.2; }
+.score-val { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 40px; text-align: right; font-size: 18px; line-height: 1.2; }
 .score-val .delta.up { color: var(--up); }
 .score-val .delta.down { color: var(--down); }
 .score-val .delta.flat { color: var(--text-2); }
 .score-val small { font-size: 11px; font-weight: 500; color: var(--text-3); white-space: nowrap; }
 .score-val .muted { font-size: 13px; font-weight: 600; }
-.score-axis { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-3); margin-top: 5px; padding: 0 2px; }
+
 /* 점수 선택: 테두리 없는 숫자 줄 위를 글라스 블럭 하나가 미끄러져 가며 포커스 */
-.score-row { position: relative; display: flex; isolation: isolate; }
+.score-row { position: relative; display: flex; isolation: isolate; margin-bottom: 2px; }
 .score-btn {
   position: relative; z-index: 1; flex: 1; padding: 9px 0; border: none; background: none; border-radius: 10px;
   color: var(--text-3); font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; transition: color 0.2s, transform 0.1s;

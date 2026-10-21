@@ -181,7 +181,6 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
       <div className="stack">
         {CATEGORIES.map((c) => {
           const e = day[c.id];
-          const hasPrev = typeof prev?.[c.id]?.score === "number";
           const p = prevScoreOf(c.id);
           const delta = e ? e.delta ?? e.score - p : null;
           return (
@@ -194,14 +193,9 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
                   {delta === null ? (
                     <span className="muted">어제보다?</span>
                   ) : (
-                    <>
-                      <span className={`delta ${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>
-                        {delta > 0 ? "▲" : delta < 0 ? "▼" : "→"} {delta === 0 ? "그대로" : Math.abs(delta)}
-                      </span>
-                      <small>
-                        {hasPrev ? `어제 ${signed(p)}` : "기준 0"} → 오늘 {signed(e!.score)}
-                      </small>
-                    </>
+                    <span className={`delta ${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>
+                      {delta > 0 ? `▲ ${delta}` : delta < 0 ? `▼ ${-delta}` : "그대로"}
+                    </span>
                   )}
                 </div>
               </div>
@@ -219,11 +213,6 @@ function TodayWrite({ onChange }: { onChange: (filled: number, did: number) => v
                     {d === 0 ? "=" : signed(d)}
                   </button>
                 ))}
-              </div>
-              <div className="score-axis" aria-hidden="true">
-                <span>▼ 내려감</span>
-                <span>어제와 같음</span>
-                <span>올라옴 ▲</span>
               </div>
               <textarea
                 className="note"
