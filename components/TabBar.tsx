@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconMegaphone, IconPen, IconReels, IconSun, IconUser } from "./Icons";
+import { IconBubble, IconPen, IconReels, IconSun, IconUser } from "./Icons";
 import { fetchCommunity, unreadCount } from "@/lib/community";
 import { unreadMessages } from "@/lib/social";
 
@@ -11,7 +11,7 @@ import { unreadMessages } from "@/lib/social";
 const TABS = [
   { href: "/", label: "홈", Icon: IconSun, match: (p: string) => p === "/" || p === "/summary" },
   { href: "/log", label: "기록", Icon: IconPen },
-  { href: "/shout", label: "외침", Icon: IconMegaphone, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
+  { href: "/shout", label: "외침", Icon: IconBubble, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
   { href: "/feed", label: "위로", Icon: IconReels },
   { href: "/me", label: "나", Icon: IconUser, match: (p: string) => ["/me", "/memo", "/goals", "/schedule", "/auth", "/messages", "/u/"].some((x) => p.startsWith(x)) },
 ];

@@ -23,8 +23,8 @@ import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import ShoutTabs from "@/components/ShoutTabs";
-import { CheerButton, CommentThread, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
-import { IconMessage, IconMore, IconPlus, IconShield } from "@/components/Icons";
+import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
+import { IconBubble, IconMore, IconPlus, IconShield } from "@/components/Icons";
 
 type Filter = ShoutCat | "all";
 
@@ -159,7 +159,7 @@ export default function ShoutPage() {
             <p className="post-text" style={{ fontSize: 16 }}>{current.text}</p>
             <div className="post-foot" style={{ marginBottom: 6 }}>
               <CheerButton count={current.cheers.length} on={current.cheers.includes(s.me.id)} onClick={() => run(setS, () => api.toggleCheer({ kind: "post", id: current.id }))} />
-              <span className="tiny muted">위로 {commentsOf(s, current.id).length}개</span>
+              <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={commentsOf(s, current.id).length} onClick={() => {}} ariaLabel="위로 댓글" />
             </div>
             <CommentThread s={s} postId={current.id} onChange={setS} onMenu={(t) => setMenu(t)} />
             {hasCrisisSignal(current.text) && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
@@ -206,9 +206,7 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
       <p className="post-text" onClick={onOpen} role="button" tabIndex={0}>{post.text}</p>
       <div className="post-foot">
         <CheerButton count={post.cheers.length} on={post.cheers.includes(s.me.id)} onClick={onCheer} />
-        <button className="pillbtn" onClick={onOpen}>
-          <IconMessage style={{ width: 15, height: 15 }} /> 위로 <span className="n">{commentCount}</span>
-        </button>
+        <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={commentCount} onClick={onOpen} ariaLabel="위로 댓글" />
       </div>
     </article>
   );

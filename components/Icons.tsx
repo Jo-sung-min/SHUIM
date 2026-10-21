@@ -164,3 +164,14 @@ export const IconMore = (p: P) => (
     <circle cx="18" cy="12" r="1.8" />
   </svg>
 );
+/** 동그란 말풍선 (외침 탭 · 위로 댓글) */
+export const IconBubble = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3.5a8.5 8.5 0 0 1 0 17 9 9 0 0 1-3.9-.9L4 20.5l.9-3.6A8.5 8.5 0 0 1 12 3.5Z" />
+  </svg>
+);
+export const IconBookmark = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 4.5h12v16l-6-4.2-6 4.2Z" />
+  </svg>
+);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Comment,
   CommunityStore,
@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import { Sheet, fmtRelative } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
+import Heart3D from "./Heart3D";
 
 /** 변경 결과(최신 store)를 화면에 반영하고, 실패하면 알림 */
 export async function run(onChange: (s: CommunityStore) => void, fn: () => Promise<CommunityStore>, onError?: (m: string) => void) {
@@ -31,12 +32,36 @@ export async function run(onChange: (s: CommunityStore) => void, fn: () => Promi
   }
 }
 
-/* ---------- 힘내요 버튼 ---------- */
-export function CheerButton({ count, on, onClick, small }: { count: number; on: boolean; onClick: () => void; small?: boolean }) {
+/* ---------- 선 아이콘 액션 (테두리 없음, 아이콘 + 숫자) ---------- */
+export function LineAction({ icon, label, onClick, on, vertical, ariaLabel }: { icon: React.ReactNode; label?: React.ReactNode; onClick: () => void; on?: boolean; vertical?: boolean; ariaLabel: string }) {
   return (
-    <button className={`pillbtn cheer ${on ? "on" : ""}`} style={small ? { padding: "5px 10px", fontSize: 12 } : undefined} onClick={onClick} aria-pressed={on}>
-      <span className="emoji">💪</span> 힘내요 <span className="n">{count}</span>
+    <button className={`lact ${vertical ? "v" : ""} ${on ? "on" : ""}`} onClick={onClick} aria-pressed={on} aria-label={ariaLabel}>
+      <span className="ico">{icon}</span>
+      {label !== undefined && <span className="lbl">{label}</span>}
     </button>
+  );
+}
+
+/* ---------- 힘내요: 선 하트 → 누르면 3D 하트가 튀어나온다 ---------- */
+export function CheerButton({ count, on, onClick, small, vertical }: { count: number; on: boolean; onClick: () => void; small?: boolean; vertical?: boolean }) {
+  const [burst, setBurst] = useState(false);
+  useEffect(() => {
+    if (!burst) return;
+    const t = setTimeout(() => setBurst(false), 900);
+    return () => clearTimeout(t);
+  }, [burst]);
+  return (
+    <LineAction
+      vertical={vertical}
+      on={on}
+      ariaLabel="힘내요"
+      icon={<Heart3D on={on} burst={burst} size={vertical ? 30 : small ? 18 : 22} />}
+      label={count}
+      onClick={() => {
+        if (!on) setBurst(true);
+        onClick();
+      }}
+    />
   );
 }
 

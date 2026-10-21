@@ -25,13 +25,14 @@ import type { FeedPage as FeedContent } from "@/lib/community-core";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
 import { Sheet, fmtRelative } from "@/components/ui";
-import { CommentThread, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
+import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import FeedComposer from "@/components/FeedComposer";
 import Link from "next/link";
-import { IconMessage, IconMore, IconPen } from "@/components/Icons";
+import { IconBookmark, IconBubble, IconMore, IconPen } from "@/components/Icons";
 import { uploadAvailable, uploadImage } from "@/lib/upload";
 
 type Filter = "all" | "following" | "saved";
+const FILTERS: [Filter, string][] = [["all", "전체"], ["following", "팔로잉"], ["saved", "저장함"]];
 const PAGE = 5;
 
 export default function FeedPage() {
@@ -42,6 +43,7 @@ export default function FeedPage() {
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
   const [writing, setWriting] = useState(false);
+  const [topMenu, setTopMenu] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [limit, setLimit] = useState(PAGE);
@@ -163,16 +165,10 @@ export default function FeedPage() {
   return (
     <>
       <div className="feed-top">
-        <div className="segmented feed-seg" role="tablist">
-          {([["all", "전체"], ["following", "팔로잉"], ["saved", "저장함"]] as [Filter, string][]).map(([v, l]) => (
-            <button key={v} role="tab" aria-selected={filter === v} className={filter === v ? "on" : ""} onClick={() => setFilter(v)}>{l}</button>
-          ))}
-        </div>
-        {!blocked && (
-          <button className="btn sm feed-write" onClick={() => setWriting(true)}>
-            <IconPen style={{ width: 15, height: 15 }} /> {isCreator(s, me) ? "위로글 쓰기" : "크리에이터 되기"}
-          </button>
-        )}
+        <span className="feed-title">{FILTERS.find(([v]) => v === filter)?.[1]}</span>
+        <button className="feed-more" onClick={() => setTopMenu(true)} aria-label="피드 메뉴" aria-haspopup="dialog">
+          <IconMore />
+        </button>
       </div>
 
       <div className={`ptr ${refreshing ? "spin" : ""}`} style={{ opacity: refreshing ? 1 : Math.min(1, pull / 64), transform: `translate(-50%, ${refreshing ? 0 : Math.min(0, pull - 64)}px)` }} aria-hidden={!refreshing && pull === 0}>
@@ -227,6 +223,22 @@ export default function FeedPage() {
 
       <Sheet open={Boolean(profile)} onClose={() => setProfile(null)} title="크리에이터">
         {profile && <CreatorProfile s={s} userId={profile} onFollow={() => run(setS, () => api.toggleFollow(profile))} onBio={(b) => run(setS, () => api.updateBio(b))} />}
+      </Sheet>
+
+      <Sheet open={topMenu} onClose={() => setTopMenu(false)} title="위로 피드">
+        <div className="stack" style={{ gap: 6 }}>
+          {FILTERS.map(([v, l]) => (
+            <button key={v} type="button" className={`reason glass ${filter === v ? "on" : ""}`} onClick={() => { setFilter(v); setTopMenu(false); feedRef.current?.scrollTo({ top: 0 }); }}>
+              <span className="radio" />
+              <span><b>{l}</b><small>{v === "all" ? "모든 크리에이터의 위로글" : v === "following" ? "팔로우한 크리에이터만" : "내가 저장한 글"}</small></span>
+            </button>
+          ))}
+          {!blocked && (
+            <button type="button" className="btn block" style={{ marginTop: 8 }} onClick={() => { setTopMenu(false); setWriting(true); }}>
+              <IconPen style={{ width: 16, height: 16 }} /> {isCreator(s, me) ? "위로글 쓰기" : "크리에이터 되기"}
+            </button>
+          )}
+        </div>
       </Sheet>
 
       <FeedComposer
@@ -327,18 +339,10 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
         )}
       </div>
       <div className="reel-actions">
-        <button className={`ract ${cheered ? "on" : ""}`} onClick={onCheer} aria-pressed={cheered} aria-label="힘내요">
-          <span className="ico">💪</span><span className="lbl">{post.cheers.length}</span>
-        </button>
-        <button className="ract" onClick={onComments} aria-label="위로 댓글">
-          <span className="ico"><IconMessage /></span><span className="lbl">{comments}</span>
-        </button>
-        <button className={`ract ${saved ? "on" : ""}`} onClick={onSave} aria-pressed={saved} aria-label="저장">
-          <span className="ico">{saved ? "🔖" : "🏷️"}</span><span className="lbl">{saved ? "저장됨" : "저장"}</span>
-        </button>
-        <button className="ract" onClick={onMenu} aria-label="더보기">
-          <span className="ico"><IconMore /></span>
-        </button>
+        <CheerButton vertical count={post.cheers.length} on={cheered} onClick={onCheer} />
+        <LineAction vertical icon={<IconBubble />} label={comments} onClick={onComments} ariaLabel="위로 댓글" />
+        <LineAction vertical on={saved} icon={<IconBookmark style={saved ? { fill: "currentColor" } : undefined} />} label="저장" onClick={onSave} ariaLabel={saved ? "저장 취소" : "저장"} />
+        <LineAction vertical icon={<IconMore />} onClick={onMenu} ariaLabel="더보기" />
       </div>
     </section>
   );

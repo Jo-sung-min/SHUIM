@@ -1012,3 +1012,52 @@ textarea.lined {
 
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
 .toast { font-size: 14px; color: var(--text-2); }
+
+/* ===== 선 아이콘 액션 (테두리·배경 없음) ===== */
+.lact { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; padding: 4px 2px; color: inherit; font-size: 13px; font-weight: 700; transition: transform 0.1s, opacity 0.15s; }
+.lact .ico { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+.lact .ico svg { width: 22px; height: 22px; }
+.lact .lbl { font-variant-numeric: tabular-nums; }
+.lact:active { transform: scale(0.9); }
+.lact.v { flex-direction: column; gap: 4px; padding: 0; }
+.lact.v .ico svg { width: 30px; height: 30px; }
+.lact.v .lbl { font-size: 11.5px; font-weight: 700; }
+.post-foot .lact { color: var(--text-2); }
+.post-foot .lact.on { color: var(--text); }
+.comment .lact { font-size: 12px; }
+.comment .lact .ico svg { width: 18px; height: 18px; }
+.reel-actions { gap: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); }
+
+/* ===== 3D 하트 ===== */
+.heart3d { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 0; perspective: 120px; }
+.heart3d svg { filter: drop-shadow(0 3px 4px rgba(190, 20, 50, 0.45)); animation: heart-bob 3s ease-in-out 0.9s infinite; transform-origin: 50% 55%; }
+.heart3d.burst svg { animation: heart-pop 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) both, heart-bob 3s ease-in-out 0.9s infinite; }
+@keyframes heart-pop {
+  0% { transform: scale(0.3) rotateY(0deg); }
+  35% { transform: scale(1.35) rotateY(180deg); }
+  60% { transform: scale(0.92) rotateY(360deg); }
+  100% { transform: scale(1) rotateY(360deg); }
+}
+@keyframes heart-bob {
+  0%, 100% { transform: translateY(0) rotateY(0deg) scale(1); }
+  50% { transform: translateY(-1.5px) rotateY(18deg) scale(1.04); }
+}
+.heart3d-sparks { position: absolute; inset: 0; pointer-events: none; }
+.heart3d-sparks i {
+  position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffd1d8, #ff2d55 60%, #b8102e); opacity: 0;
+  transform: rotate(var(--a)) translateY(0) scale(0.4);
+  animation: heart-spark 0.8s ease-out var(--d) both;
+}
+@keyframes heart-spark {
+  0% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(0.4); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(-26px) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .heart3d svg, .heart3d.burst svg, .heart3d-sparks i { animation: none; } }
+
+/* ===== 피드 상단: 제목 + ⋯ 만 ===== */
+.feed-title { font-size: 15px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); letter-spacing: -0.01em; }
+.feed-more { background: none; border: none; padding: 6px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); line-height: 0; }
+.feed-more svg { width: 24px; height: 24px; }
+.feed-more:active { transform: scale(0.9); }
