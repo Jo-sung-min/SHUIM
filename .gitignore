@@ -1,36 +1,35 @@
-# dependencies
-node_modules/
-.pnp
-.pnp.js
-
-# next.js
-.next/
-out/
-next-env.d.ts
-
-# production
-build/
-dist/
-
-# env (API 키 등 비밀값)
+# env (API 키, DB 비밀번호 등 비밀값) — 어느 폴더에 있어도 올리지 않음
 .env
 .env.local
 .env.*.local
 
-# typescript
+# frontend (Next.js)
+node_modules/
+.pnp
+.pnp.js
+.next/
+out/
+next-env.d.ts
 *.tsbuildinfo
+.vercel
 
-# debug
+# backend (Spring Boot / Gradle)
+.gradle/
+backend/build/
+backend/bin/
+backend/out/
+*.class
+
+# logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# vercel
-.vercel
+*.log
 
 # editor / os
 .vscode/
 .idea/
+*.iml
 .DS_Store
 Thumbs.db
 

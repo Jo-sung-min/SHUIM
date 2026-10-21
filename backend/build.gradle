@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.16'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'kr.co.shuim'
+version = '0.0.1-SNAPSHOT'
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+
+repositories { mavenCentral() }
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    // Node(scryptSync)로 만든 기존 비밀번호 해시와 호환되는 scrypt
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+    implementation platform('software.amazon.awssdk:bom:2.32.29')
+    implementation 'software.amazon.awssdk:s3'
+    runtimeOnly 'org.postgresql:postgresql'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') { useJUnitPlatform() }

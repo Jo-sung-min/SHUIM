@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: shuim-backend
+  config:
+    import: optional:file:.env[.properties],optional:file:backend/.env[.properties]
+  flyway:
+    enabled: true
+    table: flyway_schema_history
+    baseline-on-migrate: true
+    baseline-version: 0
+  jackson:
+    # TS 서버가 undefined 로 비우던 선택 필드를 JSON 에서 빼기 위해 null 은 직렬화하지 않는다
+    default-property-inclusion: non_null
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+  error:
+    include-message: never
+    include-stacktrace: never
+logging:
+  level:
+    org.springframework.jdbc.core.JdbcTemplate: ${SPRING_JDBC_LOG_LEVEL:WARN}
+app:
+  origin: ${APP_ORIGIN:http://localhost:3000}
+  allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:3000}
+  auth:
+    secure-cookie: ${AUTH_SECURE_COOKIE:false}
+    session-days: ${AUTH_SESSION_DAYS:90}
+  db:
+    # jdbc:postgresql://host:6543/db?user=..&password=..  또는  postgresql://user:pass@host:6543/db
+    url: ${DB_URL:}
+    pool-max: ${DB_POOL_MAX:3}
+    keep-session-mode: ${DB_KEEP_SESSION_MODE:false}
+  community:
+    # 개발용 샘플 유저 자동 답글 (운영에서는 false)
+    simulate: ${COMMUNITY_SIMULATE:true}
+  s3:
+    region: ${AWS_REGION:ap-northeast-2}
+    bucket: ${S3_BUCKET:}
+    prefix: ${S3_PREFIX:feed}
+    access-key-id: ${AWS_ACCESS_KEY_ID:}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+    cdn-base-url: ${CDN_BASE_URL:}
+  ai:
+    base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-haiku-5-5}
