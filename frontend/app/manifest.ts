@@ -14,7 +14,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     start_url: "/",
     categories: ["lifestyle", "productivity"],
     display: "standalone",
-    background_color: SITE.themeLight,
+    background_color: SITE.splashColor, // 홈 화면 앱 실행 직후 색 = 시작 화면 바탕 (밝은 화면이 번쩍이지 않게)
     theme_color: SITE.themeLight,
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },

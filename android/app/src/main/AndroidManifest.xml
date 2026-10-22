@@ -43,7 +43,7 @@
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
                 android:resource="@mipmap/ic_launcher" />
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
-                android:resource="@color/sorow_background" />
+                android:resource="@color/sorow_splash" />
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
                 android:value="200" />
             <meta-data android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"

@@ -3,5 +3,7 @@
     <color name="sorow_background">#F4F3EE</color>
     <color name="sorow_background_dark">#121419</color>
     <color name="sorow_brand">#4B5FE0</color>
+    <!-- 시작 화면 바탕: 웹의 시지프 시작 화면(SITE.splashColor)과 같은 색이라 이어질 때 번쩍이지 않는다 -->
+    <color name="sorow_splash">#1B1611</color>
 </resources>
 

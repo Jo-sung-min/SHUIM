@@ -13,6 +13,8 @@ export const SITE = {
   keywords: ["소로우", "SOROW", "슬픔", "위로", "마음 기록", "감정 일기", "익명 커뮤니티", "멘탈 케어", "마음 가속도"],
   themeLight: "#f7f7fb",
   themeDark: "#15141c",
+  /** 시작 화면(시지프 그림)의 어두운 바탕. PWA·Android 앱의 첫 화면 색도 이것으로 맞춰 밝게 번쩍이지 않게 한다 */
+  splashColor: "#1b1611",
 } as const;
 
 /** GET /api/site 응답 (없는 값은 null = 기본값) */

@@ -952,3 +952,42 @@ html[data-keyboard="open"] .app-toasts { bottom: calc(var(--kb) + 12px); }
   .sheet, .sheet-backdrop, .app-toast, .cheer3d svg, .cheer3d-sparks i { animation: none !important; }
   .score-thumb { transition: none !important; }
 }
+
+/* ===== 시작 화면 (시지프) — components/Splash.tsx =====
+   hold: 이미지 준비 중(흐린 자리표시) → play: 1초 뒤 0.9초 동안 옅어짐 → off: 치움 */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+  color-scheme: dark;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.splash::before {
+  content: "";
+  position: absolute;
+  inset: -48px;
+  background: var(--splash-blur) center / cover no-repeat;
+  filter: blur(28px) brightness(0.62);
+}
+/* 화면 크기에 고정 (그림 원래 높이 1672px 에 끌려가지 않게 절대 위치로) */
+.splash img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 75% 45%; /* 세로로 긴 폰에서는 양옆이 잘리는데, 바위와 시지프가 오른쪽에 있어 왼쪽 구름 쪽을 더 자른다 */
+}
+/* 가로로 넓은 화면(태블릿·PC)에서는 그림을 자르지 않고 세로로 꽉 채우고, 양옆은 흐린 그림으로 */
+@media (min-aspect-ratio: 4/5) {
+  .splash img { object-fit: contain; object-position: 50% 50%; filter: drop-shadow(0 0 60px rgba(0, 0, 0, 0.55)); }
+}
+.splash[data-state="play"] { animation: splash-out 900ms ease-in-out 1000ms forwards; }
+.splash[data-state="off"] { display: none; }
+@keyframes splash-out { to { opacity: 0; visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) {
+  .splash[data-state="play"] { animation-duration: 300ms; }
+}

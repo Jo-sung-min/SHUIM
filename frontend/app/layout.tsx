@@ -5,6 +5,7 @@ import AppRuntime from "@/components/AppRuntime";
 import CommunityConsent from "@/components/CommunityConsent";
 import ServiceAvailability from "@/components/ServiceAvailability";
 import AppToast from "@/components/AppToast";
+import Splash from "@/components/Splash";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
 
 /**
@@ -100,6 +101,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body>
+        <Splash />
         <AppRuntime />
         <AppToast />
         <ServiceAvailability>
