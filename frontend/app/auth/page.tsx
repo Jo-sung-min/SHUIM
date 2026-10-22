@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Me, fetchMe, signIn, signOut, signUp, startKakaoLogin, updateNick } from "@/lib/auth";
-import { Segmented, TopBar, fmtDate } from "@/components/ui";
+import { Empty, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui";
+import { toastSuccess } from "@/lib/toast";
 import { todayKey } from "@/lib/storage";
 import { POLICY_VERSION, acceptPolicyConsent, fetchPolicyConsent, type PolicyConsent } from "@/lib/safety";
 import { IconChevronL, IconChevronR, IconKakao, IconNote, IconShield, IconUser } from "@/components/Icons";
@@ -86,9 +87,9 @@ export default function AuthPage() {
 
   const back = <Link href="/me" className="icon-btn" aria-label="내 공간으로"><IconChevronL /></Link>;
 
-  if (!me) return <><TopBar title="계정" right={back} /><div className={`screen ${styles.pending}`} role="status" aria-label="계정을 확인하고 있어요"><div className="skeleton" /><div className="skeleton" /></div></>;
+  if (!me) return <><TopBar title="계정" right={back} /><div className="screen" role="status" aria-label="계정을 확인하고 있어요"><SkeletonCard lines={2} head /><div style={{ height: 16 }} /><SkeletonCard lines={3} /></div></>;
 
-  if (!me.configured) return <><TopBar title="계정" right={back} /><div className="screen"><div className="empty"><IconUser width={32} height={32} /><b>계정을 준비하고 있어요</b><p>잠시 후 다시 연결해 주세요.</p><button type="button" className="btn ghost" disabled={busy} onClick={() => run("submit", async () => { setMe(await fetchMe(true)); })}>{busy ? "확인 중…" : "다시 확인"}</button></div></div></>;
+  if (!me.configured) return <><TopBar title="계정" right={back} /><div className="screen"><Empty icon={<IconUser />} title="계정을 준비하고 있어요" action={<button type="button" className="btn ghost" disabled={busy} onClick={() => run("submit", async () => { setMe(await fetchMe(true)); })}>{busy ? "확인 중…" : "다시 확인"}</button>}>잠시 후 다시 연결해 주세요.</Empty></div></>;
 
   if (me.user) {
     const user = me.user;
@@ -107,6 +108,7 @@ export default function AuthPage() {
               if (message) { setError(message); return; }
               setMe(await fetchMe(true));
               setEditNick(null);
+              toastSuccess("닉네임을 바꿨어요");
             }); }}>
               <div className="field"><label htmlFor="account-nick">닉네임</label><input id="account-nick" value={editNick} onChange={(e) => setEditNick(e.target.value)} minLength={2} maxLength={12} disabled={busy} required autoFocus autoComplete="nickname" /></div>
               <div className="row"><button type="button" className="btn ghost grow" disabled={busy} onClick={() => { setEditNick(null); setError(null); }}>취소</button><button type="submit" className="btn grow" disabled={busy || editNick.trim().length < 2}>{pending === "nick" ? "저장 중…" : "저장"}</button></div>

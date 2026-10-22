@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import "./app-polish.css";
 import TabBar from "@/components/TabBar";
 import AppRuntime from "@/components/AppRuntime";
 import CommunityConsent from "@/components/CommunityConsent";

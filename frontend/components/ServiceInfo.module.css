@@ -7,9 +7,8 @@
   gap: 10px;
   min-height: 64px;
   padding: calc(8px + env(safe-area-inset-top)) 18px 8px 12px;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
 .header h1 {
@@ -38,59 +37,59 @@
 .main { padding: 24px 20px 16px; }
 .intro { margin: 0 0 28px; }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
-.brand img { width: 54px; height: 54px; border-radius: 16px; box-shadow: 0 6px 16px #7360d31a; }
+.brand img { width: 54px; height: 54px; border-radius: 16px; border: 1px solid var(--border); }
 .brand strong { display: block; color: var(--text); font-size: 17px; letter-spacing: -.035em; }
-.brand small { display: block; margin-top: 4px; color: var(--text-2); font-size: 12px; }
-.intro h2 { margin: 0; font-size: 25px; line-height: 1.45; font-weight: 750; letter-spacing: -.055em; }
-.intro > p { margin: 10px 0 0; color: var(--text-2); font-size: 14px; line-height: 1.7; }
+.brand small { display: block; margin-top: 4px; color: var(--text-2); font-size: 13px; }
+.intro h2 { margin: 0; font-size: 24px; line-height: 1.4; font-weight: 800; letter-spacing: -.03em; }
+.intro > p { margin: 10px 0 0; color: var(--text-2); font-size: 15px; line-height: 1.7; }
 .group { margin: 0 0 26px; }
-.group > h2 { margin: 0 4px 10px; color: var(--text-2); font-size: 12px; font-weight: 700; }
-.menu { overflow: hidden; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); }
+.group > h2 { margin: 0 4px 8px; color: var(--text); font-size: 14px; font-weight: 700; }
+.menu { overflow: hidden; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); }
 .row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 13px;
-  min-height: 87px;
-  padding: 17px 16px;
+  min-height: 72px;
+  padding: 16px;
   color: var(--text);
   text-decoration: none;
   transition: background 160ms ease, transform 160ms ease;
   touch-action: manipulation;
 }
 .row + .row::before { content: ""; position: absolute; top: 0; right: 16px; left: 65px; border-top: 1px solid var(--border); }
-.row:active { background: var(--surface-2); transform: scale(.985); }
-.row:focus-visible, .back:focus-visible, .returnLink:focus-visible { outline: 3px solid var(--home-a); outline-offset: -3px; }
-.icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 36px; width: 36px; height: 36px; color: var(--home-b); background: color-mix(in srgb, var(--home-b) 9%, var(--surface)); border-radius: 12px; }
+.row:active { background: var(--surface-2); scale: .98; }
+.row:focus-visible, .back:focus-visible, .returnLink:focus-visible { outline: 3px solid var(--ring); outline-offset: -3px; }
+.icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 36px; width: 36px; height: 36px; color: var(--text-2); background: var(--surface-2); border-radius: 12px; }
 .icon svg { width: 20px; height: 20px; }
 .rowCopy { flex: 1; min-width: 0; }
-.rowCopy strong { display: block; font-size: 14px; line-height: 1.5; font-weight: 700; letter-spacing: -.025em; }
-.rowCopy small { display: block; color: var(--text-2); font-size: 12px; line-height: 1.6; margin-top: 3px; overflow-wrap: anywhere; }
+.rowCopy strong { display: block; font-size: 15px; line-height: 1.5; font-weight: 700; letter-spacing: -.02em; }
+.rowCopy small { display: block; color: var(--text-2); font-size: 13px; line-height: 1.6; margin-top: 3px; overflow-wrap: anywhere; }
 .chevron { flex: 0 0 16px; width: 16px; height: 16px; color: var(--text-3); }
-.draft { padding: 14px 16px; margin: 0 0 20px; border-radius: 16px; background: color-mix(in srgb, var(--home-b) 7%, var(--surface)); color: var(--text-2); font-size: 12px; line-height: 1.7; }
-.draft strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 3px; font-weight: 650; }
-.operator { margin: 0; padding: 0 4px; color: var(--text-2); font-size: 12px; line-height: 1.9; }
+.draft { padding: 14px 16px; margin: 0 0 20px; border-radius: 16px; background: var(--surface-2); color: var(--text-2); font-size: 13px; line-height: 1.7; }
+.draft strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 3px; font-weight: 650; }
+.operator { margin: 0; padding: 0 4px; color: var(--text-2); font-size: 13px; line-height: 1.9; }
 .operator dt, .operator dd { display: inline; margin: 0; }
 .operator dt { margin-right: 14px; }
 .operator div + div { margin-top: 2px; }
 .operator a { text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
-.signature { margin: 26px 0 0; font-size: 10px; color: var(--text-3); letter-spacing: .18em; text-align: center; }
+.signature { margin: 26px 0 0; font-size: 12px; color: var(--text-3); letter-spacing: .18em; text-align: center; }
 
 .document { padding: 20px 20px 16px; }
 .document .draft { font-size: 13px; }
-.effectiveDate { margin: 0 4px 18px; color: var(--text-2); font-size: 12px; }
-.documentCard { padding: 22px 20px; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); line-height: 1.85; overflow-wrap: anywhere; }
+.effectiveDate { margin: 0 4px 18px; color: var(--text-2); font-size: 13px; }
+.documentCard { padding: 22px 20px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); line-height: 1.85; overflow-wrap: anywhere; }
 .documentCard > p:first-child { margin-top: 0; }
 .documentCard h2 { margin: 0 0 12px; font-size: 16px; line-height: 1.5; font-weight: 750; letter-spacing: -.03em; }
-.documentCard p, .documentCard li { font-size: 13.5px; color: var(--text-2); }
+.documentCard p, .documentCard li { font-size: 15px; color: var(--text-2); }
 .documentCard p { margin: 10px 0 0; }
 .documentCard ul { padding-left: 18px; margin: 10px 0 0; }
 .documentCard li + li { margin-top: 10px; }
 .documentCard section { scroll-margin-top: calc(90px + env(safe-area-inset-top)); }
 .documentCard section + section, .documentCard > p + section { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--border); }
-.documentCard a { text-decoration: underline; text-underline-offset: 3px; color: var(--home-a); }
-.documentCard :global(a.btn) { text-decoration: none; color: var(--glass-strong-fg); }
-.returnLink { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 48px; padding: 12px; border-radius: 16px; margin-top: 18px; color: var(--text-2); font-size: 13px; font-weight: 600; background: var(--surface-2); transition: background 160ms ease, transform 160ms ease; }
+.documentCard a { text-decoration: underline; text-underline-offset: 3px; color: var(--text); }
+.documentCard :global(a.btn) { text-decoration: none; color: var(--on-accent); }
+.returnLink { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 48px; padding: 12px; border-radius: 16px; margin-top: 18px; color: var(--text-2); font-size: 14px; font-weight: 600; background: var(--surface-2); transition: background 160ms ease, transform 160ms ease; }
 .returnLink svg { width: 15px; height: 15px; }
 .returnLink:active { transform: scale(.98); background: var(--surface-3); }
 

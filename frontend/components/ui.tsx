@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { IconClose } from "./Icons";
+import { IconClose, IconCloudOff, IconInbox } from "./Icons";
+import { CategoryIcon } from "./CategoryIcon";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 
 /* ---------- 상단 바 ---------- */
@@ -17,7 +18,7 @@ export function TopBar({ title, eyebrow, right }: { title: string; eyebrow?: Rea
   );
 }
 
-/* ---------- 흑백 대리석 히어로 (각 탭 상단) ---------- */
+/* ---------- 요약 카드 (각 탭 상단) ---------- */
 export function Hero({
   label,
   title,
@@ -25,14 +26,14 @@ export function Hero({
   stats,
   children,
 }: {
-  label?: string;
+  label?: ReactNode;
   title: string;
   sub?: string;
   stats?: string[];
   children?: ReactNode;
 }) {
   return (
-    <section className="hero mono compact">
+    <section className="hero">
       {label && <div className="label">{label}</div>}
       <h2>{title}</h2>
       {sub && <p>{sub}</p>}
@@ -76,7 +77,7 @@ export function Segmented<T extends string>({
   );
 }
 
-/* ---------- 카테고리 칩 ---------- */
+/* ---------- 카테고리 칩 (선 아이콘 + 이름) ---------- */
 export function CatChips({
   value,
   onChange,
@@ -105,7 +106,8 @@ export function CatChips({
           style={{ ["--chip" as string]: c.color }}
           onClick={() => onChange(c.id)}
         >
-          {c.emoji} {c.label}
+          <CategoryIcon id={c.id} emoji={c.emoji} />
+          {c.label}
         </button>
       ))}
     </div>
@@ -116,12 +118,13 @@ export function CatTag({ cat }: { cat: MemoCat }) {
   const c = memoCatById(cat);
   return (
     <span className="cat">
-      {c.emoji} {c.label}
+      <CategoryIcon id={c.id} emoji={c.emoji} />
+      {c.label}
     </span>
   );
 }
 
-/* ---------- 바텀시트 ---------- */
+/* ---------- 바텀시트 (작은 작업용. 긴 읽기는 별도 화면) ---------- */
 const openSheets: HTMLElement[] = [];
 let previousOverflow = "";
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
@@ -170,13 +173,107 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   );
 }
 
-/* ---------- 빈 상태 ---------- */
-export function Empty({ icon, title, children }: { icon: string; title: string; children?: ReactNode }) {
+/* ---------- 확인 시트 (브라우저 confirm 대신) ---------- */
+export function ConfirmSheet({
+  open,
+  title,
+  message,
+  confirmLabel = "확인",
+  cancelLabel = "취소",
+  danger = false,
+  busy = false,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet open={open} onClose={() => { if (!busy) onClose(); }} title={title}>
+      {message && <p className="sheet-text">{message}</p>}
+      <div className="sheet-actions">
+        <button type="button" className="btn ghost" disabled={busy} onClick={onClose}>{cancelLabel}</button>
+        <button type="button" className={`btn ${danger ? "danger" : ""}`} disabled={busy} aria-busy={busy} onClick={onConfirm}>{busy ? "처리 중…" : confirmLabel}</button>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ---------- 빈 화면: "아직 …이 없어요" + 첫 행동 ---------- */
+export function Empty({ icon, title, action, children }: { icon?: ReactNode; title: string; action?: ReactNode; children?: ReactNode }) {
   return (
     <div className="empty">
-      <div className="ico">{icon}</div>
+      <div className="ico" aria-hidden="true">{icon ?? <IconInbox />}</div>
       <b>{title}</b>
       {children}
+      {action && <div className="empty-action">{action}</div>}
+    </div>
+  );
+}
+
+/* ---------- 오류 화면: "불러오지 못했어요" + 다시 시도 (빈 화면과 구분) ---------- */
+export function LoadError({ message, onRetry, title = "불러오지 못했어요" }: { message?: string; onRetry: () => void; title?: string }) {
+  const technical = message ? /서버|\b(?:db|sql|api|s3|http)\b|failed to fetch|fetch failed|networkerror|unexpected token|json|50[234]|<html/i.test(message) : true;
+  const detail = technical ? "연결을 확인한 뒤 다시 시도해 주세요." : message;
+  return (
+    <div className="empty error" role="alert">
+      <div className="ico" aria-hidden="true"><IconCloudOff /></div>
+      <b>{title}</b>
+      <p>{detail}</p>
+      <div className="empty-action">
+        <button type="button" className="btn ghost" onClick={onRetry}>다시 시도</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- 로딩: 실제 카드와 같은 모양의 자리표시자 ---------- */
+export function SkeletonHero() {
+  return (
+    <div className="sk-card hero" aria-hidden="true">
+      <div className="sk w40" />
+      <div className="sk sk-line lg w80" />
+      <div className="sk w60" />
+    </div>
+  );
+}
+
+export function SkeletonCard({ lines = 3, head = false, className = "" }: { lines?: number; head?: boolean; className?: string }) {
+  const widths = ["w80", "", "w60", "w40"];
+  return (
+    <div className={`sk-card ${className}`.trim()} aria-hidden="true">
+      {head && (
+        <div className="sk-row">
+          <div className="sk sk-circle" />
+          <div className="sk-col"><div className="sk w40" /><div className="sk sk-line sm w30" /></div>
+        </div>
+      )}
+      {Array.from({ length: lines }, (_, i) => <div key={i} className={`sk ${widths[i % widths.length]}`.trim()} />)}
+    </div>
+  );
+}
+
+export function SkeletonList({ count = 3, lines = 2, head = true }: { count?: number; lines?: number; head?: boolean }) {
+  return (
+    <div className="stack">
+      {Array.from({ length: count }, (_, i) => <SkeletonCard key={i} lines={lines} head={head} />)}
+    </div>
+  );
+}
+
+/** 요약 카드 + 목록 모양의 화면 전체 자리표시자 */
+export function SkeletonScreen({ hero = true, count = 3, lines = 2, label = "불러오고 있어요" }: { hero?: boolean; count?: number; lines?: number; label?: string }) {
+  return (
+    <div className="stack" role="status" aria-label={label} style={{ gap: 16 }}>
+      {hero && <SkeletonHero />}
+      <SkeletonList count={count} lines={lines} />
     </div>
   );
 }

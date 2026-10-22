@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat, memoCatById } from "@/lib/categories";
 import { Goal, GoalStep, goalProgress, loadGoals, saveGoals, syncRecords, todayKey, uid } from "@/lib/storage";
-import { CatChips, CatTag, Empty, Hero, Sheet, TopBar, fmtDate } from "@/components/ui";
-import { IconCheck, IconPlus } from "@/components/Icons";
+import { CatChips, CatTag, Empty, Hero, Sheet, SkeletonScreen, TopBar, fmtDate } from "@/components/ui";
+import { IconCheck, IconFlag, IconPlus } from "@/components/Icons";
+import { useScrollMemory } from "@/lib/scroll-memory";
+import { toastSuccess } from "@/lib/toast";
 
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[] | null>(null);
@@ -38,14 +40,17 @@ export default function GoalsPage() {
     const exists = goals.some((x) => x.id === g.id);
     commit(exists ? goals.map((x) => (x.id === g.id ? g : x)) : [g, ...goals]);
     setEditing(null);
+    toastSuccess(exists ? "목표를 고쳤어요" : "목표를 저장했어요");
   };
   const remove = (id: string) => {
     if (!goals) return;
     commit(goals.filter((x) => x.id !== id));
     setEditing(null);
+    toastSuccess("목표를 지웠어요");
   };
+  useScrollMemory(goals !== null);
 
-  if (!goals) return <TopBar title="목표" />;
+  if (!goals) return <><TopBar title="목표" /><div className="screen"><SkeletonScreen count={2} lines={3} label="목표를 불러오고 있어요" /></div></>;
 
   const totalSteps = active.reduce((n, g) => n + g.steps.length, 0);
   const doneSteps = active.reduce((n, g) => n + g.steps.filter((s) => s.done).length, 0);
@@ -62,7 +67,7 @@ export default function GoalsPage() {
         />
         <div style={{ height: 12 }} />
         {active.length === 0 && done.length === 0 ? (
-          <Empty icon="🚩" title="목표를 하나 세워볼까요">
+          <Empty icon={<IconFlag />} title="아직 목표가 없어요" action={<button type="button" className="btn ghost" onClick={() => setEditing("new")}>첫 목표 세우기</button>}>
             크게 잡지 않아도 돼요.
             <br />
             단계를 쪼개두면 하나씩 체크하면서 가속이 붙어요.
@@ -254,13 +259,13 @@ function GoalSheet({
               placeholder="작은 단계 하나 (예: 이력서 최신화)"
               maxLength={60}
             />
-            <button type="button" className="btn sm soft" onClick={addStep} disabled={!newStep.trim()}>추가</button>
+            <button type="button" className="btn sm ghost" onClick={addStep} disabled={!newStep.trim()}>추가</button>
           </div>
         </div>
       </div>
       <div className="sheet-actions">
         {goal && (
-          <button className="btn ghost" style={{ flex: "0 0 auto", color: "var(--down)" }} onClick={() => onDelete(goal.id)}>삭제</button>
+          <button className="btn ghost danger" onClick={() => onDelete(goal.id)}>삭제</button>
         )}
         <button className="btn ghost" onClick={onClose}>취소</button>
         <button className="btn" onClick={save} disabled={!title.trim()}>저장</button>

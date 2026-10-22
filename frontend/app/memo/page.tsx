@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 import { Memo, loadMemos, saveMemos, syncRecords, todayKey, uid } from "@/lib/storage";
-import { CatChips, CatTag, Empty, Hero, Segmented, Sheet, TopBar, fmtDate, fmtRelative } from "@/components/ui";
-import { IconPin, IconPlus } from "@/components/Icons";
+import { CatChips, CatTag, Empty, Hero, Segmented, Sheet, SkeletonScreen, TopBar, fmtDate, fmtRelative } from "@/components/ui";
+import { IconClock, IconNote, IconPin, IconPlus } from "@/components/Icons";
+import { CategoryIcon } from "@/components/CategoryIcon";
+import { useScrollMemory } from "@/lib/scroll-memory";
+import { toastSuccess } from "@/lib/toast";
 
 type Filter = MemoCat | "all";
 type View = "list" | "lookback";
@@ -35,14 +38,17 @@ export default function MemoPage() {
     const exists = memos.some((x) => x.id === m.id);
     commit(exists ? memos.map((x) => (x.id === m.id ? m : x)) : [m, ...memos]);
     setEditing(null);
+    toastSuccess(exists ? "메모를 고쳤어요" : "메모를 저장했어요");
   };
   const remove = (id: string) => {
     if (!memos) return;
     commit(memos.filter((x) => x.id !== id));
     setEditing(null);
+    toastSuccess("메모를 지웠어요");
   };
+  useScrollMemory(memos !== null);
 
-  if (!memos) return <TopBar title="메모" />;
+  if (!memos) return <><TopBar title="메모" /><div className="screen"><SkeletonScreen count={3} lines={2} label="메모를 불러오고 있어요" /></div></>;
 
   const pinnedCount = memos.filter((m) => m.pinned).length;
   const latest = memos.length ? Math.max(...memos.map((m) => m.updatedAt)) : null;
@@ -76,7 +82,7 @@ export default function MemoPage() {
         )}
 
         {view === "list" && list.length === 0 ? (
-          <Empty icon="📝" title={filter === "all" ? "첫 메모를 남겨볼까요" : "이 카테고리엔 아직 메모가 없어요"}>
+          <Empty icon={<IconNote />} title={filter === "all" ? "아직 메모가 없어요" : "이 카테고리엔 아직 메모가 없어요"} action={<button type="button" className="btn ghost" onClick={() => setEditing("new")}>첫 메모 쓰기</button>}>
             생각, 깨달음, 다짐… 카테고리별로 모아두면
             <br />
             오늘의 나가 읽고 방향을 잡아줘요.
@@ -154,7 +160,7 @@ function Lookback({ memos }: { memos: Memo[] }) {
 
   if (memos.length === 0) {
     return (
-      <Empty icon="🪞" title="되돌아볼 메모가 아직 없어요">
+      <Empty icon={<IconClock />} title="되돌아볼 메모가 아직 없어요">
         다짐이나 원칙을 적어두면, 나중의 내가 그때의 나와 비교할 수 있어요.
       </Empty>
     );
@@ -175,7 +181,7 @@ function Lookback({ memos }: { memos: Memo[] }) {
           {pairs.map(({ cat, first, last, count, gapDays }) => (
             <section key={cat.id} className="card lookback">
               <div className="cat-head">
-                <span>{cat.emoji} {cat.label}</span>
+                <span><CategoryIcon id={cat.id} emoji={cat.emoji} /> {cat.label}</span>
                 <small>메모 {count}개</small>
               </div>
               <div className="pair">
@@ -211,7 +217,7 @@ function Lookback({ memos }: { memos: Memo[] }) {
                 <div key={m.id} className="item">
                   <span className="d">{fmtDate(todayKey(new Date(m.createdAt)), false).replace("월 ", "/").replace("일", "")}</span>
                   <p>
-                    <span className="tiny muted">{memoCatById(m.cat).emoji} </span>
+                    <CategoryIcon id={memoCatById(m.cat).id} emoji={memoCatById(m.cat).emoji} size={14} />{" "}
                     {m.text}
                   </p>
                 </div>
@@ -275,7 +281,7 @@ function MemoSheet({
       </div>
       <div className="sheet-actions">
         {memo && (
-          <button className="btn ghost" style={{ flex: "0 0 auto", color: "var(--down)" }} onClick={() => onDelete(memo.id)}>
+          <button className="btn ghost danger" onClick={() => onDelete(memo.id)}>
             삭제
           </button>
         )}

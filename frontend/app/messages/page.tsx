@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ConversationSummary, fetchConversations } from "@/lib/social";
-import { Empty, TopBar, fmtRelative } from "@/components/ui";
-import { LoadError } from "@/components/CommunityUI";
-import { IconChevronL, IconUser } from "@/components/Icons";
+import { Empty, LoadError, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { IconChevronL, IconMessage, IconUser } from "@/components/Icons";
+import { useScrollMemory } from "@/lib/scroll-memory";
 
 /** 메시지함: 대화 목록 */
 export default function MessagesPage() {
@@ -25,16 +25,17 @@ export default function MessagesPage() {
     const t = window.setInterval(load, 15000); // 새 대화·읽지 않은 수 갱신
     return () => window.clearInterval(t);
   }, [load]);
+  useScrollMemory(list !== null);
 
   if (loadError) return <><TopBar title="메시지" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!list) return <TopBar title="메시지" />;
+  if (!list) return <><TopBar title="메시지" right={<Link href="/me" className="icon-btn" aria-label="나로"><IconChevronL /></Link>} /><div className="screen" role="status" aria-label="대화를 불러오고 있어요"><SkeletonList count={4} lines={1} /></div></>;
 
   return (
     <>
       <TopBar title="메시지" eyebrow={list.length ? `${list.length}개의 대화` : undefined} right={<Link href="/me" className="icon-btn" aria-label="나로"><IconChevronL /></Link>} />
       <div className="screen">
         {list.length === 0 ? (
-          <Empty icon="✉️" title="아직 대화가 없어요">
+          <Empty icon={<IconMessage />} title="아직 대화가 없어요" action={<Link href="/shout" className="btn ghost">외침 둘러보기</Link>}>
             외침이나 피드에서 닉네임을 누르면 그 사람 프로필에서 메시지를 보낼 수 있어요.
           </Empty>
         ) : (

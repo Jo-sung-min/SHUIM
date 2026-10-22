@@ -18,6 +18,7 @@ import {
 } from "@/lib/community";
 import Link from "next/link";
 import { Sheet, fmtRelative } from "./ui";
+export { LoadError } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
 import Fist3D from "./Fist3D";
 import { showToast } from "@/lib/toast";
@@ -211,7 +212,7 @@ export function TargetMenuSheet({
         <div className="stack">
           {item.authorId === s.me.id ? (
             <button
-              className="btn ghost"
+              className="btn ghost danger"
               disabled={busy}
               aria-busy={busy}
               onClick={async () => {
@@ -275,19 +276,3 @@ export function ReportSheet({ open, onClose, onSubmit }: { open: boolean; onClos
   );
 }
 
-/* ---------- 서버 연결 실패 안내 ---------- */
-export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const detail = /서버|\b(?:db|sql|api|s3|http)\b|failed to fetch|fetch failed|networkerror|unexpected token|json|50[234]|<html/i.test(message)
-    ? "연결을 확인한 뒤 다시 시도해 주세요."
-    : message;
-  return (
-    <div className="empty">
-      <div className="ico">☁️</div>
-      <b>잠시 불러오지 못했어요</b>
-      {detail}
-      <div style={{ marginTop: 14 }}>
-        <button className="btn sm soft" onClick={onRetry}>다시 시도</button>
-      </div>
-    </div>
-  );
-}

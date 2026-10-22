@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { Sheet } from "./ui";
+import { toastSuccess } from "@/lib/toast";
 
 type SafetyReportKind = "user" | "message" | "ai";
 
@@ -25,7 +26,6 @@ export default function SafetyReport({
   const [detail, setDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
   const submitting = useRef(false);
   const source = context?.trim();
   const close = () => { if (!submitting.current) setOpen(false); };
@@ -51,9 +51,9 @@ export default function SafetyReport({
         const body = await res.json().catch(() => null);
         throw new Error(typeof body?.error === "string" ? body.error : "신고를 보내지 못했어요. 다시 시도해 주세요.");
       }
-      setSent(true);
       setDetail("");
       setOpen(false);
+      toastSuccess("신고를 접수했어요");
     } catch (e) {
       setError(e instanceof Error ? e.message : "연결을 확인하고 다시 시도해 주세요.");
     } finally {
@@ -64,10 +64,9 @@ export default function SafetyReport({
 
   return (
     <>
-      <button type="button" className="text-btn muted" onClick={() => { setSent(false); setError(null); setOpen(true); }}>
+      <button type="button" className="text-btn muted" onClick={() => { setError(null); setOpen(true); }}>
         {LABELS[kind]}
       </button>
-      {sent && <span className="tiny muted" role="status">신고를 접수했어요.</span>}
       <Sheet open={open} onClose={close} title={LABELS[kind]}>
         <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
           <p className="tiny muted">문제가 된 부분과 이유를 알려 주세요. 신고 대상과 아래에 작성한 내용이 운영팀에 전달돼요. 비밀번호나 불필요한 개인정보는 적지 마세요.</p>
@@ -86,7 +85,7 @@ export default function SafetyReport({
             <span id={`${fieldId}-count`} className="tiny muted">{detail.length.toLocaleString()} / 2,000자</span>
           </div>
           {error && <p className="notice warn" role="alert">{error}</p>}
-          <div className="row" style={{ gap: 8, marginTop: 16 }}>
+          <div className="sheet-actions">
             <button type="button" className="btn ghost" onClick={close} disabled={busy}>취소</button>
             <button type="submit" className="btn" disabled={busy || !detail.trim()}>{busy ? "보내는 중…" : "신고 보내기"}</button>
           </div>

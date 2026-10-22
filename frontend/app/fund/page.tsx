@@ -4,14 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, DONATION_PRESETS, RANK_SHARES, api, currentWeekKey, fetchCommunity, fmtWon, myPayouts, pastWeeks, userById, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
-import { Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
-import { LoadError, run } from "@/components/CommunityUI";
+import { Empty, Hero, LoadError, Sheet, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { run } from "@/components/CommunityUI";
+import { IconCoin } from "@/components/Icons";
+import { useScrollMemory } from "@/lib/scroll-memory";
+import { toastSuccess } from "@/lib/toast";
 
 export default function FundPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -24,9 +26,10 @@ export default function FundPage() {
   useEffect(() => {
     load();
   }, [load]);
+  useScrollMemory(s !== null);
 
   if (loadError) return <><TopBar title="불행 모금" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!s) return <TopBar title="불행 모금" />;
+  if (!s) return <><TopBar title="불행 모금" /><div className="screen" role="status" aria-label="모금 현황을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div></>;
 
   const cur = currentWeekKey();
   const batch = weeklyOf(s, cur);
@@ -46,8 +49,7 @@ export default function FundPage() {
         <div style={{ height: 12 }} />
         <Hero label={`${weekLabel(cur)} · 이번 주 모금`} title={fmtWon(batch?.fund.total ?? 0)} stats={[`후원 ${batch?.fund.count ?? 0}건`, `후원자 ${batch?.fund.donors ?? 0}명`, `분배 대상 ${top10.length}명`]} />
         <div className="notice" style={{ marginTop: 12 }}>지금은 모금을 미리 체험하는 화면이에요. 실제로 결제되거나 돈이 전달되지는 않아요.</div>
-        <button className="btn block" style={{ marginTop: 12 }} onClick={() => setOpen(true)}>모금하기</button>
-        {toast && <p className="toast" style={{ textAlign: "center", margin: "8px 0 0" }}>{toast}</p>}
+        <button type="button" className="btn block" style={{ marginTop: 16 }} onClick={() => setOpen(true)}>모금하기</button>
 
         {(myTotal > 0 || myDonated > 0) && (
           <div className="tiles" style={{ marginTop: 12, gridTemplateColumns: "1fr 1fr" }}>
@@ -58,7 +60,7 @@ export default function FundPage() {
 
         <div className="section-title"><span>이번 주 분배 예상</span><Link href="/ranking" className="link">랭킹 보기</Link></div>
         {top10.length === 0 ? (
-          <Empty icon="🪙" title="아직 분배 대상이 없어요">불행 털어내기에 글이 올라오면 순위가 생겨요.</Empty>
+          <Empty icon={<IconCoin />} title="아직 분배 대상이 없어요">불행 털어내기에 글이 올라오면 순위가 생겨요.</Empty>
         ) : (
           <section className="card" style={{ padding: "6px 16px" }}>
             {top10.map((r) => (
@@ -120,17 +122,18 @@ export default function FundPage() {
         open={open}
         onClose={() => setOpen(false)}
         onSubmit={async (amount, message) => {
-          await run(setS, () => api.donate(amount, message));
+          const ok = await run(setS, () => api.donate(amount, message));
+          if (!ok) return false;
           setOpen(false);
-          setToast(`${fmtWon(amount)}을 이번 주 모금에 보탰어요 (모의)`);
-          setTimeout(() => setToast(null), 3000);
+          toastSuccess(`${fmtWon(amount)}을 이번 주 모금에 보탰어요 (모의)`);
+          return true;
         }}
       />
     </>
   );
 }
 
-function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () => void; onSubmit: (amount: number, message: string) => Promise<void> }) {
+function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () => void; onSubmit: (amount: number, message: string) => Promise<boolean> }) {
   const [amount, setAmount] = useState<number>(3000);
   const [custom, setCustom] = useState("");
   const [message, setMessage] = useState("");
@@ -157,7 +160,7 @@ function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () =
       </div>
       <div className="sheet-actions">
         <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" disabled={!valid || busy} onClick={async () => { setBusy(true); await onSubmit(value, message); setBusy(false); }}>
+        <button className="btn" disabled={!valid || busy} aria-busy={busy} onClick={async () => { setBusy(true); try { await onSubmit(value, message); } finally { setBusy(false); } }}>
           {busy ? "보내는 중…" : valid ? `${fmtWon(value)} 보태기` : "금액을 확인해요"}
         </button>
       </div>

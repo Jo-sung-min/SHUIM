@@ -1,21 +1,34 @@
 "use client";
 
-export interface AppNotice { id: number; message: string }
+export type NoticeKind = "error" | "success" | "info";
+export interface AppNotice { id: number; message: string; kind: NoticeKind }
 const EMPTY_NOTICES: readonly AppNotice[] = [];
 let notices: readonly AppNotice[] = EMPTY_NOTICES;
 let nextId = 0;
 const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((listener) => listener());
 
-/** Errors remain readable until dismissed; repeating the same error does not stack alerts. */
-export function showToast(message: string) {
+/**
+ * 작은 안내. 오류는 닫을 때까지 남고(같은 문구는 겹치지 않음), 완료 안내는 잠깐 보이고 사라진다.
+ * 기본 kind 는 "error" 라서 예전 호출(메시지만 넘김)은 그대로 오류 안내다.
+ */
+export function showToast(message: string, options: { kind?: NoticeKind; duration?: number } = {}) {
+  const kind = options.kind ?? "error";
   if (!message.trim() || notices.some((notice) => notice.message === message)) return;
-  notices = [...notices, { id: ++nextId, message }];
-  listeners.forEach((listener) => listener());
+  const id = ++nextId;
+  notices = [...notices, { id, message, kind }];
+  emit();
+  const duration = options.duration ?? (kind === "error" ? 0 : 2400);
+  if (duration > 0) setTimeout(() => dismissToast(id), duration);
 }
 
+/** 저장·전송이 끝났을 때의 작은 완료 안내 */
+export const toastSuccess = (message: string) => showToast(message, { kind: "success" });
+
 export function dismissToast(id: number) {
+  if (!notices.some((notice) => notice.id === id)) return;
   notices = notices.filter((notice) => notice.id !== id);
-  listeners.forEach((listener) => listener());
+  emit();
 }
 
 export const getToastSnapshot = () => notices;

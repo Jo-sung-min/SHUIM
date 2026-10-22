@@ -9,8 +9,10 @@ import { hasCrisisSignal } from "@/lib/crisis";
 import { biggestShifts, lastNDays, series, volatility } from "@/lib/accel";
 import AccelChart from "@/components/AccelChart";
 import HelpBanner from "@/components/HelpBanner";
-import { Empty, Segmented, TopBar, fmtDate } from "@/components/ui";
-import { IconClose, IconPlus, IconSparkle } from "@/components/Icons";
+import { ConfirmSheet, Empty, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui";
+import { IconChart, IconClose, IconPlus, IconSparkle } from "@/components/Icons";
+import { CategoryIcon } from "@/components/CategoryIcon";
+import { useScrollMemory } from "@/lib/scroll-memory";
 
 /** 어제 대비 변화 선택지: -DELTA_MAX(많이 내려감) ~ +DELTA_MAX(많이 올라옴) */
 const DELTA_MAX = 5;
@@ -40,7 +42,7 @@ export default function LogPage() {
         {view === "today" ? (
           <TodayWrite />
         ) : (
-          <Flow />
+          <Flow onWrite={() => setView("today")} />
         )}
       </div>
     </>
@@ -62,7 +64,9 @@ function TodayWrite() {
   const [newLabel, setNewLabel] = useState("");
   const [newEmoji, setNewEmoji] = useState(CUSTOM_EMOJIS[0]);
   const [order, setOrder] = useState<string[]>([]);
+  const [removing, setRemoving] = useState<CategoryId | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useScrollMemory(ready);
   const cats = useMemo(() => orderCategories(allCategories(customCats), order), [customCats, order]);
   /** 카드를 꾹 눌렀다가 끌어서 순서 바꾸기 (사용자별 저장) */
   const reorder = useLongPressReorder(
@@ -130,7 +134,6 @@ function TodayWrite() {
   };
   /** 사용자 카테고리 삭제. 지난 기록은 그대로 두고 카드만 사라진다 */
   const removeCategory = (id: CategoryId) => {
-    if (!window.confirm("이 카테고리를 지울까요? 지난 기록은 남고 카드만 사라져요.")) return;
     const next = customCats.filter((c) => c.id !== id);
     setCustomCats(next);
     saveCustomCategories(next);
@@ -149,7 +152,15 @@ function TodayWrite() {
   const crisis = useMemo(() => hasCrisisSignal(Object.values(day).map((e) => e?.note ?? "").join(" ")), [day]);
   const filled = Object.keys(day).length;
 
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <div className="stack" role="status" aria-label="오늘 기록을 불러오고 있어요" style={{ marginTop: 16 }}>
+        <SkeletonCard lines={2} />
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={3} />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -202,9 +213,10 @@ function TodayWrite() {
             <section key={c.id} {...reorder.bind(c.id)} className={`card draggable ${reorder.draggingId === c.id ? "dragging" : ""}`}>
               <div className="entry-head">
                 <div className="entry-title">
-                  {c.emoji} {c.label}
+                  <CategoryIcon id={c.id} emoji={c.emoji} size={18} />
+                  {c.label}
                   {isCustomCategory(c.id) && (
-                    <button type="button" className="cat-del" aria-label={`${c.label} 카테고리 삭제`} onClick={() => removeCategory(c.id)}>
+                    <button type="button" className="cat-del" aria-label={`${c.label} 카테고리 삭제`} onClick={() => setRemoving(c.id)}>
                       <IconClose />
                     </button>
                   )}
@@ -254,9 +266,11 @@ function TodayWrite() {
           adding ? (
             <section className="card cat-form">
               <div className="entry-title" style={{ marginBottom: 10 }}>새 카테고리</div>
-              <div className="chips wrap emoji-pick" role="radiogroup" aria-label="이모지">
+              <div className="chips wrap icon-pick" role="radiogroup" aria-label="아이콘">
                 {CUSTOM_EMOJIS.map((e) => (
-                  <button key={e} type="button" role="radio" aria-checked={newEmoji === e} className={`chip ${newEmoji === e ? "on" : ""}`} onClick={() => setNewEmoji(e)}>{e}</button>
+                  <button key={e} type="button" role="radio" aria-checked={newEmoji === e} aria-label={e} className={`chip ${newEmoji === e ? "on" : ""}`} onClick={() => setNewEmoji(e)}>
+                    <CategoryIcon emoji={e} size={20} />
+                  </button>
                 ))}
               </div>
               <form
@@ -280,6 +294,15 @@ function TodayWrite() {
         )}
       </div>
 
+      <ConfirmSheet
+        open={removing !== null}
+        title="이 카테고리를 지울까요?"
+        message="지난 기록은 남고 카드만 사라져요."
+        confirmLabel="지우기"
+        danger
+        onClose={() => setRemoving(null)}
+        onConfirm={() => { if (removing) removeCategory(removing); setRemoving(null); }}
+      />
     </>
   );
 }
@@ -287,9 +310,10 @@ function TodayWrite() {
 /* ================= 흐름 ================= */
 
 /** 흐름은 항상 전체 평균(기본 + 내가 추가한 카테고리 점수를 모두 합산) */
-function Flow() {
+function Flow({ onWrite }: { onWrite: () => void }) {
   const [journal, setJournal] = useState<Journal | null>(null);
   const [range, setRange] = useState<7 | 14 | 30>(14);
+  useScrollMemory(journal !== null, "/log:flow");
 
   useEffect(() => { syncRecords().then(() => setJournal(loadJournal())); }, []);
 
@@ -300,11 +324,18 @@ function Flow() {
   const vol = volatility(points);
   const color = "var(--text)";
 
-  if (!journal) return null;
+  if (!journal) {
+    return (
+      <div role="status" aria-label="흐름을 불러오고 있어요" style={{ marginTop: 16 }}>
+        <div className="sk-card"><div className="sk w60" /><div className="sk" style={{ height: 240, borderRadius: 12 }} /></div>
+        <div className="sk-tiles" style={{ marginTop: 8 }}><div className="sk" /><div className="sk" /><div className="sk" /></div>
+      </div>
+    );
+  }
 
   if (Object.keys(journal).length === 0) {
     return (
-      <Empty icon="〰️" title="아직 기록이 없어요">
+      <Empty icon={<IconChart />} title="아직 기록이 없어요" action={<button type="button" className="btn ghost" onClick={onWrite}>오늘 쓰기로 가기</button>}>
         오늘 쓰기에서 첫 기록을 남기면 흐름이 보이기 시작해요.
       </Empty>
     );
@@ -317,7 +348,7 @@ function Flow() {
           <span className="tiny muted">전체 평균 · 위는 그날 위치, 아래는 직전 대비 변화</span>
           <div className="segmented" style={{ padding: 3 }}>
             {[7, 14, 30].map((r) => (
-              <button key={r} className={range === r ? "on" : ""} style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setRange(r as 7 | 14 | 30)}>
+              <button key={r} type="button" className={range === r ? "on" : ""} style={{ minHeight: 32, padding: "0 10px", fontSize: 13 }} onClick={() => setRange(r as 7 | 14 | 30)}>
                 {r}일
               </button>
             ))}
@@ -364,7 +395,7 @@ function Flow() {
         </section>
       </div>
 
-      <Link className="btn block soft" href="/summary" style={{ marginTop: 12 }}>
+      <Link className="btn block ghost" href="/summary" style={{ marginTop: 16 }}>
         <IconSparkle style={{ width: 18, height: 18 }} /> 이 흐름 AI로 정리하기
       </Link>
     </>

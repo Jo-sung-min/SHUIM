@@ -21,7 +21,10 @@ import {
 } from "@/lib/community";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
-import { Empty, Hero, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Hero, Sheet, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { ShoutCatIcon } from "@/components/CategoryIcon";
+import { useScrollMemory } from "@/lib/scroll-memory";
+import { toastSuccess } from "@/lib/toast";
 import ShoutTabs from "@/components/ShoutTabs";
 import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconBubble, IconMore, IconPlus, IconShield } from "@/components/Icons";
@@ -57,6 +60,7 @@ export default function ShoutPage() {
     if (!s) return [];
     return s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter)).sort((a, b) => b.createdAt - a.createdAt);
   }, [s, filter]);
+  useScrollMemory(s !== null);
 
   if (loadError) {
     return (
@@ -66,7 +70,19 @@ export default function ShoutPage() {
       </>
     );
   }
-  if (!s) return <TopBar title="외침" />;
+  if (!s) {
+    return (
+      <>
+        <TopBar title="외침" />
+        <div className="screen" role="status" aria-label="외침을 불러오고 있어요">
+          <ShoutTabs />
+          <SkeletonHero />
+          <div style={{ height: 16 }} />
+          <SkeletonList count={3} lines={3} />
+        </div>
+      </>
+    );
+  }
 
   const blocked = isBlocked(s.me);
   const flaggedCount = listFlagged(s).length;
@@ -96,14 +112,17 @@ export default function ShoutPage() {
           <button className={`chip ${filter === "all" ? "on" : ""}`} onClick={() => setFilter("all")}>전체</button>
           {SHOUT_CATEGORIES.map((c) => (
             <button key={c.id} className={`chip ${filter === c.id ? "on" : ""}`} onClick={() => setFilter(c.id)}>
-              {c.emoji} {c.label}
+              <ShoutCatIcon id={c.id} />
+              {c.label}
             </button>
           ))}
         </div>
         {filter !== "all" && <p className="tiny muted" style={{ margin: "2px 4px 10px" }}>{shoutCatById(filter).desc}</p>}
 
         {posts.length === 0 ? (
-          <Empty icon="📣" title="아직 외침이 없어요">첫 외침을 남기면 누군가 힘내요를 보낼 거예요.</Empty>
+          <Empty icon={<IconBubble />} title="아직 외침이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={() => setWriting(true)}>첫 외침 남기기</button>}>
+            첫 외침을 남기면 누군가 힘내요를 보낼 거예요.
+          </Empty>
         ) : (
           <div className="stack">
             {posts.map((p) =>
@@ -142,13 +161,17 @@ export default function ShoutPage() {
         defaultCat={filter === "all" ? "misfortune" : filter}
         onClose={() => setWriting(false)}
         onSubmit={async (cat, text) => {
-          await run(setS, () => api.createPost(cat, text));
+          // 실패하면 시트와 입력을 그대로 두고(run 이 오류 안내) 다시 시도할 수 있게 한다
+          const ok = await run(setS, () => api.createPost(cat, text));
+          if (!ok) return false;
           setWriting(false);
           setFilter("all");
+          toastSuccess("외침을 올렸어요");
+          return true;
         }}
       />
 
-      <Sheet open={Boolean(current)} onClose={() => setOpenPost(null)} title={current ? `${shoutCatById(current.cat).emoji} ${shoutCatById(current.cat).label}` : ""}>
+      <Sheet open={Boolean(current)} onClose={() => setOpenPost(null)} title={current ? shoutCatById(current.cat).label : ""}>
         {current && (
           <>
             <div className="post-head" style={{ marginBottom: 2 }}>
@@ -196,7 +219,7 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
   return (
     <article className="card post">
       <div className="post-head">
-        <span className="cat">{c.emoji} {c.label}</span>
+        <span className="cat"><ShoutCatIcon id={c.id} /> {c.label}</span>
         <span>·</span>
         <Link href={`/u/${post.authorId}`} className="nick" style={{ textDecoration: "underline", textDecorationColor: "var(--border)" }}>{mine ? "나" : author.nick}</Link>
         <span>·</span>
@@ -212,7 +235,7 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
   );
 }
 
-function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; defaultCat: ShoutCat; onClose: () => void; onSubmit: (cat: ShoutCat, text: string) => Promise<void> }) {
+function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; defaultCat: ShoutCat; onClose: () => void; onSubmit: (cat: ShoutCat, text: string) => Promise<boolean> }) {
   const [cat, setCat] = useState<ShoutCat>(defaultCat);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -225,7 +248,8 @@ function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; de
           <div className="chips wrap">
             {SHOUT_CATEGORIES.map((x) => (
               <button key={x.id} type="button" className={`chip ${cat === x.id ? "on" : ""}`} onClick={() => setCat(x.id)}>
-                {x.emoji} {x.label}
+                <ShoutCatIcon id={x.id} />
+                {x.label}
               </button>
             ))}
           </div>
@@ -245,8 +269,8 @@ function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; de
           disabled={!text.trim() || busy}
           onClick={async () => {
             setBusy(true);
-            await onSubmit(cat, text);
-            setBusy(false);
+            try { await onSubmit(cat, text); }
+            finally { setBusy(false); }
           }}
         >
           {busy ? "올리는 중…" : "외치기"}

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, RankRow, WeeklyBatch, api, currentWeekKey, fetchCommunity, fmtWon, pastWeeks, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
-import { Empty, Hero, Segmented, TopBar, fmtRelative } from "@/components/ui";
-import { LoadError, run } from "@/components/CommunityUI";
-import { IconRefresh } from "@/components/Icons";
+import { Empty, Hero, LoadError, Segmented, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { run } from "@/components/CommunityUI";
+import { IconRefresh, IconTrophy } from "@/components/Icons";
+import { useScrollMemory } from "@/lib/scroll-memory";
 
 type View = "current" | "past";
 
@@ -29,9 +30,10 @@ export default function RankingPage() {
   useEffect(() => {
     load();
   }, [load]);
+  useScrollMemory(s !== null);
 
   if (loadError) return <><TopBar title="불행 랭킹" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!s) return <TopBar title="불행 랭킹" />;
+  if (!s) return <><TopBar title="불행 랭킹" /><div className="screen" role="status" aria-label="랭킹을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={3} lines={2} /></div></>;
 
   const cur = currentWeekKey();
   const batch: WeeklyBatch | undefined = view === "current" ? weeklyOf(s, cur) : pastWeek ? weeklyOf(s, pastWeek) : undefined;
@@ -63,8 +65,8 @@ export default function RankingPage() {
           </div>
         )}
         {!batch || batch.rows.length === 0 ? (
-          <Empty icon="🏔️" title={view === "past" ? "확정된 지난 주 집계가 없어요" : "이번 주엔 아직 순위가 없어요"}>
-            <Link href="/shout" style={{ textDecoration: "underline" }}>외침</Link>의 불행 털어내기에 글을 쓰면 여기 올라와요.
+          <Empty icon={<IconTrophy />} title={view === "past" ? "확정된 지난 주 집계가 없어요" : "이번 주엔 아직 순위가 없어요"} action={<Link href="/shout" className="btn ghost">외침 보러 가기</Link>}>
+            외침의 불행 털어내기에 글을 쓰면 여기 올라와요.
           </Empty>
         ) : (
           <div className="stack" style={{ marginTop: 12 }}>
@@ -84,7 +86,7 @@ export default function RankingPage() {
 function RankCard({ row, me, hasFund, finalized }: { row: RankRow; me: boolean; hasFund: boolean; finalized: boolean }) {
   return (
     <section className={`card rank ${row.rank <= 3 ? "top" : ""} ${me ? "me" : ""}`}>
-      <div className="rank-no">{row.rank <= 3 ? ["🥇", "🥈", "🥉"][row.rank - 1] : row.rank}</div>
+      <div className="rank-no">{row.rank}</div>
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="row" style={{ gap: 6 }}>
           <b style={{ fontSize: 15 }}>{row.nick}{me ? " (나)" : ""}</b>

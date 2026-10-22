@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { haptic } from "@/lib/haptics";
 
 /**
  * 세로 목록을 "꾹 눌렀다가 끌어서" 순서 바꾸기.
@@ -146,11 +147,7 @@ export function useLongPressReorder(ids: string[], onReorder: (ids: string[]) =>
         target.current = drag.current.index;
         rects.forEach((r) => r.id !== id && items.current.get(r.id)?.classList.add("shifting"));
         document.body.style.userSelect = "none";
-        try {
-          navigator.vibrate?.(12);
-        } catch {
-          /* noop */
-        }
+        haptic(12);
         setDraggingId(id);
         applyTransforms(0);
       }, LONG_PRESS);

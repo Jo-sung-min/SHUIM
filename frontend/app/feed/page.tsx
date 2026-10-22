@@ -21,8 +21,9 @@ import { Sheet, fmtRelative } from "@/components/ui";
 import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import FeedComposer from "@/components/FeedComposer";
 import Link from "next/link";
-import { IconBookmark, IconBubble, IconMore, IconPen } from "@/components/Icons";
-import { showToast } from "@/lib/toast";
+import { IconBookmark, IconBubble, IconFist, IconMore, IconPen } from "@/components/Icons";
+import { showToast, toastSuccess } from "@/lib/toast";
+import { readScrollMemory, useElementScrollMemory } from "@/lib/scroll-memory";
 import styles from "./feed-media.module.css";
 
 type Filter = "all" | "following" | "saved";
@@ -32,7 +33,9 @@ const PAGE = 5;
 export default function FeedPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
+  // 다른 화면에 갔다가 돌아오면 보던 필터·위치·불러온 개수를 그대로 이어 본다
+  const [remembered] = useState(() => readScrollMemory<{ limit: number; filter: Filter }>("/feed")?.extra ?? null);
+  const [filter, setFilter] = useState<Filter>(remembered?.filter ?? "all");
   const [openComments, setOpenComments] = useState<string | null>(null);
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
@@ -40,7 +43,8 @@ export default function FeedPage() {
   const [topMenu, setTopMenu] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
-  const [limit, setLimit] = useState(PAGE);
+  const [limit, setLimit] = useState(Math.max(PAGE, remembered?.limit ?? PAGE));
+  const firstFilter = useRef(true);
   const [deepLink, setDeepLink] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -63,7 +67,10 @@ export default function FeedPage() {
     load(true);
     setDeepLink(new URLSearchParams(window.location.search).get("post"));
   }, [load]);
-  useEffect(() => setLimit(PAGE), [filter]);
+  useEffect(() => {
+    if (firstFilter.current) { firstFilter.current = false; return; }
+    setLimit(PAGE);
+  }, [filter]);
   useEffect(() => {
     if (!writing && scrollToNewPost.current && s) {
       scrollToNewPost.current = false;
@@ -89,6 +96,7 @@ export default function FeedPage() {
     if (filter === "saved") return all.filter((f) => f.saves.includes(s.me.id));
     return all;
   }, [s, filter]);
+  useElementScrollMemory(feedRef, s !== null && items.length > 0, "/feed", { limit, filter });
 
   // ?post=ID 로 들어오면 그 글까지 불러와 스크롤하고 댓글을 연다
   useEffect(() => {
@@ -157,7 +165,18 @@ export default function FeedPage() {
   };
 
   if (loadError) return <div className="screen" style={{ paddingTop: 80 }}><LoadError message={loadError} onRetry={() => load(true)} /></div>;
-  if (!s) return null;
+  if (!s) {
+    return (
+      <div className="sk-reel" role="status" aria-label="위로글을 불러오고 있어요">
+        <div style={{ width: "100%", display: "grid", gap: 12 }}>
+          <div className="sk w40" />
+          <div className="sk sk-line lg" />
+          <div className="sk sk-line lg w80" />
+          <div className="sk w60" />
+        </div>
+      </div>
+    );
+  }
 
   const me = s.me.id;
   const blocked = isBlocked(s.me);
@@ -181,8 +200,13 @@ export default function FeedPage() {
             <div className="reel-body">
               <div className="reel-title">{filter === "saved" ? "저장함" : filter === "following" ? "팔로잉" : "위로 피드"}</div>
               <p className="reel-text">
-                {filter === "saved" ? "저장한 위로글이 아직 없어요.\n마음에 닿는 글의 🔖를 눌러요." : filter === "following" ? "팔로우한 크리에이터가 없어요.\n전체에서 마음에 드는 글쓴이를 팔로우해요." : "아직 위로글이 없어요.\n첫 크리에이터가 되어볼까요."}
+                {filter === "saved" ? "저장한 위로글이 아직 없어요.\n마음에 닿는 글에서 저장을 눌러요." : filter === "following" ? "팔로우한 크리에이터가 없어요.\n전체에서 마음에 드는 글쓴이를 팔로우해요." : "아직 위로글이 없어요.\n첫 크리에이터가 되어볼까요."}
               </p>
+              {filter === "following" ? (
+                <button type="button" className="btn ghost" style={{ marginTop: 16 }} onClick={() => setFilter("all")}>전체 피드 보기</button>
+              ) : filter === "all" && !blocked ? (
+                <button type="button" className="btn ghost" style={{ marginTop: 16 }} onClick={() => setWriting(true)}>첫 위로글 쓰기</button>
+              ) : null}
             </div>
           </section>
         ) : (
@@ -206,7 +230,7 @@ export default function FeedPage() {
         {items.length > 0 && limit >= items.length && (
           <div className="feed-end">
             <span>다 봤어요</span>
-            <button className="btn sm soft" onClick={refresh}>새로고침</button>
+            <button type="button" className="btn sm ghost" onClick={refresh}>새로고침</button>
           </div>
         )}
       </div>
@@ -257,6 +281,7 @@ export default function FeedPage() {
           setWriting(false);
           scrollToNewPost.current = true;
           setFilter("all");
+          toastSuccess("위로글을 올렸어요");
         }}
       />
 
@@ -431,7 +456,7 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
             <div key={f.id} className="card flat" style={{ padding: "10px 12px", fontSize: 13.5 }}>
               {f.title && <b style={{ display: "block", fontSize: 12, color: "var(--text-2)" }}>{f.title}</b>}
               <span style={{ whiteSpace: "pre-wrap" }}>{f.text.slice(0, 60)}{f.text.length > 60 ? "…" : ""}</span>
-              <div className="tiny muted" style={{ marginTop: 4 }}>💪 {f.cheers.length} · {fmtRelative(f.createdAt)}</div>
+              <div className="tiny muted" style={{ marginTop: 4 }}><span className="inline-fist"><IconFist /> {f.cheers.length}</span> · {fmtRelative(f.createdAt)}</div>
             </div>
           ))}
         </div>

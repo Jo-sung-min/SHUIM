@@ -4,9 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Message, Thread, fetchThread, markThreadRead, sendMessage } from "@/lib/social";
-import { TopBar } from "@/components/ui";
-import { LoadError } from "@/components/CommunityUI";
-import { IconChevronL, IconSend } from "@/components/Icons";
+import { Empty, LoadError, TopBar } from "@/components/ui";
+import { IconChevronL, IconMessage, IconSend } from "@/components/Icons";
 import BlockUser from "@/components/BlockUser";
 import SafetyReport from "@/components/SafetyReport";
 import { showToast } from "@/lib/toast";
@@ -79,7 +78,11 @@ export default function ThreadPage() {
   };
 
   if (loadError) return <><TopBar title="대화" right={<Link href="/messages" className="icon-btn" aria-label="메시지함"><IconChevronL /></Link>} /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!thread) return <TopBar title="대화" />;
+  if (!thread) return <><TopBar title="대화" right={<Link href="/messages" className="icon-btn" aria-label="메시지함"><IconChevronL /></Link>} /><div className="screen thread" role="status" aria-label="대화를 불러오고 있어요">
+    <div className="sk" style={{ height: 44, width: "60%", borderRadius: 16 }} />
+    <div className="sk" style={{ height: 44, width: "50%", borderRadius: 16, marginLeft: "auto", marginTop: 8 }} />
+    <div className="sk" style={{ height: 64, width: "70%", borderRadius: 16, marginTop: 8 }} />
+  </div></>;
 
   const me = (m: Message) => m.senderId !== thread.otherId;
   let lastDay = "";
@@ -93,7 +96,7 @@ export default function ThreadPage() {
       />
       <div className="screen thread">
         <div className="row" style={{ gap: 20, marginBottom: 16 }}><BlockUser userId={thread.otherId} /><SafetyReport kind="user" targetId={thread.otherId} /></div>
-        {thread.messages.length === 0 && <p className="tiny muted" style={{ textAlign: "center", margin: "30px 0" }}>첫 메시지를 보내 봐요.</p>}
+        {thread.messages.length === 0 && <Empty icon={<IconMessage />} title="아직 메시지가 없어요">첫 메시지를 보내 봐요.</Empty>}
         {thread.messages.map((m) => {
           const d = new Date(m.at);
           const day = `${d.getMonth() + 1}월 ${d.getDate()}일`;

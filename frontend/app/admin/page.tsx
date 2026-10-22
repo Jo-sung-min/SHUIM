@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, FlaggedItem, REPORT_REASONS, REPORT_THRESHOLD, api, blockedUsers, fetchCommunity, listFlagged, shoutCatById } from "@/lib/community";
-import { Empty, Hero, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
-import { IconChevronL } from "@/components/Icons";
+import { Empty, Hero, LoadError, Segmented, Sheet, SkeletonScreen, TopBar, fmtRelative } from "@/components/ui";
+import { IconBubble, IconChevronL, IconFilm, IconLock, IconShield } from "@/components/Icons";
+import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { Me, fetchMe } from "@/lib/auth";
 import { DEFAULT_MODEL, DEFAULT_PROMPTS, MODEL_OPTIONS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
 import { PromptOverrides, loadPrompts, savePrompts } from "@/lib/storage";
-import { LoadError, run } from "@/components/CommunityUI";
+import { run } from "@/components/CommunityUI";
 import SiteAdmin from "./SiteAdmin";
 import SafetyAdmin from "@/components/SafetyAdmin";
 
@@ -45,16 +46,15 @@ export default function AdminPage() {
   }, [load]);
 
   if (loadError) return <><TopBar title="관리자" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!s || !me) return <TopBar title="관리자" />;
+  if (!s || !me) return <><TopBar title="관리자" /><div className="screen"><SkeletonScreen count={2} lines={3} label="관리자 화면을 불러오고 있어요" /></div></>;
 
   if (!me.admin) {
     return (
       <>
         <TopBar title="관리자" right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
         <div className="screen">
-          <Empty icon="🔒" title="관리자만 들어올 수 있어요">
+          <Empty icon={<IconLock />} title="관리자만 들어올 수 있어요" action={<Link href="/auth" className="btn ghost">{me.user ? "내 계정" : "로그인"}</Link>}>
             {me.user ? `${me.user.nick} 님은 일반 회원이에요.` : "관리자 계정으로 로그인해요."}
-            <div style={{ marginTop: 14 }}><Link href="/auth" className="btn sm soft">{me.user ? "내 계정" : "로그인"}</Link></div>
           </Empty>
         </div>
       </>
@@ -80,7 +80,7 @@ export default function AdminPage() {
             <Hero label="관리자" title={flagged.length ? `검토할 글 ${flagged.length}개` : "검토할 글이 없어요"} stats={[`대기 ${flagged.length}`, `차단 유저 ${blocked.length}`]} />
             <div className="section-title"><span>검토 대기</span></div>
             {flagged.length === 0 ? (
-              <Empty icon="🛡️" title="깨끗해요">지금은 신고가 쌓인 글이 없어요.</Empty>
+              <Empty icon={<IconShield />} title="검토할 글이 없어요">지금은 신고가 쌓인 글이 없어요.</Empty>
             ) : (
               <div className="stack">
                 {flagged.map((f) => <FlaggedCard key={`${f.target.kind}-${f.target.id}`} f={f} s={s} onChange={setS} />)}
@@ -176,8 +176,8 @@ function PromptAdmin() {
               <div className="meta"><span>{p.desc}</span><span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{drafts[p.key].length.toLocaleString()}자</span></div>
               <textarea aria-label={`${p.label} 작성 지침`} value={drafts[p.key]} onChange={(e) => setDrafts((d) => ({ ...d, [p.key]: e.target.value }))} spellCheck={false} />
               <div className="row" style={{ marginTop: 10, gap: 6 }}>
-                <button className="btn sm" disabled={!dirty} onClick={() => save(p.key)}>{savedKey === p.key ? "저장됨" : "저장"}</button>
-                <button className="btn ghost sm" disabled={!isCustom && !dirty} onClick={() => reset(p.key)}>기본값으로</button>
+                <button type="button" className={`btn sm ${dirty ? "" : "ghost"}`} disabled={!dirty} onClick={() => save(p.key)}>{savedKey === p.key ? "저장됨" : "저장"}</button>
+                <button type="button" className="text-btn muted" disabled={!isCustom && !dirty} onClick={() => reset(p.key)}>기본값으로</button>
               </div>
             </section>
           );
@@ -204,7 +204,7 @@ function FlaggedCard({ f, s, onChange }: { f: FlaggedItem; s: CommunityStore; on
   };
   const counts = REPORT_REASONS.map((r) => ({ ...r, n: f.reports.filter((x) => x.reason === r.id).length })).filter((r) => r.n > 0);
   const cat = "cat" in f.item ? shoutCatById(f.item.cat) : null;
-  const kindLabel = f.target.kind === "post" ? `${cat!.emoji} ${cat!.label}` : f.target.kind === "feed" ? "🎞️ 위로 피드" : "💬 댓글";
+  const kindLabel = f.target.kind === "post" ? <><ShoutCatIcon id={cat!.id} /> {cat!.label}</> : f.target.kind === "feed" ? <><IconFilm className="cat-ico" /> 위로 피드</> : <><IconBubble className="cat-ico" /> 댓글</>;
   return (
     <section className="card admin-item" aria-busy={busy}>
       <div className="post-head">
@@ -220,7 +220,7 @@ function FlaggedCard({ f, s, onChange }: { f: FlaggedItem; s: CommunityStore; on
         <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void act(() => api.adminDismiss(f.target))}>문제 없음</button>
         <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void act(() => api.adminHide(f.target))}>내용 숨기기</button>
         <button
-          className="btn sm"
+          className="btn ghost danger sm"
           type="button"
           disabled={busy}
           onClick={() => { setError(null); setConfirm(true); }}
@@ -230,11 +230,11 @@ function FlaggedCard({ f, s, onChange }: { f: FlaggedItem; s: CommunityStore; on
       </div>
       {error && !confirm && <p className="notice warn" role="alert">{error}</p>}
       <Sheet open={confirm} onClose={() => { if (!locked.current) setConfirm(false); }} title={`${f.author.nick} 님을 차단할까요?`}>
-        <p className="tiny muted">이 사용자의 글과 댓글이 모두 가려지고, 새 글을 작성할 수 없게 돼요.</p>
+        <p className="sheet-text">이 사용자의 글과 댓글이 모두 가려지고, 새 글을 작성할 수 없게 돼요.</p>
         {error && <p className="notice warn" role="alert">{error}</p>}
-        <div className="row" style={{ gap: 8, marginTop: 16 }}>
+        <div className="sheet-actions">
           <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirm(false)}>취소</button>
-          <button type="button" className="btn" disabled={busy} onClick={() => void act(async () => {
+          <button type="button" className="btn danger" disabled={busy} aria-busy={busy} onClick={() => void act(async () => {
             await api.adminBlock(f.author.id, `신고 ${f.reports.length}회`);
             return api.adminHide(f.target);
           })}>{busy ? "처리 중…" : "차단하기"}</button>

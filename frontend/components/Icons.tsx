@@ -181,3 +181,170 @@ export const IconBookmark = (p: P) => (
     <path d="M6 4.5h12v16l-6-4.2-6 4.2Z" />
   </svg>
 );
+
+/* ---------- 카테고리·상태용 추가 아이콘 (같은 선 두께) ---------- */
+export const IconSmile = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 10h.01M15 10h.01" />
+  </svg>
+);
+export const IconMoon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
+  </svg>
+);
+export const IconUsers = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
+    <path d="M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20c0-3-2-5.2-4.8-5.8" />
+  </svg>
+);
+export const IconBriefcase = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="7" width="18" height="13" rx="3" />
+    <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18" />
+  </svg>
+);
+export const IconLeaf = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 19C5 10 10 5 20 4c0 10-5 15-14 15Z" />
+    <path d="M5 19c3-4 6-7 10-10" />
+  </svg>
+);
+export const IconTag = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 12V4h8l10 10-8 8L3 12Z" />
+    <circle cx="8" cy="9" r="1.2" fill="currentColor" stroke="none" />
+  </svg>
+);
+export const IconBook = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z" />
+    <path d="M4 19a2 2 0 0 1 2-2h13M8 7h7" />
+  </svg>
+);
+export const IconPalette = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2v-1a2 2 0 0 1 2-2h1.5c1.5 0 2.5-1 2.5-3 0-5-3.8-10-8-10Z" />
+    <circle cx="8" cy="10" r="1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="10" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+export const IconRun = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="15" cy="4.5" r="1.8" />
+    <path d="M5 21l3.5-6 3-1.5 2 2.5 4 1M9 10l3.5-1 4 1.5 2.5 2.5M12.5 9 9 10l-2 3" />
+  </svg>
+);
+export const IconLotus = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 20c-3-2-4-6-4-10 2 1 3 3 4 5 1-2 2-4 4-5 0 4-1 8-4 10Z" />
+    <path d="M12 20c-5 0-8-2.5-9-6 3 0 5 1 7 3M12 20c5 0 8-2.5 9-6-3 0-5 1-7 3" />
+  </svg>
+);
+export const IconGamepad = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M7 8h10a5 5 0 0 1 5 5v1a3 3 0 0 1-5.2 2L15 14H9l-1.8 2A3 3 0 0 1 2 14v-1a5 5 0 0 1 5-5Z" />
+    <path d="M7 11v3M5.5 12.5h3M15.5 11.5h.01M17.5 13.5h.01" />
+  </svg>
+);
+export const IconClover = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="7" r="3" />
+    <circle cx="7.5" cy="12.5" r="3" />
+    <circle cx="16.5" cy="12.5" r="3" />
+    <path d="M12 15.5V21M12 15.5c-1 1.5-2.5 2.5-4.5 3" />
+  </svg>
+);
+export const IconPlane = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M10.5 13.5 3 11l1-2 7.5 1.5L17 5l2.5 1-3.5 7 3 3-1 1.5-4-1.5-3 3.5H9l1.5-6Z" />
+  </svg>
+);
+export const IconPaw = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="7" cy="9" r="1.8" />
+    <circle cx="17" cy="9" r="1.8" />
+    <circle cx="10" cy="5.5" r="1.8" />
+    <circle cx="14" cy="5.5" r="1.8" />
+    <path d="M12 11c-3 0-5.5 2.5-5.5 5 0 1.7 1.2 3 3 3 .9 0 1.6-.4 2.5-.4s1.6.4 2.5.4c1.8 0 3-1.3 3-3 0-2.5-2.5-5-5.5-5Z" />
+  </svg>
+);
+export const IconCoffee = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9Z" />
+    <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M7 3.5v2M10 3.5v2M13 3.5v2" />
+  </svg>
+);
+export const IconMusic = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M9 18V5l11-2v13" />
+    <circle cx="6.5" cy="18" r="2.5" />
+    <circle cx="17.5" cy="16" r="2.5" />
+  </svg>
+);
+export const IconTool = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M21 6.5a5 5 0 0 1-6.8 6.4L6 21l-3-3 8.1-8.2A5 5 0 0 1 17.5 3l-3 3 3.5 3.5 3-3Z" />
+  </svg>
+);
+export const IconRain = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M7 15a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.3 1.5A3.8 3.8 0 0 1 17.5 15H7Z" />
+    <path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3" />
+  </svg>
+);
+export const IconBubbles = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="9" cy="14" r="5" />
+    <circle cx="17" cy="7" r="3" />
+    <circle cx="17.5" cy="16.5" r="1.5" />
+  </svg>
+);
+export const IconCloudOff = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M7 18a4.5 4.5 0 0 1-1.5-8.7A6 6 0 0 1 16 6.5M19.5 11.5A3.8 3.8 0 0 1 17.5 18H9" />
+    <path d="M3 3l18 18" />
+  </svg>
+);
+export const IconAlert = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5v5M12 16h.01" />
+  </svg>
+);
+export const IconLock = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="5" y="10" width="14" height="11" rx="3" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3M12 14.5v2.5" />
+  </svg>
+);
+export const IconInbox = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 4h16v16H4Z" />
+    <path d="M4 14h4.5l1.5 2.5h4l1.5-2.5H20" />
+  </svg>
+);
+export const IconClock = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </svg>
+);
+export const IconFilm = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="4" width="18" height="16" rx="3" />
+    <path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" />
+  </svg>
+);
+/** 선으로 그린 주먹 (힘내요 숫자 옆 표시용). 켜진 상태의 3D 주먹은 Fist3D */
+export const IconFist = (p: P) => (
+  <svg {...base({ strokeWidth: 1.8, ...p })}>
+    <path d="M6 11V8.5a1.5 1.5 0 0 1 3 0V11M9 11V7.5a1.5 1.5 0 0 1 3 0V11M12 11V7.5a1.5 1.5 0 0 1 3 0V11M15 11V8.5a1.5 1.5 0 0 1 3 0V11" />
+    <path d="M6 11h12v4.5A5.5 5.5 0 0 1 12.5 21h-1A5.5 5.5 0 0 1 6 15.5Z" />
+    <path d="M8 13.3h3.5a1.6 1.6 0 0 1 0 3.2H8a1.6 1.6 0 0 1 0-3.2Z" />
+  </svg>
+);

@@ -10,6 +10,7 @@ import { lastNDays } from "@/lib/accel";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar } from "@/components/ui";
 import { IconChevronL, IconSparkle } from "@/components/Icons";
+import { CategoryIcon } from "@/components/CategoryIcon";
 
 type Sel = CategoryId | "all";
 
@@ -79,8 +80,9 @@ export default function SummaryPage() {
             <div className="chips">
               <button className={`chip ${sel === "all" ? "on" : ""}`} onClick={() => setSel("all")}>전체</button>
               {cats.map((c) => (
-                <button key={c.id} className={`chip cat ${sel === c.id ? "on" : ""}`} style={{ ["--chip" as string]: c.color }} onClick={() => setSel(c.id)}>
-                  {c.emoji} {c.label}
+                <button key={c.id} type="button" className={`chip cat ${sel === c.id ? "on" : ""}`} style={{ ["--chip" as string]: c.color }} onClick={() => setSel(c.id)}>
+                  <CategoryIcon id={c.id} emoji={c.emoji} />
+                  {c.label}
                 </button>
               ))}
             </div>
@@ -101,7 +103,7 @@ export default function SummaryPage() {
           </button>
         </section>
 
-        {error && <p className="tiny" style={{ color: "var(--down)" }}>{error}</p>}
+        {error && <p className="form-error" role="alert" style={{ marginTop: 12 }}>{error}</p>}
 
         {result?.crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 

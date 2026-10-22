@@ -9,7 +9,9 @@ import { MyProfile, fetchMyProfile, unreadMessages, updateMyProfile } from "@/li
 import { uploadImage } from "@/lib/upload";
 import PhotoEditor from "@/components/PhotoEditor";
 import photoStyles from "@/components/PhotoEditor.module.css";
-import { Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import { ConfirmSheet, Empty, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import { useScrollMemory } from "@/lib/scroll-memory";
+import { toastSuccess } from "@/lib/toast";
 import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconShield, IconTrophy, IconUser, IconChevronR, IconBubble } from "@/components/Icons";
 import styles from "../account-screens.module.css";
 
@@ -25,6 +27,7 @@ export default function MePage() {
   const [stats, setStats] = useState({ streak: 0, memos: 0, goals: 0, today: 0 });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<"clear" | "logout" | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const actionInFlight = useRef(false);
 
   const reload = useCallback(async () => {
@@ -47,6 +50,7 @@ export default function MePage() {
   useEffect(() => {
     reload();
   }, [reload]);
+  useScrollMemory(me !== null);
 
   const openNotif = () => {
     setView("notif");
@@ -63,7 +67,10 @@ export default function MePage() {
     finally { actionInFlight.current = false; setPending(null); }
   };
 
-  if (!me) return <><TopBar title="내 공간" /><div className={`screen ${styles.pending}`} role="status" aria-label="내 공간을 불러오고 있어요"><div className="skeleton" /><div className="skeleton" /></div></>;
+  if (!me) return <><TopBar title="내 공간" /><div className="screen" role="status" aria-label="내 공간을 불러오고 있어요">
+    <div className="sk-card"><div className="sk-row"><div className="sk sk-circle lg" /><div className="sk-col"><div className="sk sk-line lg w60" /><div className="sk w80" /></div></div></div>
+    <div className="sk-grid" style={{ marginTop: 16 }}><div className="sk" /><div className="sk" /><div className="sk" /><div className="sk" /></div>
+  </div></>;
 
   const user = me.user;
   const unread = notifs.filter((n) => !n.read).length;
@@ -135,7 +142,7 @@ export default function MePage() {
               </div>
             </section>
             <div className={styles.quietActions}>
-              <button type="button" className="text-btn muted" disabled={pending !== null} onClick={() => { if (!window.confirm(user ? "이 계정의 기록·메모·목표·일정을 모두 지울까요? 되돌릴 수 없어요." : "이 기기의 기록·메모·목표·일정을 지울까요? 되돌릴 수 없어요.")) return; runAction("clear", async () => { clearAll(); await reload(); }); }}>{pending === "clear" ? "삭제 중…" : "기록 전체 삭제"}</button>
+              <button type="button" className="text-btn muted" disabled={pending !== null} onClick={() => setConfirmClear(true)}>{pending === "clear" ? "삭제 중…" : "기록 전체 삭제"}</button>
               {user && <button type="button" className="text-btn muted" disabled={pending !== null} onClick={() => runAction("logout", async () => { await signOut(); await reload(); })}>{pending === "logout" ? "로그아웃 중…" : "로그아웃"}</button>}
             </div>
           </>
@@ -150,7 +157,7 @@ export default function MePage() {
               </Link>
             )}
             {notifs.length === 0 && dmUnread === 0 ? (
-              <div className="empty"><div className="ico"><IconBubble width={32} height={32} /></div><b>아직 도착한 알림이 없어요</b>내 이야기에 달린 위로와 답글을<br />이곳에 모아드릴게요.</div>
+              <Empty icon={<IconBubble />} title="아직 도착한 알림이 없어요">내 이야기에 달린 위로와 답글을<br />이곳에 모아드릴게요.</Empty>
             ) : (
               notifs.map((n) => (
                 <Link key={n.id} href={`${n.postKind === "post" ? "/shout" : "/feed"}?post=${n.postId}`} className={`notif ${n.read ? "" : "unread"}`}>
@@ -173,9 +180,19 @@ export default function MePage() {
           open={editing}
           profile={profile}
           onClose={() => setEditing(false)}
-          onSaved={(p) => { setProfile(p); setEditing(false); fetchMe(true).then(setMe); }}
+          onSaved={(p) => { setProfile(p); setEditing(false); toastSuccess("프로필을 저장했어요"); fetchMe(true).then(setMe); }}
         />
       )}
+      <ConfirmSheet
+        open={confirmClear}
+        title={user ? "이 계정의 기록을 모두 지울까요?" : "이 기기의 기록을 모두 지울까요?"}
+        message="기록·메모·목표·일정이 모두 사라지고 되돌릴 수 없어요."
+        confirmLabel="모두 지우기"
+        danger
+        busy={pending === "clear"}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => runAction("clear", async () => { clearAll(); await reload(); setConfirmClear(false); })}
+      />
     </>
   );
 }
@@ -276,7 +293,7 @@ function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; prof
         <div className="field">
           <label htmlFor="profile-phone">전화번호 (나만 보기)</label>
           <input id="profile-phone" value={phone} disabled={busy} onChange={(e) => setPhone(formatPhone(e.target.value))} placeholder="010-0000-0000" inputMode="tel" autoComplete="tel" />
-          {!phoneOk && <span className="tiny" style={{ color: "var(--down)" }}>숫자 10~11자리로 입력해요.</span>}
+          {!phoneOk && <span className="form-error">숫자 10~11자리로 입력해요.</span>}
         </div>
         {error && <p className={styles.error} role="alert">{error}</p>}
       </div>

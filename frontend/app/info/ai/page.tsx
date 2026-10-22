@@ -74,7 +74,7 @@ export default function AiPreferencesPage() {
         <p className="consent-help">정보 처리와 보관에 관한 자세한 내용은 <Link href="/privacy#ai-processing" style={{ textDecoration: "underline" }}>개인정보 처리방침</Link>에서 확인할 수 있어요.</p>
       </section>
 
-      {loading ? <p role="status" className="consent-help">이용 설정을 확인하고 있어요.</p> : consent && <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      {loading ? <div role="status" aria-label="이용 설정을 확인하고 있어요" style={{ display: "grid", gap: 8, padding: "16px 0" }}><div className="sk sk-block" /><div className="sk sk-block" /></div> : consent && <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
         {!consent.signupAccepted && <label className="consent-choice">
           <input type="checkbox" checked={terms} disabled={saving} onChange={(event) => setTerms(event.target.checked)} />
           <span><strong>[필수]</strong> <Link href="/terms">이용약관</Link>에 동의하고 <Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</span>

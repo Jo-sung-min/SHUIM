@@ -35,6 +35,6 @@ export default function DeleteAccount() {
     <p><b>{me.user.nick}</b> 님의 계정을 삭제합니다. 이 작업은 되돌릴 수 없습니다.</p>
     <label className="field">확인을 위해 ‘계정 삭제’를 입력해 주세요.<input autoComplete="off" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} placeholder="계정 삭제" disabled={busy} /></label>
     {error && <p className="notice warn" role="alert">{error}</p>}
-    <button type="submit" className="btn" disabled={busy || confirmation !== "계정 삭제"}>{busy ? "삭제 처리 중…" : "계정과 연결된 정보 삭제"}</button>
+    <button type="submit" className="btn danger" disabled={busy || confirmation !== "계정 삭제"} aria-busy={busy}>{busy ? "삭제 처리 중…" : "계정과 연결된 정보 삭제"}</button>
   </form>;
 }

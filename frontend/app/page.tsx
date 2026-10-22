@@ -37,7 +37,8 @@ import {
 import { Account, completeKakaoLogin, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
-import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
+import { SkeletonCard, SkeletonHero, TopBar, fmtDate, fmtRelative } from "@/components/ui";
+import { useScrollMemory } from "@/lib/scroll-memory";
 import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser, IconHeart, IconStar, IconPen, IconBubble } from "@/components/Icons";
 import styles from "./account-screens.module.css";
 
@@ -51,9 +52,9 @@ interface Data {
 
 type Mode = "briefing" | MomentMode | "review";
 
-const MOMENTS: Record<MomentMode, { emoji: string; label: string; heading: string }> = {
-  praise: { emoji: "🌟", label: "칭찬받기", heading: "오늘의 칭찬" },
-  love: { emoji: "💗", label: "사랑받기", heading: "나를 사랑하는 법" },
+const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
+  praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
+  love: { label: "사랑받기", heading: "나를 사랑하는 법" },
 };
 
 /** API로 보낼 재료: 최근 기록, 오늘 한 일, 메모, 목표, 일정 */
@@ -121,6 +122,7 @@ export default function HomePage() {
   }, [today]);
 
   useEffect(reload, [reload]);
+  useScrollMemory(data !== null);
 
   const empty = useMemo(
     () => Boolean(data) && Object.keys(data!.journal).length === 0 && data!.memos.length === 0 && data!.goals.length === 0 && data!.schedule.length === 0,
@@ -191,7 +193,7 @@ export default function HomePage() {
     }
   };
 
-  if (!data) return <><TopBar title="오늘의 나" eyebrow={fmtDate(today)} /><div className={`screen ${styles.pending}`} role="status" aria-label="오늘의 기록을 불러오고 있어요"><div className="skeleton" /><div className="skeleton" /></div></>;
+  if (!data) return <><TopBar title="오늘의 나" eyebrow={fmtDate(today)} /><div className="screen" role="status" aria-label="오늘의 기록을 불러오고 있어요"><SkeletonHero /><div style={{ height: 16 }} /><SkeletonCard lines={2} head /></div></>;
 
   const d = briefing?.data;
   /** 오늘 기록 현황: 다 채우면 버튼 대신 문구 */
@@ -216,7 +218,6 @@ export default function HomePage() {
         }
       />
       <div className="screen home">
-        <div className="ambient" aria-hidden="true" />
 
         {/* 히어로 */}
         {empty ? (
@@ -227,9 +228,9 @@ export default function HomePage() {
           </section>
         ) : loading === "briefing" ? (
           <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘의 기록을 정리하고 있어요">
-            <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px", background: "rgba(255,255,255,0.25)" }} />
-            <div className="skeleton" style={{ height: 14, width: "100%", background: "rgba(255,255,255,0.2)" }} />
-            <div className="skeleton" style={{ height: 14, width: "60%", marginTop: 8, background: "rgba(255,255,255,0.2)" }} />
+            <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px" }} />
+            <div className="skeleton" style={{ height: 14, width: "100%" }} />
+            <div className="skeleton" style={{ height: 14, width: "60%", marginTop: 8 }} />
           </section>
         ) : d ? (
           <section className={`hero ${styles.homeHero}`}>
@@ -315,7 +316,7 @@ export default function HomePage() {
         {open && openMoment && !loading && (
           <section className="card moment" style={{ marginTop: 12 }}>
             <div className="head">
-              <span className="label">{MOMENTS[open].emoji} {MOMENTS[open].heading}</span>
+              <span className="label">{open === "praise" ? <IconStar /> : <IconHeart />} {MOMENTS[open].heading}</span>
               <span className="tiny muted">{fmtRelative(openMoment.generatedAt)}</span>
             </div>
             <h3>{openMoment.data.title}</h3>
@@ -371,7 +372,7 @@ export default function HomePage() {
             {review.data.question && <p className="closing">{review.data.question}</p>}
             <div className="row" style={{ marginTop: 10 }}>
               <SourceBadge source={review.source} />
-              <Link href="/memo" className="text-btn" style={{ marginLeft: "auto" }}>되돌아보기 →</Link>
+              <Link href="/memo" className="text-btn" style={{ marginLeft: "auto" }}>되돌아보기 <IconChevronR /></Link>
             </div>
           </section>
         )}

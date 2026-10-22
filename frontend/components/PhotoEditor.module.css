@@ -2,7 +2,7 @@
 .header { display: grid; grid-template-columns: 66px 1fr 66px; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; flex: none; border-bottom: 1px solid #ffffff12; }
 .header h2 { margin: 0; font-size: 16px; font-weight: 650; text-align: center; }
 .editor button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: transform 120ms ease, opacity 120ms ease, background 120ms ease; cursor: pointer; font: inherit; }
-.editor button:active:not(:disabled) { transform: scale(.95); opacity: .8; }
+.editor button:active:not(:disabled) { transform: scale(.98); opacity: .85; }
 .editor button:disabled { opacity: .35; cursor: default; }
 .editor :is(button,input,[tabindex="0"]):focus-visible { outline: 2px solid #bca5ff; outline-offset: 3px; }
 .back { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: inherit; }
@@ -14,7 +14,7 @@
 .viewport:active { cursor: grabbing; }
 .preview { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .grid { position: absolute; inset: 0; pointer-events: none; border: 1px solid #ffffffa6; background: linear-gradient(to right, transparent calc(33.333% - .5px), #ffffff50 calc(33.333% - .5px), #ffffff50 calc(33.333% + .5px), transparent calc(33.333% + .5px), transparent calc(66.666% - .5px), #ffffff50 calc(66.666% - .5px), #ffffff50 calc(66.666% + .5px), transparent calc(66.666% + .5px)), linear-gradient(to bottom, transparent calc(33.333% - .5px), #ffffff50 calc(33.333% - .5px), #ffffff50 calc(33.333% + .5px), transparent calc(33.333% + .5px), transparent calc(66.666% - .5px), #ffffff50 calc(66.666% - .5px), #ffffff50 calc(66.666% + .5px), transparent calc(66.666% + .5px)); }
-.hint { margin: 13px 20px; text-align: center; color: #a5a5b0; font-size: 11px; line-height: 1.65; }
+.hint { margin: 13px 20px; text-align: center; color: #b4b4bf; font-size: 13px; line-height: 1.65; }
 .loading { color: #c7c7d0; font-size: 14px; }
 .emptyMark { font-size: 48px; color: #8f8f9a; }
 .error { margin: 12px 20px; padding: 12px 14px; border-radius: 12px; color: #ffe2e5; background: #4a242e; font-size: 13px; line-height: 1.6; }
@@ -23,17 +23,17 @@
 .ratios button { min-width: 66px; min-height: 40px; border: 1px solid #3c3c46; border-radius: 12px; color: #bdbdc8; background: #202027; font-size: 13px; }
 .ratios button.selected { background: #393047; border-color: #bca5ff; color: #e4d9ff; }
 .zoom { display: flex; align-items: center; gap: 13px; }
-.zoom label { font-size: 12px; flex: none; }
+.zoom label { font-size: 13px; flex: none; }
 .zoom input { width: 100%; min-width: 0; height: 44px; padding: 0; background: transparent; border: 0; accent-color: #c6b4ff; cursor: pointer; }
-.zoom output { min-width: 32px; text-align: right; font-size: 12px; color: #c6b4ff; font-variant-numeric: tabular-nums; }
+.zoom output { min-width: 32px; text-align: right; font-size: 13px; color: #c6b4ff; font-variant-numeric: tabular-nums; }
 .tools { display: flex; justify-content: center; gap: 16px; margin-top: 8px; }
-.tools button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 10px 16px; color: #e2e2e9; background: transparent; border: 0; border-radius: 12px; font-size: 12px; }
+.tools button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 10px 16px; color: #e2e2e9; background: transparent; border: 0; border-radius: 12px; font-size: 13px; }
 .tools svg { width: 17px; height: 17px; }
-.privacy { margin: 14px 0 0; text-align: center; font-size: 10px; color: #8c8c98; line-height: 1.7; }
+.privacy { margin: 14px 0 0; text-align: center; font-size: 12px; color: #9a9aa5; line-height: 1.7; }
 .profilePhoto { display: flex; flex-direction: column; align-items: center; gap: 13px; padding: 5px 0 8px; }
-.profilePhotoPreview { display: grid; place-items: center; width: 94px; height: 94px; border-radius: 50%; overflow: hidden; background: var(--home-soft); color: var(--home-a); font-size: 30px; font-weight: 700; }
+.profilePhotoPreview { display: grid; place-items: center; width: 94px; height: 94px; border-radius: 50%; overflow: hidden; background: var(--surface-2); color: var(--text); font-size: 30px; font-weight: 700; }
 .profilePhotoPreview img { width: 100%; height: 100%; object-fit: cover; }
 .profilePhotoActions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
-.profilePhotoNote { font-size: 12px; color: var(--text-2); text-align: center; margin: 0; }
-.progress { width: 100%; height: 5px; accent-color: var(--home-a); }
+.profilePhotoNote { font-size: 13px; color: var(--text-2); text-align: center; margin: 0; }
+.progress { width: 100%; height: 5px; accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .editor button { transition: none; } }

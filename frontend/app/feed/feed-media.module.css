@@ -1,6 +1,6 @@
 .photoPost.photoPost { background: var(--bg); --reel-fg: var(--text); --reel-bg: var(--bg); color: var(--text); }
 .photoPost :global(.reel-meta) { top: calc(63px + env(safe-area-inset-top)); bottom: auto; right: 18px; min-height: 50px; }
-.photoPost :global(.reel-author) { flex: 1; }.photoPost :global(.reel-author small) { font-size: 10px; margin-top: 3px; }
+.photoPost :global(.reel-author) { flex: 1; }.photoPost :global(.reel-author small) { font-size: 12px; margin-top: 3px; }
 .photoPost :global(.reel-actions) { display: flex; left: 18px; right: 18px; bottom: 18px; gap: 18px; justify-content: flex-start; }
 .photoPost :global(.reel-actions) > :last-child { margin-left: auto; }
 .photoPost :global(.lact.v) { flex-direction: row; gap: 5px; }.photoPost :global(.lact .ico) { width: 36px; height: 40px; border: 0; box-shadow: none; background: transparent; backdrop-filter: none; }.photoPost :global(.lact .lbl) { font-size: 12px; }
@@ -12,7 +12,7 @@
 .photoFrame { flex: 1; min-height: 0; width: 100%; background: var(--surface-2); display: grid; place-items: center; }
 .photoFrame img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
 .photoSlide :global(.slide-body) { flex: none; max-height: 26%; overflow-y: auto; padding: 14px 20px 0; pointer-events: auto; }
-.photoPost :global(.reel-text) { font-size: 13px; line-height: 1.75; font-weight: 450; text-shadow: none; word-break: break-word; overflow-wrap: anywhere; }
+.photoPost :global(.reel-text) { font-size: 15px; line-height: 1.7; font-weight: 450; text-shadow: none; word-break: break-word; overflow-wrap: anywhere; }
 .photoPost :global(.reel-title) { font-size: 13px; font-weight: 700; margin-bottom: 5px; opacity: 1; letter-spacing: 0; }
 .pageDots.pageDots { gap: 0; pointer-events: auto; }
 .pageDots button { border: 0; padding: 0; width: 30px; height: 28px; background: none; display: grid; place-items: center; border-radius: 10px; }

@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { MemoCat, memoCatById } from "@/lib/categories";
 import { ScheduleItem, addDays, loadSchedule, saveSchedule, syncRecords, todayKey, uid } from "@/lib/storage";
-import { CatChips, DOW_LABELS, Empty, Hero, Sheet, TopBar, fmtDate } from "@/components/ui";
-import { IconCheck, IconChevronL, IconChevronR, IconPlus } from "@/components/Icons";
+import { CatChips, DOW_LABELS, Empty, Hero, Sheet, SkeletonScreen, TopBar, fmtDate } from "@/components/ui";
+import { IconCalendar, IconCheck, IconChevronL, IconChevronR, IconPlus } from "@/components/Icons";
+import { CategoryIcon } from "@/components/CategoryIcon";
+import { useScrollMemory } from "@/lib/scroll-memory";
+import { toastSuccess } from "@/lib/toast";
 
 function weekStart(key: string): string {
   const [y, m, d] = key.split("-").map(Number);
@@ -51,14 +54,17 @@ export default function SchedulePage() {
     commit(exists ? items.map((x) => (x.id === it.id ? it : x)) : [...items, it]);
     setEditing(null);
     setSel(it.date);
+    toastSuccess(exists ? "일정을 고쳤어요" : "일정을 저장했어요");
   };
   const remove = (id: string) => {
     if (!items) return;
     commit(items.filter((x) => x.id !== id));
     setEditing(null);
+    toastSuccess("일정을 지웠어요");
   };
+  useScrollMemory(items !== null);
 
-  if (!items) return <TopBar title="일정" />;
+  if (!items) return <><TopBar title="일정" /><div className="screen"><SkeletonScreen count={2} lines={2} label="일정을 불러오고 있어요" /></div></>;
 
   const [wy, wm] = ws.split("-").map(Number);
   const dayItems = byDate[sel] ?? [];
@@ -110,7 +116,7 @@ export default function SchedulePage() {
         </div>
 
         {dayItems.length === 0 ? (
-          <Empty icon="🗓️" title="일정이 비어 있어요">
+          <Empty icon={<IconCalendar />} title="일정이 비어 있어요" action={<button type="button" className="btn ghost" onClick={() => setEditing("new")}>일정 추가</button>}>
             여유도 일정이에요. 필요하면 + 로 추가해요.
           </Empty>
         ) : (
@@ -157,7 +163,7 @@ function EventRow({ item, showDate, onToggle, onEdit }: { item: ScheduleItem; sh
       <span className="time">{showDate ? fmtDate(item.date, false).replace("월 ", "/").replace("일", "") : item.time ?? "종일"}</span>
       <button className="grow" style={{ background: "none", border: "none", textAlign: "left", padding: 0 }} onClick={onEdit}>
         <div className="title">{item.title}</div>
-        <div className="tiny muted">{showDate && item.time ? `${item.time} · ` : ""}{c.emoji} {c.label}</div>
+        <div className="meta">{showDate && item.time ? `${item.time} · ` : ""}<CategoryIcon id={c.id} emoji={c.emoji} size={14} /> {c.label}</div>
       </button>
       <button className="check" aria-label={item.done ? "완료 취소" : "완료"} onClick={onToggle}>
         {item.done && <IconCheck />}
@@ -223,7 +229,7 @@ function EventSheet({
       </div>
       <div className="sheet-actions">
         {item && (
-          <button className="btn ghost" style={{ flex: "0 0 auto", color: "var(--down)" }} onClick={() => onDelete(item.id)}>삭제</button>
+          <button className="btn ghost danger" onClick={() => onDelete(item.id)}>삭제</button>
         )}
         <button className="btn ghost" onClick={onClose}>취소</button>
         <button className="btn" onClick={save} disabled={!title.trim() || !date}>저장</button>
