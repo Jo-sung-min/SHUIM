@@ -12,6 +12,7 @@
     "test:privacy": "node --test scripts/community-cache.test.mjs",
     "test:availability": "node --test scripts/service-availability.test.mjs",
     "test:media": "node --test scripts/photo-edit.test.mjs scripts/upload.test.mjs",
+    "test:quotes": "node --test scripts/daily-quote.test.mjs",
     "check:release": "node scripts/check-release.mjs"
   },
   "dependencies": {

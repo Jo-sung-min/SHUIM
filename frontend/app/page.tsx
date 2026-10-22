@@ -1,6 +1,7 @@
 "use client";
 import { requestAiProcessing } from "@/lib/safety";
 import SafetyReport from "@/components/SafetyReport";
+import DailyQuote from "@/components/DailyQuote";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -30,16 +31,15 @@ import {
   saveMoment,
   saveReview,
   sessionUserId,
-  streak,
   syncRecords,
   todayKey,
 } from "@/lib/storage";
 import { Account, completeKakaoLogin, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
-import { SkeletonCard, SkeletonHero, TopBar, fmtDate, fmtRelative } from "@/components/ui";
+import { SkeletonCard, SkeletonHero, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser, IconHeart, IconStar, IconPen, IconBubble } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser, IconHeart, IconStar, IconBubble } from "@/components/Icons";
 import styles from "./account-screens.module.css";
 
 interface Data {
@@ -51,6 +51,16 @@ interface Data {
 }
 
 type Mode = "briefing" | MomentMode | "review";
+
+function HomeHeader({ account }: { account: Account | null }) {
+  return <header className={styles.homeHeader}>
+    <span aria-hidden="true" />
+    <h1 aria-label="소로우">SOROW</h1>
+    <Link href="/me" className={`icon-btn ${styles.homeProfile}`} aria-label={account ? `${account.nick}님의 프로필` : "내 프로필"}>
+      {account ? <span className={styles.homeAvatar}>{account.nick.slice(0, 1)}</span> : <IconUser />}
+    </Link>
+  </header>;
+}
 
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
@@ -84,7 +94,7 @@ function buildPayload(data: Data, today: string) {
 }
 
 export default function HomePage() {
-  const today = todayKey();
+  const [today, setToday] = useState(todayKey);
   const [data, setData] = useState<Data | null>(null);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [moments, setMoments] = useState<Partial<Record<MomentMode, Moment>>>({});
@@ -96,7 +106,31 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
+  // Refresh the record day too when the app stays open overnight or resumes.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      const now = new Date();
+      setToday(todayKey(now));
+      clearTimeout(timer);
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      timer = setTimeout(refresh, midnight.getTime() - now.getTime() + 50);
+    };
+    const onVisibility = () => { if (!document.hidden) refresh(); };
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
   const reload = useCallback(() => {
+    setBriefing((current) => current?.date === today ? current : null);
+    setMoments((current) => ({ praise: current.praise?.date === today ? current.praise : undefined, love: current.love?.date === today ? current.love : undefined }));
+    setReview((current) => current?.date === today ? current : null);
     const apply = () => {
       setData({ journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() });
       const b = loadBriefing();
@@ -125,7 +159,7 @@ export default function HomePage() {
   useScrollMemory(data !== null);
 
   const empty = useMemo(
-    () => Boolean(data) && Object.keys(data!.journal).length === 0 && data!.memos.length === 0 && data!.goals.length === 0 && data!.schedule.length === 0,
+    () => Boolean(data) && Object.keys(data!.journal).length === 0 && !Object.values(data!.log).some((day) => day.did.length > 0) && data!.memos.length === 0 && data!.goals.length === 0 && data!.schedule.length === 0,
     [data]
   );
 
@@ -150,6 +184,7 @@ export default function HomePage() {
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
       const json = await res.json();
+      if (todayKey() !== today) return;
       const base = { date: today, generatedAt: Date.now(), source: json.source, crisis: json.crisis };
       if (mode === "briefing") {
         const b: Briefing = { ...base, data: json.briefing };
@@ -193,14 +228,13 @@ export default function HomePage() {
     }
   };
 
-  if (!data) return <><TopBar title="오늘의 나" eyebrow={fmtDate(today)} /><div className="screen" role="status" aria-label="오늘의 기록을 불러오고 있어요"><SkeletonHero /><div style={{ height: 16 }} /><SkeletonCard lines={2} head /></div></>;
+  if (!data) return <><HomeHeader account={me} /><div className="screen" role="status" aria-label="오늘의 기록을 불러오고 있어요"><SkeletonHero /><div style={{ height: 16 }} /><SkeletonCard lines={2} head /></div></>;
 
   const d = briefing?.data;
-  /** 오늘 기록 현황: 다 채우면 버튼 대신 문구 */
-  const total = orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()).length;
-  const filled = Object.keys(data.journal[today] ?? {}).length;
+  const categories = orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder());
+  const total = categories.length;
+  const filled = categories.filter((category) => data.journal[today]?.[category.id] !== undefined).length;
   const didCount = data.log[today]?.did.length ?? 0;
-  const days = streak(data.journal);
   const logDone = filled >= total && total > 0;
   const dirLabel = { up: "▲ 올라오는 중", flat: "→ 유지 중", down: "▼ 내려간 날" } as const;
   const crisis = briefing?.crisis || moments.praise?.crisis || moments.love?.crisis || review?.crisis;
@@ -208,25 +242,13 @@ export default function HomePage() {
 
   return (
     <>
-      <TopBar
-        title="오늘의 나"
-        eyebrow={fmtDate(today)}
-        right={
-          <Link href="/me" className={`account-btn ${me ? "on" : ""}`} aria-label={me ? me.nick : "나"}>
-            {me ? me.nick.slice(0, 1) : <IconUser style={{ width: 18, height: 18 }} />}
-          </Link>
-        }
-      />
+      <HomeHeader account={me} />
       <div className="screen home">
 
-        {/* 히어로 */}
-        {empty ? (
-          <section className={`hero ${styles.homeHero}`}>
-            <div className="label">나를 돌보는 작은 시간</div>
-            <h2>오늘의 마음은<br />어떤 모양인가요?</h2>
-            <p>잘한 일도, 힘들었던 일도<br />여기서는 편하게 남겨요.</p>
-          </section>
-        ) : loading === "briefing" ? (
+        <DailyQuote />
+
+        {/* 문구는 매일 유지하고, 요청한 오늘의 정리는 따로 보여준다. */}
+        {loading === "briefing" ? (
           <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘의 기록을 정리하고 있어요">
             <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px" }} />
             <div className="skeleton" style={{ height: 14, width: "100%" }} />
@@ -241,30 +263,17 @@ export default function HomePage() {
             <h2>{d.headline}</h2>
             <p>{d.momentum.text}</p>
           </section>
-        ) : (
-          <section className={`hero ${styles.homeHero}`}>
-            <div className="label">오늘, 나에게 한 걸음</div>
-            <h2>{me ? `${me.nick} 님의 하루를` : "당신의 하루를"}<br />천천히 돌아봐요.</h2>
-            <p>쌓아온 기록 속 작은 변화를 만나보세요.</p>
-          </section>
-        )}
+        ) : null}
 
-        {/* 오늘 기록 현황: 채우기 전엔 버튼, 다 채우면 문구만 */}
-        {logDone ? (
-          <p className="log-done">
-            <b>고생했어요, 오늘도 화이팅</b>
-            <small>연속 {days}일째 · 기분 {filled}/{total}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
-          </p>
-        ) : (
-          <Link href="/log" className={`card log-cta ${styles.recordLink}`}>
-            <span className={styles.recordIcon}><IconPen /></span>
-            <span className={styles.recordText}>
-              <b>{filled ? "오늘의 기록 이어 쓰기" : "오늘의 마음 기록하기"}</b>
-              <small>{days > 0 ? `연속 ${days}일째 · ` : ""}{filled ? `마음 기록 ${filled}/${total}` : "한 가지 마음부터 천천히 남겨요"}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
-            </span>
-            <IconChevronR />
+        <section className={styles.homeRecord} aria-labelledby="home-record-title">
+          <div className={styles.homeRecordCopy}>
+            <h2 id="home-record-title">오늘의 기록</h2>
+            <p>마음 {filled}/{total} · 한 일 {didCount}개</p>
+          </div>
+          <Link href="/log" className={`text-btn ${styles.homeRecordLink}`} aria-label={logDone ? "오늘의 기록 돌아보기" : filled || didCount ? "오늘의 기록 이어 쓰기" : "오늘의 마음 기록하기"}>
+            <span>{logDone ? "돌아보기" : filled || didCount ? "이어 쓰기" : "기록하기"}</span><IconChevronR />
           </Link>
-        )}
+        </section>
 
         {empty && <section aria-labelledby="home-start-title">
           <div className={styles.sectionHeading}><h3 id="home-start-title">나의 속도로 시작해요</h3></div>

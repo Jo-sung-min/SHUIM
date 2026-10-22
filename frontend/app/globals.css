@@ -869,6 +869,19 @@ textarea.lined {
   100% { opacity: 0; transform: rotate(var(--a)) translateY(-22px) scale(1); }
 }
 
+/* ---------- 소로우의 문장: 문구와 출처만 조용히 ---------- */
+.daily-quote { margin: 0 0 24px; padding: 24px 4px 28px; }
+.daily-quote__text { margin: 0; }
+.daily-quote__text p { margin: 0; font-size: 24px; font-weight: 500; line-height: 1.7; letter-spacing: -.035em; word-break: keep-all; overflow-wrap: anywhere; text-wrap: balance; }
+.daily-quote__source { margin-top: 16px; color: var(--text-2); font-size: 12px; line-height: 1.7; word-break: keep-all; }
+.daily-quote__loading { min-height: 118px; }
+.daily-quote__loading .skeleton { height: 23px; margin-bottom: 12px; }
+.daily-quote__loading .skeleton:nth-child(2) { width: 70%; }
+.daily-quote__loading .skeleton:last-child { height: 12px; width: 45%; margin-top: 22px; }
+@media (max-width: 360px) {
+  .daily-quote__text p { font-size: 22px; }
+}
+
 /* ---------- 서비스 연결 상태 (앱이 열리기 전) ---------- */
 .service-state {
   width: 100%; max-width: var(--app-w); min-height: 100dvh; margin-inline: auto;

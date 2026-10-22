@@ -3,6 +3,7 @@ import Link from "next/link";
 import { IconChevronL, IconChevronR, IconMessage, IconNote, IconShield, IconSparkle, IconTrash } from "@/components/Icons";
 import styles from "@/components/ServiceInfo.module.css";
 import { LEGAL } from "@/lib/legal";
+import { SITE } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default function InfoPage() {
           {/* The local brand mark is decorative; the adjacent text supplies its name. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/favicon.svg" width="54" height="54" alt="" />
-          <div><strong>소로우</strong><small>서로 위로하고, 나를 기록하는 곳</small></div>
+          <div><strong>소로우</strong><small>{SITE.tagline}</small></div>
         </div>
         <h2>이용에 필요한 안내를<br />한곳에 모았어요.</h2>
         <p>소로우의 약속과 내 정보에 관한 안내를 확인해요.</p>

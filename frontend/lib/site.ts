@@ -6,8 +6,8 @@
 export const SITE = {
   name: "소로우",
   fullName: "소로우 (SOROW)",
-  tagline: "슬픔을 나누면, 우리는 가까워진다.",
-  description: "소로우 · 슬픔을 나누면, 우리는 가까워진다.",
+  tagline: "잔혹하면서도 아름다운 역설들",
+  description: "잔혹하면서도 아름다운 역설들. 모순된 마음을 기록하고 서로에게 위로를 건네는 소로우.",
   /** 운영 주소. 미리보기·로컬은 NEXT_PUBLIC_SITE_URL 로 바꿀 수 있다 */
   url: (process.env.NEXT_PUBLIC_SITE_URL ?? "https://sorow.co.kr").replace(/\/+$/, ""),
   keywords: ["소로우", "SOROW", "슬픔", "위로", "마음 기록", "감정 일기", "익명 커뮤니티", "멘탈 케어", "마음 가속도"],

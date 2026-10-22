@@ -45,11 +45,10 @@ export async function GET() {
           </div>
           <div style={{ display: "flex", fontSize: 40, fontWeight: 700, letterSpacing: -1, opacity: 0.95 }}>{korean ? SITE.fullName : "SOROW"}</div>
         </div>
-        {/* 한 줄 소개는 쉼표에서 줄을 바꿔 두 줄로 (자동 줄바꿈이 어색한 곳에서 끊기지 않게) */}
-        <div style={{ display: "flex", flexDirection: "column", fontSize: 80, fontWeight: 700, lineHeight: 1.2, letterSpacing: -3, marginTop: 40 }}>
-          {korean ? SITE.tagline.split(/(?<=,)\s*/).map((line, i) => <div key={i} style={{ display: "flex" }}>{line}</div>) : <div style={{ display: "flex" }}>Sorrow, shared side by side.</div>}
+        <div style={{ display: "flex", fontSize: 64, fontWeight: 700, lineHeight: 1.3, letterSpacing: -2, marginTop: 40 }}>
+          {korean ? SITE.tagline : "Beautiful, cruel paradoxes."}
         </div>
-        <div style={{ display: "flex", fontSize: 30, marginTop: 26, opacity: 0.82 }}>{korean ? "슬픔을 나란히 나누는 공간" : "sorow.co.kr"}</div>
+        <div style={{ display: "flex", fontSize: 30, marginTop: 26, opacity: 0.82 }}>{korean ? "모순된 마음을 기록하는 공간" : "sorow.co.kr"}</div>
       </div>
     ),
     {

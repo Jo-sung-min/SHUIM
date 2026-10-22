@@ -52,6 +52,16 @@
 .utilityGrid :global(.me-tile .ico) { color: var(--text); }
 .quietActions { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 24px 0 4px; }
 .quietActions button { min-height: 44px; padding: 10px 8px; font-size: 14px; }
+.homeHeader { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; min-height: calc(64px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) 12px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.homeHeader h1 { margin: 0; padding-left: .16em; text-align: center; color: var(--text); font-size: 22px; font-weight: 750; line-height: 1.2; letter-spacing: .16em; }
+.homeProfile:global(.icon-btn) { width: 48px; height: 48px; border-radius: 50%; }
+.homeAvatar { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border-strong); border-radius: 50%; font-size: 13px; font-weight: 650; }
+.homeRecord { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; border-block: 1px solid var(--border); }
+.homeRecordCopy { min-width: 0; }
+.homeRecordCopy h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.5; }
+.homeRecordCopy p { margin: 4px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.homeRecordLink:global(.text-btn) { flex: none; min-height: 48px; gap: 6px; padding: 10px 0 10px 10px; color: var(--text); font-size: 13px; font-weight: 600; border-radius: 12px; }
+.homeRecordLink svg { width: 16px; height: 16px; }
 .homeHero { min-height: 176px; display: flex; flex-direction: column; justify-content: center; }
 .homeHero :global(.label) { margin-bottom: 4px; }
 .homeHero h2 { font-size: 24px; letter-spacing: -.03em; line-height: 1.35; }
@@ -63,7 +73,7 @@
 .sectionHeading { display: flex; align-items: center; justify-content: space-between; margin: 28px 2px 12px; }
 .sectionHeading h3 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
 .sectionHeading span { font-size: 13px; color: var(--text-2); }
-.homeActions { padding: 16px 4px; margin-top: 0; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); }
+.homeActions { padding: 8px 0; margin-top: 0; }
 .homeActions :global(.action .ring) { border: 0; box-shadow: none; background: var(--surface-2); width: 48px; height: 48px; }
 .homeActions :global(.action.on .ring) { background: var(--home-soft); color: var(--home-a); }
 .homeActions :global(.action .lbl) { margin-top: 7px; font-size: 12px; }
