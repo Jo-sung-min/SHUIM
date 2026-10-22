@@ -4,6 +4,6 @@ export const LEGAL = {
   email: process.env.LEGAL_SUPPORT_EMAIL?.trim() || "developer@lucelab.co.kr",
   approved: process.env.LEGAL_POLICY_APPROVED === "true" && [process.env.LEGAL_EFFECTIVE_DATE, process.env.LEGAL_RETENTION_NOTICE, process.env.LEGAL_PROCESSORS_NOTICE].every((value) => Boolean(value?.trim())),
   effectiveDate: process.env.LEGAL_EFFECTIVE_DATE?.trim() || "공개 전 확정 예정",
-  retention: process.env.LEGAL_RETENTION_NOTICE?.trim() || "운영 DB에서 삭제한 후 백업·로그·파일 저장소·CDN에 남을 수 있는 기간과 삭제 처리 기한은 공개 전 확정하여 안내합니다.",
-  processors: process.env.LEGAL_PROCESSORS_NOTICE?.trim() || "호스팅, 데이터베이스, 사진 저장소와 AI 처리 제공자의 실제 계약 주체·처리 국가·보유기간 및 국외 이전 관련 안내는 공개 전 확정하여 이 항목에 기재합니다.",
+  retention: process.env.LEGAL_RETENTION_NOTICE?.trim() || "계정 삭제 후에도 복구용 사본, 접속 기록, 사진 보관·전송 서비스에 일부 정보가 남을 수 있습니다. 각 정보의 보관 기간과 완전히 삭제되는 시점은 정식 안내를 공개하기 전에 확정합니다.",
+  processors: process.env.LEGAL_PROCESSORS_NOTICE?.trim() || "서비스 운영, 기록·사진 보관, AI 처리를 맡는 업체의 이름과 정보를 처리하는 국가, 보관 기간, 해외 이전에 관한 상세 내용은 정식 안내를 공개하기 전에 확정해 이곳에 안내합니다.",
 };

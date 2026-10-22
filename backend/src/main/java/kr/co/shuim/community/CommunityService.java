@@ -305,10 +305,25 @@ public class CommunityService {
      * 옛 호출(text/title/images)도 받아서 콘텐츠 하나(또는 사진마다 같은 글)로 바꾼다.
      */
     @Transactional
-    @SuppressWarnings("unchecked")
     public Store createFeedPost(DbUser me, Object body, Object bg, Object title, Object images, Object pages) {
+        return createFeedPost(me, body, bg, title, images, pages, null);
+    }
+
+    @Transactional
+    @SuppressWarnings("unchecked")
+    public Store createFeedPost(DbUser me, Object body, Object bg, Object title, Object images, Object pages, Object clientRequestId) {
         Db.lockCommunity(jdbc);
         assertNotBlocked(me);
+        String requestId = null;
+        if (clientRequestId != null) {
+            if (!(clientRequestId instanceof String value) || !value.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
+                throw ApiException.badRequest("게시 요청을 확인하지 못했어요. 다시 시도해 주세요.");
+            }
+            requestId = ((String) clientRequestId).toLowerCase(Locale.ROOT);
+            // The shared transaction lock also serializes retries with creation and account deletion.
+            if (jdbc.sql("SELECT count(*) FROM feed_posts WHERE author_id = ? AND client_request_id = ?::uuid")
+                .param(me.id()).param(requestId).query(Long.class).single() > 0) return loadStore(me);
+        }
         int bgN = 0;
         if (bg instanceof Number n) bgN = n.intValue();
         else if (bg instanceof String s) try { bgN = Integer.parseInt(s.strip()); } catch (NumberFormatException ignored) { /* 0 */ }
@@ -320,16 +335,18 @@ public class CommunityService {
                 if (!(o instanceof Map<?, ?> m)) continue;
                 Map<String, Object> p = (Map<String, Object>) m;
                 String t = str(p.get("text"), 280);
-                if (t == null) continue;
                 String img = okUrl(p.get("image")) ? str(p.get("image"), 500) : null;
-                list.add(new FeedPage(img, str(p.get("title"), 24), t));
+                if (t == null && img == null) continue;
+                list.add(new FeedPage(img, str(p.get("title"), 24), t == null ? "" : t));
             }
         }
         if (list.isEmpty()) {
-            String t = text(body, 280);
+            String t = str(body, 280);
             List<String> imgs = new ArrayList<>();
             if (images instanceof List<?> l) for (Object u : l) { if (okUrl(u)) imgs.add(str(u, 500)); }
             else if (okUrl(images)) imgs.add(str(images, 500));
+            if (t == null && imgs.isEmpty()) throw ApiException.badRequest("사진이나 내용을 추가해 주세요.");
+            if (t == null) t = "";
             String tt = str(title, 24);
             if (imgs.isEmpty()) list.add(new FeedPage(null, tt, t));
             else for (String img : imgs) list.add(new FeedPage(img, tt, t));
@@ -339,9 +356,9 @@ public class CommunityService {
         String[] allImages = list.stream().map(FeedPage::image).filter(Objects::nonNull).toArray(String[]::new);
         jdbc.sql("INSERT INTO creators (user_id, bio) VALUES (?, '') ON CONFLICT (user_id) DO NOTHING").param(me.id()).update();
         try {
-            jdbc.sql("INSERT INTO feed_posts (id, author_id, title, text, bg, image, images, pages) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb)")
+            jdbc.sql("INSERT INTO feed_posts (id, author_id, title, text, bg, image, images, pages, client_request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::uuid)")
                 .param(Ids.uid()).param(me.id()).param(first.title()).param(first.text()).param(bgN).param(first.image())
-                .param(allImages).param(json.writeValueAsString(list)).update();
+                .param(allImages).param(json.writeValueAsString(list)).param(requestId).update();
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException(e);
         }

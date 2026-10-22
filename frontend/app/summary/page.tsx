@@ -1,8 +1,8 @@
 "use client";
-import { confirmAiProcessing } from "@/lib/safety";
+import { requestAiProcessing } from "@/lib/safety";
 import SafetyReport from "@/components/SafetyReport";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CATEGORIES, Category, CategoryId, allCategories, orderCategories } from "@/lib/categories";
 import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal, syncRecords } from "@/lib/storage";
@@ -27,6 +27,7 @@ export default function SummaryPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const running = useRef(false);
 
   useEffect(() => {
     syncRecords().then(() => {
@@ -39,11 +40,13 @@ export default function SummaryPage() {
   const entries = dates.filter((d) => journal[d]).map((d) => ({ date: d, record: journal[d] }));
 
   const run = async () => {
-    if (!confirmAiProcessing()) return;
+    if (running.current) return;
+    running.current = true;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
+      if (!(await requestAiProcessing())) return;
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,6 +57,7 @@ export default function SummaryPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "정리하지 못했어요");
     } finally {
+      running.current = false;
       setLoading(false);
     }
   };
@@ -91,7 +95,7 @@ export default function SummaryPage() {
               ))}
             </div>
           </div>
-          <button className="btn block" onClick={run} disabled={loading || entries.length === 0}>
+          <button className="btn block" onClick={run} aria-busy={loading} disabled={loading || entries.length === 0}>
             <IconSparkle style={{ width: 18, height: 18 }} />
             {loading ? "정리하는 중…" : entries.length === 0 ? "이 기간엔 기록이 없어요" : `${entries.length}일치 기록 정리하기`}
           </button>
@@ -104,14 +108,14 @@ export default function SummaryPage() {
         {result && (
           <section className="card" style={{ marginTop: 12 }}>
             <div style={{ marginBottom: 10 }}>
-              <span className={`badge ${result.source === "ai" ? "" : "gray"}`}>{result.source === "ai" ? "AI 정리" : "간단 정리 · API 키 없음"}</span>
+              <span className={`badge ${result.source === "ai" ? "" : "gray"}`}>{result.source === "ai" ? "AI 정리" : "기록 정리"}</span>
             </div>
             <div className="summary-body">{result.summary}</div>
             <SafetyReport kind="ai" context={result.summary} />
           </section>
         )}
 
-        <p className="tiny muted" style={{ textAlign: "center", marginTop: 20 }}>진단이나 조언이 아니라 거울에 가까워요.</p>
+        <p className="tiny muted" style={{ textAlign: "center", marginTop: 20 }}>나를 돌아보는 참고로 읽어 주세요. <Link href="/info/ai" style={{ textDecoration: "underline" }}>AI 이용 안내</Link></p>
       </div>
     </>
   );

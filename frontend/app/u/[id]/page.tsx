@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ProfilePage, fetchProfilePage, sendMessage } from "@/lib/social";
@@ -11,6 +11,7 @@ import { LoadError } from "@/components/CommunityUI";
 import { IconChevronL, IconMessage, IconUser } from "@/components/Icons";
 import BlockUser from "@/components/BlockUser";
 import SafetyReport from "@/components/SafetyReport";
+import { showToast } from "@/lib/toast";
 
 type Tab = "feed" | "shout";
 
@@ -22,6 +23,8 @@ export default function PublicProfilePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("feed");
   const [dm, setDm] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const followLocked = useRef(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -41,11 +44,17 @@ export default function PublicProfilePage() {
   const { profile: p, isMe } = data;
 
   const follow = async () => {
+    if (followLocked.current) return;
+    followLocked.current = true;
+    setFollowing(true);
     try {
       await api.toggleFollow(p.id);
       await load();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
+      showToast(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
+    } finally {
+      followLocked.current = false;
+      setFollowing(false);
     }
   };
 
@@ -73,7 +82,7 @@ export default function PublicProfilePage() {
           <Link href="/me" className="btn ghost block sm" style={{ marginTop: 10 }}>내 프로필 수정</Link>
         ) : (
           <div className="row" style={{ gap: 8, marginTop: 10 }}>
-            <button className={`btn block sm ${p.isFollowing ? "ghost" : ""}`} style={{ flex: 1 }} onClick={follow}>{p.isFollowing ? "팔로잉" : "팔로우"}</button>
+            <button type="button" className={`btn block sm ${p.isFollowing ? "ghost" : ""}`} style={{ flex: 1 }} onClick={follow} disabled={following} aria-busy={following} aria-pressed={p.isFollowing}>{following ? "변경 중…" : p.isFollowing ? "팔로잉" : "팔로우"}</button>
             <button className="btn soft block sm" style={{ flex: 1 }} onClick={() => setDm(true)} disabled={p.blocked}>
               <IconMessage style={{ width: 16, height: 16 }} /> 메시지
             </button>
@@ -129,28 +138,33 @@ export default function PublicProfilePage() {
 function DmSheet({ open, toNick, onClose, onSend }: { open: boolean; toNick: string; onClose: () => void; onSend: (text: string) => Promise<void> }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Sheet open={open} onClose={onClose} title={`${toNick} 님에게`}>
+    <Sheet open={open} onClose={() => { if (!locked.current) onClose(); }} title={`${toNick} 님에게`}>
       <div className="stack">
         <div className="field">
-          <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder="첫 메시지. 위로든 안부든." style={{ minHeight: 120 }} />
+          <textarea autoFocus value={text} disabled={busy} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder="첫 메시지. 위로든 안부든." style={{ minHeight: 120 }} />
         </div>
-        {error && <p className="tiny" style={{ color: "var(--down)", margin: 0 }}>{error}</p>}
+        {error && <p className="tiny" role="status" style={{ color: "var(--down)", margin: 0 }}>{error}</p>}
       </div>
       <div className="sheet-actions">
-        <button className="btn ghost" onClick={onClose}>취소</button>
+        <button className="btn ghost" disabled={busy} onClick={onClose}>취소</button>
         <button
           className="btn"
           disabled={!text.trim() || busy}
+          aria-busy={busy}
           onClick={async () => {
+            if (!text.trim() || locked.current) return;
+            locked.current = true;
             setBusy(true);
             setError(null);
             try {
-              await onSend(text);
+              await onSend(text.trim());
             } catch (e) {
               setError(e instanceof Error ? e.message : "보내지 못했어요");
             } finally {
+              locked.current = false;
               setBusy(false);
             }
           }}

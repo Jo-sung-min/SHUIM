@@ -52,7 +52,7 @@ public class CommunityController {
             case "comment.delete" -> community.deleteComment(me, str(b, "id"));
             case "cheer" -> community.toggleCheer(me, target(b));
             case "report" -> community.report(me, target(b), b.get("reason"));
-            case "feed.create" -> community.createFeedPost(me, b.get("text"), b.get("bg"), b.get("title"), b.containsKey("images") ? b.get("images") : b.get("image"), b.get("pages"));
+            case "feed.create" -> community.createFeedPost(me, b.get("text"), b.get("bg"), b.get("title"), b.containsKey("images") ? b.get("images") : b.get("image"), b.get("pages"), b.get("clientRequestId"));
             case "feed.delete" -> community.deleteFeedPost(me, str(b, "id"));
             case "bio" -> community.updateBio(me, b.get("bio"));
             case "follow" -> community.toggleFollow(me, str(b, "creatorId"));

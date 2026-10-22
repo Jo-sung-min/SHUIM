@@ -45,7 +45,7 @@ export default function FundPage() {
         <ShoutTabs />
         <div style={{ height: 12 }} />
         <Hero label={`${weekLabel(cur)} · 이번 주 모금`} title={fmtWon(batch?.fund.total ?? 0)} stats={[`후원 ${batch?.fund.count ?? 0}건`, `후원자 ${batch?.fund.donors ?? 0}명`, `분배 대상 ${top10.length}명`]} />
-        <div className="notice" style={{ marginTop: 12 }}>프로토타입이라 실제 결제는 일어나지 않아요. 실서비스에선 결제사 연동과 기부금 모집 신고가 필요해요.</div>
+        <div className="notice" style={{ marginTop: 12 }}>지금은 모금을 미리 체험하는 화면이에요. 실제로 결제되거나 돈이 전달되지는 않아요.</div>
         <button className="btn block" style={{ marginTop: 12 }} onClick={() => setOpen(true)}>모금하기</button>
         {toast && <p className="toast" style={{ textAlign: "center", margin: "8px 0 0" }}>{toast}</p>}
 

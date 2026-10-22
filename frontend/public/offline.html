@@ -1,4 +1,53 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4f3ee"><title>연결 확인 · 소로우</title>
-<style>*{box-sizing:border-box}body{margin:0;background:#f4f3ee;color:#202223;font-family:system-ui,sans-serif;min-height:100dvh;display:grid;place-items:center;padding:32px}main{max-width:380px}small{letter-spacing:.2em}h1{font-size:28px;line-height:1.4}p{line-height:1.8;color:#555}button,a{font:inherit;color:inherit}button{margin:16px 0;padding:14px 24px;border:0;border-radius:30px;background:#202223;color:white;cursor:pointer}a{display:block;font-size:14px}@media(prefers-color-scheme:dark){body{background:#121419;color:#f4f3ee}p{color:#bbb}button{background:#f4f3ee;color:#121419}}</style></head>
-<body><main><small>SOROW</small><h1>잠시 연결이 끊겼어요.</h1><p>인터넷 연결을 확인한 뒤 다시 시도해 주세요. 이미 이 기기에 저장된 기록은 그대로 남아 있어요. 서버에 아직 전송하지 못한 내용은 연결 후 확인해 주세요.</p><button onclick="location.reload()">다시 연결하기</button><a href="/">홈으로 이동</a></main></body></html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f7fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15141c" media="(prefers-color-scheme: dark)">
+  <title>연결 준비 중 · 소로우</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f7f7fb;--surface:#fff;--ink:#242236;--muted:#747185;--accent:#7963c5;--line:#e8e5f1}
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;min-height:100dvh}
+    main{width:min(100%,520px);min-height:100vh;min-height:100dvh;margin:auto;display:flex;flex-direction:column;padding:calc(26px + env(safe-area-inset-top)) 28px calc(24px + env(safe-area-inset-bottom))}
+    .brand{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800;letter-spacing:.16em}.brand span{color:var(--muted);font-size:12px;font-weight:500;letter-spacing:0}
+    .body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:54px 0}
+    .mark{width:112px;height:94px;display:grid;place-items:center;border:1px solid var(--line);border-radius:32px;background:var(--surface);margin-bottom:30px;color:var(--accent)}.mark svg{width:82px;height:64px}
+    .eyebrow{font-size:12px;font-weight:650;color:var(--accent);margin:0 0 12px;letter-spacing:.02em}h1{font-size:26px;line-height:1.4;letter-spacing:-.06em;margin:0 0 16px}p{font-size:14px;line-height:1.8;color:var(--muted);margin:0}
+    .actions{width:min(100%,280px);display:grid;gap:10px;margin-top:30px}button,a{font:inherit;touch-action:manipulation}button{min-height:50px;display:flex;align-items:center;justify-content:center;gap:9px;padding:14px 22px;border:0;border-radius:17px;background:var(--accent);color:#fff;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 7px 16px #7963c51f;transition:transform .14s,opacity .14s,box-shadow .14s}button svg{width:17px;height:17px}button:active:not(:disabled){transform:scale(.97);box-shadow:0 2px 6px #7963c51f}button:disabled{cursor:wait;opacity:.6}a{min-height:44px;display:grid;place-items:center;color:var(--muted);font-size:13px;text-decoration:none;border-radius:14px}a:active{background:var(--line)}button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.footnote{font-size:11px;text-align:center;letter-spacing:.01em}
+    @media(prefers-color-scheme:dark){:root{--bg:#15141c;--surface:#201e2a;--ink:#f3f0fc;--muted:#a39db5;--accent:#ac96ed;--line:#312c40}button{color:#201830}}
+    @media(prefers-reduced-motion:reduce){button{transition:none}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">SOROW <span>소로우</span></div>
+    <section class="body" aria-labelledby="title">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 96 72" fill="none"><circle cx="35" cy="36" r="27" fill="currentColor" opacity=".3"/><circle cx="61" cy="36" r="27" fill="currentColor" opacity=".65"/></svg></div>
+      <div role="status" aria-live="polite">
+        <p class="eyebrow">조금만 기다려 주세요</p>
+        <h1 id="title">잠시 준비 중이에요</h1>
+        <p>인터넷 연결을 확인해 주세요.<br>연결이 돌아오면 다시 열어드릴게요.</p>
+      </div>
+      <div class="actions">
+        <button type="button" id="retry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg><span id="retry-label">다시 연결하기</span></button>
+        <a href="/info">서비스 안내</a>
+      </div>
+    </section>
+    <p class="footnote">슬픔을 나누면, 우리는 가까워진다.</p>
+  </main>
+  <script>
+    const retryButton = document.getElementById("retry");
+    function reconnect() {
+      if (retryButton.disabled) return;
+      retryButton.disabled = true;
+      retryButton.setAttribute("aria-busy", "true");
+      document.getElementById("retry-label").textContent = "연결 확인 중";
+      window.location.reload();
+    }
+    retryButton.addEventListener("click", reconnect);
+    window.addEventListener("online", reconnect);
+  </script>
+</body>
+</html>

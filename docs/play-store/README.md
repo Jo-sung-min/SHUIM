@@ -20,13 +20,24 @@
 
 - [Android 프로젝트와 빌드·서명 안내](../../android/README.md): 패키지 `kr.co.sorow.app`, Android 16(API 36), TWA 연결 설정.
 - 웹 앱 매니페스트, 공개 오프라인 안내, `/.well-known/assetlinks.json` 연결 경로. 인증서가 미설정이면 연결 성공으로 표시하지 않습니다.
-- `/privacy`, `/terms`, `/account-deletion` 페이지와 앱 내 계정 삭제 경로. 계정 삭제·사진 삭제 재시도, 사용자 차단, 사용자/메시지/AI 신고 및 관리자 검토 API와 화면.
-- UGC 작성 전 동의 화면과 `POST /api/community/consent`의 계정/익명 세션별 동의 버전 저장. 서버가 현재 동의 없는 글·댓글·피드·후원 메시지·프로필 공개 항목 변경·DM·사진 업로드를 거부합니다. AI 실행 전에는 별도 전송 확인을 표시합니다.
-- 로컬 오프라인 테스트와 공개 웹 출시 점검 도구. 모두 통과하더라도 회사 계정·서명·운영 정책 확정과 실기기 시험은 별도입니다.
+- `/info` 서비스 안내에 개인정보 처리방침·이용약관·계정 삭제·고객 문의를 모았습니다. 기존 `/privacy`, `/terms`, `/account-deletion` 공개 주소는 유지합니다. 계정 삭제·사진 삭제 재시도, 사용자 차단, 사용자/메시지/AI 신고 및 관리자 검토 API와 화면도 포함합니다.
+- 가입 시 필수 약관·개인정보 안내와 선택 AI 정보 제공 동의를 구분하고, 선택 AI 항목은 미리 체크하지 않습니다. `GET/POST /api/auth/consent`와 V13 마이그레이션으로 계정/익명 세션별 동의 상태와 정책 버전 `2026-10-21`을 서버에 저장합니다. AI 미동의자는 `/info/ai`에서 한 번 안내·동의한 뒤 사용하고, 같은 버전의 동의가 유효한 동안 매 호출마다 확인창을 띄우지 않습니다. 이 페이지에서 동의를 철회할 수 있으며 서버도 미동의·철회 상태의 AI 요청을 거부합니다.
+- UGC 작성 전 동의 화면과 `POST /api/community/consent`의 계정/익명 세션별 동의 버전 저장은 별도입니다. 서버가 현재 커뮤니티 동의 없는 글·댓글·피드·후원 메시지·프로필 공개 항목 변경·DM·사진 업로드를 거부합니다.
+- 홈·내 공간·계정과 공통 내비게이션을 앱 화면에 맞춰 정리하고, 버튼 눌림·처리 중·중복 요청 방지 상태를 보완했습니다. 백엔드 연결 실패 시 기본 콘텐츠를 노출하지 않고 준비 중 안내와 재시도를 표시합니다. 프런트엔드가 열리는 동안 공개 정책 안내에는 접근할 수 있습니다.
+- 로컬 프런트엔드 51개·서버 53개 테스트와 TypeScript 검사·프로덕션 빌드를 통과했습니다. 연결 중단 후 작성 중인 초안과 입력 위치 복구, 계정별 게스트 기록 가져오기, 사진 편집·전송 실패 후 재시도도 확인했습니다. **이번 UI·동의·사진 첨부 변경은 아직 운영에 배포하지 않았습니다.** 회사 계정·서명·운영 정책 확정과 실기기 시험은 별도입니다.
 
 **법적 안내는 아직 승인된 최종 정책이 아닙니다.** 웹 서버의 `LEGAL_OPERATOR_NAME=루체`, `LEGAL_SUPPORT_EMAIL=developer@lucelab.co.kr`가 기본값입니다. `LEGAL_EFFECTIVE_DATE`, `LEGAL_RETENTION_NOTICE`, `LEGAL_PROCESSORS_NOTICE`를 실제 운영 내용으로 채우고 검토한 다음 `LEGAL_POLICY_APPROVED=true`로 설정해야 준비용 배너가 사라집니다. 승인 플래그만 켜고 실제 내용을 누락한 채 출시하지 마세요.
 
 ## 내가 작업할 순서
+
+이번 화면·AI 동의 변경을 기존 서비스에 먼저 반영할 때는 다음 순서로 진행합니다.
+
+1. AWS Elastic Beanstalk의 `sorow-api-prod`에 새 `backend/build/libs/sorow-server-2026-10-21.jar`를 업로드·배포합니다. 정상 시작 시 V13 동의 저장 테이블과 V14 중복 게시 방지 항목이 자동 추가됩니다. 기존 환경변수와 `SERVER_PORT=5000`은 유지합니다.
+2. 변경된 프런트엔드를 Vercel `shuim` 프로젝트에 배포합니다. Root Directory는 `frontend`, `BACKEND_ORIGIN`은 기존 연결 값을 유지합니다. 최신 웹과 새 JAR가 모두 적용돼야 가입·AI 동의 기능이 함께 동작합니다.
+3. 웹을 새로고침하고 회원가입의 필수/선택 안내, `나 → 서비스 안내`, AI 첫 동의와 반복 호출을 확인합니다. 기존 회원은 AI 안내 페이지에서 처음 한 번 선택합니다.
+4. 사진 첨부는 기기 선택·미리보기·자르기·회전·순서 변경·게시로 바뀌었습니다. 현재 운영 사진 저장 기능은 준비되지 않은 상태(`/api/upload/presign`의 `configured:false`)입니다. `backend/.env.example`의 사진 저장소 설정과 실제 사이트 출처를 연결한 뒤 전송·공개 사진 보기·삭제를 확인해야 합니다. 이 설정은 앱 이용자에게 보이지 않습니다. 사진 요청의 진행률·취소·재시도와 초안 보존을 로컬 환경에서 검증했습니다.
+
+Play 출시 준비는 아래 순서로 이어집니다.
 
 1. **회사 계정 준비**: [Play Console](https://play.google.com/console)에 회사에서 관리하는 Google 계정으로 가입합니다. 조직 유형을 선택하고 루체의 법적 명칭, 주소, D-U-N-S, 담당자 정보를 맞춥니다. 개발자 등록비는 **미화 25달러 1회**이며 계정·기기 확인은 콘솔 지시에 따릅니다. [가입 안내](https://support.google.com/googleplay/android-developer/answer/6112435), [조직 계정 요구사항](https://support.google.com/googleplay/android-developer/answer/10788890)
 2. **운영 정보 확정**: 아래 출시 차단 목록을 처리합니다. 개인정보처리방침·약관·계정 삭제 페이지를 실제 공개 웹에서 확인합니다. 서버 코드만 바뀌고 운영 서비스가 예전 버전이면 준비 완료가 아닙니다.
@@ -49,6 +60,8 @@
 - [ ] 공개 개인정보처리방침에 루체·지원 연락처·수집 항목·목적·위탁/제공·보유/삭제·국외 처리 내용을 실제 설정대로 기재. 초안·미확정 값 제거.
 - [ ] 앱 안 탈퇴 경로와 앱 설치 없이 접근할 수 있는 웹 삭제 요청 경로 동작. 기록 지우기와 계정 탈퇴는 구별. 카카오 계정도 지원. 삭제 범위·예외 보관·기간 안내. [계정 삭제 요구사항](https://support.google.com/googleplay/android-developer/answer/13327111)
 - [ ] 구현된 글·댓글·사진·프로필·메시지 작성 전 동의가 계정 전환·카카오·익명 활동에서도 표시되는지 확인. 현재 버전(`2026-10-21`)의 동의 저장과 동의 없는 API 거부를 운영에서도 검증.
+- [ ] V13 적용 후 이메일·카카오 신규 가입의 필수 정책 확인, 선택 AI 미체크 상태, `/info/ai` 최초 동의·철회·계정 전환, 서버의 미동의 AI 요청 거부를 운영 환경에서 검증. 동의한 이용자에게 반복 확인창이 나타나지 않는지 확인.
+- [ ] 백엔드 장애 시 준비 중 화면만 표시되고 기본 콘텐츠가 나타나지 않는지 확인. `/info`와 공개 정책 페이지 접근, 재연결 후 회복도 검증.
 - [ ] 글·댓글·프로필·사용자 신고와 사용자 차단, 1:1 메시지 차단을 앱에서 제공. 관리자 계정 정지만으로 사용자 간 차단을 대신하지 않음. 신고가 5개 쌓이기 전에도 심각한 신고를 처리할 운영 담당자·절차 마련. [UGC 정책](https://support.google.com/googleplay/android-developer/answer/9876937)
 - [ ] AI 결과를 앱을 떠나지 않고 신고할 수 있고, 담당자가 확인·처리. AI 기능이 꺼진 경우 스토어 설명도 수정. [AI 생성 콘텐츠 정책](https://support.google.com/googleplay/android-developer/answer/13985936)
 - [ ] 기분/몸 기록과 AI 마음 정리를 건강 관련 기능으로 검토해 건강 앱 선언 작성. 질병 진단·치료 효능을 광고하지 않고 의료기기 아님·의료 전문가 상담 문구 반영. [건강 정책](https://support.google.com/googleplay/android-developer/answer/16679511), [건강 선언](https://support.google.com/googleplay/android-developer/answer/14738291)
@@ -67,7 +80,10 @@
 ```powershell
 npm.cmd run typecheck
 npm.cmd run test:offline
-node --test scripts/records-sync.test.mjs
+npm.cmd run test:records
+npm.cmd run test:privacy
+npm.cmd run test:availability
+npm.cmd run test:media
 npm.cmd run build
 npm.cmd run check:release -- https://sorow.co.kr
 ```

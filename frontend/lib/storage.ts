@@ -1,7 +1,7 @@
 "use client";
 
 import { CATEGORIES, CUSTOM_MAX, Category, CategoryId, MemoCat, isCustomCategory } from "./categories";
-import { Section, installSyncHooks, pushRecords } from "./records-sync";
+import { Section, clearGuestImport, installSyncHooks, pushRecords, stageGuestImport, startGuestImport } from "./records-sync";
 
 /**
  * 저장 위치: 화면은 언제나 localStorage(계정별 키)를 동기적으로 읽고 쓴다.
@@ -157,6 +157,7 @@ export function sessionUserId(): string | null {
 
 /** Called only after successful server account deletion; never enqueues a new server write. */
 export function clearAccountCache(userId: string | null) {
+  if (userId) clearGuestImport(userId);
   try {
     for (const key of Object.values(K)) {
       const accountKey = userId ? `${key}:${userId}` : key;
@@ -200,32 +201,45 @@ export const readShared = readRaw;
 export const writeShared = writeRaw;
 
 /**
- * 가입·로그인 직후: 게스트로 쓰던 개인 데이터를 계정으로 복사 (이 기기의 계정 데이터가 비어 있을 때만)
- * 하고, 같은 내용을 서버에도 한 번 올린다 (서버에서도 계정에 아직 없는 부분만 채운다 — POST /api/records/import).
+ * 가입·로그인 직후: 게스트 데이터를 빈 계정별 저장 위치로 옮긴 뒤 원본을 소비한다.
+ * 계정별 저장과 영속 import 보관을 확인한 데이터만 소비한다 (서버의 빈 부분만 채움 — POST /api/records/import).
+ * 다른 계정의 다음 로그인에 이미 이전한 게스트 데이터가 다시 들어가면 안 된다.
  * 세션 키(SESSION_KEY)가 이미 새 계정으로 바뀐 뒤에 불러야 서버로 보내진다.
  */
 export function adoptGuestData(userId: string) {
+  if (!userId || sessionUserId() !== userId) return;
   const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review, K.profile, K.notif, K.cats, K.catOrder];
-  try {
-    for (const key of personal) {
+  const adopted = new Map<string, { raw: string; value: unknown }>();
+  for (const key of personal) {
+    if (sessionUserId() !== userId) break;
+    try {
       const target = `${key}:${userId}`;
       const guest = window.localStorage.getItem(key);
-      if (guest && !window.localStorage.getItem(target)) window.localStorage.setItem(target, guest);
-    }
-  } catch {
-    /* noop */
+      if (guest === null) continue;
+      const value: unknown = JSON.parse(guest);
+      const account = window.localStorage.getItem(target);
+      if (account === null) window.localStorage.setItem(target, guest);
+      // Never overwrite an existing account value or consume data whose write failed.
+      if (window.localStorage.getItem(target) !== guest) continue;
+      if (window.localStorage.getItem(key) !== guest) continue;
+      adopted.set(key, { raw: guest, value });
+    } catch { /* Keep the guest source when storage is unavailable or its data is invalid. */ }
   }
-  const guest: Snapshot = {
-    journal: readRaw<Journal>(K.journal, {}),
-    log: readRaw<LogBook>(K.log, {}),
-    memos: readRaw<Memo[]>(K.memos, []),
-    goals: readRaw<Goal[]>(K.goals, []),
-    schedule: readRaw<ScheduleItem[]>(K.schedule, []),
-    categories: readRaw<Category[]>(K.cats, []),
-    order: readRaw<string[]>(K.catOrder, []),
-  };
-  const has = Object.keys(guest.journal).length || Object.keys(guest.log).length || guest.memos.length || guest.goals.length || guest.schedule.length || guest.categories.length || guest.order.length;
-  if (has) pushRecords([], "import", "POST", "/api/records/import", guest); // 한 번만: 실패해도 다시 보내지 않는다
+  const serverFields = { journal: K.journal, log: K.log, memos: K.memos, goals: K.goals, schedule: K.schedule, categories: K.cats, order: K.catOrder };
+  const guest: Record<string, unknown> = {};
+  for (const [field, key] of Object.entries(serverFields)) {
+    const item = adopted.get(key);
+    if (item) guest[field] = item.value;
+  }
+  const hasImport = Object.keys(guest).length > 0;
+  if (sessionUserId() !== userId || (hasImport && !stageGuestImport(userId, guest))) return;
+  // The account copy and its durable import are verified before any guest source is consumed.
+  for (const [key, item] of adopted) {
+    try {
+      if (window.localStorage.getItem(key) === item.raw) window.localStorage.removeItem(key);
+    } catch { /* The account-scoped copy and pending import remain available. */ }
+  }
+  if (hasImport && sessionUserId() === userId) startGuestImport(userId);
 }
 
 /* ---------- 서버 동기화 연결 ---------- */
@@ -415,6 +429,8 @@ export const savePrompts = (p: PromptOverrides) => writeShared(PROMPTS_KEY, p);
 /* ---------- 전체 삭제 ---------- */
 
 export function clearAll() {
+  const userId = sessionUserId();
+  if (userId) clearGuestImport(userId);
   // 현재 계정(또는 게스트)의 개인 데이터만 (커뮤니티는 서버 DB). 로그인 계정이면 서버의 기록도 지운다
   for (const k of Object.values(K)) {
     try {

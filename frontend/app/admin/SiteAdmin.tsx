@@ -1,22 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Hero } from "@/components/ui";
-import { EMPTY_SITE, SITE, SiteSettings, faviconHref, normalizeSite, ogHref } from "@/lib/site";
+import { SITE, SiteSettings, faviconHref, normalizeSite, ogHref } from "@/lib/site";
 import { imageToDataUrl } from "@/lib/siteImage";
 
 const TITLE_MAX = 60;
 const DESC_MAX = 160;
+type ImageKind = "favicon" | "og";
+type ImageDraft = { dataUrl: string; name: string };
 
 async function getSite(): Promise<SiteSettings> {
   const r = await fetch("/api/site", { cache: "no-store" });
+  if (!r.ok) throw new Error("서비스 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
   return normalizeSite((await r.json()) as Partial<SiteSettings>);
 }
 
 async function putSite(body: Record<string, unknown>): Promise<SiteSettings> {
   const r = await fetch("/api/site", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "same-origin" });
   const j = (await r.json().catch(() => ({}))) as Partial<SiteSettings> & { error?: string };
-  if (!r.ok) throw new Error(j.error ?? `저장하지 못했어요 (${r.status})`);
+  if (!r.ok) throw new Error("변경 사항을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
   return normalizeSite(j);
 }
 
@@ -27,45 +30,61 @@ export default function SiteAdmin() {
   const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState("");
+  const [images, setImages] = useState<Partial<Record<ImageKind, ImageDraft>>>({});
+  const busyRef = useRef(false);
   const faviconInput = useRef<HTMLInputElement>(null);
   const ogInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    getSite()
-      .then((s) => { setSite(s); setTitle(s.title ?? ""); setDesc(s.description ?? ""); })
-      .catch(() => setSite(EMPTY_SITE));
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const current = await getSite();
+      setSite(current);
+      setTitle(current.title ?? "");
+      setDesc(current.description ?? "");
+    } catch {
+      setError("서비스 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
   }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  if (!site) return null;
+  if (!site) return <div className="card" role={error ? "alert" : "status"}><p className="tiny muted">{error ?? "서비스 정보를 확인하고 있어요."}</p>{error && <button type="button" className="btn ghost sm" onClick={() => void load()}>다시 불러오기</button>}</div>;
 
   const apply = async (label: string, body: Record<string, unknown>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(label);
     setError(null);
+    setSaved("");
     try {
       const s = await putSite(body);
       setSite(s);
-      setTitle(s.title ?? "");
-      setDesc(s.description ?? "");
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      if (label === "text") { setTitle(s.title ?? ""); setDesc(s.description ?? ""); }
+      else setImages((current) => { const next = { ...current }; delete next[label as ImageKind]; return next; });
+      setSaved(label === "favicon" ? "소로우 아이콘을 저장했어요." : label === "og" ? "공유 사진을 저장했어요." : "제목과 소개를 저장했어요.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "저장하지 못했어요");
     } finally {
+      busyRef.current = false;
       setBusy(null);
     }
   };
 
-  const pickImage = async (kind: "favicon" | "og", file: File | undefined) => {
-    if (!file) return;
+  const pickImage = async (kind: ImageKind, file: File | undefined) => {
+    if (!file || busyRef.current) return;
+    busyRef.current = true;
     setBusy(kind);
     setError(null);
+    setSaved("");
     try {
       // 파비콘은 256×256 PNG(투명 유지), 공유 이미지는 1200×630 JPEG 로 줄여서 보낸다
       const dataUrl = kind === "favicon" ? await imageToDataUrl(file, 256, 256, "image/png") : await imageToDataUrl(file, 1200, 630, "image/jpeg", 0.86);
-      await apply(kind, { [kind]: dataUrl });
+      setImages((current) => ({ ...current, [kind]: { dataUrl, name: file.name } }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "이미지를 올리지 못했어요");
+    } finally {
+      busyRef.current = false;
       setBusy(null);
     }
   };
@@ -76,64 +95,69 @@ export default function SiteAdmin() {
   return (
     <>
       <Hero
-        label="사이트 설정"
-        title={customized ? `${customized}개를 직접 정했어요` : "기본 설정을 쓰고 있어요"}
-        sub="검색 결과·카카오톡 링크 미리보기·홈 화면 아이콘에 쓰여요. 바꾼 뒤 1분 안에 반영돼요."
+        label="서비스 소개"
+        title={customized ? "소로우의 모습을 다듬어요" : "소로우를 소개해 주세요"}
+        sub="제목과 사진은 검색 결과, 공유한 링크와 홈 화면에 표시돼요. 저장한 내용은 잠시 후 반영돼요."
         stats={[`주소 ${SITE.url.replace(/^https?:\/\//, "")}`]}
       />
 
-      <div className="section-title"><span>제목 · 설명</span>{saved && <span className="tiny muted">저장됨</span>}</div>
+      <div className="section-title"><span>이름과 소개</span></div>
       <section className="card stack" style={{ gap: 12 }}>
         <div className="field">
-          <label>사이트 제목 <span className="tiny muted" style={{ fontWeight: 500 }}>{title.length}/{TITLE_MAX}</span></label>
-          <input value={title} onChange={(e) => setTitle(e.target.value.slice(0, TITLE_MAX))} placeholder={SITE.fullName} />
+          <label htmlFor="site-title">서비스 이름 <span className="tiny muted" style={{ fontWeight: 500 }}>{title.length}/{TITLE_MAX}</span></label>
+          <input id="site-title" value={title} disabled={busy !== null} onChange={(e) => setTitle(e.target.value.slice(0, TITLE_MAX))} placeholder={SITE.fullName} />
         </div>
         <div className="field">
-          <label>사이트 설명 <span className="tiny muted" style={{ fontWeight: 500 }}>{desc.length}/{DESC_MAX}</span></label>
-          <textarea value={desc} onChange={(e) => setDesc(e.target.value.slice(0, DESC_MAX))} placeholder={SITE.description} rows={3} />
+          <label htmlFor="site-description">한 줄 소개 <span className="tiny muted" style={{ fontWeight: 500 }}>{desc.length}/{DESC_MAX}</span></label>
+          <textarea id="site-description" value={desc} disabled={busy !== null} onChange={(e) => setDesc(e.target.value.slice(0, DESC_MAX))} placeholder={SITE.description} rows={3} />
           <span className="tiny muted">검색 결과 아래 줄과 링크 미리보기에 보여요. 비우면 기본 문구 “{SITE.description}”</span>
         </div>
         <div className="row" style={{ gap: 6 }}>
           <button className="btn sm" disabled={!textDirty || busy !== null} onClick={() => apply("text", { title, description: desc })}>{busy === "text" ? "저장 중…" : "저장"}</button>
-          <button className="btn ghost sm" disabled={busy !== null || (!site.title && !site.description && !textDirty)} onClick={() => apply("text", { title: null, description: null })}>기본값으로</button>
+          <button className="btn ghost sm" disabled={busy !== null || (!site.title && !site.description && !textDirty)} onClick={() => apply("text", { title: null, description: null })}>기본 소개로</button>
         </div>
       </section>
 
-      <div className="section-title"><span>파비콘</span><span className="tiny muted">브라우저 탭 · 홈 화면 아이콘</span></div>
+      <div className="section-title"><span>소로우 아이콘</span><span className="tiny muted">탭과 홈 화면에 표시해요</span></div>
       <section className="card">
         <div className="row" style={{ gap: 14, alignItems: "center" }}>
           <span style={{ width: 56, height: 56, borderRadius: 14, overflow: "hidden", background: "var(--surface-2)", border: "1px solid var(--border)", display: "grid", placeItems: "center", flexShrink: 0 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={faviconHref(site)} alt="현재 파비콘" width={40} height={40} style={{ width: 40, height: 40, objectFit: "contain" }} />
+            <img src={images.favicon?.dataUrl ?? faviconHref(site)} alt="소로우 아이콘 미리보기" width={40} height={40} style={{ width: 40, height: 40, objectFit: "contain" }} />
           </span>
           <span className="grow">
-            <b style={{ fontSize: 14.5 }}>{site.faviconAt ? "직접 올린 파비콘" : "기본 파비콘"}</b>
-            <div className="tiny muted">정사각형 이미지를 올리면 256×256 PNG 로 맞춰요. PNG·JPEG·WebP·SVG, 가운데를 기준으로 잘라요.</div>
+            <b style={{ fontSize: 14.5 }}>{images.favicon ? "새 아이콘 미리보기" : site.faviconAt ? "직접 선택한 아이콘" : "기본 소로우 아이콘"}</b>
+            <div className="tiny muted">정사각형 사진을 추천해요. 가운데에 맞춰 표시돼요.</div>
           </span>
         </div>
         <input ref={faviconInput} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={(e) => { pickImage("favicon", e.target.files?.[0]); e.target.value = ""; }} />
-        <div className="row" style={{ marginTop: 12, gap: 6 }}>
-          <button className="btn sm" disabled={busy !== null} onClick={() => faviconInput.current?.click()}>{busy === "favicon" ? "올리는 중…" : "이미지 선택"}</button>
-          <button className="btn ghost sm" disabled={busy !== null || !site.faviconAt} onClick={() => apply("favicon", { favicon: null })}>기본으로</button>
+        {images.favicon && <p className="tiny muted" style={{ overflowWrap: "anywhere", marginTop: 10 }}>선택한 사진 · {images.favicon.name}</p>}
+        <div className="row" style={{ marginTop: 12, gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="btn sm" disabled={busy !== null} onClick={() => faviconInput.current?.click()}>{busy === "favicon" ? "준비하는 중…" : images.favicon || site.faviconAt ? "사진 바꾸기" : "기기에서 사진 선택"}</button>
+          {images.favicon && <button type="button" className="btn sm" disabled={busy !== null} onClick={() => apply("favicon", { favicon: images.favicon!.dataUrl })}>이 아이콘 저장</button>}
+          {images.favicon ? <button type="button" className="btn ghost sm" disabled={busy !== null} onClick={() => setImages((current) => ({ ...current, favicon: undefined }))}>선택 취소</button> : <button type="button" className="btn ghost sm" disabled={busy !== null || !site.faviconAt} onClick={() => apply("favicon", { favicon: null })}>삭제하고 기본 아이콘 사용</button>}
         </div>
       </section>
 
-      <div className="section-title"><span>공유 이미지</span><span className="tiny muted">링크 미리보기 (1200×630)</span></div>
+      <div className="section-title"><span>공유 사진</span><span className="tiny muted">링크를 공유하면 함께 보여요</span></div>
       <section className="card">
         <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", aspectRatio: "1200 / 630", background: "var(--surface-2)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={ogHref(site)} alt="현재 공유 이미지" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <img src={images.og?.dataUrl ?? ogHref(site)} alt="공유 사진 미리보기" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
-        <div className="tiny muted" style={{ marginTop: 8 }}>{site.ogAt ? "직접 올린 이미지예요." : "기본 이미지는 제목과 한 줄 소개를 그려서 보여줘요."} 가로로 긴 사진을 올리면 1200×630 으로 잘라요.</div>
+        <div className="tiny muted" style={{ marginTop: 8 }}>{images.og ? "선택한 사진을 저장하기 전에 확인해 주세요." : site.ogAt ? "직접 선택한 사진이에요." : "기본 사진에는 서비스 이름과 소개가 표시돼요."} 가로로 긴 사진을 추천해요.</div>
         <input ref={ogInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { pickImage("og", e.target.files?.[0]); e.target.value = ""; }} />
-        <div className="row" style={{ marginTop: 12, gap: 6 }}>
-          <button className="btn sm" disabled={busy !== null} onClick={() => ogInput.current?.click()}>{busy === "og" ? "올리는 중…" : "이미지 선택"}</button>
-          <button className="btn ghost sm" disabled={busy !== null || !site.ogAt} onClick={() => apply("og", { og: null })}>기본으로</button>
+        {images.og && <p className="tiny muted" style={{ overflowWrap: "anywhere", marginTop: 10 }}>선택한 사진 · {images.og.name}</p>}
+        <div className="row" style={{ marginTop: 12, gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="btn sm" disabled={busy !== null} onClick={() => ogInput.current?.click()}>{busy === "og" ? "준비하는 중…" : images.og || site.ogAt ? "사진 바꾸기" : "기기에서 사진 선택"}</button>
+          {images.og && <button type="button" className="btn sm" disabled={busy !== null} onClick={() => apply("og", { og: images.og!.dataUrl })}>이 사진 저장</button>}
+          {images.og ? <button type="button" className="btn ghost sm" disabled={busy !== null} onClick={() => setImages((current) => ({ ...current, og: undefined }))}>선택 취소</button> : <button type="button" className="btn ghost sm" disabled={busy !== null || !site.ogAt} onClick={() => apply("og", { og: null })}>삭제하고 기본 사진 사용</button>}
         </div>
       </section>
 
-      {error && <p className="tiny" style={{ color: "var(--down)", margin: "10px 4px 0" }}>{error}</p>}
-      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>설정은 서버 DB(site_settings)에 저장돼 모든 방문자에게 적용돼요. robots.txt·sitemap.xml·manifest 는 자동으로 만들어져요.</p>
+      {error && <p className="notice warn" role="alert">{error}</p>}
+      {saved && <p className="notice" role="status">{saved}</p>}
+      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>저장한 소개와 사진은 소로우를 방문하는 모든 분께 보여요.</p>
     </>
   );
 }

@@ -1,291 +1,226 @@
 "use client";
 
-/**
- * 피드 글 작성기 — 인스타그램 새 게시물 흐름을 참고한 3단계 풀스크린.
- *  1) 사진 선택: 그리드에서 여러 장을 순서대로 고름 (내 사진 올리기 / 기본 그림 / 주소), 또는 글만
- *  2) 편집: 고른 순서대로 넘기며 슬라이드마다 제목·글 입력
- *  3) 공유: 요약 확인, 배경·소개 선택, 공유
- */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FEED_BG_COUNT, FEED_BG_LABELS, FEED_IMAGES, FEED_MAX_PAGES } from "@/lib/community-core";
-import type { FeedPage } from "@/lib/community-core";
+import { useEffect, useRef, useState } from "react";
+import { FEED_BG_COUNT, FEED_BG_LABELS, FEED_MAX_PAGES, type FeedPage } from "@/lib/community-core";
 import { hasCrisisSignal } from "@/lib/crisis";
-import { uploadAvailable, uploadImage } from "@/lib/upload";
+import { uploadImage } from "@/lib/upload";
+import { inspectPhotoHeader } from "@/lib/photo-edit";
 import HelpBanner from "./HelpBanner";
+import PhotoEditor from "./PhotoEditor";
 import { IconChevronL, IconClose, IconPlus } from "./Icons";
+import styles from "./FeedComposer.module.css";
 
-type Step = 1 | 2 | 3;
-interface Draft {
-  image?: string;
-  title: string;
-  text: string;
-}
+type Photo = { id: string; file: File; preview: string; uploaded?: string };
+const ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
 
-export default function FeedComposer({
-  open,
-  firstTime,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  firstTime: boolean;
-  onClose: () => void;
-  onSubmit: (pages: FeedPage[], bg: number, bio: string | undefined) => Promise<void>;
+export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
+  open: boolean; firstTime: boolean; onClose: () => void;
+  onSubmit: (pages: FeedPage[], bg: number, bio: string | undefined, clientRequestId: string) => Promise<void>;
 }) {
-  const [step, setStep] = useState<Step>(1);
-  const [library, setLibrary] = useState<string[]>([]); // 이번에 올린 내 사진
-  const [selected, setSelected] = useState<string[]>([]); // 고른 순서
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const photosRef = useRef<Photo[]>([]);
+  const [active, setActive] = useState(0);
+  const [step, setStep] = useState<1 | 2>(1);
   const [textOnly, setTextOnly] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [cur, setCur] = useState(0);
-  const [bg, setBg] = useState(0);
+  const [title, setTitle] = useState("");
+  const [caption, setCaption] = useState("");
   const [bio, setBio] = useState("");
-  const [urlInput, setUrlInput] = useState("");
-  const [canUpload, setCanUpload] = useState(false);
-  const [uploading, setUploading] = useState<string | null>(null);
+  const [bg, setBg] = useState(0);
+  const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ index: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
-  const slidesRef = useRef<HTMLDivElement | null>(null);
+  const busyRef = useRef(false);
+  const pickingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const [picking, setPicking] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const submission = useRef<{ payload: string; id: string } | null>(null);
+  const gallery = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
+  function replacePhotos(next: Photo[]) { photosRef.current = next; setPhotos(next); }
+  useEffect(() => { mountedRef.current = true; return () => {
+    mountedRef.current = false;
+    abortRef.current?.abort();
+    photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.preview));
+  }; }, []);
   useEffect(() => {
-    if (!open) return;
-    uploadAvailable().then(setCanUpload);
+    if (!open || !dialog.current) return;
+    const element = dialog.current;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", onKey);
+    element.focus({ preventScroll: true });
+    const keydown = (event: KeyboardEvent) => {
+      if (element.closest("[inert]") || element.inert || document.querySelector(".community-consent [role=dialog]")) return;
+      if (event.key === "Escape") { event.preventDefault(); if (!busyRef.current) closeRef.current(); }
+      if (event.key !== "Tab") return;
+      const targets = [...element.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href]')].filter((target) => target.getClientRects().length);
+      const first = targets[0], last = targets.at(-1);
+      if (!first) { event.preventDefault(); element.focus(); }
+      else if (event.shiftKey && (document.activeElement === first || document.activeElement === element)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !element.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
     };
-  }, [open, onClose]);
+    window.addEventListener("keydown", keydown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", keydown);
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, [open]);
 
-  const tiles = useMemo(() => [...library, ...FEED_IMAGES.map((i) => i.src)], [library]);
-  const toggle = (src: string) =>
-    setSelected((cur) => (cur.includes(src) ? cur.filter((x) => x !== src) : cur.length >= FEED_MAX_PAGES ? cur : [...cur, src]));
-
-  const onPickFiles = async (files: FileList | null) => {
-    if (!files || !files.length) return;
-    setError(null);
-    const list = Array.from(files);
+  async function pick(files: FileList | null) {
+    if (!files?.length || busyRef.current || pickingRef.current) return;
+    pickingRef.current = true; setPicking(true);
+    const accepted: Photo[] = [], issues: string[] = [];
+    const room = FEED_MAX_PAGES - photosRef.current.length;
+    for (const file of Array.from(files)) {
+      if (accepted.length >= room) { issues.push("사진은 최대 " + FEED_MAX_PAGES + "장까지 골라 주세요."); break; }
+      if (file.type && !ACCEPT.split(",").includes(file.type)) { issues.push("읽을 수 없는 사진이 있어요. JPG, PNG, WebP 또는 GIF 사진을 골라 주세요."); continue; }
+      if (file.size === 0 || file.size > 20 * 1024 * 1024) { issues.push("사진 한 장은 20MB 이하로 골라 주세요."); continue; }
+      try { inspectPhotoHeader(await file.slice(0, 512 * 1024).arrayBuffer()); }
+      catch (cause) { issues.push(cause instanceof Error ? cause.message : "이 사진을 읽지 못했어요. 다른 사진을 선택해 주세요."); continue; }
+      if (!mountedRef.current) break;
+      accepted.push({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) });
+    }
+    pickingRef.current = false;
+    if (!mountedRef.current) { accepted.forEach((photo) => URL.revokeObjectURL(photo.preview)); return; }
+    setPicking(false);
+    if (accepted.length) {
+      const index = photosRef.current.length;
+      replacePhotos([...photosRef.current, ...accepted]);
+      setActive(index); setTextOnly(false);
+    }
+    setError(issues.length ? [...new Set(issues)].join(" ") : null);
+  }
+  function remove(index: number) {
+    const previous = photosRef.current;
+    URL.revokeObjectURL(previous[index].preview);
+    replacePhotos(previous.filter((_, i) => i !== index));
+    setActive(Math.max(0, Math.min(index, previous.length - 2))); setError(null);
+  }
+  function move(direction: -1 | 1) {
+    const next = [...photosRef.current], target = active + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[active], next[target]] = [next[target], next[active]];
+    replacePhotos(next); setActive(target);
+  }
+  function saveEdit(file: File) {
+    replacePhotos(photosRef.current.map((photo) => {
+      if (photo.id !== editing) return photo;
+      URL.revokeObjectURL(photo.preview);
+      return { ...photo, file, preview: URL.createObjectURL(file), uploaded: undefined };
+    }));
+    setEditing(null); setError(null);
+  }
+  async function share() {
+    if (busyRef.current || pickingRef.current || (textOnly ? !caption.trim() : photosRef.current.length === 0)) return;
+    busyRef.current = true; setBusy(true); setError(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      for (let i = 0; i < list.length; i++) {
-        setUploading(`${i + 1}/${list.length} · 0%`);
-        const r = await uploadImage(list[i], (pct) => setUploading(`${i + 1}/${list.length} · ${pct}%`));
-        setLibrary((l) => (l.includes(r.url) ? l : [r.url, ...l]));
-        setSelected((s) => (s.includes(r.url) || s.length >= FEED_MAX_PAGES ? s : [...s, r.url]));
+      const pages: FeedPage[] = [];
+      if (textOnly) pages.push({ title: title.trim() || undefined, text: caption.trim() });
+      else {
+        for (let index = 0; index < photosRef.current.length; index++) {
+          const photo = photosRef.current[index];
+          let url = photo.uploaded;
+          if (!url) {
+            setProgress({ index, percent: 0 });
+            const result = await uploadImage(photo.file, {
+              signal: controller.signal, onProgress: (percent) => setProgress({ index, percent }),
+            });
+            url = result.url;
+            replacePhotos(photosRef.current.map((item) => item.id === photo.id ? { ...item, uploaded: url } : item));
+          }
+          if (controller.signal.aborted) throw new DOMException("취소", "AbortError");
+          pages.push({ image: url, title: index === 0 ? title.trim() || undefined : undefined, text: index === 0 ? caption.trim() : "" });
+        }
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "업로드하지 못했어요");
+      // A post may already be accepted after this point; only uploads can be canceled.
+      abortRef.current = null; setProgress(null);
+      const payload = JSON.stringify({ pages, bg });
+      if (submission.current?.payload !== payload) submission.current = { payload, id: crypto.randomUUID() };
+      await onSubmit(pages, bg, firstTime ? bio : undefined, submission.current.id);
+      submission.current = null;
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.preview));
+      replacePhotos([]);
+      setCaption(""); setTitle(""); setBio(""); setStep(1); setActive(0); setTextOnly(false);
+    } catch (cause) {
+      setError(cause instanceof Error && cause.name === "AbortError" ? "전송을 멈췄어요. 고른 사진과 작성한 내용은 그대로 있어요." : abortRef.current && cause instanceof Error ? cause.message + " 고른 사진과 작성한 내용은 그대로 있어요." : "게시하지 못했어요. 사진과 내용은 그대로 있으니 연결을 확인하고 다시 시도해 주세요.");
     } finally {
-      setUploading(null);
+      abortRef.current = null; busyRef.current = false; setBusy(false); setProgress(null);
     }
-  };
-  const addUrl = () => {
-    const u = urlInput.trim();
-    if (!/^(\/|https?:\/\/)/.test(u)) return;
-    setLibrary((l) => (l.includes(u) ? l : [u, ...l]));
-    setSelected((s) => (s.includes(u) || s.length >= FEED_MAX_PAGES ? s : [...s, u]));
-    setUrlInput("");
-  };
-
-  // 1 → 2: 고른 사진 순서대로 슬라이드 초안 만들기 (이미 쓴 글은 유지)
-  const goEdit = (onlyText = false) => {
-    setTextOnly(onlyText);
-    const images = onlyText ? [undefined] : selected;
-    setDrafts((old) => images.map((img) => old.find((d) => d.image === img) ?? { image: img, title: "", text: "" }));
-    setCur(0);
-    setStep(2);
-  };
-  const update = (patch: Partial<Draft>) => setDrafts((ds) => ds.map((d, i) => (i === cur ? { ...d, ...patch } : d)));
-  const allFilled = drafts.length > 0 && drafts.every((d) => d.text.trim());
-  const scrollTo = (i: number) => {
-    const el = slidesRef.current;
-    if (el) el.scrollTo({ left: el.clientWidth * i, behavior: "smooth" });
-    setCur(i);
-  };
-  const onSlidesScroll = () => {
-    const el = slidesRef.current;
-    if (el) setCur(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
-  };
-
-  const share = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await onSubmit(
-        drafts.map((d) => ({ image: d.image, title: d.title.trim() || undefined, text: d.text.trim() })),
-        bg,
-        firstTime ? bio : undefined
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "올리지 못했어요");
-    } finally {
-      setBusy(false);
-    }
-  };
+  }
 
   if (!open) return null;
-  const d = drafts[cur];
-  const needsBg = drafts.some((x) => !x.image);
-
-  return (
-    <div className="composer-screen" role="dialog" aria-modal="true" aria-label="새 게시물">
-      <header className="composer-head">
-        {step === 1 ? (
-          <button className="icon-btn" aria-label="닫기" onClick={onClose}><IconClose /></button>
-        ) : (
-          <button className="icon-btn" aria-label="이전" onClick={() => setStep((s) => (s === 3 ? 2 : 1))}><IconChevronL /></button>
-        )}
-        <b>{step === 1 ? "새 게시물" : step === 2 ? "편집" : "공유"}</b>
-        {step === 1 && (
-          <button className="text-btn accent" disabled={selected.length === 0 || Boolean(uploading)} onClick={() => goEdit(false)}>
-            다음{selected.length ? ` (${selected.length})` : ""}
-          </button>
-        )}
-        {step === 2 && <button className="text-btn accent" disabled={!allFilled} onClick={() => setStep(3)}>다음</button>}
-        {step === 3 && <button className="text-btn accent" disabled={busy || !allFilled} onClick={share}>{busy ? "올리는 중…" : "공유"}</button>}
+  const current = photos[active], editPhoto = photos.find((photo) => photo.id === editing);
+  const canShare = textOnly ? Boolean(caption.trim()) : photos.length > 0;
+  return <>
+    <div ref={dialog} className={styles.screen} role="dialog" aria-modal="true" aria-label="새 게시물" tabIndex={-1} inert={Boolean(editPhoto)}>
+      <header className={styles.header}>
+        <button type="button" className="icon-btn" disabled={busy} aria-label={step === 1 ? "작성 내용 유지하고 닫기" : "사진 선택으로 돌아가기"} onClick={() => step === 1 ? onClose() : (setStep(1), setError(null))}>{step === 1 ? <IconClose /> : <IconChevronL />}</button>
+        <div><b>새 게시물</b><small>{step === 1 ? "사진 선택" : "내용 작성"}</small></div>
+        <button type="button" className={styles.next} disabled={busy || picking || (step === 1 ? !photos.length : !canShare)} onClick={() => step === 1 ? (setTextOnly(false), setStep(2), setError(null)) : void share()}>{busy ? "게시 중…" : step === 1 ? "다음" : "게시"}</button>
       </header>
-
-      {/* ---------- 1. 사진 선택 ---------- */}
-      {step === 1 && (
-        <div className="composer-body">
-          <div className="composer-preview">
-            {selected.length ? (
-              <div className="preview-img" style={{ backgroundImage: `url(${selected[selected.length - 1]})` }}>
-                {selected.length > 1 && <span className="reel-count" style={{ top: 10, right: 10 }}>{selected.length}장</span>}
-              </div>
-            ) : (
-              <div className="preview-empty">
-                <span>아래에서 사진을 골라요</span>
-                <small>여러 장 고르면 가로로 넘겨 보는 글이 돼요 (최대 {FEED_MAX_PAGES}장)</small>
-              </div>
-            )}
+      <div className={styles.steps} aria-hidden="true"><i /><i className={step === 2 ? styles.done : undefined} /></div>
+      <div className={styles.body} aria-busy={busy || picking}>
+        {picking && <p className={styles.hint} role="status">사진을 준비하고 있어요…</p>}
+        <input ref={gallery} type="file" multiple accept={ACCEPT} hidden onChange={(event) => { pick(event.target.files); event.target.value = ""; }} />
+        <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { pick(event.target.files); event.target.value = ""; }} />
+        {step === 1 ? <>
+          <div className={styles.preview}>
+            {current ? <>
+              {/* Local previews must not be sent to an image proxy. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={current.preview} alt={(active + 1) + "번째 사진 미리보기"} onError={() => setError("이 사진을 읽지 못했어요. 다른 사진으로 바꿔 주세요.")} />
+              <span className={styles.count}>{active + 1} / {photos.length}</span>
+              {active === 0 && <span className={styles.cover}>대표 사진</span>}
+              <button type="button" className={styles.edit} onClick={() => setEditing(current.id)}>자르기 · 회전</button>
+            </> : <div className={styles.empty}>
+              <span className={styles.photoSymbol}><PhotoIcon /></span><h2>나누고 싶은 순간</h2><p>사진 한 장에 오늘의 마음을 담아 보세요.</p>
+              <button type="button" className="btn" onClick={() => gallery.current?.click()}>사진 선택</button>
+              <small>최대 {FEED_MAX_PAGES}장 · 기기에서 직접 선택해요</small>
+            </div>}
           </div>
-          <div className="composer-tools">
-            <span className="tiny muted">최근 · 기본 그림</span>
-            <button className="text-btn" onClick={() => goEdit(true)}>사진 없이 글만</button>
+          <div className={styles.libraryHead}><b>선택한 사진 <span>{photos.length}/{FEED_MAX_PAGES}</span></b><button type="button" className="text-btn" disabled={picking} onClick={() => { setTextOnly(true); setStep(2); setError(null); }}>글만 쓰기</button></div>
+          <div className={styles.pickers}>
+            <button type="button" disabled={picking || photos.length >= FEED_MAX_PAGES} onClick={() => gallery.current?.click()}><PhotoIcon />{photos.length ? "사진 추가" : "앨범에서 선택"}</button>
+            <button type="button" disabled={picking || photos.length >= FEED_MAX_PAGES} onClick={() => camera.current?.click()}><CameraIcon />촬영</button>
           </div>
-          <div className="pick-grid">
-            {canUpload && (
-              <label className={`pick-tile add ${uploading ? "busy" : ""}`}>
-                <input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" hidden disabled={Boolean(uploading)} onChange={(e) => onPickFiles(e.target.files)} />
-                <IconPlus />
-                <span>{uploading ?? "내 사진"}</span>
-              </label>
-            )}
-            {tiles.map((src) => {
-              const n = selected.indexOf(src);
-              return (
-                <button key={src} type="button" className={`pick-tile ${n >= 0 ? "on" : ""}`} style={{ backgroundImage: `url(${src})` }} onClick={() => toggle(src)} aria-pressed={n >= 0} aria-label={FEED_IMAGES.find((i) => i.src === src)?.label ?? "사진"}>
-                  <span className="order">{n >= 0 ? n + 1 : ""}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="inline-input" style={{ padding: "10px 14px 16px" }}>
-            <input value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder={canUpload ? "이미지 주소로 추가 (https://…)" : "이미지 주소로 추가 · S3 설정 시 내 사진 업로드 가능"} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }} />
-            <button type="button" className="btn sm soft" onClick={addUrl} disabled={!urlInput.trim() || selected.length >= FEED_MAX_PAGES}>추가</button>
-          </div>
-          {error && <p className="tiny" style={{ color: "var(--down)", margin: "0 14px 12px" }}>{error}</p>}
-        </div>
-      )}
-
-      {/* ---------- 2. 편집: 슬라이드마다 글 ---------- */}
-      {step === 2 && d && (
-        <div className="composer-body">
-          <div className="composer-slides-wrap">
-            <div className="composer-slides" ref={slidesRef} onScroll={onSlidesScroll}>
-              {drafts.map((x, i) => (
-                <div key={i} className={`cslide bg-${bg} ${x.image ? "has-img" : ""}`} style={x.image ? { backgroundImage: `url(${x.image})` } : undefined}>
-                  <div className="cslide-body">
-                    {x.title && <div className="reel-title">{x.title}</div>}
-                    <p className="reel-text">{x.text || (i === cur ? "아래에 글을 적어요" : "")}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {drafts.length > 1 && (
-              <>
-                <div className="reel-dots" style={{ top: 10 }}>{drafts.map((_, i) => <i key={i} className={i === cur ? "on" : ""} />)}</div>
-                <div className="reel-count" style={{ top: 10, right: 10 }}>{cur + 1}/{drafts.length}</div>
-                <button type="button" className="cnav prev" aria-label="이전 슬라이드" onClick={() => scrollTo(Math.max(0, cur - 1))} disabled={cur === 0}>‹</button>
-                <button type="button" className="cnav next" aria-label="다음 슬라이드" onClick={() => scrollTo(Math.min(drafts.length - 1, cur + 1))} disabled={cur >= drafts.length - 1}>›</button>
-              </>
-            )}
-          </div>
-          <div className="composer-form">
-            {drafts.length > 1 && (
-              <div className="page-tabs">
-                {drafts.map((x, i) => (
-                  <button key={i} type="button" className={`page-tab ${i === cur ? "on" : ""} ${x.text.trim() ? "" : "empty"}`} style={x.image ? { backgroundImage: `url(${x.image})` } : undefined} onClick={() => scrollTo(i)} aria-label={`${i + 1}번째`}>
-                    <span>{i + 1}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="field">
-              <label>제목 (선택)</label>
-              <input value={d.title} onChange={(e) => update({ title: e.target.value })} maxLength={24} placeholder="예: 떨어진 날에게" />
-            </div>
-            <div className="field">
-              <label>{drafts.length > 1 ? `${cur + 1}번째 글` : "글"}</label>
-              <textarea value={d.text} onChange={(e) => update({ text: e.target.value })} maxLength={280} placeholder={"줄바꿈으로 호흡을 나눠요.\n\n예)\n떨어진 날은\n내가 모자란 날이 아니라\n거기까지 걸어간 날이에요."} style={{ minHeight: 110 }} autoFocus />
-              <span className="tiny muted" style={{ textAlign: "right" }}>{d.text.length}/280</span>
-            </div>
-            {hasCrisisSignal(d.text) && <HelpBanner alert />}
-            {!allFilled && drafts.length > 1 && <p className="tiny muted" style={{ margin: 0 }}>모든 슬라이드에 글을 적어야 다음으로 갈 수 있어요.</p>}
-          </div>
-        </div>
-      )}
-
-      {/* ---------- 3. 공유 ---------- */}
-      {step === 3 && (
-        <div className="composer-body">
-          <div className="composer-form" style={{ paddingTop: 16 }}>
-            <div className="share-summary">
-              <div className={`share-thumb bg-${bg} ${drafts[0]?.image ? "has-img" : ""}`} style={drafts[0]?.image ? { backgroundImage: `url(${drafts[0].image})` } : undefined}>
-                {drafts.length > 1 && <span className="reel-count" style={{ top: 6, right: 6 }}>{drafts.length}</span>}
-              </div>
-              <div className="grow" style={{ minWidth: 0 }}>
-                {drafts[0]?.title && <b style={{ display: "block", fontSize: 13 }}>{drafts[0].title}</b>}
-                <p className="share-caption">{drafts[0]?.text}</p>
-                <small className="muted">{textOnly ? "글만" : `사진 ${drafts.filter((x) => x.image).length}장`} · 콘텐츠 {drafts.length}개</small>
-              </div>
-            </div>
-            {drafts.length > 1 && (
-              <div className="thumbs">
-                {drafts.map((x, i) => (
-                  <div key={i} className={`thumb bg-${bg}`} style={x.image ? { backgroundImage: `url(${x.image})` } : undefined}>
-                    <span className="no">{i + 1}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {needsBg && (
-              <div className="field">
-                <label>배경 (사진이 없는 슬라이드)</label>
-                <div className="swatches">
-                  {Array.from({ length: FEED_BG_COUNT }, (_, i) => (
-                    <button key={i} type="button" className={`swatch bg-${i} ${bg === i ? "on" : ""}`} onClick={() => setBg(i)} aria-label={FEED_BG_LABELS[i]} title={FEED_BG_LABELS[i]}>
-                      <span>{FEED_BG_LABELS[i]}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {firstTime && (
-              <div className="field">
-                <label>크리에이터 소개 (선택)</label>
-                <input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" />
-                <span className="tiny muted">첫 글을 올리면 크리에이터가 돼요.</span>
-              </div>
-            )}
-            <div className="notice">위로 피드에 올라가요. 좋아요 대신 힘내요를 받고, 위로가 아닌 글은 신고될 수 있어요.</div>
-            {error && <p className="tiny" style={{ color: "var(--down)", margin: 0 }}>{error}</p>}
-            <button className="btn block" disabled={busy || !allFilled} onClick={share}>{busy ? "올리는 중…" : "공유"}</button>
-          </div>
-        </div>
-      )}
+          {photos.length > 0 && <>
+            <div className={styles.thumbnails} aria-label="선택한 사진 순서">{photos.map((photo, index) => <button key={photo.id} type="button" aria-label={(index + 1) + "번째 사진" + (index === 0 ? ", 대표 사진" : "")} aria-pressed={index === active} className={index === active ? styles.selected : undefined} onClick={() => setActive(index)}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}<img src={photo.preview} alt="" /><span>{index + 1}</span>
+            </button>)}{photos.length < FEED_MAX_PAGES && <button type="button" className={styles.add} onClick={() => gallery.current?.click()} aria-label="사진 더 고르기"><IconPlus /></button>}</div>
+            <div className={styles.order}><div><button type="button" disabled={active === 0} aria-label="사진을 앞으로 이동" onClick={() => move(-1)}>← 앞으로</button><button type="button" disabled={active === photos.length - 1} aria-label="사진을 뒤로 이동" onClick={() => move(1)}>뒤로 →</button></div><button type="button" className={styles.remove} onClick={() => remove(active)}>삭제</button></div>
+            <p className={styles.hint}>첫 사진이 대표 사진이 돼요. 사진을 골라 순서를 바꿀 수 있어요.</p>
+          </>}
+        </> : <div className={styles.form}>
+          {!textOnly && <>
+            <div className={styles.review} aria-label="게시할 사진 미리보기">{photos.map((photo, index) => <figure key={photo.id}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}<img src={photo.preview} alt={(index + 1) + "번째 게시 사진"} /><figcaption>{index + 1} / {photos.length}{index === 0 ? " · 대표 사진" : ""}</figcaption>
+            </figure>)}</div>
+            {photos.length > 1 && <p className={styles.hint}>옆으로 넘겨 사진을 확인해 보세요.</p>}
+          </>}
+          <div className="field"><label htmlFor="post-title">제목 <span className="muted">(선택)</span></label><input id="post-title" value={title} disabled={busy} maxLength={24} placeholder="오늘의 순간에 이름을 붙인다면" onChange={(event) => setTitle(event.target.value)} /></div>
+          <div className="field"><label htmlFor="post-caption">함께 나눌 이야기 {!textOnly && <span className="muted">(선택)</span>}</label><textarea id="post-caption" disabled={busy} value={caption} maxLength={280} placeholder="사진에 담긴 마음이나 누군가에게 건네고 싶은 위로를 적어 주세요." onChange={(event) => setCaption(event.target.value)} /><span className={styles.counter}>{caption.length}/280</span></div>
+          {hasCrisisSignal(caption) && <HelpBanner alert />}
+          {textOnly && <div className="field"><label>글 배경</label><div className="swatches">{Array.from({ length: FEED_BG_COUNT }, (_, index) => <button type="button" key={index} disabled={busy} className={"swatch bg-" + index + (bg === index ? " on" : "")} aria-label={FEED_BG_LABELS[index]} aria-pressed={bg === index} onClick={() => setBg(index)}><span>{FEED_BG_LABELS[index]}</span></button>)}</div></div>}
+          {firstTime && <div className="field"><label htmlFor="post-bio">내 소개 <span className="muted">(선택)</span></label><input id="post-bio" value={bio} maxLength={80} disabled={busy} placeholder="어떤 마음을 나누고 싶나요?" onChange={(event) => setBio(event.target.value)} /></div>}
+          <p className={styles.visibility}>위로 피드에 공개돼요. 모두가 편안하게 볼 수 있는 사진과 이야기를 나눠 주세요.</p>
+        </div>}
+        {error && <div className={styles.error} role="alert">{error}</div>}
+        {busy && <div className={styles.progress} role="status"><b>{progress ? "사진 " + (progress.index + 1) + "/" + photos.length + "장 전송 중 · " + progress.percent + "%" : "게시물을 올리고 있어요…"}</b>{progress && <><progress value={progress.index * 100 + progress.percent} max={photos.length * 100} aria-label="사진 전송 진행률" /><button type="button" className="text-btn" onClick={() => abortRef.current?.abort()}>전송 멈추기</button></>}</div>}
+        {step === 2 && <div className={styles.footer}><button type="button" className="btn block" disabled={busy || !canShare} onClick={() => void share()}>{busy ? "게시 중…" : error ? "다시 게시하기" : "게시하기"}</button></div>}
+      </div>
     </div>
-  );
+    {editPhoto && <PhotoEditor file={editPhoto.file} onSave={saveEdit} onClose={() => setEditing(null)} />}
+  </>;
 }
+
+function PhotoIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m3 17 5-5 4 4 4-6 5 7" strokeLinejoin="round" /></svg>; }
+function CameraIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M8 6 9.5 3h5L16 6h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" strokeLinejoin="round" /><circle cx="12" cy="13" r="4" /></svg>; }

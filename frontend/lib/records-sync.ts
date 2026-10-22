@@ -13,18 +13,22 @@
 export type Section = "journal" | "memos" | "goals" | "schedule" | "categories";
 
 interface Push {
+  userId: string;
   key: string; // 같은 키는 아직 안 보낸 것끼리 합친다 (예: 같은 날짜의 기록)
   path: string;
   method: "PUT" | "POST" | "DELETE";
   body?: unknown;
+  pendingImportRaw?: string;
 }
 
 const DIRTY_KEY = "maeum-accel:dirty:v1";
+const GUEST_IMPORT_KEY = "maeum-accel:guest-import:v1";
 
 const outbox: Push[] = [];
 let flushing: Promise<boolean> | null = null;
 let syncing: Promise<boolean> | null = null;
 let inFlight: Push | null = null;
+let generation = 0;
 
 /* ---------- 바깥에서 꽂아 주는 것 (storage.ts 가 순환 참조 없이 쓰기 위해) ---------- */
 
@@ -72,6 +76,50 @@ function clearDirty(uid: string) {
   }
 }
 
+/** Persist before consuming guest sources. Conflicting pending content is never overwritten. */
+export function stageGuestImport(userId: string, body: Record<string, unknown>): boolean {
+  if (hooks?.userId() !== userId) return false;
+  try {
+    const key = `${GUEST_IMPORT_KEY}:${userId}`;
+    const previousRaw = window.localStorage.getItem(key);
+    const previous: Record<string, unknown> = previousRaw ? JSON.parse(previousRaw) : {};
+    if (!previous || typeof previous !== "object" || Array.isArray(previous)) return false;
+    for (const field of Object.keys(body)) {
+      if (field in previous && JSON.stringify(previous[field]) !== JSON.stringify(body[field])) return false;
+    }
+    const next = JSON.stringify({ ...previous, ...body });
+    window.localStorage.setItem(key, next);
+    return window.localStorage.getItem(key) === next;
+  } catch { return false; }
+}
+
+function enqueueGuestImport(userId: string): boolean {
+  if (hooks?.userId() !== userId) return false;
+  try {
+    const raw = window.localStorage.getItem(`${GUEST_IMPORT_KEY}:${userId}`);
+    if (raw === null) return true;
+    const body: unknown = JSON.parse(raw);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+    if (!outbox.some((item) => item.userId === userId && item.pendingImportRaw === raw)) {
+      const pending = { userId, key: "guest-import", path: "/api/records/import", method: "POST" as const, body, pendingImportRaw: raw };
+      // Keep the active request first; the new import must precede ordinary queued writes.
+      outbox.splice(inFlight && outbox[0] === inFlight ? 1 : 0, 0, pending);
+    }
+    return true;
+  } catch { return false; }
+}
+
+export function startGuestImport(userId: string) {
+  if (enqueueGuestImport(userId) && outbox.length) void flushRecords();
+}
+
+export function clearGuestImport(userId: string) {
+  try { window.localStorage.removeItem(`${GUEST_IMPORT_KEY}:${userId}`); } catch { /* Storage unavailable. */ }
+  for (let index = outbox.length - 1; index >= 0; index--) {
+    if (outbox[index].userId === userId && outbox[index].pendingImportRaw && outbox[index] !== inFlight) outbox.splice(index, 1);
+  }
+}
+
 /* ---------- 보내기 ---------- */
 
 async function send(p: Push): Promise<Response> {
@@ -85,13 +133,13 @@ async function send(p: Push): Promise<Response> {
 
 /**
  * 큐에 넣고 바로 보내기 시작. 로그인 상태가 아니면 아무것도 하지 않는다.
- * sections: 실패했을 때 다음 동기화에서 통째로 다시 보낼 부분. 빈 배열이면 다시 보내지 않는다(가입 때의 게스트 데이터 가져오기처럼 한 번만 해야 하는 것).
+ * sections: 실패했을 때 다음 동기화에서 통째로 다시 보낼 부분. 게스트 import는 별도의 영속 POST 경로를 쓴다.
  */
 export function pushRecords(sections: Section[], key: string, method: Push["method"], path: string, body?: unknown) {
   const uid = hooks?.userId() ?? null;
   if (!uid) return;
   markDirty(uid, sections);
-  const p: Push = { key, path, method, body };
+  const p: Push = { userId: uid, key, path, method, body };
   const i = outbox.findIndex((x) => x.key === key && x !== inFlight);
   if (i >= 0) outbox[i] = p;
   else outbox.push(p);
@@ -104,16 +152,24 @@ export function flushRecords(): Promise<boolean> {
   let completed = false;
   flushing = (async () => {
     const uid = hooks?.userId() ?? null;
+    const startedGeneration = generation;
+    if (!uid) return false;
     while (outbox.length) {
       const p = outbox[0];
+      if (generation !== startedGeneration || hooks?.userId() !== uid || p.userId !== uid) return false;
       inFlight = p;
       try {
         const res = await send(p);
+        if (generation !== startedGeneration || hooks?.userId() !== uid) return false;
         if (res.status === 401) {
           outbox.length = 0;
           return false;
         }
         if (!res.ok) throw new Error(`records push ${res.status}`);
+        if (p.pendingImportRaw) {
+          const key = `${GUEST_IMPORT_KEY}:${uid}`;
+          if (window.localStorage.getItem(key) === p.pendingImportRaw) window.localStorage.removeItem(key);
+        }
       } catch {
         return false;
       } finally {
@@ -145,22 +201,29 @@ export function syncRecords(): Promise<boolean> {
     if (typeof window === "undefined" || !hooks) return false;
     const uid = hooks.userId();
     if (!uid) return false;
+    const startedGeneration = generation;
+    // A durable import is replayed before GET, including after a refresh lost the memory queue.
+    if (!enqueueGuestImport(uid)) return false;
     // 지난번에 못 보낸 부분이 있으면 localStorage 의 그 부분을 통째로, 먼저
     const dirty = readDirty(uid);
     if (dirty.length) {
       const body: Record<string, unknown> = {};
       for (const s of dirty) Object.assign(body, hooks.sectionBody(s));
-      outbox.unshift({ key: "resend", path: "/api/records", method: "PUT", body });
+      outbox.push({ userId: uid, key: "resend", path: "/api/records", method: "PUT", body });
     }
     if (outbox.length) {
       const sent = await flushRecords();
       if (!sent) return false;
     }
     try {
+      if (generation !== startedGeneration || hooks.userId() !== uid) return false;
+      // Failed cleanup or a newer staged snapshot must not be overwritten by a server pull.
+      if (window.localStorage.getItem(`${GUEST_IMPORT_KEY}:${uid}`) !== null) return false;
       const res = await fetch("/api/records", { credentials: "same-origin", cache: "no-store" });
       if (!res.ok) return false;
       const snapshot = await res.json();
-      if (outbox.length || hooks.userId() !== uid) return false; // 받는 사이에 또 바뀌었으면 이번엔 건너뜀
+      if (outbox.length || hooks.userId() !== uid || generation !== startedGeneration) return false; // 받는 사이에 또 바뀌었으면 이번엔 건너뜀
+      if (window.localStorage.getItem(`${GUEST_IMPORT_KEY}:${uid}`) !== null) return false;
       hooks.apply(snapshot);
       return true;
     } catch {
@@ -174,5 +237,6 @@ export function syncRecords(): Promise<boolean> {
 
 /** 로그아웃·계정 전환: 보내던 것 버림 */
 export function resetRecordsSync() {
+  generation++;
   outbox.length = 0;
 }

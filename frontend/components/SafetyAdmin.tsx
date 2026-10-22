@@ -37,7 +37,7 @@ export default function SafetyAdmin() {
       const res = await fetch("/api/safety-reports", { credentials: "same-origin", cache: "no-store", signal });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(typeof body?.error === "string" ? body.error : "신고 목록을 불러오지 못했어요.");
-      if (!Array.isArray(body?.reports)) throw new Error("신고 목록 응답을 확인하지 못했어요.");
+      if (!Array.isArray(body?.reports)) throw new Error("신고 목록을 불러오지 못했어요. 다시 시도해 주세요.");
       setReports(body.reports);
     } catch (e) {
       if (!signal?.aborted) setError(e instanceof Error ? e.message : "연결을 확인하고 다시 시도해 주세요.");
@@ -89,7 +89,7 @@ export default function SafetyAdmin() {
         <span>사용자 · 메시지 · AI 신고 {pending.length > 0 ? `(${pending.length})` : ""}</span>
         <button type="button" className="text-btn" onClick={() => void load()} disabled={loading || busy}>새로고침</button>
       </div>
-      <p className="tiny muted">신고 내용을 검토한 뒤 필요한 조치를 취해 주세요. AI 신고는 프롬프트와 안전 설정 개선에도 반영하고, 처리 후 검토 완료로 표시하세요.</p>
+      <p className="tiny muted">신고 내용을 검토한 뒤 필요한 조치를 취해 주세요. AI 신고는 답변과 안전 기능을 개선하는 데 반영하고, 처리 후 검토 완료로 표시하세요.</p>
       <label className="tiny row" style={{ gap: 8, margin: "12px 0" }}>
         <input type="checkbox" checked={showReviewed} onChange={(e) => setShowReviewed(e.target.checked)} />검토 완료 포함
       </label>
@@ -104,9 +104,9 @@ export default function SafetyAdmin() {
                 <span className="badge gray">{report.reviewedAt ? "검토 완료" : "대기"}</span>
               </div>
               <p className="tiny muted">접수 {timestamp(report.createdAt)}</p>
-              {report.targetId && <p className="tiny muted">대상 ID: {report.targetId}</p>}
+              {report.targetId && <p className="tiny muted">대상 번호: {report.targetId}</p>}
               <p style={{ whiteSpace: "pre-wrap", margin: "12px 0" }}>{report.detail}</p>
-              <details className="tiny muted"><summary>접수 정보</summary><p>신고 ID: {report.id}<br />신고자 ID: {report.reporterId}</p></details>
+              <details className="tiny muted"><summary>접수 정보</summary><p>접수 번호: {report.id}<br />신고자 번호: {report.reporterId}</p></details>
               {report.reviewedAt ? <p className="tiny muted">검토 {timestamp(report.reviewedAt)}</p> : (
                 <div className="row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void review(report, "dismiss")}>검토 완료</button>
@@ -119,7 +119,7 @@ export default function SafetyAdmin() {
       )}
       <Sheet open={confirm !== null} onClose={() => { if (!reviewing.current) setConfirm(null); }} title="신고 대상을 이용 정지할까요?">
         <p className="tiny muted">{confirm?.kind === "message" ? "이 메시지를 보낸 사용자의 계정을 이용 정지해요." : "신고된 사용자의 계정을 이용 정지해요."} 신고 내용과 대상을 확인한 뒤 진행하세요.</p>
-        {confirm?.targetId && <p className="tiny muted" style={{ overflowWrap: "anywhere" }}>대상 ID: {confirm.targetId}</p>}
+        {confirm?.targetId && <p className="tiny muted" style={{ overflowWrap: "anywhere" }}>대상 번호: {confirm.targetId}</p>}
         {error && <p className="notice warn" role="alert">{error}</p>}
         <div className="row" style={{ gap: 8, marginTop: 16 }}>
           <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirm(null)}>취소</button>

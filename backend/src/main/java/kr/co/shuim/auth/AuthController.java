@@ -3,6 +3,7 @@ package kr.co.shuim.auth;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.config.ApiException;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -13,10 +14,12 @@ import java.util.Optional;
 public class AuthController {
     private final AuthService auth;
     private final KakaoLoginService kakao;
+    private final PolicyConsentService policies;
 
-    public AuthController(AuthService auth, KakaoLoginService kakao) {
+    public AuthController(AuthService auth, KakaoLoginService kakao, PolicyConsentService policies) {
         this.auth = auth;
         this.kakao = kakao;
+        this.policies = policies;
     }
 
     static Map<String, Object> publicUser(DbUser u) {
@@ -45,15 +48,22 @@ public class AuthController {
 
     /** POST /api/auth/signup | login | logout | nick */
     @PostMapping("/api/auth/{action}")
-    public Map<String, Object> post(@PathVariable String action, @RequestBody(required = false) Map<String, String> body,
+    @Transactional
+    public Map<String, Object> post(@PathVariable String action, @RequestBody(required = false) Map<String, Object> body,
                                     HttpServletRequest req, HttpServletResponse res) {
-        Map<String, String> b = body == null ? Map.of() : body;
-        String email = b.getOrDefault("email", "");
-        String nick = b.getOrDefault("nick", "");
-        String password = b.getOrDefault("password", "");
+        Map<String, Object> b = body == null ? Map.of() : body;
+        String email = text(b, "email");
+        String nick = text(b, "nick");
+        String password = text(b, "password");
         switch (action) {
             case "signup" -> {
+                String version = text(b, "signupConsentVersion");
+                policies.validateVersion(version);
+                if (!(b.get("aiDisclosureAccepted") instanceof Boolean aiAccepted)) {
+                    throw ApiException.badRequest("AI 정보 제공 동의 여부를 선택해 주세요.");
+                }
                 DbUser u = auth.signUp(req, res, email, nick, password);
+                policies.accept(u, version, aiAccepted);
                 return Map.of("user", publicUser(u), "admin", auth.isAdmin(u));
             }
             case "login" -> {
@@ -73,5 +83,9 @@ public class AuthController {
             }
             default -> throw ApiException.notFound("not found");
         }
+    }
+
+    private static String text(Map<String, Object> body, String key) {
+        return body.get(key) instanceof String value ? value : "";
     }
 }

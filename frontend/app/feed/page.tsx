@@ -3,10 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CommunityStore,
-  FEED_BG_COUNT,
-  FEED_BG_LABELS,
-  FEED_IMAGES,
-  FEED_MAX_PAGES,
   FeedPost,
   REPORT_THRESHOLD,
   Target,
@@ -21,15 +17,13 @@ import {
   pagesOf,
   userById,
 } from "@/lib/community";
-import type { FeedPage as FeedContent } from "@/lib/community-core";
-import { hasCrisisSignal } from "@/lib/crisis";
-import HelpBanner from "@/components/HelpBanner";
 import { Sheet, fmtRelative } from "@/components/ui";
 import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import FeedComposer from "@/components/FeedComposer";
 import Link from "next/link";
 import { IconBookmark, IconBubble, IconMore, IconPen } from "@/components/Icons";
-import { uploadAvailable, uploadImage } from "@/lib/upload";
+import { showToast } from "@/lib/toast";
+import styles from "./feed-media.module.css";
 
 type Filter = "all" | "following" | "saved";
 const FILTERS: [Filter, string][] = [["all", "전체"], ["following", "팔로잉"], ["saved", "저장함"]];
@@ -50,6 +44,7 @@ export default function FeedPage() {
   const [deepLink, setDeepLink] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
+  const scrollToNewPost = useRef(false);
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const touchY = useRef<number | null>(null);
@@ -69,6 +64,12 @@ export default function FeedPage() {
     setDeepLink(new URLSearchParams(window.location.search).get("post"));
   }, [load]);
   useEffect(() => setLimit(PAGE), [filter]);
+  useEffect(() => {
+    if (!writing && scrollToNewPost.current && s) {
+      scrollToNewPost.current = false;
+      feedRef.current?.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [s, writing]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -242,19 +243,20 @@ export default function FeedPage() {
       </Sheet>
 
       <FeedComposer
-        key={writing ? "write-open" : "write-closed"}
         open={writing}
         firstTime={!isCreator(s, me)}
         onClose={() => setWriting(false)}
-        onSubmit={async (pages, bg, bio) => {
-          await run(setS, async () => {
-            let next = await api.createFeedPost(pages, bg);
-            if (bio !== undefined && bio.trim()) next = await api.updateBio(bio);
-            return next;
-          });
+        onSubmit={async (pages, bg, bio, clientRequestId) => {
+          // Let publishing errors reach the composer so its photo/text draft survives.
+          const next = await api.createFeedPost(pages, bg, clientRequestId);
+          setS(next);
+          if (bio !== undefined && bio.trim()) {
+            try { setS(await api.updateBio(bio)); }
+            catch { showToast("게시물은 올라갔어요. 소개는 프로필에서 다시 저장해 주세요."); }
+          }
           setWriting(false);
+          scrollToNewPost.current = true;
           setFilter("all");
-          feedRef.current?.scrollTo({ top: 0, behavior: "smooth" });
         }}
       />
 
@@ -277,7 +279,7 @@ export default function FeedPage() {
 
 function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile }: {
   s: CommunityStore; post: FeedPost; revealed: boolean; onReveal: () => void; onCheer: () => void; onSave: () => void;
-  onComments: () => void; onMenu: () => void; onFollow: () => void; onProfile: () => void;
+  onComments: () => void; onMenu: () => void; onFollow: () => Promise<boolean>; onProfile: () => void;
 }) {
   const me = s.me.id;
   const author = userById(s, post.authorId);
@@ -290,7 +292,17 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
   const flagged = isFlagged(post) && !revealed;
   const pages = pagesOf(post);
   const [idx, setIdx] = useState(0);
+  const [followingBusy, setFollowingBusy] = useState(false);
+  const followLock = useRef(false);
   const slides = useRef<HTMLDivElement | null>(null);
+  const handleFollow = async () => {
+    if (followLock.current) return;
+    followLock.current = true;
+    setFollowingBusy(true);
+    try { await onFollow(); }
+    catch { showToast("팔로우를 변경하지 못했어요. 다시 시도해 주세요."); }
+    finally { followLock.current = false; setFollowingBusy(false); }
+  };
   const onSlidesScroll = () => {
     const el = slides.current;
     if (el) setIdx(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
@@ -298,7 +310,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
   const anyImage = pages.some((p) => p.image);
 
   return (
-    <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${anyImage ? "has-img" : ""}`}>
+    <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${anyImage ? "has-img " + styles.photoPost : ""}`}>
       {flagged ? (
         <div className="reel-body" style={{ pointerEvents: "auto" }}>
           <button className="flagged-box reel-flagged" onClick={onReveal}>
@@ -309,10 +321,14 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
       ) : (
         <div className="reel-slides" ref={slides} onScroll={onSlidesScroll} aria-label={`콘텐츠 ${pages.length}개`}>
           {pages.map((p, i) => (
-            <article key={i} className={`slide ${p.image ? "has-img" : ""}`} style={p.image ? { backgroundImage: `url(${p.image})` } : undefined} aria-label={`${i + 1}번째 콘텐츠`}>
+            <article key={i} className={`slide ${p.image ? "has-img " + styles.photoSlide : ""}`} aria-label={`${i + 1}번째 콘텐츠`}>
+              {p.image && <div className={styles.photoFrame}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.image} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
+              </div>}
               <div className="slide-body">
-                {p.title && <div className="reel-title">{p.title}</div>}
-                <p className="reel-text">{p.text}</p>
+                {(p.title || (p.image && post.title)) && <div className="reel-title">{p.title || post.title}</div>}
+                {(p.text || (p.image && post.text)) && <p className="reel-text">{p.text || post.text}</p>}
               </div>
             </article>
           ))}
@@ -320,7 +336,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
       )}
       {!flagged && pages.length > 1 && (
         <>
-          <div className="reel-dots" aria-hidden="true">{pages.map((_, i) => <i key={i} className={i === idx ? "on" : ""} />)}</div>
+          <div className={`reel-dots ${styles.pageDots}`} aria-label="사진 넘기기">{pages.map((_, i) => <button type="button" key={i} aria-label={`${i + 1}번째 콘텐츠 보기`} aria-pressed={i === idx} onClick={() => slides.current?.scrollTo({ left: slides.current.clientWidth * i, behavior: "smooth" })}><i className={i === idx ? "on" : ""} /></button>)}</div>
           <div className="reel-count">{idx + 1}/{pages.length}</div>
         </>
       )}
@@ -333,8 +349,8 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
           </span>
         </button>
         {!mine && (
-          <button className={`pillbtn follow ${following ? "on" : ""}`} onClick={onFollow} aria-pressed={following}>
-            {following ? "팔로잉" : "팔로우"}
+          <button type="button" className={`pillbtn follow ${following ? "on" : ""}`} onClick={handleFollow} aria-pressed={following} aria-busy={followingBusy} disabled={followingBusy}>
+            {followingBusy ? "변경 중…" : following ? "팔로잉" : "팔로우"}
           </button>
         )}
       </div>
@@ -350,7 +366,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
 
 /* ================= 크리에이터 프로필 ================= */
 
-function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; userId: string; onFollow: () => void; onBio: (b: string) => void }) {
+function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; userId: string; onFollow: () => Promise<boolean>; onBio: (b: string) => Promise<boolean> }) {
   const u = userById(s, userId);
   const c = creatorOf(s, userId);
   const mine = userId === s.me.id;
@@ -358,6 +374,27 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
   const cheers = posts.reduce((n, f) => n + f.cheers.length, 0);
   const [bio, setBio] = useState(c.bio);
   const [editing, setEditing] = useState(false);
+  const [followingBusy, setFollowingBusy] = useState(false);
+  const [savingBio, setSavingBio] = useState(false);
+  const followLock = useRef(false);
+  const bioLock = useRef(false);
+  const handleFollow = async () => {
+    if (followLock.current) return;
+    followLock.current = true;
+    setFollowingBusy(true);
+    try { await onFollow(); }
+    catch { showToast("팔로우를 변경하지 못했어요. 다시 시도해 주세요."); }
+    finally { followLock.current = false; setFollowingBusy(false); }
+  };
+  const saveBio = async () => {
+    if (bioLock.current) return;
+    bioLock.current = true;
+    setSavingBio(true);
+    try {
+      if (await onBio(bio)) setEditing(false);
+    } catch { showToast("소개를 저장하지 못했어요. 다시 시도해 주세요."); }
+    finally { bioLock.current = false; setSavingBio(false); }
+  };
   return (
     <div className="stack">
       <div className="row" style={{ gap: 12 }}>
@@ -367,18 +404,18 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
           <div className="tiny muted">팔로워 {c.followers.length} · 위로글 {posts.length} · 받은 힘내요 {cheers}</div>
         </div>
         {!mine && (
-          <button className={`pillbtn follow ${s.following.includes(userId) ? "on" : ""}`} onClick={onFollow}>
-            {s.following.includes(userId) ? "팔로잉" : "팔로우"}
+          <button type="button" className={`pillbtn follow ${s.following.includes(userId) ? "on" : ""}`} onClick={handleFollow} aria-pressed={s.following.includes(userId)} aria-busy={followingBusy} disabled={followingBusy}>
+            {followingBusy ? "변경 중…" : s.following.includes(userId) ? "팔로잉" : "팔로우"}
           </button>
         )}
       </div>
       {mine && editing ? (
-        <div className="field">
-          <label>소개</label>
-          <input value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" autoFocus />
+        <div className="field" aria-busy={savingBio}>
+          <label htmlFor="creator-bio">소개</label>
+          <input id="creator-bio" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={80} placeholder="어떤 사람에게 어떤 글을 쓰는지 한 줄" disabled={savingBio} autoFocus />
           <div className="sheet-actions" style={{ marginTop: 8 }}>
-            <button className="btn ghost" onClick={() => setEditing(false)}>취소</button>
-            <button className="btn" onClick={() => { onBio(bio); setEditing(false); }}>저장</button>
+            <button type="button" className="btn ghost" onClick={() => setEditing(false)} disabled={savingBio}>취소</button>
+            <button type="button" className="btn" onClick={saveBio} disabled={savingBio}>{savingBio ? "저장 중…" : "저장"}</button>
           </div>
         </div>
       ) : (

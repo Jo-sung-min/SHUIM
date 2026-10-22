@@ -1,8 +1,8 @@
 "use client";
-import { confirmAiProcessing } from "@/lib/safety";
+import { requestAiProcessing } from "@/lib/safety";
 import SafetyReport from "@/components/SafetyReport";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefing,
@@ -38,7 +38,8 @@ import { Account, completeKakaoLogin, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar, fmtDate, fmtRelative } from "@/components/ui";
-import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser, IconHeart, IconStar, IconPen, IconBubble } from "@/components/Icons";
+import styles from "./account-screens.module.css";
 
 interface Data {
   journal: Journal;
@@ -92,6 +93,7 @@ export default function HomePage() {
   const [me, setMe] = useState<Account | null>(null);
   const [loading, setLoading] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
 
   const reload = useCallback(() => {
     const apply = () => {
@@ -126,11 +128,12 @@ export default function HomePage() {
   );
 
   const call = async (mode: Mode) => {
-    if (!data) return;
-    if (!confirmAiProcessing()) return;
+    if (!data || inFlight.current) return;
+    inFlight.current = true;
     setLoading(mode);
     setError(null);
     try {
+      if (!(await requestAiProcessing())) return;
       const payload = buildPayload(data, today);
       const allMemos =
         mode === "review"
@@ -166,6 +169,7 @@ export default function HomePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "정리하지 못했어요");
     } finally {
+      inFlight.current = false;
       setLoading(null);
     }
   };
@@ -187,7 +191,7 @@ export default function HomePage() {
     }
   };
 
-  if (!data) return <TopBar title="오늘의 나" eyebrow={fmtDate(today)} />;
+  if (!data) return <><TopBar title="오늘의 나" eyebrow={fmtDate(today)} /><div className={`screen ${styles.pending}`} role="status" aria-label="오늘의 기록을 불러오고 있어요"><div className="skeleton" /><div className="skeleton" /></div></>;
 
   const d = briefing?.data;
   /** 오늘 기록 현황: 다 채우면 버튼 대신 문구 */
@@ -216,18 +220,19 @@ export default function HomePage() {
 
         {/* 히어로 */}
         {empty ? (
-          <section className="hero">
-            <div className="label">시작</div>
-            <h2>위치가 아니라, 변화를 기록해요</h2>
+          <section className={`hero ${styles.homeHero}`}>
+            <div className="label">나를 돌보는 작은 시간</div>
+            <h2>오늘의 마음은<br />어떤 모양인가요?</h2>
+            <p>잘한 일도, 힘들었던 일도<br />여기서는 편하게 남겨요.</p>
           </section>
         ) : loading === "briefing" ? (
-          <section className="hero" aria-busy="true">
+          <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘의 기록을 정리하고 있어요">
             <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px", background: "rgba(255,255,255,0.25)" }} />
             <div className="skeleton" style={{ height: 14, width: "100%", background: "rgba(255,255,255,0.2)" }} />
             <div className="skeleton" style={{ height: 14, width: "60%", marginTop: 8, background: "rgba(255,255,255,0.2)" }} />
           </section>
         ) : d ? (
-          <section className="hero">
+          <section className={`hero ${styles.homeHero}`}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="pill">{dirLabel[d.momentum.direction]}</span>
               <span className="label">{fmtRelative(briefing!.generatedAt)}</span>
@@ -236,9 +241,10 @@ export default function HomePage() {
             <p>{d.momentum.text}</p>
           </section>
         ) : (
-          <section className="hero">
-            <div className="label">오늘</div>
-            <h2>어제보다 어디로 움직였을까요</h2>
+          <section className={`hero ${styles.homeHero}`}>
+            <div className="label">오늘, 나에게 한 걸음</div>
+            <h2>{me ? `${me.nick} 님의 하루를` : "당신의 하루를"}<br />천천히 돌아봐요.</h2>
+            <p>쌓아온 기록 속 작은 변화를 만나보세요.</p>
           </section>
         )}
 
@@ -249,44 +255,58 @@ export default function HomePage() {
             <small>연속 {days}일째 · 기분 {filled}/{total}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
           </p>
         ) : (
-          <Link href="/log" className="card log-cta">
-            <span>
-              <b>오늘 기록을 채워주세요</b>
-              <small>{days > 0 ? `연속 ${days}일째 · ` : ""}기분 {filled}/{total}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
+          <Link href="/log" className={`card log-cta ${styles.recordLink}`}>
+            <span className={styles.recordIcon}><IconPen /></span>
+            <span className={styles.recordText}>
+              <b>{filled ? "오늘의 기록 이어 쓰기" : "오늘의 마음 기록하기"}</b>
+              <small>{days > 0 ? `연속 ${days}일째 · ` : ""}{filled ? `마음 기록 ${filled}/${total}` : "한 가지 마음부터 천천히 남겨요"}{didCount ? ` · 행동 ${didCount}개` : ""}</small>
             </span>
             <IconChevronR />
           </Link>
         )}
 
+        {empty && <section aria-labelledby="home-start-title">
+          <div className={styles.sectionHeading}><h3 id="home-start-title">나의 속도로 시작해요</h3></div>
+          <div className={styles.quickLinks}>
+            <Link href="/memo" className={`card ${styles.quickLink}`}><IconNote /><b>생각을 담는 메모</b><small>스쳐 가는 마음도<br />짧게 남겨두세요.</small></Link>
+            <Link href="/shout" className={`card ${styles.quickLink}`}><IconBubble /><b>마음을 나누는 외침</b><small>혼자 담아두기 힘든<br />이야기를 나눠요.</small></Link>
+          </div>
+        </section>}
+
         {/* 액션 4개 */}
         {!empty && (
-          <div className="actions-row">
-            <button className={`action ${briefing ? "done" : ""} ${loading === "briefing" ? "busy" : ""}`} disabled={loading !== null || Boolean(briefing)} onClick={() => press("briefing")} aria-label="오늘의 나 정리" title={briefing ? "오늘 정리 완료 · 하루 한 번" : undefined}>
+          <section aria-labelledby="home-care-title">
+          <div className={styles.sectionHeading}><h3 id="home-care-title">나를 위한 시간</h3><span>기록에서 찾는 작은 위로</span></div>
+          <div className={`actions-row ${styles.homeActions}`}>
+            <button type="button" className={`action ${briefing ? "done" : ""} ${loading === "briefing" ? "busy" : ""}`} disabled={loading !== null || Boolean(briefing)} onClick={() => press("briefing")} aria-label="오늘의 나 정리" aria-busy={loading === "briefing"} title={briefing ? "오늘 정리 완료 · 하루 한 번" : undefined}>
               <span className="ring">{briefing ? <IconCheck /> : <IconSparkle />}</span>
-              <span className="lbl">{briefing ? "정리됨" : "정리하기"}</span>
+              <span className="lbl">{loading === "briefing" ? "정리 중…" : briefing ? "정리 완료" : "정리하기"}</span>
             </button>
             {(Object.keys(MOMENTS) as MomentMode[]).map((mode) => (
               <button
                 key={mode}
+                type="button"
                 className={`action ${open === mode ? "on" : ""} ${moments[mode] ? "done" : ""} ${loading === mode ? "busy" : ""}`}
                 disabled={loading !== null}
                 onClick={() => press(mode)}
                 aria-pressed={open === mode}
                 aria-label={MOMENTS[mode].heading}
+                aria-busy={loading === mode}
               >
-                <span className="ring">{MOMENTS[mode].emoji}</span>
-                <span className="lbl">{MOMENTS[mode].label}</span>
+                <span className="ring">{mode === "praise" ? <IconStar /> : <IconHeart />}</span>
+                <span className="lbl">{loading === mode ? "생각 중…" : MOMENTS[mode].label}</span>
               </button>
             ))}
-            <button className={`action ${reviewOpen ? "on" : ""} ${review ? "done" : ""} ${loading === "review" ? "busy" : ""}`} disabled={loading !== null} onClick={() => press("review")} aria-pressed={reviewOpen} aria-label="메모로 나를 분석">
+            <button type="button" className={`action ${reviewOpen ? "on" : ""} ${review ? "done" : ""} ${loading === "review" ? "busy" : ""}`} disabled={loading !== null} onClick={() => press("review")} aria-pressed={reviewOpen} aria-busy={loading === "review"} aria-label="메모로 나를 분석">
               <span className="ring"><IconNote /></span>
-              <span className="lbl">분석하기</span>
+              <span className="lbl">{loading === "review" ? "분석 중…" : "분석하기"}</span>
             </button>
           </div>
+          </section>
         )}
 
-        {error && <p className="tiny" style={{ color: "var(--down)", margin: "10px 2px 0", textAlign: "center" }}>{error}</p>}
-        {!empty && <p className="tiny muted" style={{ textAlign: "center" }}>AI 응답은 의료 진단·치료가 아닙니다. <Link href="/privacy">개인정보 안내</Link></p>}
+        {error && <p className={styles.error} role="alert">{error}</p>}
+        {!empty && <p className={styles.aiNote}>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></p>}
         {(briefing || openMoment || review) && <SafetyReport kind="ai" />}
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 

@@ -12,7 +12,7 @@ class KakaoLoginServiceTest {
     private static final ObjectMapper om = new ObjectMapper();
 
     private static KakaoLoginService svc(String clientId) {
-        return new KakaoLoginService(null, null, null, RestClient.builder(), "https://sorow.co.kr/", clientId, "", true);
+        return new KakaoLoginService(null, null, null, null, RestClient.builder(), "https://sorow.co.kr/", clientId, "", true);
     }
 
     @Test

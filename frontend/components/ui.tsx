@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
+import { IconClose } from "./Icons";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 
 /* ---------- 상단 바 ---------- */
@@ -58,9 +59,16 @@ export function Segmented<T extends string>({
   options: { value: T; label: string }[];
 }) {
   return (
-    <div className="segmented" role="tablist">
+    <div className="segmented" role="tablist" aria-label="보기 선택" onKeyDown={(event) => {
+      const index = options.findIndex((option) => option.value === value);
+      const next = event.key === "ArrowRight" ? (index + 1) % options.length : event.key === "ArrowLeft" ? (index + options.length - 1) % options.length : event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      onChange(options[next].value);
+      event.currentTarget.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+    }}>
       {options.map((o) => (
-        <button key={o.value} role="tab" aria-selected={value === o.value} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
+        <button type="button" key={o.value} role="tab" tabIndex={value === o.value ? 0 : -1} aria-selected={value === o.value} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}
@@ -114,24 +122,48 @@ export function CatTag({ cat }: { cat: MemoCat }) {
 }
 
 /* ---------- 바텀시트 ---------- */
+const openSheets: HTMLElement[] = [];
+let previousOverflow = "";
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const titleId = useId();
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    if (!open || !sheetRef.current) return;
+    const sheet = sheetRef.current;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!openSheets.length) previousOverflow = document.body.style.overflow;
+    openSheets.push(sheet);
+    const onKey = (e: KeyboardEvent) => {
+      if (openSheets.at(-1) !== sheet || sheet.closest("[inert]")) return;
+      if (e.key === "Escape") { e.preventDefault(); closeRef.current(); }
+      if (e.key !== "Tab") return;
+      const targets = Array.from(sheet.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')).filter((element) => element.getClientRects().length > 0);
+      const first = targets[0];
+      const last = targets.at(-1);
+      if (!first) { e.preventDefault(); sheet.focus(); return; }
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === sheet)) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !sheet.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+    };
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
+    sheet.focus({ preventScroll: true });
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      const index = openSheets.indexOf(sheet);
+      if (index !== -1) openSheets.splice(index, 1);
+      if (!openSheets.length) document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected && (!openSheets.length || openSheets.at(-1)?.contains(previousFocus))) previousFocus.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="handle" />
-        <h3>{title}</h3>
+      <div className="sheet-backdrop" aria-hidden="true" onClick={() => { if (openSheets.at(-1) === sheetRef.current) onClose(); }} />
+      <div ref={sheetRef} className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <div className="handle" aria-hidden="true" />
+        <div className="sheet-title"><h3 id={titleId}>{title}</h3><button type="button" className="icon-btn sheet-close" onClick={onClose} aria-label={`${title} 닫기`}><IconClose /></button></div>
         {children}
       </div>
     </>

@@ -104,10 +104,11 @@ public class S3Service {
 
     /** 프리사인 PUT URL 발급. Content-Type·Content-Length·Cache-Control 을 서명에 넣어 그 조건으로만 올릴 수 있게 한다. */
     public Presigned presignUpload(String userId, String contentType, long size) {
-        if (!configured()) throw ApiException.unavailable("S3 설정이 없어 사진 업로드는 꺼져 있어요");
+        if (!configured()) throw ApiException.unavailable("지금은 사진을 첨부할 수 없어요. 잠시 후 다시 시도해 주세요.");
         String ext = ALLOWED_TYPES.get(contentType);
-        if (ext == null) throw ApiException.badRequest("jpg, png, webp, gif 이미지만 올릴 수 있어요");
-        if (size <= 0 || size > MAX_UPLOAD_BYTES) throw ApiException.badRequest("파일은 " + (MAX_UPLOAD_BYTES / 1024 / 1024) + "MB 이하여야 해요");
+        if (ext == null) throw ApiException.badRequest("JPG, PNG, WebP, GIF 사진을 선택해 주세요.");
+        if (size <= 0) throw ApiException.badRequest("비어 있는 사진은 첨부할 수 없어요. 다른 사진을 선택해 주세요.");
+        if (size > MAX_UPLOAD_BYTES) throw ApiException.badRequest("사진은 한 장당 " + (MAX_UPLOAD_BYTES / 1024 / 1024) + "MB 이하여야 해요. 크기를 줄인 뒤 다시 선택해 주세요.");
         String day = LocalDate.now(java.time.ZoneOffset.UTC).toString().replace('-', '/');
         String key = prefix + "/" + day + "/" + userId + "-" + Ids.randomHex(8) + "." + ext;
         String cacheControl = "public, max-age=300";
@@ -133,7 +134,7 @@ public class S3Service {
 
     /** Durable cleanup jobs call this method; failures must propagate so the job is retried. */
     public void deleteObject(String key) {
-        if (!configured()) throw ApiException.unavailable("S3 삭제 설정을 확인해 주세요");
+        if (!configured()) throw ApiException.unavailable("사진을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
         client().deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
     }
 }

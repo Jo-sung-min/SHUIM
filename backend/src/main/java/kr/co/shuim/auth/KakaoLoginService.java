@@ -5,7 +5,6 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.common.Ids;
-import kr.co.shuim.community.CommunityLogic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +47,7 @@ public class KakaoLoginService {
 
     private final JdbcClient jdbc;
     private final AuthService auth;
+    private final PolicyConsentService policies;
     private final TransactionTemplate tx;
     private final RestClient http;
     private final String appOrigin;
@@ -55,13 +55,14 @@ public class KakaoLoginService {
     private final String clientSecret;
     private final boolean secureCookie;
 
-    public KakaoLoginService(JdbcClient jdbc, AuthService auth, TransactionTemplate tx, RestClient.Builder builder,
+    public KakaoLoginService(JdbcClient jdbc, AuthService auth, PolicyConsentService policies, TransactionTemplate tx, RestClient.Builder builder,
                              @Value("${app.origin}") String appOrigin,
                              @Value("${app.kakao.client-id:}") String clientId,
                              @Value("${app.kakao.client-secret:}") String clientSecret,
                              @Value("${app.auth.secure-cookie:false}") boolean secureCookie) {
         this.jdbc = jdbc;
         this.auth = auth;
+        this.policies = policies;
         this.tx = tx;
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory();
         factory.setReadTimeout(Duration.ofSeconds(15));
@@ -126,6 +127,8 @@ public class KakaoLoginService {
             String userId = tx.execute(status -> findOrCreateUser(p, anonId));
             auth.switchSession(req, res, userId);
             return appUri("/?kakao=1");
+        } catch (SignupConsentRequiredException e) {
+            return appUri("/auth?mode=signup&provider=kakao");
         } catch (Exception e) {
             log.warn("kakao login failed: {}", e.toString());
             return failureUri();
@@ -168,10 +171,13 @@ public class KakaoLoginService {
         return new Profile(id, email == null ? null : email.strip().toLowerCase(), nick == null || nick.isBlank() ? null : nick.strip());
     }
 
-    /** kakao_id 로 찾고, 없으면 현재 익명 유저가 있으면 그 행을 승격, 아니면 새 행 (트랜잭션 안에서 부른다) */
+    static final class SignupConsentRequiredException extends RuntimeException {}
+
+    /** Existing accounts keep their own consent. New accounts must upgrade the consenting anonymous session. */
     String findOrCreateUser(Profile p, String anonUserId) {
         Optional<String> existing = jdbc.sql("SELECT id FROM users WHERE kakao_id = ?").param(p.kakaoId()).query(String.class).optional();
         if (existing.isPresent()) return existing.get();
+        if (!policies.hasSignupConsent(anonUserId)) throw new SignupConsentRequiredException();
         String nick = p.nick() == null || p.nick().length() < 2 ? null : (p.nick().length() > 12 ? p.nick().substring(0, 12) : p.nick());
         // 이미 이메일 계정이 쓰는 주소면 비워 둔다 (users.email UNIQUE)
         String email = p.email() != null && jdbc.sql("SELECT count(*) FROM users WHERE email = ?").param(p.email()).query(Long.class).single() == 0 ? p.email() : null;
@@ -180,10 +186,8 @@ public class KakaoLoginService {
                 .param(p.kakaoId()).param(email).param(nick).param(anonUserId).update();
             if (n > 0) return anonUserId;
         }
-        String id = Ids.uid();
-        jdbc.sql("INSERT INTO users (id, email, nick, role, is_anonymous, kakao_id) VALUES (?, ?, ?, 'user', FALSE, ?)")
-            .param(id).param(email).param(nick == null ? CommunityLogic.randomNick() : nick).param(p.kakaoId()).update();
-        return id;
+        // If the consenting anonymous row changed concurrently, require another review instead of creating an unrelated account.
+        throw new SignupConsentRequiredException();
     }
 
     private static String text(JsonNode node, String field) {

@@ -11,8 +11,8 @@ export const SITE = {
   /** 운영 주소. 미리보기·로컬은 NEXT_PUBLIC_SITE_URL 로 바꿀 수 있다 */
   url: (process.env.NEXT_PUBLIC_SITE_URL ?? "https://sorow.co.kr").replace(/\/+$/, ""),
   keywords: ["소로우", "SOROW", "슬픔", "위로", "마음 기록", "감정 일기", "익명 커뮤니티", "멘탈 케어", "마음 가속도"],
-  themeLight: "#f4f3ee",
-  themeDark: "#121419",
+  themeLight: "#f7f7fb",
+  themeDark: "#15141c",
 } as const;
 
 /** GET /api/site 응답 (없는 값은 null = 기본값) */
@@ -44,12 +44,12 @@ export const ogHref = (s: SiteSettings) => (s.ogAt ? `/api/site/og?v=${s.ogAt}` 
 
 /**
  * 서버 컴포넌트용: 백엔드에서 직접 설정을 읽는다 (브라우저 프록시를 거치지 않으므로 BACKEND_ORIGIN).
- * 1분 캐시. 백엔드가 꺼져 있거나 빌드 중이면 기본값으로 동작한다.
+ * 1분 캐시. 백엔드가 꺼져 있거나 빌드 중이면 최대 3초 후 메타데이터 기본값으로 동작한다.
  */
 export async function loadSiteSettings(): Promise<SiteSettings> {
   const origin = (process.env.BACKEND_ORIGIN ?? "http://localhost:8080").replace(/\/+$/, "");
   try {
-    const res = await fetch(`${origin}/api/site`, { next: { revalidate: 60 } });
+    const res = await fetch(`${origin}/api/site`, { next: { revalidate: 60 }, signal: AbortSignal.timeout(3_000) });
     if (!res.ok) return EMPTY_SITE;
     return normalizeSite((await res.json()) as Partial<SiteSettings>);
   } catch {

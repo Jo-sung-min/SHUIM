@@ -23,7 +23,8 @@ export async function requireCommunityConsent() {
   const response = await fetch("/api/community/consent", {
     method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version: COMMUNITY_TERMS_VERSION }),
-  });
+    signal: AbortSignal.timeout(12_000),
+  }).catch(() => { throw new Error("연결을 확인하지 못했어요. 잠시 후 다시 시도해 주세요."); });
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));
     throw new Error(result.error || "커뮤니티 동의를 저장하지 못했어요. 다시 시도해 주세요.");

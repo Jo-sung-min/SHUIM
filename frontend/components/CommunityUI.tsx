@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Comment,
   CommunityStore,
@@ -20,22 +20,35 @@ import Link from "next/link";
 import { Sheet, fmtRelative } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
 import Fist3D from "./Fist3D";
+import { showToast } from "@/lib/toast";
 
 /** 변경 결과(최신 store)를 화면에 반영하고, 실패하면 알림 */
 export async function run(onChange: (s: CommunityStore) => void, fn: () => Promise<CommunityStore>, onError?: (m: string) => void) {
   try {
     onChange(await fn());
+    return true;
   } catch (e) {
     const m = e instanceof Error ? e.message : "잠시 후 다시 시도해요";
     if (onError) onError(m);
-    else window.alert(m);
+    else showToast(m);
+    return false;
   }
 }
 
 /* ---------- 선 아이콘 액션 (테두리 없음, 아이콘 + 숫자) ---------- */
-export function LineAction({ icon, label, onClick, on, vertical, ariaLabel }: { icon: React.ReactNode; label?: React.ReactNode; onClick: () => void; on?: boolean; vertical?: boolean; ariaLabel: string }) {
+export function LineAction({ icon, label, onClick, on, vertical, ariaLabel }: { icon: React.ReactNode; label?: React.ReactNode; onClick: () => void | Promise<unknown>; on?: boolean; vertical?: boolean; ariaLabel: string }) {
+  const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
+  const activate = async () => {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    try { await onClick(); }
+    catch (error) { showToast(error instanceof Error ? error.message : "잠시 후 다시 시도해요"); }
+    finally { locked.current = false; setBusy(false); }
+  };
   return (
-    <button className={`lact ${vertical ? "v" : ""} ${on ? "on" : ""}`} onClick={onClick} aria-pressed={on} aria-label={ariaLabel}>
+    <button type="button" className={`lact ${vertical ? "v" : ""} ${on ? "on" : ""}`} onClick={activate} disabled={busy} aria-busy={busy} aria-pressed={on} aria-label={ariaLabel}>
       <span className="ico">{icon}</span>
       {label !== undefined && <span className="lbl">{label}</span>}
     </button>
@@ -43,7 +56,7 @@ export function LineAction({ icon, label, onClick, on, vertical, ariaLabel }: { 
 }
 
 /* ---------- 힘내요: 선 하트 → 누르면 3D 하트가 튀어나온다 ---------- */
-export function CheerButton({ count, on, onClick, small, vertical }: { count: number; on: boolean; onClick: () => void; small?: boolean; vertical?: boolean }) {
+export function CheerButton({ count, on, onClick, small, vertical }: { count: number; on: boolean; onClick: () => void | Promise<unknown>; small?: boolean; vertical?: boolean }) {
   const [burst, setBurst] = useState(false);
   useEffect(() => {
     if (!burst) return;
@@ -59,14 +72,14 @@ export function CheerButton({ count, on, onClick, small, vertical }: { count: nu
       label={count}
       onClick={() => {
         if (!on) setBurst(true);
-        onClick();
+        return onClick();
       }}
     />
   );
 }
 
 /* ---------- 댓글 한 줄 ---------- */
-function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; comment: Comment; onCheer: () => void; onMenu: () => void }) {
+function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; comment: Comment; onCheer: () => void | Promise<unknown>; onMenu: () => void }) {
   const me = s.me.id;
   const author = userById(s, comment.authorId);
   const [show, setShow] = useState(false);
@@ -110,15 +123,21 @@ export function CommentThread({
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
   const comments = commentsOf(s, postId);
   const blocked = isBlocked(s.me);
   const submit = async () => {
     const t = text.trim();
-    if (!t || busy) return;
+    if (!t || locked.current) return;
+    locked.current = true;
     setBusy(true);
-    await run(onChange, () => api.addComment(postId, t));
-    setBusy(false);
-    setText("");
+    try {
+      const saved = await run(onChange, () => api.addComment(postId, t));
+      if (saved) setText("");
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
   };
   return (
     <>
@@ -146,6 +165,7 @@ export function CommentThread({
         >
           <textarea
             value={text}
+            disabled={busy}
             onChange={(e) => setText(e.target.value)}
             placeholder={placeholder}
             rows={1}
@@ -156,7 +176,7 @@ export function CommentThread({
               t.style.height = `${Math.min(t.scrollHeight, 140)}px`;
             }}
           />
-          <button type="submit" className="btn" disabled={!text.trim() || busy} aria-label="보내기">
+          <button type="submit" className="btn" disabled={!text.trim() || busy} aria-busy={busy} aria-label={busy ? "댓글 보내는 중" : "보내기"}>
             <IconSend style={{ width: 18, height: 18 }} />
           </button>
         </form>
@@ -181,24 +201,32 @@ export function TargetMenuSheet({
   onReport: (t: Target) => void;
   onDeleted?: (t: Target) => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
   const item = target ? findTarget(s, target) : undefined;
   const label = target?.kind === "post" ? "이 외침" : target?.kind === "feed" ? "이 위로글" : "이 댓글";
   return (
-    <Sheet open={Boolean(target && item)} onClose={onClose} title={label}>
+    <Sheet open={Boolean(target && item)} onClose={() => { if (!locked.current) onClose(); }} title={label}>
       {target && item && (
         <div className="stack">
           {item.authorId === s.me.id ? (
             <button
               className="btn ghost"
+              disabled={busy}
+              aria-busy={busy}
               onClick={async () => {
-                await run(onChange, () =>
-                  target.kind === "post" ? api.deletePost(target.id) : target.kind === "feed" ? api.deleteFeedPost(target.id) : api.deleteComment(target.id)
-                );
-                onDeleted?.(target);
-                onClose();
+                if (locked.current) return;
+                locked.current = true;
+                setBusy(true);
+                try {
+                  const deleted = await run(onChange, () =>
+                    target.kind === "post" ? api.deletePost(target.id) : target.kind === "feed" ? api.deleteFeedPost(target.id) : api.deleteComment(target.id)
+                  );
+                  if (deleted) { onDeleted?.(target); onClose(); }
+                } finally { locked.current = false; setBusy(false); }
               }}
             >
-              <IconTrash style={{ width: 18, height: 18 }} /> 내 글 삭제
+              <IconTrash style={{ width: 18, height: 18 }} /> {busy ? "삭제하는 중…" : "내 글 삭제"}
             </button>
           ) : hasReported(s, item) ? (
             <div className="notice">이미 신고했어요. 검토 결과는 관리자가 확인해요.</div>
@@ -213,7 +241,7 @@ export function TargetMenuSheet({
               <IconFlag style={{ width: 18, height: 18 }} /> 위로가 아니에요 · 신고하기
             </button>
           )}
-          <button className="btn ghost" onClick={onClose}>닫기</button>
+          <button className="btn ghost" disabled={busy} onClick={onClose}>닫기</button>
         </div>
       )}
     </Sheet>
@@ -249,11 +277,14 @@ export function ReportSheet({ open, onClose, onSubmit }: { open: boolean; onClos
 
 /* ---------- 서버 연결 실패 안내 ---------- */
 export function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const detail = /서버|\b(?:db|sql|api|s3|http)\b|failed to fetch|fetch failed|networkerror|unexpected token|json|50[234]|<html/i.test(message)
+    ? "연결을 확인한 뒤 다시 시도해 주세요."
+    : message;
   return (
     <div className="empty">
       <div className="ico">☁️</div>
-      <b>서버에 연결하지 못했어요</b>
-      {message}
+      <b>잠시 불러오지 못했어요</b>
+      {detail}
       <div style={{ marginTop: 14 }}>
         <button className="btn sm soft" onClick={onRetry}>다시 시도</button>
       </div>

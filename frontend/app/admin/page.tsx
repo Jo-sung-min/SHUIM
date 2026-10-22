@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, FlaggedItem, REPORT_REASONS, REPORT_THRESHOLD, api, blockedUsers, fetchCommunity, listFlagged, shoutCatById } from "@/lib/community";
-import { Empty, Hero, Segmented, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Hero, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import { IconChevronL } from "@/components/Icons";
 import { Me, fetchMe } from "@/lib/auth";
 import { DEFAULT_MODEL, DEFAULT_PROMPTS, MODEL_OPTIONS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
@@ -13,13 +13,22 @@ import SiteAdmin from "./SiteAdmin";
 import SafetyAdmin from "@/components/SafetyAdmin";
 
 type View = "reports" | "prompts" | "site";
-const VIEW_EYEBROW: Record<View, string> = { reports: "외침 · 신고 누적 글", prompts: "AI 프롬프트", site: "사이트 설정 · SEO" };
+const VIEW_EYEBROW: Record<View, string> = { reports: "외침 · 신고된 글", prompts: "AI 답변 설정", site: "서비스 소개" };
 
 export default function AdminPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("reports");
+  const [unblocking, setUnblocking] = useState<string | null>(null);
+  const unblockLock = useRef(false);
+  const unblock = async (id: string) => {
+    if (unblockLock.current) return;
+    unblockLock.current = true;
+    setUnblocking(id);
+    try { await run(setS, () => api.adminUnblock(id)); }
+    finally { unblockLock.current = false; setUnblocking(null); }
+  };
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -59,7 +68,7 @@ export default function AdminPage() {
     <>
       <TopBar title="관리자" eyebrow={VIEW_EYEBROW[view]} right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
       <div className="screen">
-        <Segmented value={view} onChange={setView} options={[{ value: "reports", label: `신고 검토${flagged.length ? ` ${flagged.length}` : ""}` }, { value: "prompts", label: "프롬프트" }, { value: "site", label: "사이트" }]} />
+        <Segmented value={view} onChange={setView} options={[{ value: "reports", label: `신고 검토${flagged.length ? ` ${flagged.length}` : ""}` }, { value: "prompts", label: "AI 답변" }, { value: "site", label: "서비스 소개" }]} />
         <div style={{ height: 12 }} />
 
         {view === "prompts" && <PromptAdmin />}
@@ -88,12 +97,12 @@ export default function AdminPage() {
                       <b style={{ fontSize: 14.5 }}>{u.nick}{u.id === s.me.id ? " (나)" : ""}</b>
                       <div className="tiny muted">{u.blockedAt ? `${fmtRelative(u.blockedAt)} 차단` : ""}{u.blockedReason ? ` · ${u.blockedReason}` : ""}</div>
                     </span>
-                    <button className="btn ghost sm" onClick={() => run(setS, () => api.adminUnblock(u.id))}>차단 해제</button>
+                    <button type="button" className="btn ghost sm" disabled={unblocking !== null} onClick={() => void unblock(u.id)}>{unblocking === u.id ? "해제 중…" : "차단 해제"}</button>
                   </div>
                 ))}
               </div>
             )}
-            <p className="tiny muted" style={{ textAlign: "center", marginTop: 24 }}>{`신고가 ${REPORT_THRESHOLD}번 이상 쌓인 글·댓글·피드가 여기 모여요. 데이터는 서버 DB에 있어요.`}</p>
+            <p className="tiny muted" style={{ textAlign: "center", marginTop: 24 }}>{`신고가 ${REPORT_THRESHOLD}번 이상 접수된 글·댓글·피드를 모아 보여드려요.`}</p>
           </>
         )}
       </div>
@@ -143,17 +152,17 @@ function PromptAdmin() {
 
   return (
     <>
-      <Hero label="AI 프롬프트" title={customized ? `${customized}개를 직접 고쳤어요` : "기본 프롬프트를 쓰고 있어요"} sub="JSON 출력 형식 부분은 유지해요." stats={[`${PROMPT_META.length}개 프롬프트`, `최대 ${PROMPT_MAX_LEN.toLocaleString()}자`]} />
-      <div className="section-title"><span>모델</span><span className="tiny muted">{MODEL_OPTIONS.find((o) => o.id === model)?.label}</span></div>
+      <Hero label="AI 답변 설정" title={customized ? `${customized}개의 작성 지침을 바꿨어요` : "기본 작성 지침을 사용해요"} sub="답변의 말투와 내용을 조정해요. 안내된 답변 형식은 그대로 유지해 주세요." stats={[`${PROMPT_META.length}개 작성 지침`, `최대 ${PROMPT_MAX_LEN.toLocaleString()}자`]} />
+      <div className="section-title"><span>사용할 AI</span><span className="tiny muted">{MODEL_OPTIONS.find((o) => o.id === model)?.label}</span></div>
       <div className="stack" style={{ gap: 8 }}>
         {MODEL_OPTIONS.map((o) => (
           <button key={o.id} type="button" className={`reason glass ${model === o.id ? "on" : ""}`} onClick={() => pickModel(o.id)}>
             <span className="radio" />
-            <span><b>{o.label} <span className="tiny muted" style={{ fontWeight: 500 }}>{o.id}</span></b><small>{o.desc}</small></span>
+            <span><b>{o.label}</b><small>{o.desc}</small></span>
           </button>
         ))}
       </div>
-      <div className="section-title"><span>프롬프트</span></div>
+      <div className="section-title"><span>작성 지침</span></div>
       <div className="stack">
         {PROMPT_META.map((p) => {
           const dirty = drafts[p.key] !== (overrides[p.key] ?? DEFAULT_PROMPTS[p.key]);
@@ -165,7 +174,7 @@ function PromptAdmin() {
                 {isCustom ? <span className="badge">수정됨</span> : <span className="badge gray">기본값</span>}
               </div>
               <div className="meta"><span>{p.desc}</span><span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{drafts[p.key].length.toLocaleString()}자</span></div>
-              <textarea value={drafts[p.key]} onChange={(e) => setDrafts((d) => ({ ...d, [p.key]: e.target.value }))} spellCheck={false} />
+              <textarea aria-label={`${p.label} 작성 지침`} value={drafts[p.key]} onChange={(e) => setDrafts((d) => ({ ...d, [p.key]: e.target.value }))} spellCheck={false} />
               <div className="row" style={{ marginTop: 10, gap: 6 }}>
                 <button className="btn sm" disabled={!dirty} onClick={() => save(p.key)}>{savedKey === p.key ? "저장됨" : "저장"}</button>
                 <button className="btn ghost sm" disabled={!isCustom && !dirty} onClick={() => reset(p.key)}>기본값으로</button>
@@ -174,17 +183,30 @@ function PromptAdmin() {
           );
         })}
       </div>
-      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>프롬프트와 모델 선택은 이 기기에 저장되고 요청마다 서버로 함께 보내요. (DB의 app_settings 로 옮기는 건 다음 단계)</p>
+      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>변경한 작성 지침과 AI 선택은 현재 기기에서 만드는 답변에 적용돼요.</p>
     </>
   );
 }
 
 function FlaggedCard({ f, s, onChange }: { f: FlaggedItem; s: CommunityStore; onChange: (s: CommunityStore) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const locked = useRef(false);
+  const act = async (operation: () => Promise<CommunityStore>) => {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      if (await run(onChange, operation, setError)) setConfirm(false);
+    } finally { locked.current = false; setBusy(false); }
+  };
   const counts = REPORT_REASONS.map((r) => ({ ...r, n: f.reports.filter((x) => x.reason === r.id).length })).filter((r) => r.n > 0);
   const cat = "cat" in f.item ? shoutCatById(f.item.cat) : null;
   const kindLabel = f.target.kind === "post" ? `${cat!.emoji} ${cat!.label}` : f.target.kind === "feed" ? "🎞️ 위로 피드" : "💬 댓글";
   return (
-    <section className="card admin-item">
+    <section className="card admin-item" aria-busy={busy}>
       <div className="post-head">
         <span className="cat">{kindLabel}</span><span>·</span>
         <span className="nick">{f.author.nick}{f.author.id === s.me.id ? " (나)" : ""}</span><span>·</span>
@@ -195,21 +217,29 @@ function FlaggedCard({ f, s, onChange }: { f: FlaggedItem; s: CommunityStore; on
       <div className="quote">{f.item.text}</div>
       <div className="reasons">{counts.map((r) => <span key={r.id}>{r.label} {r.n}</span>)}</div>
       <div className="admin-actions">
-        <button className="btn ghost sm" onClick={() => run(onChange, () => api.adminDismiss(f.target))}>문제 없음</button>
-        <button className="btn ghost sm" onClick={() => run(onChange, () => api.adminHide(f.target))}>내용 숨기기</button>
+        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void act(() => api.adminDismiss(f.target))}>문제 없음</button>
+        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void act(() => api.adminHide(f.target))}>내용 숨기기</button>
         <button
           className="btn sm"
-          onClick={() => {
-            if (!window.confirm(`${f.author.nick} 님을 차단할까요? 이 유저의 글·댓글이 모두 가려지고 글을 쓸 수 없게 돼요.`)) return;
-            run(onChange, async () => {
-              await api.adminBlock(f.author.id, `신고 ${f.reports.length}회`);
-              return api.adminHide(f.target);
-            });
-          }}
+          type="button"
+          disabled={busy}
+          onClick={() => { setError(null); setConfirm(true); }}
         >
-          유저 차단
+          사용자 차단
         </button>
       </div>
+      {error && !confirm && <p className="notice warn" role="alert">{error}</p>}
+      <Sheet open={confirm} onClose={() => { if (!locked.current) setConfirm(false); }} title={`${f.author.nick} 님을 차단할까요?`}>
+        <p className="tiny muted">이 사용자의 글과 댓글이 모두 가려지고, 새 글을 작성할 수 없게 돼요.</p>
+        {error && <p className="notice warn" role="alert">{error}</p>}
+        <div className="row" style={{ gap: 8, marginTop: 16 }}>
+          <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirm(false)}>취소</button>
+          <button type="button" className="btn" disabled={busy} onClick={() => void act(async () => {
+            await api.adminBlock(f.author.id, `신고 ${f.reports.length}회`);
+            return api.adminHide(f.target);
+          })}>{busy ? "처리 중…" : "차단하기"}</button>
+        </div>
+      </Sheet>
     </section>
   );
 }

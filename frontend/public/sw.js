@@ -1,5 +1,5 @@
 /* Increment when the public offline page changes. Never cache authenticated HTML, API or uploaded photos. */
-const CACHE = "sorow-offline-v1";
+const CACHE = "sorow-offline-v2";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {

@@ -51,15 +51,23 @@ async function post<T>(path: string, body: unknown): Promise<T & { error?: strin
 
 let meCache: Me | null = null;
 
+/** A recovered connection must re-read the session instead of keeping an outage result. */
+export function resetAuthCache() {
+  meCache = null;
+}
+
 /** 현재 계정 (익명은 null). 결과는 짧게 캐시하고, 로그인·로그아웃 시 갱신 */
 export async function fetchMe(force = false): Promise<Me> {
   if (meCache && !force) return meCache;
   try {
     const res = await fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" });
     const json = (await res.json()) as Me;
-    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: json.configured !== false, kakao: Boolean(json.kakao) };
+    // Java omits null fields, so a valid guest response has no `user` property.
+    if (!res.ok || !json || json.configured !== true || typeof json.admin !== "boolean" || typeof json.kakao !== "boolean") throw new Error("계정 연결을 확인하지 못했어요.");
+    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao) };
   } catch {
-    meCache = { user: null, admin: false, configured: false, kakao: false };
+    // A network failure is not a logout. Keep the local account namespace and do not cache this failure.
+    return { user: null, admin: false, configured: false, kakao: false };
   }
   syncSessionKey(meCache.user);
   return meCache;
@@ -73,10 +81,10 @@ export function validate(email: string, nick: string, password: string): string 
   return null;
 }
 
-export async function signUp(email: string, nick: string, password: string): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
+export async function signUp(email: string, nick: string, password: string, consent: { signupConsentVersion: string; aiDisclosureAccepted: boolean }): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
   const err = validate(email, nick, password);
   if (err) return { ok: false, error: err };
-  const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/signup", { email, nick, password });
+  const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/signup", { email, nick, password, ...consent });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "가입하지 못했어요" };
   meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false };
   resetRecordsSync();

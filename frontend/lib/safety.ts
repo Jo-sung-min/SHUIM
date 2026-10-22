@@ -1,4 +1,23 @@
 "use client";
+import { showToast } from "./toast";
+
+export const POLICY_VERSION = "2026-10-21";
+export interface PolicyConsent { version: string; userId: string | null; signupAccepted: boolean; aiAccepted: boolean }
+export interface PolicyConsentInput { signupConsentVersion: string; aiDisclosureAccepted: boolean; expectedUserId: string | null }
+
+export async function fetchPolicyConsent(): Promise<PolicyConsent> {
+  const response = await fetch("/api/auth/consent", { credentials: "same-origin", cache: "no-store" });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || typeof result.signupAccepted !== "boolean" || typeof result.aiAccepted !== "boolean") throw new Error(result.error || "이용 설정을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+  return { version: result.version, userId: result.userId ?? null, signupAccepted: result.version === POLICY_VERSION && result.signupAccepted, aiAccepted: result.version === POLICY_VERSION && result.aiAccepted };
+}
+
+export async function acceptPolicyConsent(input: PolicyConsentInput): Promise<PolicyConsent> {
+  const response = await fetch("/api/auth/consent", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "이용 설정을 저장하지 못했어요. 다시 시도해 주세요.");
+  return result as PolicyConsent;
+}
 
 export async function fetchBlocks(): Promise<string[]> {
   const response = await fetch("/api/blocks", { credentials: "same-origin", cache: "no-store" });
@@ -17,6 +36,15 @@ export async function setUserBlocked(userId: string, blocked: boolean) {
   if (!response.ok) throw new Error(result.error || "차단 설정을 바꾸지 못했어요.");
 }
 
-export function confirmAiProcessing(): boolean {
-  return window.confirm("AI 기능을 위해 선택한 기록·메모·목표·일정 등을 소로우 서버로 보냅니다. 분석하기에는 전체 메모가 포함될 수 있습니다. AI가 설정된 경우 Anthropic의 Claude API로 전송해 응답을 생성합니다. 응답은 의료 진단·치료가 아니며 틀릴 수 있습니다. 개인정보 처리방침(/privacy)에서 처리 내용을 확인할 수 있습니다. 이번 요청을 전송할까요?");
+/** Consent is stored by account, checked without a dialog, and enforced again by the AI API. */
+export async function requestAiProcessing(): Promise<boolean> {
+  try {
+    const consent = await fetchPolicyConsent();
+    if (consent.signupAccepted && consent.aiAccepted) return true;
+    const next = window.location.pathname + window.location.search;
+    window.location.assign(`/info/ai?next=${encodeURIComponent(next)}`);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "AI 이용 설정을 확인하지 못했어요.");
+  }
+  return false;
 }

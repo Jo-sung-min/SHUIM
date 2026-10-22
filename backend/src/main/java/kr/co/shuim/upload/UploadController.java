@@ -32,7 +32,7 @@ public class UploadController {
     /** POST /api/upload/presign { contentType, size } → { uploadUrl, key, publicUrl, headers, expiresIn } */
     @PostMapping("/api/upload/presign")
     public S3Service.Presigned presign(@RequestBody(required = false) Map<String, Object> body, HttpServletRequest req, HttpServletResponse res) {
-        if (!s3.configured()) throw ApiException.unavailable("S3 설정이 없어 사진 업로드는 꺼져 있어요");
+        if (!s3.configured()) throw ApiException.unavailable("지금은 사진을 첨부할 수 없어요. 잠시 후 다시 시도해 주세요.");
         DbUser me = auth.requireUser(req, res);
         consent.requireAccepted(me);
         if (me.blocked()) throw ApiException.forbidden("차단된 계정은 올릴 수 없어요");

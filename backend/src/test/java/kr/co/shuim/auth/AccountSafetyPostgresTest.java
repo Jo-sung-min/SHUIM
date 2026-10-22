@@ -18,6 +18,14 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.web.client.RestClient;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -49,10 +57,78 @@ class AccountSafetyPostgresTest {
     private static long count(String sql) { return jdbc.sql(sql).query(Long.class).single(); }
 
     @Test
+    void retryingAFeedRequestCreatesOnePostPerAuthorAndLegacyRequestsStayIndependent() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser first = user("feed-retry-a");
+            DbUser second = user("feed-retry-b");
+            CommunityService community = new CommunityService(jdbc, new ObjectMapper(), mock(S3Service.class), new MockEnvironment(), false, new BlockService(jdbc));
+            String key = "d489862d-8a8f-4692-b301-59967f816a9c";
+            var initial = community.createFeedPost(first, "처음 게시", 0, null, null, null, key);
+            String postId = initial.feed().stream().filter(item -> item.authorId().equals(first.id())).findFirst().orElseThrow().id();
+            var retry = community.createFeedPost(first, "처음 게시", 0, null, null, null, key.toUpperCase());
+            assertEquals(postId, retry.feed().stream().filter(item -> item.authorId().equals(first.id())).findFirst().orElseThrow().id());
+            assertEquals(1, count("SELECT count(*) FROM feed_posts WHERE author_id = 'feed-retry-a'"));
+            community.createFeedPost(second, "다른 작성자", 0, null, null, null, key);
+            assertEquals(1, count("SELECT count(*) FROM feed_posts WHERE author_id = 'feed-retry-b'"));
+            community.createFeedPost(first, "키 없는 게시", 0, null, null, null);
+            community.createFeedPost(first, "키 없는 게시", 0, null, null, null);
+            assertEquals(3, count("SELECT count(*) FROM feed_posts WHERE author_id = 'feed-retry-a'"));
+        });
+    }
+
+    @Test
+    void malformedFeedRequestKeysNeverCreatePosts() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser author = user("feed-invalid-key");
+            CommunityService community = new CommunityService(jdbc, new ObjectMapper(), mock(S3Service.class), new MockEnvironment(), false, new BlockService(jdbc));
+            for (Object key : java.util.List.of("", "not-a-uuid", "1-1-1-1-1", 42)) {
+                assertEquals(400, assertThrows(ApiException.class, () -> community.createFeedPost(author, "글", 0, null, null, null, key)).status());
+            }
+            assertEquals(0, count("SELECT count(*) FROM feed_posts WHERE author_id = 'feed-invalid-key'"));
+        });
+    }
+
+    @Test
+    void photoOnlyFeedPagesPersistAndRoundTripWithoutInventingCaptions() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser author = user("photo-only-author");
+            CommunityService community = new CommunityService(jdbc, new ObjectMapper(), mock(S3Service.class), new MockEnvironment(), false, new BlockService(jdbc));
+            String image = "https://images.example/photo.webp";
+            var store = community.createFeedPost(author, null, 0, null, null,
+                java.util.List.of(Map.of("image", image, "text", "  "), Map.of("text", "짧은 글")));
+            var post = store.feed().stream().filter(item -> item.authorId().equals(author.id())).findFirst().orElseThrow();
+            assertEquals("", post.text());
+            assertEquals(image, post.image());
+            assertEquals(2, post.pages().size());
+            assertEquals("", post.pages().get(0).text());
+            assertEquals("짧은 글", post.pages().get(1).text());
+            assertEquals(1, count("SELECT count(*) FROM feed_posts WHERE author_id = 'photo-only-author' AND text = ''"));
+        });
+    }
+
+    @Test
+    void legacyPhotoOnlyFeedWorksButAnEmptyOrInvalidPhotoPostIsRejected() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser author = user("photo-legacy-author");
+            CommunityService community = new CommunityService(jdbc, new ObjectMapper(), mock(S3Service.class), new MockEnvironment(), false, new BlockService(jdbc));
+            community.createFeedPost(author, "", 0, null, "https://images.example/photo.jpg", null);
+            assertEquals(1, count("SELECT count(*) FROM feed_posts WHERE author_id = 'photo-legacy-author' AND text = ''"));
+            assertEquals(400, assertThrows(ApiException.class, () -> community.createFeedPost(author, "  ", 0, null, null, java.util.List.of(Map.of("text", "")))).status());
+            assertEquals(400, assertThrows(ApiException.class, () -> community.createFeedPost(author, null, 0, null, null, java.util.List.of(Map.of("image", "javascript:alert(1)", "text", "")))).status());
+            assertEquals(1, count("SELECT count(*) FROM feed_posts WHERE author_id = 'photo-legacy-author'"));
+        });
+    }
+
+    @Test
     void deletesAllAccountDataAndReferencesWhilePreservingUnrelatedAccounts() {
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
             DbUser deleted = user("delete-a");
+            new PolicyConsentService(jdbc, mock(AuthService.class)).accept(deleted, PolicyConsentService.VERSION, true);
             user("delete-b");
             jdbc.sql("INSERT INTO profiles (user_id, name, phone, avatar_url) VALUES ('delete-a', 'private', '01012345678', 'https://cdn.example/feed/2026/delete-a-legacy.png')").update();
             jdbc.sql("INSERT INTO journal_entries (user_id, date, cat, score, note) VALUES ('delete-a', CURRENT_DATE, 'mind', 1, 'private')").update();
@@ -81,7 +157,7 @@ class AccountSafetyPostgresTest {
             when(s3.ownedKeyFromUrl("https://cdn.example/feed/2026/delete-a-legacy.png", "delete-a")).thenReturn("feed/2026/delete-a-legacy.png");
             new AccountDeletionService(jdbc, s3).delete(deleted, "계정 삭제");
             assertEquals(0, count("SELECT count(*) FROM users WHERE id = 'delete-a'"));
-            for (String table : new String[]{"profiles", "journal_entries", "day_logs", "memos", "goals", "schedule_items", "user_settings", "user_categories", "auth_sessions", "uploaded_objects", "community_consents"})
+            for (String table : new String[]{"profiles", "journal_entries", "day_logs", "memos", "goals", "schedule_items", "user_settings", "user_categories", "auth_sessions", "uploaded_objects", "community_consents", "user_policy_consents"})
                 assertEquals(0, count("SELECT count(*) FROM " + table + " WHERE user_id = 'delete-a'"), table);
             assertEquals(0, count("SELECT count(*) FROM comments WHERE id IN ('delete-comment', 'delete-reply')"));
             assertEquals(0, count("SELECT count(*) FROM cheers WHERE target_id LIKE 'delete-%' OR user_id = 'delete-a'"));
@@ -99,6 +175,86 @@ class AccountSafetyPostgresTest {
             assertEquals(1, count("SELECT count(*) FROM comments WHERE id = 'keep-comment'"));
             verify(s3, never()).deleteObject(anyString());
         });
+    }
+
+    @Test
+    void aiConsentIsDurableScopedToTheSessionAndCanBeRevoked() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser a = user("policy-a");
+            DbUser b = user("policy-b");
+            AuthService auth = mock(AuthService.class);
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            when(auth.currentUser(request)).thenReturn(Optional.of(a));
+            PolicyConsentService policies = new PolicyConsentService(jdbc, auth);
+            assertFalse(policies.state(a).signupAccepted());
+            assertThrows(ApiException.class, () -> policies.requireAiConsent(request));
+            policies.accept(a, PolicyConsentService.VERSION, true);
+            assertTrue(new PolicyConsentService(jdbc, auth).state(a).aiAccepted());
+            assertFalse(policies.state(b).aiAccepted());
+            assertDoesNotThrow(() -> policies.requireAiConsent(request));
+            policies.accept(a, PolicyConsentService.VERSION, false);
+            assertTrue(policies.state(a).signupAccepted());
+            assertFalse(policies.state(a).aiAccepted());
+            assertEquals(403, assertThrows(ApiException.class, () -> policies.requireAiConsent(request)).status());
+            jdbc.sql("UPDATE user_policy_consents SET version = 'old', ai_accepted = TRUE WHERE user_id = 'policy-a'").update();
+            assertFalse(policies.state(a).signupAccepted());
+            assertFalse(policies.state(a).aiAccepted());
+        });
+    }
+
+    @Test
+    void newKakaoAccountsRequireConsentAndKeepAnonymousAccountHistory() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser anonymous = user("policy-kakao-new");
+            PolicyConsentService policies = new PolicyConsentService(jdbc, mock(AuthService.class));
+            KakaoLoginService kakao = new KakaoLoginService(jdbc, null, policies, tx, RestClient.builder(), "https://www.sorow.co.kr", "test", "", true);
+            KakaoLoginService.Profile profile = new KakaoLoginService.Profile("policy-new-kakao", null, "새계정");
+            assertThrows(KakaoLoginService.SignupConsentRequiredException.class, () -> kakao.findOrCreateUser(profile, null));
+            assertThrows(KakaoLoginService.SignupConsentRequiredException.class, () -> kakao.findOrCreateUser(profile, anonymous.id()));
+            assertEquals(0, count("SELECT count(*) FROM users WHERE kakao_id = 'policy-new-kakao'"));
+            policies.accept(anonymous, PolicyConsentService.VERSION, true);
+            assertEquals(anonymous.id(), kakao.findOrCreateUser(profile, anonymous.id()));
+            assertEquals(1, count("SELECT count(*) FROM users WHERE id = 'policy-kakao-new' AND is_anonymous = FALSE"));
+            assertTrue(policies.state(anonymous).aiAccepted());
+        });
+    }
+
+    @Test
+    void existingKakaoLoginDoesNotInheritTheVisitorsAiConsent() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser existing = user("policy-kakao-existing");
+            DbUser visitor = user("policy-kakao-visitor");
+            jdbc.sql("UPDATE users SET kakao_id = 'policy-existing-kakao', is_anonymous = FALSE WHERE id = 'policy-kakao-existing'").update();
+            PolicyConsentService policies = new PolicyConsentService(jdbc, mock(AuthService.class));
+            policies.accept(existing, PolicyConsentService.VERSION, false);
+            policies.accept(visitor, PolicyConsentService.VERSION, true);
+            KakaoLoginService kakao = new KakaoLoginService(jdbc, null, policies, tx, RestClient.builder(), "https://www.sorow.co.kr", "test", "", true);
+            KakaoLoginService.Profile profile = new KakaoLoginService.Profile("policy-existing-kakao", null, "기존계정");
+            assertEquals(existing.id(), kakao.findOrCreateUser(profile, null));
+            assertEquals(existing.id(), kakao.findOrCreateUser(profile, visitor.id()));
+            assertFalse(policies.state(existing).aiAccepted());
+        });
+    }
+
+    @Test
+    void signupRollsBackAccountAndSessionIfConsentCannotBeSaved() {
+        AuthService auth = new AuthService(jdbc, false, 90);
+        PolicyConsentService policies = spy(new PolicyConsentService(jdbc, auth));
+        doThrow(new IllegalStateException("consent write unavailable")).when(policies).accept(any(), eq(PolicyConsentService.VERSION), eq(false));
+        AuthController target = new AuthController(auth, mock(KakaoLoginService.class), policies);
+        ProxyFactory factory = new ProxyFactory(target);
+        factory.addAdvice(new TransactionInterceptor(tx.getTransactionManager(), new AnnotationTransactionAttributeSource()));
+        AuthController controller = (AuthController) factory.getProxy();
+        long sessionsBefore = count("SELECT count(*) FROM auth_sessions");
+        assertThrows(IllegalStateException.class, () -> controller.post("signup",
+            Map.of("email", "policy-rollback@example.com", "nick", "새회원", "password", "test-password",
+                "signupConsentVersion", PolicyConsentService.VERSION, "aiDisclosureAccepted", false),
+            new MockHttpServletRequest(), new MockHttpServletResponse()));
+        assertEquals(0, count("SELECT count(*) FROM users WHERE email = 'policy-rollback@example.com'"));
+        assertEquals(sessionsBefore, count("SELECT count(*) FROM auth_sessions"));
     }
 
     @Test

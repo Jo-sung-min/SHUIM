@@ -20,23 +20,29 @@ async function load(file: File): Promise<ImageBitmap | HTMLImageElement> {
 }
 
 export async function imageToDataUrl(file: File, width: number, height: number, mime: "image/png" | "image/jpeg", quality = 0.9): Promise<string> {
+  if (!["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.type)) throw new Error("사진을 열 수 없어요. 다른 사진을 선택해 주세요.");
+  if (file.size > 20 * 1024 * 1024) throw new Error("사진이 너무 커요. 20MB 이하의 사진을 선택해 주세요.");
   const src = await load(file);
-  const sw = "naturalWidth" in src ? src.naturalWidth : src.width;
-  const sh = "naturalHeight" in src ? src.naturalHeight : src.height;
-  if (!sw || !sh) throw new Error("이미지를 읽지 못했어요");
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("이 브라우저에서는 이미지를 만들 수 없어요");
-  if (mime === "image/jpeg") {
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
+  try {
+    const sw = "naturalWidth" in src ? src.naturalWidth : src.width;
+    const sh = "naturalHeight" in src ? src.naturalHeight : src.height;
+    if (!sw || !sh) throw new Error("이미지를 읽지 못했어요");
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("사진을 준비하지 못했어요. 다른 사진으로 다시 시도해 주세요.");
+    if (mime === "image/jpeg") {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+    }
+    const scale = Math.max(width / sw, height / sh);
+    const dw = sw * scale;
+    const dh = sh * scale;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src as CanvasImageSource, (width - dw) / 2, (height - dh) / 2, dw, dh);
+    return canvas.toDataURL(mime, quality);
+  } finally {
+    if ("close" in src) src.close();
   }
-  const scale = Math.max(width / sw, height / sh);
-  const dw = sw * scale;
-  const dh = sh * scale;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(src as CanvasImageSource, (width - dw) / 2, (height - dh) / 2, dw, dh);
-  return canvas.toDataURL(mime, quality);
 }

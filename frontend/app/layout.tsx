@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./app-polish.css";
 import TabBar from "@/components/TabBar";
 import AppRuntime from "@/components/AppRuntime";
 import CommunityConsent from "@/components/CommunityConsent";
+import ServiceAvailability from "@/components/ServiceAvailability";
+import AppToast from "@/components/AppToast";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
 
 /**
@@ -72,7 +75,7 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const s = await loadSiteSettings(); // generateMetadata 와 같은 요청 안에서는 fetch 가 한 번만 나간다
+  const s = await loadSiteSettings(); // 메타데이터와 같은 60초 캐시 및 연결 제한을 사용한다
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebSite",
@@ -99,11 +102,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <AppRuntime />
-        <CommunityConsent />
-        <div className="app">
-          {children}
-          <TabBar />
-        </div>
+        <AppToast />
+        <ServiceAvailability>
+          <CommunityConsent />
+          <div className="app">
+            {children}
+            <TabBar />
+          </div>
+        </ServiceAvailability>
       </body>
     </html>
   );

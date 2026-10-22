@@ -9,6 +9,7 @@ import { LoadError } from "@/components/CommunityUI";
 import { IconChevronL, IconSend } from "@/components/Icons";
 import BlockUser from "@/components/BlockUser";
 import SafetyReport from "@/components/SafetyReport";
+import { showToast } from "@/lib/toast";
 
 /** 1:1 대화. 5초마다 새 메시지를 가져온다. */
 export default function ThreadPage() {
@@ -19,6 +20,7 @@ export default function ThreadPage() {
   const [busy, setBusy] = useState(false);
   const bottom = useRef<HTMLDivElement | null>(null);
   const lastAt = useRef(0);
+  const sendLocked = useRef(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -60,7 +62,8 @@ export default function ThreadPage() {
 
   const send = async () => {
     const t = text.trim();
-    if (!t || busy || !thread) return;
+    if (!t || sendLocked.current || !thread) return;
+    sendLocked.current = true;
     setBusy(true);
     try {
       const r = await sendMessage(thread.otherId, t);
@@ -68,8 +71,9 @@ export default function ThreadPage() {
       lastAt.current = r.message.at;
       setText("");
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "보내지 못했어요");
+      showToast(e instanceof Error ? e.message : "보내지 못했어요");
     } finally {
+      sendLocked.current = false;
       setBusy(false);
     }
   };
@@ -84,7 +88,7 @@ export default function ThreadPage() {
     <>
       <TopBar
         title={thread.other.nick}
-        eyebrow={<Link href={`/u/${thread.other.id}`} style={{ textDecoration: "underline" }}>프로필 보기</Link> as unknown as string}
+        eyebrow={<Link href={`/u/${thread.other.id}`} style={{ textDecoration: "underline" }}>프로필 보기</Link>}
         right={<Link href="/messages" className="icon-btn" aria-label="메시지함"><IconChevronL /></Link>}
       />
       <div className="screen thread">
@@ -117,12 +121,13 @@ export default function ThreadPage() {
       >
         <textarea
           value={text}
+          disabled={busy}
           onChange={(e) => setText(e.target.value)}
           placeholder="메시지"
           rows={1}
           maxLength={1000}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
               e.preventDefault();
               send();
             }
@@ -133,7 +138,7 @@ export default function ThreadPage() {
             t.style.height = `${Math.min(t.scrollHeight, 120)}px`;
           }}
         />
-        <button type="submit" className="btn" disabled={!text.trim() || busy} aria-label="보내기"><IconSend style={{ width: 18, height: 18 }} /></button>
+        <button type="submit" className="btn" disabled={!text.trim() || busy} aria-busy={busy} aria-label={busy ? "메시지 보내는 중" : "보내기"}><IconSend style={{ width: 18, height: 18 }} /></button>
       </form>
     </>
   );
