@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { SITE } from "@/lib/site";
+import InlineScript from "./InlineScript";
 
 /**
  * 시작 화면: 바위를 밀어 올리는 시지프. 앱을 열면 1초 보여 준 뒤 서서히 옅어지며 메인 화면이 드러난다.
@@ -41,7 +42,7 @@ export default function Splash() {
         {/* eslint-disable-next-line @next/next/no-img-element -- 첫 페인트에 바로 떠야 해서 next/image 의 지연 로딩·래퍼를 쓰지 않는다 */}
         <img src={SPLASH_SRC} alt="" width={941} height={1672} fetchPriority="high" decoding="async" draggable={false} />
       </div>
-      <script dangerouslySetInnerHTML={{ __html: SCRIPT }} />
+      <InlineScript html={SCRIPT} />
       <noscript>
         <style>{`.splash{display:none}`}</style>
       </noscript>

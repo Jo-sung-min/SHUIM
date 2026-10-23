@@ -53,6 +53,21 @@ export const IconPlus = (p: P) => (
     <path d="M12 5v14M5 12h14" />
   </svg>
 );
+/** 새 글 (인스타그램 상단의 네모 안 더하기) */
+export const IconSquarePlus = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
+    <path d="M12 8.5v7M8.5 12h7" />
+  </svg>
+);
+/** 사진 추가 */
+export const IconImage = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="3" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="m20.5 16-4.6-4.6a1.5 1.5 0 0 0-2.1 0L6 19.5" />
+  </svg>
+);
 export const IconCheck = (p: P) => (
   <svg {...base({ strokeWidth: 3, ...p })}>
     <path d="M5 12.5l4.5 4.5L19 7.5" />

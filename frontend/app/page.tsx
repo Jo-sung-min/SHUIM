@@ -34,12 +34,12 @@ import {
   syncRecords,
   todayKey,
 } from "@/lib/storage";
-import { Account, completeKakaoLogin, fetchMe } from "@/lib/auth";
+import { completeKakaoLogin, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { SkeletonCard, SkeletonHero, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { IconChevronR, IconCheck, IconNote, IconSparkle, IconUser, IconHeart, IconStar, IconBubble } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconSparkle, IconHeart, IconStar, IconBubble, IconSquarePlus } from "@/components/Icons";
 import styles from "./account-screens.module.css";
 
 interface Data {
@@ -52,15 +52,18 @@ interface Data {
 
 type Mode = "briefing" | MomentMode | "review";
 
-function HomeHeader({ account }: { account: Account | null }) {
+/** 홈 상단: 가운데 로고, 오른쪽에 인스타그램처럼 새 글(+). 아래 선 없음 (프로필은 하단 탭의 "나"에서) */
+function HomeHeader() {
   return <header className={styles.homeHeader}>
     <span aria-hidden="true" />
     <h1 aria-label="소로우">SOROW</h1>
-    <Link href="/me" className={`icon-btn ${styles.homeProfile}`} aria-label={account ? `${account.nick}님의 프로필` : "내 프로필"}>
-      {account ? <span className={styles.homeAvatar}>{account.nick.slice(0, 1)}</span> : <IconUser />}
-    </Link>
+    <Link href="/write" className={`icon-btn ${styles.homeWrite}`} aria-label="새 외침 쓰기" title="새 외침 쓰기"><IconSquarePlus /></Link>
   </header>;
 }
+
+type CareIcon = typeof IconStar;
+/** 나를 위한 시간 네 칸. 오늘 이미 받았으면 done (빨간 점 없음) */
+interface CareItem { mode: Mode; label: string; busyLabel: string; doneLabel?: string; Icon: CareIcon; tone: string; done: boolean; on: boolean; disabled: boolean; aria: string }
 
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
@@ -101,7 +104,6 @@ export default function HomePage() {
   const [open, setOpen] = useState<MomentMode | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [me, setMe] = useState<Account | null>(null);
   const [loading, setLoading] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -149,8 +151,7 @@ export default function HomePage() {
     const fromKakao = new URLSearchParams(window.location.search).get("kakao") === "1";
     if (fromKakao) window.history.replaceState(null, "", "/");
     (fromKakao ? completeKakaoLogin() : fetchMe())
-      .then((m) => setMe(m.user))
-      .catch(() => setMe(null))
+      .catch(() => null) // 세션 키만 맞춘다 (계정 표시는 하단 탭 "나"에서)
       .then(() => syncRecords())
       .then((pulled) => { if (!guest || pulled) apply(); });
   }, [today]);
@@ -228,7 +229,7 @@ export default function HomePage() {
     }
   };
 
-  if (!data) return <><HomeHeader account={me} /><div className="screen" role="status" aria-label="오늘의 기록을 불러오고 있어요"><SkeletonHero /><div style={{ height: 16 }} /><SkeletonCard lines={2} head /></div></>;
+  if (!data) return <><HomeHeader /><div className="screen" role="status" aria-label="오늘의 기록을 불러오고 있어요"><SkeletonHero /><div style={{ height: 16 }} /><SkeletonCard lines={2} head /></div></>;
 
   const d = briefing?.data;
   const categories = orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder());
@@ -239,10 +240,16 @@ export default function HomePage() {
   const dirLabel = { up: "▲ 올라오는 중", flat: "→ 유지 중", down: "▼ 내려간 날" } as const;
   const crisis = briefing?.crisis || moments.praise?.crisis || moments.love?.crisis || review?.crisis;
   const openMoment = open ? moments[open] : undefined;
+  const care: CareItem[] = [
+    { mode: "briefing", label: "정리하기", busyLabel: "정리 중…", doneLabel: "정리 완료", Icon: briefing ? IconCheck : IconSparkle, tone: styles.toneBriefing, done: Boolean(briefing), on: false, disabled: loading !== null || Boolean(briefing), aria: "오늘의 나 정리" },
+    { mode: "praise", label: MOMENTS.praise.label, busyLabel: "생각 중…", Icon: IconStar, tone: styles.tonePraise, done: Boolean(moments.praise), on: open === "praise", disabled: loading !== null, aria: MOMENTS.praise.heading },
+    { mode: "love", label: MOMENTS.love.label, busyLabel: "생각 중…", Icon: IconHeart, tone: styles.toneLove, done: Boolean(moments.love), on: open === "love", disabled: loading !== null, aria: MOMENTS.love.heading },
+    { mode: "review", label: "분석하기", busyLabel: "분석 중…", Icon: IconNote, tone: styles.toneReview, done: Boolean(review), on: reviewOpen, disabled: loading !== null, aria: "메모로 나를 분석" },
+  ];
 
   return (
     <>
-      <HomeHeader account={me} />
+      <HomeHeader />
       <div className="screen home">
 
         <DailyQuote />
@@ -287,30 +294,30 @@ export default function HomePage() {
         {!empty && (
           <section aria-labelledby="home-care-title">
           <div className={styles.sectionHeading}><h3 id="home-care-title">나를 위한 시간</h3><span>기록에서 찾는 작은 위로</span></div>
-          <div className={`actions-row ${styles.homeActions}`}>
-            <button type="button" className={`action ${briefing ? "done" : ""} ${loading === "briefing" ? "busy" : ""}`} disabled={loading !== null || Boolean(briefing)} onClick={() => press("briefing")} aria-label="오늘의 나 정리" aria-busy={loading === "briefing"} title={briefing ? "오늘 정리 완료 · 하루 한 번" : undefined}>
-              <span className="ring">{briefing ? <IconCheck /> : <IconSparkle />}</span>
-              <span className="lbl">{loading === "briefing" ? "정리 중…" : briefing ? "정리 완료" : "정리하기"}</span>
-            </button>
-            {(Object.keys(MOMENTS) as MomentMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`action ${open === mode ? "on" : ""} ${moments[mode] ? "done" : ""} ${loading === mode ? "busy" : ""}`}
-                disabled={loading !== null}
-                onClick={() => press(mode)}
-                aria-pressed={open === mode}
-                aria-label={MOMENTS[mode].heading}
-                aria-busy={loading === mode}
-              >
-                <span className="ring">{mode === "praise" ? <IconStar /> : <IconHeart />}</span>
-                <span className="lbl">{loading === mode ? "생각 중…" : MOMENTS[mode].label}</span>
-              </button>
-            ))}
-            <button type="button" className={`action ${reviewOpen ? "on" : ""} ${review ? "done" : ""} ${loading === "review" ? "busy" : ""}`} disabled={loading !== null} onClick={() => press("review")} aria-pressed={reviewOpen} aria-busy={loading === "review"} aria-label="메모로 나를 분석">
-              <span className="ring"><IconNote /></span>
-              <span className="lbl">{loading === "review" ? "분석 중…" : "분석하기"}</span>
-            </button>
+          <div className={styles.care}>
+            <div className={styles.careGrid}>
+              {care.map(({ mode, label, busyLabel, doneLabel, Icon, tone, done, on, disabled, aria }) => {
+                const busy = loading === mode;
+                const fresh = !done && !busy; // 오늘 아직 안 눌렀으면 빨간 점
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`${styles.careTile} ${tone} ${done ? styles.careDone : ""} ${on ? styles.careOn : ""} ${busy ? styles.careBusy : ""}`}
+                    disabled={disabled}
+                    onClick={() => press(mode)}
+                    aria-pressed={mode === "briefing" ? undefined : on}
+                    aria-busy={busy}
+                    aria-label={fresh ? `${aria} · 오늘 아직 안 했어요` : aria}
+                    title={mode === "briefing" && done ? "오늘 정리 완료 · 하루 한 번" : undefined}
+                  >
+                    <span className={styles.careIcon}><Icon /></span>
+                    <span className={styles.careLabel}>{busy ? busyLabel : done && doneLabel ? doneLabel : label}</span>
+                    {fresh && <span className={styles.careDot} aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           </section>
         )}

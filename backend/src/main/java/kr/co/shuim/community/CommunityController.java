@@ -46,7 +46,7 @@ public class CommunityController {
         DbUser me = auth.requireUser(req, res);
         if (java.util.Set.of("post.create", "comment.create", "feed.create", "bio", "donate").contains(action)) consent.requireAccepted(me);
         return switch (action) {
-            case "post.create" -> community.createPost(me, b.get("cat"), b.get("text"));
+            case "post.create" -> community.createPost(me, b.get("cat"), b.get("text"), b.get("images"));
             case "post.delete" -> community.deletePost(me, str(b, "id"));
             case "comment.create" -> community.addComment(me, str(b, "postId"), b.get("text"));
             case "comment.delete" -> community.deleteComment(me, str(b, "id"));

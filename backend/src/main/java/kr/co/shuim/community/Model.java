@@ -25,7 +25,13 @@ public final class Model {
         Long reviewedAt();
     }
 
-    public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt) implements Item {}
+    /** 외침. images 는 사진 주소(최대 CommunityLogic.SHOUT_MAX_IMAGES 장, 없으면 빈 목록) */
+    public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images) implements Item {
+        /** 사진 없는 외침 (테스트·옛 호출) */
+        public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt) {
+            this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, List.of());
+        }
+    }
 
     public record Comment(String id, String postId, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt) implements Item {}
 

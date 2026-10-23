@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CommunityStore,
   Post,
@@ -19,24 +20,22 @@ import {
   shoutCatById,
   userById,
 } from "@/lib/community";
-import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
-import { Empty, Hero, Sheet, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Hero, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { toastSuccess } from "@/lib/toast";
 import ShoutTabs from "@/components/ShoutTabs";
-import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
+import { CheerButton, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconBubble, IconMore, IconPlus, IconShield } from "@/components/Icons";
+import styles from "./shout.module.css";
 
 type Filter = ShoutCat | "all";
 
 export default function ShoutPage() {
+  const router = useRouter();
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [writing, setWriting] = useState(false);
-  const [openPost, setOpenPost] = useState<string | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
   const [menu, setMenu] = useState<Target | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -44,14 +43,17 @@ export default function ShoutPage() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const st = await fetchCommunity(true);
-      setS(st);
-      const id = new URLSearchParams(window.location.search).get("post");
-      if (id && st.posts.some((p) => p.id === id)) setOpenPost(id);
+      // 예전 주소(/shout?post=아이디)는 글 화면(/shout/아이디)으로
+      const legacy = new URLSearchParams(window.location.search).get("post");
+      if (legacy) {
+        router.replace(`/shout/${encodeURIComponent(legacy)}`);
+        return;
+      }
+      setS(await fetchCommunity(true));
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "연결 실패");
     }
-  }, []);
+  }, [router]);
   useEffect(() => {
     load();
   }, [load]);
@@ -87,7 +89,7 @@ export default function ShoutPage() {
   const blocked = isBlocked(s.me);
   const flaggedCount = listFlagged(s).length;
   const totalCheers = s.posts.reduce((n, p) => n + p.cheers.length, 0) + s.comments.reduce((n, c) => n + c.cheers.length, 0);
-  const current = openPost ? s.posts.find((p) => p.id === openPost) ?? null : null;
+  const write = () => router.push(`/write?cat=${filter === "all" ? "misfortune" : filter}`);
 
   return (
     <>
@@ -120,7 +122,7 @@ export default function ShoutPage() {
         {filter !== "all" && <p className="tiny muted" style={{ margin: "2px 4px 10px" }}>{shoutCatById(filter).desc}</p>}
 
         {posts.length === 0 ? (
-          <Empty icon={<IconBubble />} title="아직 외침이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={() => setWriting(true)}>첫 외침 남기기</button>}>
+          <Empty icon={<IconBubble />} title="아직 외침이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={write}>첫 외침 남기기</button>}>
             첫 외침을 남기면 누군가 힘내요를 보낼 거예요.
           </Empty>
         ) : (
@@ -138,7 +140,7 @@ export default function ShoutPage() {
                   post={p}
                   commentCount={commentsOf(s, p.id).length}
                   onCheer={() => run(setS, () => api.toggleCheer({ kind: "post", id: p.id }))}
-                  onOpen={() => setOpenPost(p.id)}
+                  onOpen={() => router.push(`/shout/${p.id}`)}
                   onMenu={() => setMenu({ kind: "post", id: p.id })}
                 />
               )
@@ -150,54 +152,12 @@ export default function ShoutPage() {
       </div>
 
       {!blocked && (
-        <button className="fab" aria-label="외치기" onClick={() => setWriting(true)}>
+        <button className="fab" aria-label="외치기" onClick={write}>
           <IconPlus />
         </button>
       )}
 
-      <WriteSheet
-        key={writing ? "write-open" : "write-closed"}
-        open={writing}
-        defaultCat={filter === "all" ? "misfortune" : filter}
-        onClose={() => setWriting(false)}
-        onSubmit={async (cat, text) => {
-          // 실패하면 시트와 입력을 그대로 두고(run 이 오류 안내) 다시 시도할 수 있게 한다
-          const ok = await run(setS, () => api.createPost(cat, text));
-          if (!ok) return false;
-          setWriting(false);
-          setFilter("all");
-          toastSuccess("외침을 올렸어요");
-          return true;
-        }}
-      />
-
-      <Sheet open={Boolean(current)} onClose={() => setOpenPost(null)} title={current ? shoutCatById(current.cat).label : ""}>
-        {current && (
-          <>
-            <div className="post-head" style={{ marginBottom: 2 }}>
-              <span className="nick">{current.authorId === s.me.id ? "나" : userById(s, current.authorId).nick}</span>
-              <span>·</span>
-              <span>{fmtRelative(current.createdAt)}</span>
-            </div>
-            <p className="post-text" style={{ fontSize: 16 }}>{current.text}</p>
-            <div className="post-foot" style={{ marginBottom: 6 }}>
-              <CheerButton count={current.cheers.length} on={current.cheers.includes(s.me.id)} onClick={() => run(setS, () => api.toggleCheer({ kind: "post", id: current.id }))} />
-              <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={commentsOf(s, current.id).length} onClick={() => {}} ariaLabel="위로 댓글" />
-            </div>
-            <CommentThread s={s} postId={current.id} onChange={setS} onMenu={(t) => setMenu(t)} />
-            {hasCrisisSignal(current.text) && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
-          </>
-        )}
-      </Sheet>
-
-      <TargetMenuSheet
-        s={s}
-        target={menu}
-        onClose={() => setMenu(null)}
-        onChange={setS}
-        onReport={(t) => setReporting(t)}
-        onDeleted={(t) => t.kind === "post" && openPost === t.id && setOpenPost(null)}
-      />
+      <TargetMenuSheet s={s} target={menu} onClose={() => setMenu(null)} onChange={setS} onReport={(t) => setReporting(t)} />
       <ReportSheet
         key={reporting ? `report-${reporting.kind}-${reporting.id}` : "report-closed"}
         open={Boolean(reporting)}
@@ -216,6 +176,7 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
   const c = shoutCatById(post.cat);
   const author = userById(s, post.authorId);
   const mine = post.authorId === s.me.id;
+  const images = post.images ?? [];
   return (
     <article className="card post">
       <div className="post-head">
@@ -226,56 +187,18 @@ function PostCard({ s, post, commentCount, onCheer, onOpen, onMenu }: { s: Commu
         <span>{fmtRelative(post.createdAt)}</span>
         <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 16, height: 16 }} /></button>
       </div>
-      <p className="post-text" onClick={onOpen} role="button" tabIndex={0}>{post.text}</p>
+      <p className="post-text" onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }} role="button" tabIndex={0}>{post.text}</p>
+      {images.length > 0 && (
+        <button type="button" className={styles.thumbs} onClick={onOpen} aria-label={`사진 ${images.length}장 보기`}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- 사용자 사진(S3/CDN) */}
+          <img src={images[0]} alt="" loading="lazy" decoding="async" />
+          {images.length > 1 && <span className={styles.thumbsMore}>+{images.length - 1}</span>}
+        </button>
+      )}
       <div className="post-foot">
         <CheerButton count={post.cheers.length} on={post.cheers.includes(s.me.id)} onClick={onCheer} />
         <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={commentCount} onClick={onOpen} ariaLabel="위로 댓글" />
       </div>
     </article>
-  );
-}
-
-function WriteSheet({ open, defaultCat, onClose, onSubmit }: { open: boolean; defaultCat: ShoutCat; onClose: () => void; onSubmit: (cat: ShoutCat, text: string) => Promise<boolean> }) {
-  const [cat, setCat] = useState<ShoutCat>(defaultCat);
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const c = shoutCatById(cat);
-  return (
-    <Sheet open={open} onClose={onClose} title="외치기">
-      <div className="stack">
-        <div className="field">
-          <label>어디에 외칠까요</label>
-          <div className="chips wrap">
-            {SHOUT_CATEGORIES.map((x) => (
-              <button key={x.id} type="button" className={`chip ${cat === x.id ? "on" : ""}`} onClick={() => setCat(x.id)}>
-                <ShoutCatIcon id={x.id} />
-                {x.label}
-              </button>
-            ))}
-          </div>
-          <p className="tiny muted" style={{ margin: "2px 2px 0" }}>{c.desc}</p>
-        </div>
-        <div className="field">
-          <label>내용</label>
-          <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={c.placeholder} maxLength={600} />
-          <span className="tiny muted" style={{ textAlign: "right" }}>{text.length}/600 · 익명으로 올라가요</span>
-        </div>
-        {hasCrisisSignal(text) && <HelpBanner alert />}
-      </div>
-      <div className="sheet-actions">
-        <button className="btn ghost" onClick={onClose}>취소</button>
-        <button
-          className="btn"
-          disabled={!text.trim() || busy}
-          onClick={async () => {
-            setBusy(true);
-            try { await onSubmit(cat, text); }
-            finally { setBusy(false); }
-          }}
-        >
-          {busy ? "올리는 중…" : "외치기"}
-        </button>
-      </div>
-    </Sheet>
   );
 }

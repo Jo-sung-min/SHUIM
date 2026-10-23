@@ -15,6 +15,21 @@ public final class CommunityLogic {
     public static final int REPORT_THRESHOLD = 5;
     public static final int FEED_BG_COUNT = 6;
     public static final int FEED_MAX_PAGES = 10;
+    public static final int SHOUT_MAX_IMAGES = 4;
+
+    /** 요청의 사진 주소 목록을 정리: 문자열·500자 이하·accept 통과만, 중복 제거, 최대 max 장 (null·문자열 하나도 받는다) */
+    public static List<String> cleanImageList(Object raw, int max, java.util.function.Predicate<String> accept) {
+        List<?> items = raw instanceof List<?> l ? l : raw == null ? List.of() : List.of(raw);
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (Object o : items) {
+            if (!(o instanceof String s)) continue;
+            String u = s.strip();
+            if (u.isEmpty() || u.length() > 500 || !accept.test(u)) continue;
+            out.add(u);
+            if (out.size() >= max) break;
+        }
+        return new ArrayList<>(out);
+    }
     public static final int[] RANK_SHARES = {25, 18, 14, 11, 9, 7, 6, 4, 3, 3};
     public static final long PROVISIONAL_TTL = 5 * 60 * 1000L;
 

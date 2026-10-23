@@ -52,10 +52,11 @@
 .utilityGrid :global(.me-tile .ico) { color: var(--text); }
 .quietActions { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 24px 0 4px; }
 .quietActions button { min-height: 44px; padding: 10px 8px; font-size: 14px; }
-.homeHeader { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; min-height: calc(64px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) 12px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
+/* 홈 상단: 가운데 로고 + 오른쪽 새 글(+), 아래 선 없이 */
+.homeHeader { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center; min-height: calc(60px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) 8px 8px; background: var(--bg); }
+.homeWrite:global(.icon-btn) { width: 48px; height: 48px; color: var(--text); }
+.homeWrite svg { width: 27px; height: 27px; }
 .homeHeader h1 { margin: 0; padding-left: .16em; text-align: center; color: var(--text); font-size: 22px; font-weight: 750; line-height: 1.2; letter-spacing: .16em; }
-.homeProfile:global(.icon-btn) { width: 48px; height: 48px; border-radius: 50%; }
-.homeAvatar { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--border-strong); border-radius: 50%; font-size: 13px; font-weight: 650; }
 .homeRecord { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; border-block: 1px solid var(--border); }
 .homeRecordCopy { min-width: 0; }
 .homeRecordCopy h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.5; }
@@ -73,10 +74,75 @@
 .sectionHeading { display: flex; align-items: center; justify-content: space-between; margin: 28px 2px 12px; }
 .sectionHeading h3 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
 .sectionHeading span { font-size: 13px; color: var(--text-2); }
-.homeActions { padding: 8px 0; margin-top: 0; }
-.homeActions :global(.action .ring) { border: 0; box-shadow: none; background: var(--surface-2); width: 48px; height: 48px; }
-.homeActions :global(.action.on .ring) { background: var(--home-soft); color: var(--home-a); }
-.homeActions :global(.action .lbl) { margin-top: 7px; font-size: 12px; }
+/* 나를 위한 시간: 네모난 글라스 타일 4칸. 뒤에 네 색의 흐린 빛을 깔아 유리가 비쳐 보이게 하고,
+   오늘 아직 안 누른 칸에는 빨간 점 */
+.care { position: relative; isolation: isolate; padding: 4px 0 2px; }
+.care::before {
+  content: ""; position: absolute; inset: 6px 2px -4px; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(28% 75% at 12% 50%, color-mix(in srgb, var(--tone-briefing) 42%, transparent), transparent 72%),
+    radial-gradient(28% 75% at 38% 50%, color-mix(in srgb, var(--tone-praise) 38%, transparent), transparent 72%),
+    radial-gradient(28% 75% at 63% 50%, color-mix(in srgb, var(--tone-love) 38%, transparent), transparent 72%),
+    radial-gradient(28% 75% at 88% 50%, color-mix(in srgb, var(--tone-review) 40%, transparent), transparent 72%);
+  filter: blur(14px);
+  opacity: .85;
+}
+.careGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.careTile {
+  position: relative; aspect-ratio: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 4px; border-radius: 20px; color: var(--text);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--surface) 80%, transparent), color-mix(in srgb, var(--surface) 44%, transparent));
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.careTile:not(:disabled):active { transform: scale(.95); }
+@media (hover: hover) and (pointer: fine) {
+  .careTile:not(:disabled):hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 var(--glass-hi), 0 16px 30px -14px color-mix(in srgb, var(--tone) 55%, transparent); }
+}
+.careTile:disabled { cursor: default; }
+.careTile:disabled:not(.careDone):not(.careBusy) { opacity: .55; }
+.careIcon {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 14px;
+  color: var(--tone); background: color-mix(in srgb, var(--tone) 15%, transparent);
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.careIcon svg { width: 22px; height: 22px; }
+.careLabel { font-size: 13px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; white-space: nowrap; }
+.careDone .careIcon { background: var(--tone); color: var(--surface); }
+.careDone .careLabel { color: var(--text-2); }
+.careOn { border-color: color-mix(in srgb, var(--tone) 70%, transparent); box-shadow: inset 0 1px 0 var(--glass-hi), 0 0 0 2px color-mix(in srgb, var(--tone) 28%, transparent), var(--glass-shadow); }
+.careBusy .careIcon { animation: careBusy 1s ease-in-out infinite; }
+@keyframes careBusy { 50% { opacity: .45; } }
+.careDot {
+  position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 90%, transparent);
+}
+.careDot::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--dot);
+  animation: careDotPing 2.4s cubic-bezier(0, 0, .2, 1) infinite;
+}
+@keyframes careDotPing { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.4); opacity: 0; } }
+.toneBriefing { --tone: var(--tone-briefing); }
+.tonePraise { --tone: var(--tone-praise); }
+.toneLove { --tone: var(--tone-love); }
+.toneReview { --tone: var(--tone-review); }
+@media (prefers-reduced-motion: reduce) {
+  .careTile, .careIcon { transition: none; }
+  .careTile:not(:disabled):active, .careTile:not(:disabled):hover { transform: none; }
+  .careDot::after, .careBusy .careIcon { animation: none; }
+}
+@media (max-width: 360px) {
+  .careGrid { gap: 8px; }
+  .careTile { border-radius: 16px; gap: 6px; }
+  .careIcon { width: 34px; height: 34px; border-radius: 12px; }
+  .careLabel { font-size: 12px; }
+}
 .quickLinks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .quickLink { padding: 18px 16px; display: grid; gap: 7px; }
 .quickLink > svg { width: 23px; height: 23px; color: var(--text-2); margin-bottom: 5px; }

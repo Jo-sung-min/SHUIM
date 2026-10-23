@@ -89,7 +89,11 @@ npm run dev
 | 화면 | 하는 일 |
 | --- | --- |
 | **시작 화면** | 앱을 열면 바위를 밀어 올리는 시지프 그림(`public/splash.webp`)이 1초 보인 뒤 0.9초 동안 옅어지며 메인 화면이 드러난다. 탭(세션)마다 한 번만, 새로고침·로그인 복귀 때는 생략. 동작 줄이기 설정이면 0.3초. `components/Splash.tsx`. PWA·Android 첫 화면 바탕도 같은 색(`#1B1611`) |
-| **홈 (오늘의 나)** | 히어로 아래 오늘 기록 현황: 다 채우기 전엔 "오늘 기록을 채워주세요" 버튼, 다 채우면 "고생했어요, 오늘도 화이팅" 문구만. 정리하기(브리핑)·칭찬받기·사랑받기·분석하기 4개 액션, 모드별 하루 1회 캐시 |
+| **홈 (오늘의 나)** | 상단은 로고만(아래 선 없음), 오른쪽 위 `+` 로 새 외침 쓰기. 오늘 기록 현황 아래 **나를 위한 시간** 네모 글라스 타일 4칸(정리하기·칭찬받기·사랑받기·분석하기, 각자 색), 오늘 아직 안 누른 칸엔 빨간 점. 모드별 하루 1회 캐시 |
+| **새 외침** (`/write`) | 인스타그램 새 게시물처럼 닫기·올리기 상단 바, 글(600자)·사진 최대 4장(브라우저가 줄여 S3 프리사인 업로드, `S3_BUCKET` 없으면 사진 버튼 비활성)·카테고리. 올리면 그 글 화면으로 |
+| **외침 글** (`/shout/아이디`) | 유튜브 댓글 UI: 글(사진 슬라이드·본문·힘내요)이 맨 위, 아래에서 올라오는 댓글 패널(힘내요순·최신순, 접으면 댓글 수와 첫 댓글 한 줄), 댓글 입력은 화면 아래 고정. 예전 `/shout?post=아이디` 는 여기로 |
+| **화면 모드** | 나 › 화면 모드에서 기기 설정·화이트·나이트. 이 기기에만 저장(`localStorage`), `<html data-theme>` 로 즉시 적용, 첫 페인트 전 인라인 스크립트로 번쩍임 없음 |
+| **하단 탭** | 아이콘만 5개(이름은 접근성 라벨). 선택·누름은 인스타그램처럼 회색 바탕에 먹색 아이콘. 글쓰기·외침 글 화면에서는 숨김 |
 | **기록** | `오늘 쓰기`: 오늘 한 일(칩) + 카테고리(마음·몸·관계·돈·일·커리어)별 **어제보다 얼마나(−5~+5)** 와 한 줄. 숫자 줄 위를 보라 블럭이 미끄러져 선택 위치를 보여줌. 카드를 꾹 눌러 끌면 순서 변경(계정별 저장), `+ 카테고리 추가`로 내 카테고리(최대 5개). `흐름 보기`: 전체 평균(추가 카테고리 포함) 위치 라인 + 가속도 막대, 7/14/30일, AI 흐름 정리 |
 | **메모** | 카테고리별 메모(노트 UI). 고정(📌)하면 오늘의 나에서 우선 반영. `되돌아보기`: 카테고리마다 처음 메모와 최근 메모를 나란히 + 타임라인 |
 | **오늘의 나 › 분석하기** | 메모 **전체**(날짜·카테고리)를 컨텍스트로 보내 과거의 다짐·원칙과 오늘 기록을 대조 → 주의할 점, 그때와 다른 점, 움직인 거리, 질문 |
@@ -116,7 +120,7 @@ npm run dev
 | `GET/POST /api/blocks`, `DELETE /api/blocks/{id}` | 사용자별 차단 목록·차단·해제 |
 | `POST /api/community/consent` | 커뮤니티 약관 동의 버전·시각 저장. 게시·사진 업로드·메시지 전송 전 필요 |
 | `POST/GET /api/safety-reports`, `POST /api/safety-reports/{id}/review` | 사용자·메시지·AI 신고 / 관리자 조회 / 관리자 검토 |
-| `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
+| `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create `{ cat, text, images? }` — 사진은 본인이 올린 S3 주소만 최대 4장, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
 | `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필 / 공개 프로필 |
 | `GET/POST /api/messages`, `GET/POST /api/messages/{id}` | 대화 목록·보내기 / 대화 내용·읽음 |
 | `GET/POST /api/upload/presign` | 사진 업로드 프리사인 URL |
@@ -130,7 +134,7 @@ npm run dev
 
 ## DB (PostgreSQL)
 
-- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
+- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘) … `V15__shout_post_images.sql`(외침 사진). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
 - 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
 - 로그인 전에도 익명 유저가 자동 생성되어(세션 쿠키 `shuim_session`, DB 에는 SHA-256 해시만) 글·힘내요를 쓸 수 있고, 가입하면 승격된다. 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1) 라 기존 계정이 그대로 로그인된다
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches` 에 저장. 샘플 유저 자동 답글은 `COMMUNITY_SIMULATE=true` 일 때만

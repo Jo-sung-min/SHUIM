@@ -81,7 +81,11 @@ export interface Base {
 
 export interface Post extends Base {
   cat: ShoutCat;
+  /** 사진 주소 (최대 SHOUT_MAX_IMAGES 장). 옛 글은 빈 배열 */
+  images?: string[];
 }
+
+export const SHOUT_MAX_IMAGES = 4;
 
 export interface Comment extends Base {
   postId: string;

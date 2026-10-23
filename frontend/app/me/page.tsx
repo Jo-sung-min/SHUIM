@@ -14,8 +14,15 @@ import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
 import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconShield, IconTrophy, IconUser, IconChevronR, IconBubble } from "@/components/Icons";
 import styles from "../account-screens.module.css";
+import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
 
 type View = "profile" | "notif";
+
+const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
+  { value: "system", label: "기기 설정" },
+  { value: "light", label: "화이트" },
+  { value: "dark", label: "나이트" },
+];
 
 export default function MePage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -28,7 +35,9 @@ export default function MePage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<"clear" | "logout" | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [theme, setTheme] = useState<ThemePref>("system"); // 서버 렌더와 맞추려고 기본값으로 시작해 마운트 후 읽는다
   const actionInFlight = useRef(false);
+  useEffect(() => setTheme(loadTheme()), []);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -132,6 +141,10 @@ export default function MePage() {
                 <Link href="/fund" className={styles.menuRow}><IconCoin /><span className={styles.menuLabel}><strong>함께하는 모금</strong></span><IconChevronR /></Link>
               </div>
             </section>
+            <section className={styles.group} aria-labelledby="me-theme-title">
+              <h2 className={styles.groupTitle} id="me-theme-title">화면 모드</h2>
+              <Segmented value={theme} onChange={(v) => { setTheme(v); saveTheme(v); }} options={THEME_OPTIONS} />
+            </section>
             <section className={styles.group} aria-labelledby="me-settings-title">
               <h2 className={styles.groupTitle} id="me-settings-title">설정과 안내</h2>
               <div className={`card ${styles.menu}`}>
@@ -160,7 +173,7 @@ export default function MePage() {
               <Empty icon={<IconBubble />} title="아직 도착한 알림이 없어요">내 이야기에 달린 위로와 답글을<br />이곳에 모아드릴게요.</Empty>
             ) : (
               notifs.map((n) => (
-                <Link key={n.id} href={`${n.postKind === "post" ? "/shout" : "/feed"}?post=${n.postId}`} className={`notif ${n.read ? "" : "unread"}`}>
+                <Link key={n.id} href={n.postKind === "post" ? `/shout/${n.postId}` : `/feed?post=${n.postId}`} className={`notif ${n.read ? "" : "unread"}`}>
                   <span className="avatar sm">{n.actorNick.slice(0, 1)}</span>
                   <span className="grow" style={{ minWidth: 0 }}>
                     <span className="who"><b>{n.actorNick}</b>{n.kind === "comment_on_post" ? " 님이 내 글에 위로를 남겼어요" : " 님이 내가 위로한 글에 답했어요"}<small>{fmtRelative(n.at)}</small></span>

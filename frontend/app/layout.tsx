@@ -6,6 +6,8 @@ import CommunityConsent from "@/components/CommunityConsent";
 import ServiceAvailability from "@/components/ServiceAvailability";
 import AppToast from "@/components/AppToast";
 import Splash from "@/components/Splash";
+import { THEME_SCRIPT } from "@/lib/theme";
+import InlineScript from "@/components/InlineScript";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
 
 /**
@@ -92,8 +94,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     },
   };
   return (
-    <html lang="ko">
+    // data-theme 은 아래 인라인 스크립트가 첫 페인트 전에 붙인다 (React 가 그대로 두도록 suppressHydrationWarning)
+    <html lang="ko" suppressHydrationWarning>
       <head>
+        <InlineScript html={THEME_SCRIPT} />
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"

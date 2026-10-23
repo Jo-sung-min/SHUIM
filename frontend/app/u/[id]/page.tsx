@@ -122,7 +122,7 @@ export default function PublicProfilePage() {
               {data.shout.map((s) => {
                 const c = shoutCatById(s.cat as ShoutCat);
                 return (
-                  <Link key={s.id} href={`/shout?post=${s.id}`} className="card post" style={{ display: "block" }}>
+                  <Link key={s.id} href={`/shout/${s.id}`} className="card post" style={{ display: "block" }}>
                     <div className="post-head"><span className="cat"><ShoutCatIcon id={c.id} /> {c.label}</span><span>·</span><span>{fmtRelative(s.createdAt)}</span><span className="inline-fist" style={{ marginLeft: "auto" }}><IconFist /> {s.cheers}</span></div>
                     <p className="post-text" style={{ marginBottom: 0 }}>{s.text}</p>
                   </Link>

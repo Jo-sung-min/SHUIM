@@ -2,6 +2,8 @@
   소로우 화면 규칙 (단일 소스)
   - 배경은 밝은 중립색, 본문은 짙은 먹색. 보라(--accent)는 주요 버튼과 선택 상태에만 쓴다.
   - 유리 느낌·큰 그림자·장식 그라데이션 대신 카드 테두리와 여백으로 구분한다.
+    예외: 홈의 "나를 위한 시간" 네 칸(정리·칭찬·사랑·분석)만 눌러 보고 싶게 글라스 타일로 둔다 (--glass-*, --tone-*).
+  - 색 모드: 기기 설정을 따르고, 마이페이지에서 고르면 <html data-theme="light|dark"> 가 우선한다 (lib/theme.ts).
   - 좌우 여백 20px, 간격은 8·16·24px. 본문 16px, 보조 13~14px, 제목 22~24px.
   - 버튼 높이 48px, 카드 모서리 16px, 선형 아이콘 한 세트(components/Icons.tsx).
   - 누름은 색이 살짝 진해지고 0.98배. 전환은 150~220ms. 동작 줄이기에서는 이동·확대 효과를 끈다.
@@ -54,15 +56,26 @@
   --dur-slow: 220ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --shadow-float: 0 6px 20px rgba(20, 20, 30, 0.14);
+  /* 홈 글라스 타일 전용 */
+  --glass-edge: rgba(255, 255, 255, 0.78);
+  --glass-hi: rgba(255, 255, 255, 0.92);
+  --glass-shadow: 0 12px 28px -14px rgba(52, 40, 120, 0.36);
+  --tone-briefing: #6d5bd0;
+  --tone-praise: #d98a1c;
+  --tone-love: #df4f78;
+  --tone-review: #2f80d0;
+  --dot: #ff3b30;
   --app-w: 480px;
-  --tabbar-h: 64px;
+  --tabbar-h: 56px;
   /* AppRuntime 이 visualViewport 로 채운다: 키보드 높이, 보이는 높이 */
   --kb: 0px;
   --vvh: 100dvh;
 }
 
+/* 나이트 색: 기기 설정이 어두우면(화이트를 고르지 않았을 때), 또는 마이페이지에서 나이트를 골랐을 때.
+   CSS 만으로는 두 조건을 한 규칙에 묶을 수 없어 같은 값을 두 번 적는다 — 고칠 때 둘 다 고친다 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #121214;
     --bg-outer: #0b0b0d;
     --surface: #1b1b1f;
@@ -83,8 +96,48 @@
     --down: #7f7f89;
     --zero: #3c3c44;
     --shadow-float: 0 6px 20px rgba(0, 0, 0, 0.5);
+    --glass-edge: rgba(255, 255, 255, 0.12);
+    --glass-hi: rgba(255, 255, 255, 0.16);
+    --glass-shadow: 0 12px 28px -14px rgba(0, 0, 0, 0.75);
+    --tone-briefing: #ab9ef5;
+    --tone-praise: #f2b65a;
+    --tone-love: #f382a3;
+    --tone-review: #6fb0f2;
+    --dot: #ff453a;
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121214;
+  --bg-outer: #0b0b0d;
+  --surface: #1b1b1f;
+  --surface-2: #242428;
+  --surface-3: #2e2e34;
+  --text: #f2f2f4;
+  --text-2: #a7a7b0;
+  --text-3: #7f7f89;
+  --border: #2b2b31;
+  --border-strong: #3c3c44;
+  --accent: #a99cf2;
+  --accent-strong: #9a8bee;
+  --accent-soft: #2a2740;
+  --on-accent: #17142a;
+  --danger: #f08a98;
+  --danger-soft: #3a2228;
+  --up: #f2f2f4;
+  --down: #7f7f89;
+  --zero: #3c3c44;
+  --shadow-float: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --glass-edge: rgba(255, 255, 255, 0.12);
+  --glass-hi: rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 12px 28px -14px rgba(0, 0, 0, 0.75);
+  --tone-briefing: #ab9ef5;
+  --tone-praise: #f2b65a;
+  --tone-love: #f382a3;
+  --tone-review: #6fb0f2;
+  --dot: #ff453a;
+}
+:root[data-theme="light"] { color-scheme: light; }
 
 /* ---------- 기본 ---------- */
 * { box-sizing: border-box; }
@@ -160,17 +213,20 @@ html[data-keyboard="open"] .app { padding-bottom: calc(var(--kb) + var(--sp-3));
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
+/* 아이콘만 (이름은 aria-label·title). 선택하면 인스타그램처럼 회색 바탕에 먹색 아이콘 */
 .tabbar a {
-  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 4px 0; border-radius: var(--radius-sm);
-  color: var(--text-2); font-size: 12px; font-weight: 600;
+  position: relative; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
 }
-.tabbar-icon { position: relative; display: grid; place-items: center; width: 52px; height: 32px; border-radius: 12px; }
-.tabbar a svg { width: 24px; height: 24px; }
-.tabbar a.active { color: var(--accent); }
-.tabbar a.active .tabbar-icon { background: var(--accent-soft); }
-.tabbar-label { font-size: 12px; line-height: 16px; }
-.tabbar .dot-badge { position: absolute; top: 2px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); border: 2px solid var(--surface); }
+.tabbar-icon {
+  position: relative; display: grid; place-items: center; width: 52px; height: 40px; border-radius: 14px;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.tabbar a svg { width: 26px; height: 26px; }
+.tabbar a.active { color: var(--text); }
+.tabbar a.active .tabbar-icon, .tabbar a:active .tabbar-icon { background: var(--surface-3); color: var(--text); }
+.tabbar .dot-badge { position: absolute; top: 5px; right: 11px; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); border: 2px solid var(--surface); }
 html[data-keyboard="open"] .tabbar { visibility: hidden; pointer-events: none; }
 
 /* ---------- 카드·레이아웃 ---------- */

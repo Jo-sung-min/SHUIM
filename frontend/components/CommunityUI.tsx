@@ -80,7 +80,7 @@ export function CheerButton({ count, on, onClick, small, vertical }: { count: nu
 }
 
 /* ---------- 댓글 한 줄 ---------- */
-function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; comment: Comment; onCheer: () => void | Promise<unknown>; onMenu: () => void }) {
+export function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; comment: Comment; onCheer: () => void | Promise<unknown>; onMenu: () => void }) {
   const me = s.me.id;
   const author = userById(s, comment.authorId);
   const [show, setShow] = useState(false);
@@ -122,10 +122,43 @@ export function CommentThread({
   onMenu: (t: Target) => void;
   placeholder?: string;
 }) {
+  const comments = commentsOf(s, postId);
+  return (
+    <>
+      <div className="comment-list">
+        {comments.length === 0 && <p className="tiny muted" style={{ margin: "6px 0 10px" }}>아직 위로가 없어요. 첫 한마디를 남겨요.</p>}
+        {comments.map((cm) => (
+          <CommentRow
+            key={cm.id}
+            s={s}
+            comment={cm}
+            onCheer={() => run(onChange, () => api.toggleCheer({ kind: "comment", id: cm.id }))}
+            onMenu={() => onMenu({ kind: "comment", id: cm.id })}
+          />
+        ))}
+      </div>
+      <CommentComposer s={s} postId={postId} onChange={onChange} placeholder={placeholder} />
+    </>
+  );
+}
+
+/* ---------- 댓글 입력창 (스레드 아래, 또는 외침 글 화면 하단 고정) ---------- */
+export function CommentComposer({
+  s,
+  postId,
+  onChange,
+  placeholder = "위로 한마디. 조언보다 '그랬구나'가 먼저예요.",
+  className,
+}: {
+  s: CommunityStore;
+  postId: string;
+  onChange: (s: CommunityStore) => void;
+  placeholder?: string;
+  className?: string;
+}) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
-  const comments = commentsOf(s, postId);
   const blocked = isBlocked(s.me);
   const submit = async () => {
     const t = text.trim();
@@ -142,23 +175,11 @@ export function CommentThread({
   };
   return (
     <>
-      <div className="comment-list">
-        {comments.length === 0 && <p className="tiny muted" style={{ margin: "6px 0 10px" }}>아직 위로가 없어요. 첫 한마디를 남겨요.</p>}
-        {comments.map((cm) => (
-          <CommentRow
-            key={cm.id}
-            s={s}
-            comment={cm}
-            onCheer={() => run(onChange, () => api.toggleCheer({ kind: "comment", id: cm.id }))}
-            onMenu={() => onMenu({ kind: "comment", id: cm.id })}
-          />
-        ))}
-      </div>
       {blocked ? (
-        <div className="notice warn">차단된 계정은 댓글을 쓸 수 없어요.</div>
+        <div className={`notice warn ${className ?? ""}`}>차단된 계정은 댓글을 쓸 수 없어요.</div>
       ) : (
         <form
-          className="composer"
+          className={`composer ${className ?? ""}`}
           onSubmit={(e) => {
             e.preventDefault();
             submit();

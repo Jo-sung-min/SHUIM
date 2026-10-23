@@ -81,7 +81,8 @@ public class CommunityService {
 
         List<Post> posts = jdbc.sql("SELECT * FROM shout_posts").query((rs, i) -> new Post(
             rs.getString("id"), rs.getString("cat"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
-            listOf(cheerMap, "post:" + rs.getString("id")), reportsOf(reportMap, "post:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"))).list();
+            listOf(cheerMap, "post:" + rs.getString("id")), reportsOf(reportMap, "post:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
+            Db.textArray(rs, "images"))).list();
         List<Comment> comments = new ArrayList<>(jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
             rs.getString("id"), rs.getString("post_id"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"))).list());
@@ -135,7 +136,7 @@ public class CommunityService {
     static Store visibleStore(Store store, Set<String> excluded, boolean admin) {
         String viewer = store.me().id();
         List<Post> posts = store.posts().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
-            .map(p -> new Post(p.id(), p.cat(), p.text(), p.authorId(), p.createdAt(), p.cheers(), publicReports(p, viewer, admin), p.hidden(), p.reviewedAt())).toList();
+            .map(p -> new Post(p.id(), p.cat(), p.text(), p.authorId(), p.createdAt(), p.cheers(), publicReports(p, viewer, admin), p.hidden(), p.reviewedAt(), p.images())).toList();
         List<FeedPost> feed = store.feed().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
             .map(p -> new FeedPost(p.id(), p.title(), p.text(), p.bg(), p.image(), p.images(), p.pages(), p.authorId(), p.createdAt(), p.cheers(),
                 publicReports(p, viewer, admin), p.saves().stream().filter(viewer::equals).toList(), p.hidden(), p.reviewedAt())).toList();
@@ -243,20 +244,33 @@ public class CommunityService {
         return t.length() > max ? t.substring(0, max) : t;
     }
 
-    @Transactional
     public Store createPost(DbUser me, Object cat, Object body) {
+        return createPost(me, cat, body, null);
+    }
+
+    /** 외침 올리기. 사진은 이 사용자가 S3 에 올린 주소만 받는다 (다른 사람 사진·외부 주소 차단), 최대 4장 */
+    @Transactional
+    public Store createPost(DbUser me, Object cat, Object body, Object images) {
         Db.lockCommunity(jdbc);
         assertNotBlocked(me);
         if (!(cat instanceof String c) || !CommunityLogic.SHOUT_CAT_IDS.contains(c)) throw ApiException.badRequest("카테고리가 올바르지 않아요");
-        jdbc.sql("INSERT INTO shout_posts (id, author_id, cat, text) VALUES (?, ?, ?, ?)").param(Ids.uid()).param(me.id()).param(c).param(text(body, 600)).update();
+        String t = text(body, 600);
+        if (t == null) throw ApiException.badRequest("내용을 적어 주세요.");
+        List<String> imgs = CommunityLogic.cleanImageList(images, CommunityLogic.SHOUT_MAX_IMAGES, u -> s3.ownedKeyFromUrl(u, me.id()) != null);
+        jdbc.sql("INSERT INTO shout_posts (id, author_id, cat, text, images) VALUES (?, ?, ?, ?, ?)")
+            .param(Ids.uid()).param(me.id()).param(c).param(t).param(imgs.toArray(String[]::new)).update();
         return loadStore(me);
     }
 
     @Transactional
     public Store deletePost(DbUser me, String id) {
         Db.lockCommunity(jdbc);
-        int n = jdbc.sql("DELETE FROM shout_posts WHERE id = ? AND author_id = ?").param(id).param(me.id()).update();
-        if (n > 0) jdbc.sql("DELETE FROM comments WHERE post_kind = 'post' AND post_id = ?").param(id).update();
+        Optional<List<String>> removed = jdbc.sql("DELETE FROM shout_posts WHERE id = ? AND author_id = ? RETURNING images").param(id).param(me.id())
+            .query((rs, i) -> Db.textArray(rs, "images")).optional();
+        if (removed.isPresent()) {
+            jdbc.sql("DELETE FROM comments WHERE post_kind = 'post' AND post_id = ?").param(id).update();
+            for (String u : removed.get()) if (s3.ownedKeyFromUrl(u, me.id()) != null) s3.deleteUploadedImage(u);
+        }
         return loadStore(me);
     }
 

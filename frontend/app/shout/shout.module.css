@@ -1,0 +1,71 @@
+/* 외침 목록의 사진 미리보기 + 외침 글 화면(유튜브 댓글처럼: 글이 맨 위, 아래에서 올라오는 댓글 패널) */
+
+/* ---------- 목록 카드: 사진 미리보기 ---------- */
+.thumbs { position: relative; display: block; width: 100%; margin: 2px 0 12px; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--surface-2); aspect-ratio: 16 / 10; cursor: pointer; }
+.thumbs img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumbsMore { position: absolute; right: 8px; bottom: 8px; padding: 3px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- 글 화면 상단 바 ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 20;
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center;
+  min-height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 4px 0;
+  background: var(--bg);
+}
+.bar h1 { margin: 0; text-align: center; font-size: 16px; font-weight: 700; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar :global(.icon-btn) { width: 48px; height: 48px; }
+
+/* ---------- 글 (맨 위) ---------- */
+.media { position: relative; background: #0b0b0d; }
+.slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; aspect-ratio: 4 / 3; }
+.slides::-webkit-scrollbar { display: none; }
+.slides img { flex: 0 0 100%; width: 100%; height: 100%; object-fit: contain; scroll-snap-align: center; }
+.counter { position: absolute; top: 10px; right: 10px; padding: 3px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dots { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
+.dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.45); transition: background-color var(--dur-fast) var(--ease); }
+.dots span[data-on="true"] { background: #fff; }
+.body { padding: 14px var(--gutter) 4px; }
+.body :global(.post-text) { font-size: 17px; margin: 10px 0 12px; }
+
+/* ---------- 댓글 패널: 아래에서 올라와 글 밑에 붙는다 ---------- */
+.panel {
+  margin-top: 10px; min-height: 55dvh;
+  padding: 0 var(--gutter) calc(96px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border: 1px solid var(--border); border-bottom: 0; border-radius: 22px 22px 0 0;
+  box-shadow: 0 -10px 28px -22px rgba(0, 0, 0, 0.35);
+  animation: panelUp 340ms var(--ease) both;
+}
+@keyframes panelUp { from { transform: translateY(48px); opacity: 0; } }
+.handle { display: block; width: 100%; height: 22px; margin: 0; padding: 0; border: 0; background: none; cursor: pointer; }
+.handle::before { content: ""; display: block; width: 40px; height: 4px; margin: 9px auto 0; border-radius: 2px; background: var(--border-strong); }
+.panelHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0 8px; }
+.panelHead h2 { margin: 0; font-size: 18px; font-weight: 750; letter-spacing: -0.02em; }
+.panelHead h2 span { margin-left: 6px; color: var(--text-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.panel :global(.chips) { margin-bottom: 4px; }
+.panel :global(.comment-list) > :global(.comment):first-child { border-top: 0; }
+.empty { margin: 18px 0; text-align: center; color: var(--text-2); font-size: 14px; line-height: 1.7; }
+
+/* 패널을 접으면: 댓글 수와 첫 댓글 한 줄 (유튜브의 접힌 댓글 칸처럼) */
+.peek {
+  display: grid; gap: 6px; width: calc(100% - 2 * var(--gutter)); margin: 12px var(--gutter) calc(96px + env(safe-area-inset-bottom));
+  padding: 14px 16px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.peek b { font-size: 15px; }
+.peek b span { margin-left: 6px; color: var(--text-2); font-weight: 600; }
+.peek small { font-size: 14px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 댓글 입력: 화면 아래 고정 (탭바 대신) */
+.dock {
+  position: fixed; left: 50%; bottom: var(--kb); transform: translateX(-50%); z-index: 30;
+  width: 100%; max-width: var(--app-w);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border);
+}
+.dock :global(.composer) { margin-top: 0; }
+.dock :global(.notice) { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel { animation: none; }
+}
