@@ -9,7 +9,7 @@ import { unreadMessages } from "@/lib/social";
 
 /** 짧은 이름과 선택 표시를 함께 제공하는 앱 탐색. */
 const TABS = [
-  { href: "/", label: "홈", Icon: IconSun, match: (p: string) => p === "/" || p === "/summary" },
+  { href: "/", label: "홈", Icon: IconSun, match: (p: string) => p === "/" || p === "/summary" || p === "/flow" },
   { href: "/log", label: "기록", Icon: IconPen },
   { href: "/shout", label: "외침", Icon: IconBubble, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
   { href: "/feed", label: "위로", Icon: IconReels },

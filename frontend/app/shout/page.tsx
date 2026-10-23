@@ -97,10 +97,13 @@ export default function ShoutPage() {
         title="외침"
         eyebrow="익명"
         right={
-          <Link href="/admin" className="icon-btn" aria-label="관리자 검토" style={{ position: "relative" }}>
-            <IconShield />
-            {flaggedCount > 0 && <span className="count-badge">{flaggedCount}</span>}
-          </Link>
+          // 관리자 검토 아이콘은 관리자에게만 (일반 회원·익명에겐 없음)
+          s.me.role === "admin" ? (
+            <Link href="/admin" className="icon-btn" aria-label="관리자 검토" style={{ position: "relative" }}>
+              <IconShield />
+              {flaggedCount > 0 && <span className="count-badge">{flaggedCount}</span>}
+            </Link>
+          ) : undefined
         }
       />
       <div className="screen">

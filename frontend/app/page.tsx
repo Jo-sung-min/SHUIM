@@ -43,7 +43,7 @@ import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus
 import { useRouter } from "next/navigation";
 import { CARE_BUILTIN, CARE_CATALOG, type CareAction, type CareTone, careDoneToday, loadCareExtras, markCareDone, saveCareExtras } from "@/lib/care";
 import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
-import FlowView from "@/components/FlowView";
+import Highlighted from "@/components/Highlighted";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "./account-screens.module.css";
 
@@ -120,7 +120,6 @@ export default function HomePage() {
   const [careDone, setCareDone] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState(false);
   const [breathing, setBreathing] = useState(false);
-  const [flowOpen, setFlowOpen] = useState(false); // 흐름 보기 타일 → 타일 아래 그래프
   const refreshCare = useCallback(() => {
     const ids = loadCareExtras();
     setCareExtras(ids);
@@ -234,7 +233,6 @@ export default function HomePage() {
 
   const press = (mode: Mode) => {
     if (loading) return;
-    setFlowOpen(false);
     if (mode === "briefing") {
       if (!briefing) call("briefing");
     } else if (mode === "review") {
@@ -272,14 +270,6 @@ export default function HomePage() {
   };
   const runCare = (action: CareAction) => {
     if (action.kind === "ai") { press(action.id as Mode); return; }
-    if (action.kind === "flow") {
-      setFlowOpen((v) => !v);
-      setOpen(null);
-      setReviewOpen(false);
-      markCareDone(action.id, today);
-      refreshCare();
-      return;
-    }
     if (action.kind === "breath") { setBreathing(true); return; }
     if (action.kind === "link" && action.href) {
       markCareDone(action.id, today);
@@ -297,9 +287,6 @@ export default function HomePage() {
         disabled: loading !== null || (action.id === "briefing" && s.done),
         onPress: () => press(action.id as Mode),
       };
-    }
-    if (action.kind === "flow") {
-      return { action, label: action.label, done: flowOpen || Boolean(careDoneToday(action.id, today)), on: flowOpen, busy: false, disabled: false, aria: "최근 흐름 보기", onPress: () => runCare(action) };
     }
     return { action, label: action.label, done: Boolean(careDone[action.id]), on: false, busy: false, disabled: false, aria: action.desc, onPress: () => runCare(action) };
   };
@@ -388,13 +375,6 @@ export default function HomePage() {
 
         {error && <p className={styles.error} role="alert">{error}</p>}
 
-        {/* 흐름 보기 (타일 아래) */}
-        {flowOpen && !loading && (
-          <section aria-label="최근 흐름" style={{ marginTop: 4 }}>
-            <FlowView onWrite={() => router.push("/log")} scrollKey="/:flow" />
-          </section>
-        )}
-
         {(briefing || openMoment || review) && <SafetyReport kind="ai" />}
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
@@ -406,13 +386,14 @@ export default function HomePage() {
               <span className="label">{open === "praise" ? <IconStar /> : <IconHeart />} {MOMENTS[open].heading}</span>
               <span className="tiny muted">{fmtRelative(openMoment.generatedAt)}</span>
             </div>
-            <h3>{openMoment.data.title}</h3>
+            <h3><Highlighted text={openMoment.data.title} fallback="none" /></h3>
             <ul className="brief-list">
               {openMoment.data.lines.map((l, i) => (
-                <li key={i}>{l}</li>
+                <li key={i}><span><Highlighted text={l} fallback="none" /></span></li>
               ))}
             </ul>
-            {openMoment.data.closing && <p className="closing">{openMoment.data.closing}</p>}
+            {/* 마지막 한마디는 문장 자체가 위로라 AI 표시가 없어도 통째로 형광펜 */}
+            {openMoment.data.closing && <p className="closing"><Highlighted text={openMoment.data.closing} fallback="all" /></p>}
           </section>
         )}
 
@@ -424,7 +405,7 @@ export default function HomePage() {
               <span className="label">그때의 나 → 오늘의 나</span>
               <span className="tiny muted">{fmtRelative(review.generatedAt)}</span>
             </div>
-            <h3>{review.data.headline}</h3>
+            <h3><Highlighted text={review.data.headline} fallback="none" /></h3>
             {review.data.cautions.length > 0 && (
               <>
                 <div className="sub-title">주의할 점</div>
@@ -433,7 +414,7 @@ export default function HomePage() {
                     <div key={i} className="caution">
                       <div className="then"><span className="tag">그때</span>{c.past}</div>
                       <div className="now"><span className="tag">오늘</span>{c.now}</div>
-                      <p className="note">{c.note}</p>
+                      <p className="note"><Highlighted text={c.note} fallback="none" /></p>
                     </div>
                   ))}
                 </div>
@@ -444,7 +425,7 @@ export default function HomePage() {
                 <div className="sub-title">그때와 다른 점</div>
                 <ul className="brief-list">
                   {review.data.changes.map((h, i) => (
-                    <li key={i}>{h}</li>
+                    <li key={i}><span><Highlighted text={h} fallback="none" /></span></li>
                   ))}
                 </ul>
               </>
@@ -452,10 +433,10 @@ export default function HomePage() {
             {review.data.growth && (
               <>
                 <div className="sub-title">움직인 거리</div>
-                <p className="brief-text">{review.data.growth}</p>
+                <p className="brief-text"><Highlighted text={review.data.growth} fallback="none" /></p>
               </>
             )}
-            {review.data.question && <p className="closing">{review.data.question}</p>}
+            {review.data.question && <p className="closing"><Highlighted text={review.data.question} fallback="none" /></p>}
             <div className="row" style={{ marginTop: 10 }}>
               <Link href="/memo" className="text-btn" style={{ marginLeft: "auto" }}>되돌아보기 <IconChevronR /></Link>
             </div>
@@ -477,26 +458,26 @@ export default function HomePage() {
                 <span className="pill">{dirLabel[d.momentum.direction]}</span>
                 <span className="label">{fmtRelative(briefing!.generatedAt)}</span>
               </div>
-              <h2>{d.headline}</h2>
-              <p>{d.momentum.text}</p>
+              <h2><Highlighted text={d.headline} fallback="none" /></h2>
+              <p><Highlighted text={d.momentum.text} fallback="none" /></p>
             </section>
             <section className="card" style={{ marginTop: 12 }}>
               <ul className="brief-list">
                 {d.highlights.map((h, i) => (
-                  <li key={i}>{h}</li>
+                  <li key={i}><span><Highlighted text={h} fallback="none" /></span></li>
                 ))}
               </ul>
             </section>
             {d.nextStep && (
               <section className="card next-step" style={{ marginTop: 10 }}>
                 <div className="label">지금 한 걸음</div>
-                <p>{d.nextStep}</p>
+                <p><Highlighted text={d.nextStep} fallback="none" /></p>
               </section>
             )}
             <section className="card stack" style={{ gap: 10, marginTop: 10 }}>
-              <p className="brief-text"><span className="tiny muted" style={{ fontWeight: 700 }}>일정 · </span>{d.today.schedule}</p>
-              <p className="brief-text"><span className="tiny muted" style={{ fontWeight: 700 }}>목표 · </span>{d.today.goals}</p>
-              {d.question && <p className="question muted" style={{ fontSize: 14 }}>{d.question}</p>}
+              <p className="brief-text"><span className="tiny muted" style={{ fontWeight: 700 }}>일정 · </span><Highlighted text={d.today.schedule} fallback="none" /></p>
+              <p className="brief-text"><span className="tiny muted" style={{ fontWeight: 700 }}>목표 · </span><Highlighted text={d.today.goals} fallback="none" /></p>
+              {d.question && <p className="question muted" style={{ fontSize: 14 }}><Highlighted text={d.question} fallback="none" /></p>}
             </section>
           </>
         )}

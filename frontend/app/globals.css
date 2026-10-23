@@ -830,11 +830,14 @@ textarea.lined {
 .hl {
   --hl: #ffe14d;
   color: inherit;
-  background: linear-gradient(transparent 34%, color-mix(in srgb, var(--hl) 62%, transparent) 34%, color-mix(in srgb, var(--hl) 62%, transparent) 94%, transparent 94%);
+  background: linear-gradient(transparent 34%, color-mix(in srgb, var(--hl) var(--hl-a, 62%), transparent) 34%, color-mix(in srgb, var(--hl) var(--hl-a, 62%), transparent) 94%, transparent 94%);
   padding: 0 .14em; margin: 0 -.14em; border-radius: .2em;
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
-.reel-text .hl { color: inherit; }
+/* 나이트 모드의 카드 위(밝은 글자)에서는 띠를 옅게. 위로 피드(.reel-text)는 배경을 직접 칠하므로 그대로 */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --hl-a: 34%; } }
+:root[data-theme="dark"] { --hl-a: 34%; }
+.reel-text .hl { color: inherit; --hl-a: 62%; }
 .bg-4 .hl, .bg-1 .hl { --hl: #ffd400; }
 .reel-flagged { background: rgba(127, 127, 127, 0.12); color: inherit; border-color: color-mix(in srgb, var(--reel-fg, #fff) 35%, transparent); }
 .reel-flagged b { color: inherit; }
