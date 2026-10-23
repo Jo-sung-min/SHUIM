@@ -4,8 +4,10 @@
  * 홈 "나를 위한 시간" 등록부.
  * - 기본 4칸(정리·칭찬·사랑·분석)은 AI 호출이라 홈이 직접 다루고(ai 종류), 여기서는 모양·순서만 정한다.
  * - 그 밖의 칸은 카탈로그(CARE_CATALOG)에서 사용자가 "추가하기"로 고른다. 종류:
- *     link   — 앱 안 화면으로 이동 (메모·목표·일정·외침·위로·흐름)
+ *     link   — 앱 안 화면으로 이동 (메모·목표·일정·외침·위로)
  *     breath — 1분 숨 고르기 시트
+ *     flow   — 흐름 보기(최근 N일 그래프)를 타일 아래에 펼친다 (기본 4칸 중 하나)
+ *   카탈로그의 ai 종류(분석하기)는 기본 칸과 같은 AI 호출로 홈이 처리한다.
  *   새 종류를 더하려면 CareKind 에 추가하고 홈의 runCare 에서 처리하면 된다.
  * - 고른 칸과 "오늘 했음" 기록은 이 기기의 localStorage(계정별)에만 둔다. 서버 동기화는 아직 하지 않는다.
  */
@@ -13,7 +15,7 @@ import { read, write } from "./storage";
 import { todayKey } from "./dates";
 
 export type CareTone = "briefing" | "praise" | "love" | "review" | "mint" | "plum";
-export type CareKind = "ai" | "link" | "breath";
+export type CareKind = "ai" | "link" | "breath" | "flow";
 export type CareIconName = "sparkle" | "star" | "heart" | "note" | "flag" | "calendar" | "bubble" | "reels" | "chart" | "lotus" | "leaf" | "book";
 
 export interface CareAction {
@@ -33,16 +35,16 @@ export const CARE_BUILTIN: CareAction[] = [
   { id: "briefing", label: "정리하기", desc: "오늘 기록을 AI 가 한 번 정리해요", kind: "ai", icon: "sparkle", tone: "briefing" },
   { id: "praise", label: "칭찬받기", desc: "오늘의 나를 칭찬하는 말", kind: "ai", icon: "star", tone: "praise" },
   { id: "love", label: "사랑받기", desc: "나를 사랑하는 법 한 가지", kind: "ai", icon: "heart", tone: "love" },
-  { id: "review", label: "분석하기", desc: "메모 전체로 그때와 오늘을 비교", kind: "ai", icon: "note", tone: "review" },
+  { id: "flow", label: "흐름 보기", desc: "최근 7·14·30일의 마음 흐름 (홈에서 바로 펼쳐요)", kind: "flow", icon: "chart", tone: "review" },
 ];
 
 /** 추가할 수 있는 칸 */
 export const CARE_CATALOG: CareAction[] = [
+  { id: "review", label: "분석하기", desc: "메모 전체로 그때와 오늘을 AI 가 비교", kind: "ai", icon: "note", tone: "plum" },
   { id: "breath", label: "숨 고르기", desc: "1분 동안 천천히 숨 쉬어요", kind: "breath", icon: "lotus", tone: "mint" },
   { id: "memo", label: "메모 남기기", desc: "스쳐 가는 마음을 한 줄로", kind: "link", icon: "book", tone: "plum", href: "/memo" },
   { id: "goals", label: "목표 한 걸음", desc: "목표의 다음 단계 하나 체크", kind: "link", icon: "flag", tone: "review", href: "/goals" },
   { id: "schedule", label: "오늘 일정", desc: "다가오는 일정 보기", kind: "link", icon: "calendar", tone: "briefing", href: "/schedule" },
-  { id: "summary", label: "흐름 보기", desc: "최근 7·14·30일의 마음 흐름", kind: "link", icon: "chart", tone: "praise", href: "/summary" },
   { id: "shout", label: "외침 읽기", desc: "다른 사람의 이야기에 힘내요 하나", kind: "link", icon: "bubble", tone: "love", href: "/shout" },
   { id: "feed", label: "위로 보기", desc: "위로 피드 한 바퀴", kind: "link", icon: "reels", tone: "mint", href: "/feed" },
 ];

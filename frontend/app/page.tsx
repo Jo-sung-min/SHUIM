@@ -43,6 +43,7 @@ import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus
 import { useRouter } from "next/navigation";
 import { CARE_BUILTIN, CARE_CATALOG, type CareAction, type CareTone, careDoneToday, loadCareExtras, markCareDone, saveCareExtras } from "@/lib/care";
 import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
+import FlowView from "@/components/FlowView";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "./account-screens.module.css";
 
@@ -119,6 +120,7 @@ export default function HomePage() {
   const [careDone, setCareDone] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState(false);
   const [breathing, setBreathing] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false); // 흐름 보기 타일 → 타일 아래 그래프
   const refreshCare = useCallback(() => {
     const ids = loadCareExtras();
     setCareExtras(ids);
@@ -232,6 +234,7 @@ export default function HomePage() {
 
   const press = (mode: Mode) => {
     if (loading) return;
+    setFlowOpen(false);
     if (mode === "briefing") {
       if (!briefing) call("briefing");
     } else if (mode === "review") {
@@ -268,6 +271,15 @@ export default function HomePage() {
     review: { done: Boolean(review), on: reviewOpen, aria: "메모로 나를 분석", busyLabel: "분석 중…" },
   };
   const runCare = (action: CareAction) => {
+    if (action.kind === "ai") { press(action.id as Mode); return; }
+    if (action.kind === "flow") {
+      setFlowOpen((v) => !v);
+      setOpen(null);
+      setReviewOpen(false);
+      markCareDone(action.id, today);
+      refreshCare();
+      return;
+    }
     if (action.kind === "breath") { setBreathing(true); return; }
     if (action.kind === "link" && action.href) {
       markCareDone(action.id, today);
@@ -275,8 +287,8 @@ export default function HomePage() {
       router.push(action.href);
     }
   };
-  const care: CareTile[] = [
-    ...CARE_BUILTIN.map((action) => {
+  const tileOf = (action: CareAction): CareTile => {
+    if (action.kind === "ai") {
       const s = aiState[action.id];
       const busy = loading === action.id;
       return {
@@ -285,11 +297,15 @@ export default function HomePage() {
         disabled: loading !== null || (action.id === "briefing" && s.done),
         onPress: () => press(action.id as Mode),
       };
-    }),
-    ...careExtras.flatMap((id) => {
-      const action = CARE_CATALOG.find((c) => c.id === id);
-      return action ? [{ action, label: action.label, done: Boolean(careDone[id]), on: false, busy: false, disabled: false, aria: action.desc, onPress: () => runCare(action) }] : [];
-    }),
+    }
+    if (action.kind === "flow") {
+      return { action, label: action.label, done: flowOpen || Boolean(careDoneToday(action.id, today)), on: flowOpen, busy: false, disabled: false, aria: "최근 흐름 보기", onPress: () => runCare(action) };
+    }
+    return { action, label: action.label, done: Boolean(careDone[action.id]), on: false, busy: false, disabled: false, aria: action.desc, onPress: () => runCare(action) };
+  };
+  const care: CareTile[] = [
+    ...CARE_BUILTIN.map(tileOf),
+    ...careExtras.flatMap((id) => { const action = CARE_CATALOG.find((c) => c.id === id); return action ? [tileOf(action)] : []; }),
   ];
 
   return (
@@ -371,6 +387,14 @@ export default function HomePage() {
         )}
 
         {error && <p className={styles.error} role="alert">{error}</p>}
+
+        {/* 흐름 보기 (타일 아래) */}
+        {flowOpen && !loading && (
+          <section aria-label="최근 흐름" style={{ marginTop: 4 }}>
+            <FlowView onWrite={() => router.push("/log")} scrollKey="/:flow" />
+          </section>
+        )}
+
         {(briefing || openMoment || review) && <SafetyReport kind="ai" />}
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 

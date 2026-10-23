@@ -1,16 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { ACTION_PRESETS, CUSTOM_COLORS, CUSTOM_EMOJIS, CUSTOM_MAX, Category, CategoryId, SCORE_MAX, SCORE_MIN, allCategories, isCustomCategory, newCategoryId, orderCategories } from "@/lib/categories";
-import { DayRecord, Journal, loadCategoryOrder, loadCustomCategories, loadJournal, loadLog, saveCategoryOrder, saveCustomCategories, saveDay, saveDayLog, syncRecords, todayKey } from "@/lib/storage";
+import { DayRecord, loadCategoryOrder, loadCustomCategories, loadJournal, loadLog, saveCategoryOrder, saveCustomCategories, saveDay, saveDayLog, syncRecords, todayKey } from "@/lib/storage";
 import { useLongPressReorder } from "@/components/useLongPressReorder";
 import { hasCrisisSignal } from "@/lib/crisis";
-import { biggestShifts, lastNDays, series, volatility } from "@/lib/accel";
-import AccelChart from "@/components/AccelChart";
 import HelpBanner from "@/components/HelpBanner";
-import { ConfirmSheet, Empty, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui";
-import { IconChart, IconClose, IconPlus, IconSparkle } from "@/components/Icons";
+import { ConfirmSheet, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui";
+import { IconClose, IconPlus } from "@/components/Icons";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { useScrollMemory } from "@/lib/scroll-memory";
 
@@ -19,7 +16,8 @@ const DELTA_MAX = 5;
 const DELTAS = Array.from({ length: DELTA_MAX * 2 + 1 }, (_, i) => i - DELTA_MAX);
 const clamp = (v: number) => Math.max(SCORE_MIN, Math.min(SCORE_MAX, v));
 const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-type View = "today" | "flow";
+/** 오늘 쓰기 = 오늘 한 일, 기록하기 = 카테고리별 어제 대비 점수. 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다 */
+type View = "today" | "record";
 
 /** 상단 현황(연속 일수·채운 수)은 메인 페이지에서 보여주고, 여기선 바로 쓰기부터 시작 */
 export default function LogPage() {
@@ -35,23 +33,19 @@ export default function LogPage() {
             onChange={setView}
             options={[
               { value: "today", label: "오늘 쓰기" },
-              { value: "flow", label: "흐름 보기" },
+              { value: "record", label: "기록하기" },
             ]}
           />
         </div>
-        {view === "today" ? (
-          <TodayWrite />
-        ) : (
-          <Flow onWrite={() => setView("today")} />
-        )}
+        <TodayWrite part={view} />
       </div>
     </>
   );
 }
 
-/* ================= 오늘 쓰기 ================= */
+/* ================= 오늘 쓰기 · 기록하기 (상태는 공유, 보이는 부분만 다르다) ================= */
 
-function TodayWrite() {
+function TodayWrite({ part }: { part: View }) {
   const date = todayKey();
   const [day, setDay] = useState<DayRecord>({});
   const [did, setDid] = useState<string[]>([]);
@@ -162,7 +156,7 @@ function TodayWrite() {
     );
   }
 
-  return (
+  if (part === "today") return (
     <>
       <div className="section-title" style={{ marginTop: 16 }}>
         <span>오늘 한 일</span>
@@ -196,8 +190,13 @@ function TodayWrite() {
           </button>
         </form>
       </section>
+      <p className="tiny muted" style={{ margin: "12px 4px 0" }}>마음·몸·관계·돈·일의 어제 대비 변화는 <b>기록하기</b> 탭에서 남겨요.</p>
+    </>
+  );
 
-      <div className="section-title">
+  return (
+    <>
+      <div className="section-title" style={{ marginTop: 16 }}>
         <span>오늘의 기분 · 어제보다</span>
         <span className={`saved-indicator ${saved ? "on" : ""}`}>{filled === 0 ? "" : saved ? "저장됨" : "저장 중…"}</span>
       </div>
@@ -303,101 +302,6 @@ function TodayWrite() {
         onClose={() => setRemoving(null)}
         onConfirm={() => { if (removing) removeCategory(removing); setRemoving(null); }}
       />
-    </>
-  );
-}
-
-/* ================= 흐름 ================= */
-
-/** 흐름은 항상 전체 평균(기본 + 내가 추가한 카테고리 점수를 모두 합산) */
-function Flow({ onWrite }: { onWrite: () => void }) {
-  const [journal, setJournal] = useState<Journal | null>(null);
-  const [range, setRange] = useState<7 | 14 | 30>(14);
-  useScrollMemory(journal !== null, "/log:flow");
-
-  useEffect(() => { syncRecords().then(() => setJournal(loadJournal())); }, []);
-
-  const dates = useMemo(() => lastNDays(range), [range]);
-  const points = useMemo(() => (journal ? series(journal, dates, "all") : []), [journal, dates]);
-  const recorded = points.filter((p) => p.level !== null).length;
-  const { drops, rises } = biggestShifts(points);
-  const vol = volatility(points);
-  const color = "var(--text)";
-
-  if (!journal) {
-    return (
-      <div role="status" aria-label="흐름을 불러오고 있어요" style={{ marginTop: 16 }}>
-        <div className="sk-card"><div className="sk w60" /><div className="sk" style={{ height: 240, borderRadius: 12 }} /></div>
-        <div className="sk-tiles" style={{ marginTop: 8 }}><div className="sk" /><div className="sk" /><div className="sk" /></div>
-      </div>
-    );
-  }
-
-  if (Object.keys(journal).length === 0) {
-    return (
-      <Empty icon={<IconChart />} title="아직 기록이 없어요" action={<button type="button" className="btn ghost" onClick={onWrite}>오늘 쓰기로 가기</button>}>
-        오늘 쓰기에서 첫 기록을 남기면 흐름이 보이기 시작해요.
-      </Empty>
-    );
-  }
-
-  return (
-    <>
-      <section className="card" style={{ marginTop: 14 }}>
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-          <span className="tiny muted">전체 평균 · 위는 그날 위치, 아래는 직전 대비 변화</span>
-          <div className="segmented" style={{ padding: 3 }}>
-            {[7, 14, 30].map((r) => (
-              <button key={r} type="button" className={range === r ? "on" : ""} style={{ minHeight: 32, padding: "0 10px", fontSize: 13 }} onClick={() => setRange(r as 7 | 14 | 30)}>
-                {r}일
-              </button>
-            ))}
-          </div>
-        </div>
-        <AccelChart points={points} color={color} />
-        <div className="legend">
-          <span><i className="dot" style={{ background: color }} /> 전체 평균 위치</span>
-          <span><i className="dot" style={{ background: "var(--up)" }} /> 올라간 날</span>
-          <span><i className="dot" style={{ background: "var(--down)" }} /> 내려간 날</span>
-        </div>
-      </section>
-
-      <div className="tiles" style={{ marginTop: 10 }}>
-        <div className="tile"><b>{recorded}</b><small>기록한 날</small></div>
-        <div className="tile"><b>{vol}</b><small>평균 변화폭</small></div>
-        <div className="tile"><b style={{ color: "var(--up)" }}>{points.filter((p) => (p.accel ?? 0) > 0).length}</b><small>올라간 날</small></div>
-      </div>
-
-      <div className="stack" style={{ marginTop: 10 }}>
-        <section className="card">
-          <div className="entry-title" style={{ marginBottom: 8 }}>가장 크게 흔들린 날</div>
-          {drops.length === 0 ? (
-            <p className="muted" style={{ margin: 0, fontSize: 14 }}>큰 하락은 없었어요.</p>
-          ) : (
-            <ul className="shift-list">
-              {drops.map((p) => (
-                <li key={p.date}><span>{fmtDate(p.date)}</span><b style={{ color: "var(--down)" }}>{p.accel}</b></li>
-              ))}
-            </ul>
-          )}
-        </section>
-        <section className="card">
-          <div className="entry-title" style={{ marginBottom: 8 }}>다시 올라온 날</div>
-          {rises.length === 0 ? (
-            <p className="muted" style={{ margin: 0, fontSize: 14 }}>아직은 버티는 중이에요. 그것도 충분해요.</p>
-          ) : (
-            <ul className="shift-list">
-              {rises.map((p) => (
-                <li key={p.date}><span>{fmtDate(p.date)}</span><b style={{ color: "var(--up)" }}>+{p.accel}</b></li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <Link className="btn block ghost" href="/summary" style={{ marginTop: 16 }}>
-        <IconSparkle style={{ width: 18, height: 18 }} /> 이 흐름 AI로 정리하기
-      </Link>
     </>
   );
 }
