@@ -65,6 +65,11 @@
   --tone-love: #df4f78;
   --tone-review: #2f80d0;
   --dot: #ff3b30;
+  --tone-mint: #1f9d7a;
+  --tone-plum: #b34fa0;
+  /* 화면을 가르는 선: 거의 안 보일 만큼 얇게 (고해상도에서는 0.5px) */
+  --hairline: color-mix(in srgb, var(--border) 65%, transparent);
+  --hairline-w: 1px;
   --app-w: 480px;
   --tabbar-h: 56px;
   /* AppRuntime 이 visualViewport 로 채운다: 키보드 높이, 보이는 높이 */
@@ -104,6 +109,8 @@
     --tone-love: #f382a3;
     --tone-review: #6fb0f2;
     --dot: #ff453a;
+    --tone-mint: #4fd1a8;
+    --tone-plum: #e07ccf;
   }
 }
 :root[data-theme="dark"] {
@@ -136,8 +143,11 @@
   --tone-love: #f382a3;
   --tone-review: #6fb0f2;
   --dot: #ff453a;
+  --tone-mint: #4fd1a8;
+  --tone-plum: #e07ccf;
 }
 :root[data-theme="light"] { color-scheme: light; }
+@media (min-resolution: 2dppx) { :root { --hairline-w: 0.5px; } }
 
 /* ---------- 기본 ---------- */
 * { box-sizing: border-box; }
@@ -196,8 +206,12 @@ html[data-keyboard="open"] .app { padding-bottom: calc(var(--kb) + var(--sp-3));
   min-height: calc(64px + env(safe-area-inset-top));
   padding: calc(12px + env(safe-area-inset-top)) var(--gutter) 12px;
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--hairline-w) solid var(--hairline);
+  transition: transform var(--dur-slow) var(--ease);
 }
+/* 스크롤로 숨김 (lib/use-hide-on-scroll.ts). sticky 라 자리는 그대로 두고 위로만 밀어 올린다 */
+.topbar[data-hidden] { transform: translateY(-100%); }
+@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
 .topbar h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.25; }
 .topbar .eyebrow { display: block; font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 2px; }
 .topbar .right { display: flex; gap: var(--sp-1); align-items: center; }
@@ -211,7 +225,7 @@ html[data-keyboard="open"] .app { padding-bottom: calc(var(--kb) + var(--sp-3));
   min-height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
   background: var(--surface);
-  border-top: 1px solid var(--border);
+  border-top: var(--hairline-w) solid var(--hairline);
 }
 /* 아이콘만 (이름은 aria-label·title). 선택하면 인스타그램처럼 회색 바탕에 먹색 아이콘 */
 .tabbar a {

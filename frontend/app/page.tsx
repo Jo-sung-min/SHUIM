@@ -39,8 +39,14 @@ import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { SkeletonCard, SkeletonHero, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { IconChevronR, IconCheck, IconNote, IconSparkle, IconHeart, IconStar, IconBubble, IconSquarePlus } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus, IconHeart, IconStar } from "@/components/Icons";
+import { useRouter } from "next/navigation";
+import { CARE_BUILTIN, CARE_CATALOG, type CareAction, type CareTone, careDoneToday, loadCareExtras, markCareDone, saveCareExtras } from "@/lib/care";
+import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
+import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "./account-screens.module.css";
+
+const TONE_CLASS: Record<CareTone, string> = { briefing: styles.toneBriefing, praise: styles.tonePraise, love: styles.toneLove, review: styles.toneReview, mint: styles.toneMint, plum: styles.tonePlum };
 
 interface Data {
   journal: Journal;
@@ -52,18 +58,18 @@ interface Data {
 
 type Mode = "briefing" | MomentMode | "review";
 
-/** 홈 상단: 가운데 로고, 오른쪽에 인스타그램처럼 새 글(+). 아래 선 없음 (프로필은 하단 탭의 "나"에서) */
+/** 홈 상단: 가운데 로고, 오른쪽에 인스타그램처럼 새 글(+). 내리면 숨고 올리면 다시 나온다 (프로필은 하단 탭의 "나"에서) */
 function HomeHeader() {
-  return <header className={styles.homeHeader}>
+  const hidden = useHideOnScroll();
+  return <header className={styles.homeHeader} data-hidden={hidden || undefined}>
     <span aria-hidden="true" />
     <h1 aria-label="소로우">SOROW</h1>
     <Link href="/write" className={`icon-btn ${styles.homeWrite}`} aria-label="새 외침 쓰기" title="새 외침 쓰기"><IconSquarePlus /></Link>
   </header>;
 }
 
-type CareIcon = typeof IconStar;
-/** 나를 위한 시간 네 칸. 오늘 이미 받았으면 done (빨간 점 없음) */
-interface CareItem { mode: Mode; label: string; busyLabel: string; doneLabel?: string; Icon: CareIcon; tone: string; done: boolean; on: boolean; disabled: boolean; aria: string }
+/** 나를 위한 시간 한 칸. 기본 4칸은 AI 상태에서, 추가한 칸은 lib/care 의 오늘 기록에서 done 을 정한다 (안 했으면 빨간 점) */
+interface CareTile { action: CareAction; label: string; done: boolean; on: boolean; busy: boolean; disabled: boolean; aria: string; onPress: () => void }
 
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
@@ -107,6 +113,17 @@ export default function HomePage() {
   const [loading, setLoading] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const router = useRouter();
+  // 나를 위한 시간: 추가한 칸과 오늘 했는지 (이 기기, 계정별)
+  const [careExtras, setCareExtras] = useState<string[]>([]);
+  const [careDone, setCareDone] = useState<Record<string, boolean>>({});
+  const [adding, setAdding] = useState(false);
+  const [breathing, setBreathing] = useState(false);
+  const refreshCare = useCallback(() => {
+    const ids = loadCareExtras();
+    setCareExtras(ids);
+    setCareDone(Object.fromEntries(ids.map((id) => [id, careDoneToday(id, today)])));
+  }, [today]);
 
   // Refresh the record day too when the app stays open overnight or resumes.
   useEffect(() => {
@@ -143,6 +160,7 @@ export default function HomePage() {
       setReview(r && r.date === today ? r : null);
       setReviewOpen(false);
       setOpen(null);
+      refreshCare();
     };
     // 익명이면 이 기기의 데이터를 바로. 로그인 계정이면 서버에서 받은 뒤에 (빈 화면이 잠깐 비치지 않게)
     const guest = !sessionUserId();
@@ -154,7 +172,7 @@ export default function HomePage() {
       .catch(() => null) // 세션 키만 맞춘다 (계정 표시는 하단 탭 "나"에서)
       .then(() => syncRecords())
       .then((pulled) => { if (!guest || pulled) apply(); });
-  }, [today]);
+  }, [today, refreshCare]);
 
   useEffect(reload, [reload]);
   useScrollMemory(data !== null);
@@ -240,11 +258,36 @@ export default function HomePage() {
   const dirLabel = { up: "▲ 올라오는 중", flat: "→ 유지 중", down: "▼ 내려간 날" } as const;
   const crisis = briefing?.crisis || moments.praise?.crisis || moments.love?.crisis || review?.crisis;
   const openMoment = open ? moments[open] : undefined;
-  const care: CareItem[] = [
-    { mode: "briefing", label: "정리하기", busyLabel: "정리 중…", doneLabel: "정리 완료", Icon: briefing ? IconCheck : IconSparkle, tone: styles.toneBriefing, done: Boolean(briefing), on: false, disabled: loading !== null || Boolean(briefing), aria: "오늘의 나 정리" },
-    { mode: "praise", label: MOMENTS.praise.label, busyLabel: "생각 중…", Icon: IconStar, tone: styles.tonePraise, done: Boolean(moments.praise), on: open === "praise", disabled: loading !== null, aria: MOMENTS.praise.heading },
-    { mode: "love", label: MOMENTS.love.label, busyLabel: "생각 중…", Icon: IconHeart, tone: styles.toneLove, done: Boolean(moments.love), on: open === "love", disabled: loading !== null, aria: MOMENTS.love.heading },
-    { mode: "review", label: "분석하기", busyLabel: "분석 중…", Icon: IconNote, tone: styles.toneReview, done: Boolean(review), on: reviewOpen, disabled: loading !== null, aria: "메모로 나를 분석" },
+  // 기본 4칸: AI 상태(오늘 캐시)로 done/busy 를 정한다
+  const aiState: Record<string, { done: boolean; on: boolean; aria: string; busyLabel: string; doneLabel?: string }> = {
+    briefing: { done: Boolean(briefing), on: false, aria: "오늘의 나 정리", busyLabel: "정리 중…", doneLabel: "정리 완료" },
+    praise: { done: Boolean(moments.praise), on: open === "praise", aria: MOMENTS.praise.heading, busyLabel: "생각 중…" },
+    love: { done: Boolean(moments.love), on: open === "love", aria: MOMENTS.love.heading, busyLabel: "생각 중…" },
+    review: { done: Boolean(review), on: reviewOpen, aria: "메모로 나를 분석", busyLabel: "분석 중…" },
+  };
+  const runCare = (action: CareAction) => {
+    if (action.kind === "breath") { setBreathing(true); return; }
+    if (action.kind === "link" && action.href) {
+      markCareDone(action.id, today);
+      refreshCare();
+      router.push(action.href);
+    }
+  };
+  const care: CareTile[] = [
+    ...CARE_BUILTIN.map((action) => {
+      const s = aiState[action.id];
+      const busy = loading === action.id;
+      return {
+        action, done: s.done, on: s.on, busy, aria: s.aria,
+        label: busy ? s.busyLabel : s.done && s.doneLabel ? s.doneLabel : action.label,
+        disabled: loading !== null || (action.id === "briefing" && s.done),
+        onPress: () => press(action.id as Mode),
+      };
+    }),
+    ...careExtras.flatMap((id) => {
+      const action = CARE_CATALOG.find((c) => c.id === id);
+      return action ? [{ action, label: action.label, done: Boolean(careDone[id]), on: false, busy: false, disabled: false, aria: action.desc, onPress: () => runCare(action) }] : [];
+    }),
   ];
 
   return (
@@ -290,35 +333,50 @@ export default function HomePage() {
           </div>
         </section>}
 
-        {/* 액션 4개 */}
+        {/* 나를 위한 시간: 기본 4칸 + 사용자가 추가한 칸 (lib/care.ts) */}
         {!empty && (
           <section aria-labelledby="home-care-title">
-          <div className={styles.sectionHeading}><h3 id="home-care-title">나를 위한 시간</h3><span>기록에서 찾는 작은 위로</span></div>
+          <div className={styles.sectionHeading}>
+            <h3 id="home-care-title">나를 위한 시간</h3>
+            <button type="button" className={styles.sectionAdd} onClick={() => setAdding(true)} aria-label="나를 위한 시간 칸 추가"><IconPlus />추가</button>
+          </div>
           <div className={styles.care}>
             <div className={styles.careGrid}>
-              {care.map(({ mode, label, busyLabel, doneLabel, Icon, tone, done, on, disabled, aria }) => {
-                const busy = loading === mode;
+              {care.map(({ action, label, done, on, busy, disabled, aria, onPress }) => {
                 const fresh = !done && !busy; // 오늘 아직 안 눌렀으면 빨간 점
                 return (
                   <button
-                    key={mode}
+                    key={action.id}
                     type="button"
-                    className={`${styles.careTile} ${tone} ${done ? styles.careDone : ""} ${on ? styles.careOn : ""} ${busy ? styles.careBusy : ""}`}
+                    className={`${styles.careTile} ${TONE_CLASS[action.tone]} ${done ? styles.careDone : ""} ${on ? styles.careOn : ""} ${busy ? styles.careBusy : ""}`}
                     disabled={disabled}
-                    onClick={() => press(mode)}
-                    aria-pressed={mode === "briefing" ? undefined : on}
+                    onClick={onPress}
+                    aria-pressed={action.kind === "ai" && action.id !== "briefing" ? on : undefined}
                     aria-busy={busy}
                     aria-label={fresh ? `${aria} · 오늘 아직 안 했어요` : aria}
-                    title={mode === "briefing" && done ? "오늘 정리 완료 · 하루 한 번" : undefined}
+                    title={action.id === "briefing" && done ? "오늘 정리 완료 · 하루 한 번" : undefined}
                   >
-                    <span className={styles.careIcon}><Icon /></span>
-                    <span className={styles.careLabel}>{busy ? busyLabel : done && doneLabel ? doneLabel : label}</span>
+                    <span className={styles.careIcon}><CareIcon name={action.icon} /></span>
+                    <span className={styles.careLabel}>{label}</span>
                     {fresh && <span className={styles.careDot} aria-hidden="true" />}
+                    {done && !busy && <span className={styles.careCheck} aria-hidden="true"><IconCheck /></span>}
                   </button>
                 );
               })}
             </div>
           </div>
+          <CareAddSheet
+            open={adding}
+            selected={careExtras}
+            onClose={() => setAdding(false)}
+            onToggle={(id) => {
+              // 저장된 목록을 그때그때 읽어 연타해도 앞 선택이 덮이지 않게
+              const cur = loadCareExtras();
+              saveCareExtras(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+              refreshCare();
+            }}
+          />
+          <BreathSheet open={breathing} onClose={() => setBreathing(false)} onDone={() => { markCareDone("breath", today); refreshCare(); }} />
           </section>
         )}
 

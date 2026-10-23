@@ -1,0 +1,14 @@
+/* 나를 위한 시간: 추가 시트의 줄 아이콘, 숨 고르기 원 */
+.pickIcon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 12px; background: var(--surface-2); color: var(--text); }
+.pickIcon svg { width: 20px; height: 20px; }
+.pickCheck { display: grid; place-items: center; width: 22px; height: 22px; margin-left: auto; flex: none; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+.pickCheck svg { width: 13px; height: 13px; stroke-width: 3; }
+
+.breath { display: grid; justify-items: center; gap: 8px; padding: 18px 0 6px; text-align: center; }
+.breath b { font-size: 20px; letter-spacing: -0.02em; }
+.breath small { max-width: 28ch; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.breathCircle { width: 150px; height: 150px; margin-bottom: 10px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--tone-mint) 55%, var(--surface)), var(--tone-mint)); box-shadow: 0 18px 40px -22px var(--tone-mint); transform: scale(0.72); }
+.breathing { animation: breathe 10s ease-in-out infinite; }
+/* 4초 들이쉬며 커지고 6초 내쉬며 작아진다 (BreathSheet 의 BREATH_IN 과 맞춤) */
+@keyframes breathe { 0% { transform: scale(0.72); } 40% { transform: scale(1); } 100% { transform: scale(0.72); } }
+@media (prefers-reduced-motion: reduce) { .breathing { animation: none; transform: scale(0.86); } }

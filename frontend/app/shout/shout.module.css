@@ -11,7 +11,11 @@
   display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; align-items: center;
   min-height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 4px 0;
   background: var(--bg);
+  border-bottom: var(--hairline-w) solid var(--hairline);
+  transition: transform var(--dur-slow) var(--ease);
 }
+.bar[data-hidden] { transform: translateY(-100%); }
+@media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
 .bar h1 { margin: 0; text-align: center; font-size: 16px; font-weight: 700; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar :global(.icon-btn) { width: 48px; height: 48px; }
 

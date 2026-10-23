@@ -4,11 +4,13 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { IconClose, IconCloudOff, IconInbox } from "./Icons";
 import { CategoryIcon } from "./CategoryIcon";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
+import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 
-/* ---------- 상단 바 ---------- */
+/* ---------- 상단 바 (인스타그램처럼 내리면 숨고 올리면 다시 나온다) ---------- */
 export function TopBar({ title, eyebrow, right }: { title: string; eyebrow?: ReactNode; right?: ReactNode }) {
+  const hidden = useHideOnScroll();
   return (
-    <header className="topbar">
+    <header className="topbar" data-hidden={hidden || undefined}>
       <h1>
         {eyebrow && <span className="eyebrow">{eyebrow}</span>}
         {title}

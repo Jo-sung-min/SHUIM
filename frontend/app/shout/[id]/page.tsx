@@ -10,6 +10,7 @@ import { Empty, SkeletonCard, fmtRelative } from "@/components/ui";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { CheerButton, CommentComposer, CommentRow, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconBubble, IconChevronL, IconClose, IconMore } from "@/components/Icons";
+import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "../shout.module.css";
 
 type Sort = "top" | "new";
@@ -30,6 +31,7 @@ export default function ShoutPostPage() {
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const barHidden = useHideOnScroll();
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -62,7 +64,7 @@ export default function ShoutPostPage() {
   };
 
   const bar = (title: string, right?: React.ReactNode) => (
-    <header className={styles.bar}>
+    <header className={styles.bar} data-hidden={barHidden || undefined}>
       <button type="button" className="icon-btn" aria-label="뒤로" onClick={back}><IconChevronL /></button>
       <h1>{title}</h1>
       {right ?? <span aria-hidden="true" />}
