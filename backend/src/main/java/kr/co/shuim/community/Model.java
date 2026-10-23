@@ -33,7 +33,13 @@ public final class Model {
         }
     }
 
-    public record Comment(String id, String postId, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt) implements Item {}
+    /** 댓글. parentId 가 있으면 그 댓글의 답글(대댓글, 한 단계) */
+    public record Comment(String id, String postId, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, String parentId) implements Item {
+        /** 답글이 아닌 댓글 (테스트·시뮬레이션) */
+        public Comment(String id, String postId, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt) {
+            this(id, postId, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, null);
+        }
+    }
 
     public record FeedPage(String image, String title, String text) {}
 

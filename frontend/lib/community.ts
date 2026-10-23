@@ -62,7 +62,7 @@ export const cachedCommunity = () => cached;
 export const api = {
   createPost: (cat: ShoutCat, text: string, images: string[] = []) => call("/api/community/post.create", { cat, text, images }),
   deletePost: (id: string) => call("/api/community/post.delete", { id }),
-  addComment: (postId: string, text: string) => call("/api/community/comment.create", { postId, text }),
+  addComment: (postId: string, text: string, parentId?: string) => call("/api/community/comment.create", { postId, text, parentId }),
   deleteComment: (id: string) => call("/api/community/comment.delete", { id }),
   toggleCheer: (t: Target) => call("/api/community/cheer", t),
   report: (t: Target, reason: ReportReason) => call("/api/community/report", { ...t, reason }),

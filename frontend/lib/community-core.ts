@@ -89,6 +89,8 @@ export const SHOUT_MAX_IMAGES = 4;
 
 export interface Comment extends Base {
   postId: string;
+  /** 답글(대댓글)이면 부모 댓글 id. 한 단계만 — 답글의 답글은 같은 부모에 붙는다 */
+  parentId?: string;
 }
 
 /** 피드 글 안의 콘텐츠 하나: 사진(선택) + 제목(선택) + 글. 가로로 넘기면 사진과 글이 함께 바뀐다 */
@@ -186,6 +188,11 @@ export function findTarget(s: CommunityStore, target: Target): Post | Comment | 
 }
 export const commentsOf = (s: CommunityStore, postId: string) =>
   s.comments.filter((c) => c.postId === postId && isVisible(s, c)).sort((a, b) => a.createdAt - b.createdAt);
+/** 글의 최상위 댓글만 (답글 제외) */
+export const topCommentsOf = (s: CommunityStore, postId: string) => commentsOf(s, postId).filter((c) => !c.parentId);
+/** 댓글에 달린 답글 (오래된 순) */
+export const repliesOf = (s: CommunityStore, commentId: string) =>
+  s.comments.filter((c) => c.parentId === commentId && isVisible(s, c)).sort((a, b) => a.createdAt - b.createdAt);
 export const hasReported = (s: CommunityStore, item: Base) => activeReports(item).some((r) => r.by === s.me.id);
 export const isCreator = (s: CommunityStore, userId: string) => Boolean(s.creators[userId]);
 export const creatorOf = (s: CommunityStore, userId: string): Creator => s.creators[userId] ?? { bio: "", followers: [], since: Date.now() };
@@ -275,7 +282,7 @@ export const fmtWon = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 
 export interface Notification {
   id: string;
-  kind: "comment_on_post" | "reply_on_thread";
+  kind: "comment_on_post" | "reply_on_thread" | "reply_to_comment";
   postKind: "post" | "feed";
   postId: string;
   postText: string;
@@ -297,13 +304,16 @@ export function listNotifications(s: CommunityStore, seenAt: number): Notificati
     return null;
   };
   const myFirstComment = new Map<string, number>();
-  for (const c of s.comments) if (c.authorId === me) myFirstComment.set(c.postId, Math.min(c.createdAt, myFirstComment.get(c.postId) ?? Infinity));
+  const myCommentIds = new Set<string>();
+  for (const c of s.comments) if (c.authorId === me) { myFirstComment.set(c.postId, Math.min(c.createdAt, myFirstComment.get(c.postId) ?? Infinity)); myCommentIds.add(c.id); }
   for (const c of s.comments) {
     if (c.authorId === me || !isVisible(s, c)) continue;
     const p = postOf(c.postId);
     if (!p) continue;
     const base = { id: c.id, postKind: p.kind, postId: c.postId, postText: p.text, actorId: c.authorId, actorNick: userById(s, c.authorId).nick, text: c.text, at: c.createdAt, read: c.createdAt <= seenAt } as const;
-    if (p.authorId === me) out.push({ ...base, kind: "comment_on_post" });
+    // 내 댓글에 달린 답글이 가장 먼저
+    if (c.parentId && myCommentIds.has(c.parentId)) out.push({ ...base, kind: "reply_to_comment" });
+    else if (p.authorId === me) out.push({ ...base, kind: "comment_on_post" });
     else {
       const mine = myFirstComment.get(c.postId);
       if (mine !== undefined && c.createdAt > mine) out.push({ ...base, kind: "reply_on_thread" });

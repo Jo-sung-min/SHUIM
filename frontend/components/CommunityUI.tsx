@@ -9,8 +9,9 @@ import {
   ReportReason,
   Target,
   api,
-  commentsOf,
   findTarget,
+  repliesOf,
+  topCommentsOf,
   hasReported,
   isBlocked,
   isFlagged,
@@ -80,10 +81,26 @@ export function CheerButton({ count, on, onClick, small, vertical }: { count: nu
 }
 
 /* ---------- 댓글 한 줄 ---------- */
-export function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore; comment: Comment; onCheer: () => void | Promise<unknown>; onMenu: () => void }) {
+/** 답글 대상: 어느 댓글(최상위)에, 누구에게 */
+export interface ReplyTarget { parentId: string; nick: string }
+
+/**
+ * 댓글 한 줄. 최상위 댓글이면 아래에 "답글 달기"와 답글 목록(접기/펼치기)이 붙는다.
+ * 답글(대댓글) 줄에서 "답글 달기"를 누르면 같은 부모 댓글에 그 사람 앞으로 답글이 달린다 (인스타그램처럼 한 단계만).
+ */
+export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onReplyCheer, onReplyMenu }: {
+  s: CommunityStore; comment: Comment; onCheer: () => void | Promise<unknown>; onMenu: () => void;
+  onReply?: (target: ReplyTarget) => void;
+  replies?: Comment[];
+  onReplyCheer?: (reply: Comment) => void | Promise<unknown>;
+  onReplyMenu?: (reply: Comment) => void;
+}) {
   const me = s.me.id;
   const author = userById(s, comment.authorId);
   const [show, setShow] = useState(false);
+  const [openReplies, setOpenReplies] = useState(false);
+  const parentId = comment.parentId ?? comment.id;
+  const nick = comment.authorId === me ? "나" : author.nick;
   if (isFlagged(comment) && !show) {
     return (
       <div className="comment">
@@ -94,17 +111,44 @@ export function CommentRow({ s, comment, onCheer, onMenu }: { s: CommunityStore;
       </div>
     );
   }
+  const list = replies ?? [];
   return (
-    <div className="comment">
-      <div className="meta">
-        <Link href={`/u/${comment.authorId}`} style={{ color: "var(--text)", fontWeight: 600 }}>{comment.authorId === me ? "나" : author.nick}</Link>
-        <span>·</span>
-        <span>{fmtRelative(comment.createdAt)}</span>
-        <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 15, height: 15 }} /></button>
+    <>
+      <div className="comment">
+        <div className="meta">
+          <Link href={`/u/${comment.authorId}`} style={{ color: "var(--text)", fontWeight: 600 }}>{nick}</Link>
+          <span>·</span>
+          <span>{fmtRelative(comment.createdAt)}</span>
+          <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 15, height: 15 }} /></button>
+        </div>
+        <p className="text">{comment.text}</p>
+        <div className="acts">
+          <CheerButton small count={comment.cheers.length} on={comment.cheers.includes(me)} onClick={onCheer} />
+          {onReply && <button type="button" className="reply-btn" onClick={() => onReply({ parentId, nick: author.nick })}>답글 달기</button>}
+        </div>
       </div>
-      <p className="text">{comment.text}</p>
-      <CheerButton small count={comment.cheers.length} on={comment.cheers.includes(me)} onClick={onCheer} />
-    </div>
+      {list.length > 0 && (
+        <>
+          <button type="button" className="replies-toggle" aria-expanded={openReplies} onClick={() => setOpenReplies((v) => !v)}>
+            {openReplies ? "답글 숨기기" : `답글 ${list.length}개 보기`}
+          </button>
+          {openReplies && (
+            <div className="replies">
+              {list.map((r) => (
+                <CommentRow
+                  key={r.id}
+                  s={s}
+                  comment={r}
+                  onCheer={() => onReplyCheer?.(r)}
+                  onMenu={() => onReplyMenu?.(r)}
+                  onReply={onReply}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -122,7 +166,8 @@ export function CommentThread({
   onMenu: (t: Target) => void;
   placeholder?: string;
 }) {
-  const comments = commentsOf(s, postId);
+  const comments = topCommentsOf(s, postId);
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   return (
     <>
       <div className="comment-list">
@@ -132,12 +177,16 @@ export function CommentThread({
             key={cm.id}
             s={s}
             comment={cm}
+            replies={repliesOf(s, cm.id)}
             onCheer={() => run(onChange, () => api.toggleCheer({ kind: "comment", id: cm.id }))}
             onMenu={() => onMenu({ kind: "comment", id: cm.id })}
+            onReply={setReplyTo}
+            onReplyCheer={(r) => run(onChange, () => api.toggleCheer({ kind: "comment", id: r.id }))}
+            onReplyMenu={(r) => onMenu({ kind: "comment", id: r.id })}
           />
         ))}
       </div>
-      <CommentComposer s={s} postId={postId} onChange={onChange} placeholder={placeholder} />
+      <CommentComposer s={s} postId={postId} onChange={onChange} placeholder={placeholder} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
     </>
   );
 }
@@ -149,25 +198,33 @@ export function CommentComposer({
   onChange,
   placeholder = "위로 한마디. 조언보다 '그랬구나'가 먼저예요.",
   className,
+  replyTo,
+  onCancelReply,
 }: {
   s: CommunityStore;
   postId: string;
   onChange: (s: CommunityStore) => void;
   placeholder?: string;
   className?: string;
+  /** 있으면 이 댓글의 답글로 올라간다 (입력창 위에 "○○ 님에게 답글" 띠) */
+  replyTo?: ReplyTarget | null;
+  onCancelReply?: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
+  const field = useRef<HTMLTextAreaElement>(null);
   const blocked = isBlocked(s.me);
+  // 답글 대상이 정해지면 바로 입력할 수 있게 포커스
+  useEffect(() => { if (replyTo) field.current?.focus(); }, [replyTo]);
   const submit = async () => {
     const t = text.trim();
     if (!t || locked.current) return;
     locked.current = true;
     setBusy(true);
     try {
-      const saved = await run(onChange, () => api.addComment(postId, t));
-      if (saved) setText("");
+      const saved = await run(onChange, () => api.addComment(postId, t, replyTo?.parentId));
+      if (saved) { setText(""); onCancelReply?.(); if (field.current) field.current.style.height = "auto"; }
     } finally {
       locked.current = false;
       setBusy(false);
@@ -179,17 +236,24 @@ export function CommentComposer({
         <div className={`notice warn ${className ?? ""}`}>차단된 계정은 댓글을 쓸 수 없어요.</div>
       ) : (
         <form
-          className={`composer ${className ?? ""}`}
+          className={`composer ${replyTo ? "replying" : ""} ${className ?? ""}`}
           onSubmit={(e) => {
             e.preventDefault();
             submit();
           }}
         >
+          {replyTo && (
+            <div className="reply-bar">
+              <span><b>{replyTo.nick}</b> 님에게 답글 남기는 중</span>
+              <button type="button" onClick={onCancelReply} aria-label="답글 취소">취소</button>
+            </div>
+          )}
           <textarea
+            ref={field}
             value={text}
             disabled={busy}
             onChange={(e) => setText(e.target.value)}
-            placeholder={placeholder}
+            placeholder={replyTo ? `${replyTo.nick} 님에게 답글…` : placeholder}
             rows={1}
             maxLength={300}
             onInput={(ev) => {

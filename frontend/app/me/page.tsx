@@ -176,7 +176,7 @@ export default function MePage() {
                 <Link key={n.id} href={n.postKind === "post" ? `/shout/${n.postId}` : `/feed?post=${n.postId}`} className={`notif ${n.read ? "" : "unread"}`}>
                   <span className="avatar sm">{n.actorNick.slice(0, 1)}</span>
                   <span className="grow" style={{ minWidth: 0 }}>
-                    <span className="who"><b>{n.actorNick}</b>{n.kind === "comment_on_post" ? " 님이 내 글에 위로를 남겼어요" : " 님이 내가 위로한 글에 답했어요"}<small>{fmtRelative(n.at)}</small></span>
+                    <span className="who"><b>{n.actorNick}</b>{n.kind === "comment_on_post" ? " 님이 내 글에 위로를 남겼어요" : n.kind === "reply_to_comment" ? " 님이 내 댓글에 답글을 남겼어요" : " 님이 내가 위로한 글에 답했어요"}<small>{fmtRelative(n.at)}</small></span>
                     <span className="msg">{n.text}</span>
                     <span className="ctx"><IconMessage style={{ width: 12, height: 12 }} /> {n.postText.slice(0, 40)}{n.postText.length > 40 ? "…" : ""}</span>
                   </span>

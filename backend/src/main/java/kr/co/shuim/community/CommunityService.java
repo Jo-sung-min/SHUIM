@@ -85,7 +85,8 @@ public class CommunityService {
             Db.textArray(rs, "images"))).list();
         List<Comment> comments = new ArrayList<>(jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
             rs.getString("id"), rs.getString("post_id"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
-            listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"))).list());
+            listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
+            rs.getString("parent_id"))).list());
         List<FeedPost> feed = jdbc.sql("SELECT * FROM feed_posts").query((rs, i) -> {
             String id = rs.getString("id");
             String image = rs.getString("image");
@@ -154,7 +155,7 @@ public class CommunityService {
             w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund())));
         return new Store(store.me(), store.users().stream().filter(u -> !excluded.contains(u.id())).toList(), posts,
             store.comments().stream().filter(c -> !excluded.contains(c.authorId()) && visiblePostIds.contains(c.postId()) && (admin || CommunityLogic.isVisible(store, c)))
-                .map(c -> new Comment(c.id(), c.postId(), c.text(), c.authorId(), c.createdAt(), c.cheers(), publicReports(c, viewer, admin), c.hidden(), c.reviewedAt())).toList(),
+                .map(c -> new Comment(c.id(), c.postId(), c.text(), c.authorId(), c.createdAt(), c.cheers(), publicReports(c, viewer, admin), c.hidden(), c.reviewedAt(), c.parentId())).toList(),
             feed, creators, store.following().stream().filter(id -> !excluded.contains(id)).toList(),
             store.donations().stream().filter(d -> !excluded.contains(d.by())).toList(), weekly);
     }
@@ -274,19 +275,34 @@ public class CommunityService {
         return loadStore(me);
     }
 
-    @Transactional
     public Store addComment(DbUser me, String postId, Object body) {
+        return addComment(me, postId, body, null);
+    }
+
+    /** 댓글 또는 답글. parentId 가 있으면 같은 글의 댓글이어야 하고, 답글의 답글은 그 부모(최상위 댓글)에 붙인다 */
+    @Transactional
+    public Store addComment(DbUser me, String postId, Object body, String parentId) {
         Db.lockCommunity(jdbc);
         assertNotBlocked(me);
         String kind = jdbc.sql("SELECT count(*) FROM shout_posts WHERE id = ?").param(postId).query(Long.class).single() > 0 ? "post"
             : jdbc.sql("SELECT count(*) FROM feed_posts WHERE id = ?").param(postId).query(Long.class).single() > 0 ? "feed" : null;
         if (kind == null) throw ApiException.notFound("글을 찾을 수 없어요");
         assertTargetAccessible(me, kind, postId);
-        jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text) VALUES (?, ?, ?, ?, ?)")
-            .param(Ids.uid()).param(kind).param(postId).param(me.id()).param(text(body, 300)).update();
+        String parent = null;
+        if (parentId != null && !parentId.isBlank()) {
+            record Parent(String postId, String parentId) {}
+            Parent p = jdbc.sql("SELECT post_id, parent_id FROM comments WHERE id = ?").param(parentId)
+                .query((rs, i) -> new Parent(rs.getString("post_id"), rs.getString("parent_id"))).optional()
+                .orElseThrow(() -> ApiException.notFound("답글을 달 댓글을 찾을 수 없어요"));
+            if (!postId.equals(p.postId())) throw ApiException.badRequest("다른 글의 댓글에는 답글을 달 수 없어요");
+            parent = p.parentId() != null ? p.parentId() : parentId;
+        }
+        jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text, parent_id) VALUES (?, ?, ?, ?, ?, ?)")
+            .param(Ids.uid()).param(kind).param(postId).param(me.id()).param(text(body, 300)).param(parent).update();
         return loadStore(me);
     }
 
+    /** 내 댓글 삭제. 답글은 DB 의 ON DELETE CASCADE 로 함께 지워진다 */
     @Transactional
     public Store deleteComment(DbUser me, String id) {
         Db.lockCommunity(jdbc);

@@ -48,7 +48,7 @@ public class CommunityController {
         return switch (action) {
             case "post.create" -> community.createPost(me, b.get("cat"), b.get("text"), b.get("images"));
             case "post.delete" -> community.deletePost(me, str(b, "id"));
-            case "comment.create" -> community.addComment(me, str(b, "postId"), b.get("text"));
+            case "comment.create" -> community.addComment(me, str(b, "postId"), b.get("text"), b.get("parentId") instanceof String p ? p : null);
             case "comment.delete" -> community.deleteComment(me, str(b, "id"));
             case "cheer" -> community.toggleCheer(me, target(b));
             case "report" -> community.report(me, target(b), b.get("reason"));

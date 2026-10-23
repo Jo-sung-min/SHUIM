@@ -710,7 +710,11 @@ textarea.lined {
 .event .check svg { width: 14px; height: 14px; }
 
 /* ---------- 외침 (커뮤니티) ---------- */
-.post { padding: 16px 16px 12px; }
+.post { padding: 16px 16px 12px; transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
+/* 목록에서 글(본문·사진)을 누르면 카드 전체가 살짝 눌린다 (힘내요·더보기 버튼은 자기 효과만) */
+.post:has(> .post-text:active), .post:has(> [class*="thumbs"]:active) { transform: scale(0.985); background: var(--surface-2); }
+.post > .post-text[role="button"] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+@media (prefers-reduced-motion: reduce) { .post { transition: none; } .post:has(> .post-text:active), .post:has(> [class*="thumbs"]:active) { transform: none; } }
 .post-head { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
 .post-head .cat { color: var(--text); font-weight: 700; }
 .post-head .nick { color: var(--text-2); }
@@ -735,8 +739,23 @@ textarea.lined {
 .comment .meta { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
 .comment .meta .more { margin-left: auto; width: 32px; height: 32px; }
 .comment .text { margin: 0 0 8px; font-size: 16px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+/* 대댓글: 댓글 아래 "답글 달기", 답글 목록은 들여쓰기, 접고 펼치기 */
+.comment .acts { display: flex; align-items: center; gap: 6px; }
+.comment .reply-btn { min-height: 36px; padding: 6px 8px; border: 0; background: none; color: var(--text-2); font-size: 13px; font-weight: 600; border-radius: 10px; }
+.comment .reply-btn:active { background: var(--surface-2); }
+.replies { margin-left: 22px; padding-left: 14px; border-left: 2px solid var(--border); }
+.replies .comment { border-top: 0; padding: 10px 0 2px; }
+.replies .comment .text { font-size: 15px; }
+.replies-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; margin: 2px 0 4px 22px; padding: 0 6px; border: 0; background: none; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.replies-toggle::before { content: ""; width: 24px; height: 1px; background: var(--border-strong); }
+.reply-mention { color: var(--accent); font-weight: 650; margin-right: 4px; }
 
 .composer { display: flex; gap: var(--sp-1); align-items: flex-end; margin-top: 12px; }
+/* 답글 입력 중: 입력창 위에 대상 띠 */
+.composer.replying { flex-wrap: wrap; }
+.composer .reply-bar { flex: 0 0 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); font-size: 13px; }
+.composer .reply-bar b { color: var(--text); font-weight: 650; }
+.composer .reply-bar button { min-height: 28px; padding: 2px 8px; border: 0; background: none; color: var(--text-2); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .composer textarea {
   flex: 1; min-height: 48px; max-height: 140px; padding: 12px 14px; border-radius: var(--radius-btn); border: 1px solid var(--border);
   background: var(--surface-2); resize: none; line-height: 1.5; font-size: 16px;
