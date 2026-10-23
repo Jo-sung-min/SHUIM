@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FEED_BG_COUNT, FEED_BG_LABELS, FEED_MAX_PAGES, type FeedPage } from "@/lib/community-core";
 import { hasCrisisSignal } from "@/lib/crisis";
+import { hasHighlights } from "@/lib/highlight";
 import { uploadImage } from "@/lib/upload";
 import { inspectPhotoHeader } from "@/lib/photo-edit";
 import HelpBanner from "./HelpBanner";
@@ -24,6 +25,23 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
   const [textOnly, setTextOnly] = useState(false);
   const [title, setTitle] = useState("");
   const [caption, setCaption] = useState("");
+  const captionRef = useRef<HTMLTextAreaElement>(null);
+  /** 형광펜: 선택한 글(없으면 커서가 있는 줄)을 ==…== 로 감싼다. 이미 감싸져 있으면 푼다 */
+  const highlightSelection = () => {
+    const el = captionRef.current;
+    if (!el) return;
+    const v = caption;
+    let s = el.selectionStart, e = el.selectionEnd;
+    if (s === e) { s = v.lastIndexOf("\n", s - 1) + 1; e = v.indexOf("\n", e); if (e < 0) e = v.length; }
+    const sel = v.slice(s, e);
+    if (!sel.trim()) return;
+    const wrapped = sel.startsWith("==") && sel.endsWith("==") && sel.length > 4;
+    const next = wrapped ? v.slice(0, s) + sel.slice(2, -2) + v.slice(e) : `${v.slice(0, s)}==${sel}==${v.slice(e)}`;
+    if (next.length > 280) return;
+    setCaption(next);
+    const len = wrapped ? sel.length - 4 : sel.length + 4;
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s, s + len); });
+  };
   const [bio, setBio] = useState("");
   const [bg, setBg] = useState(0);
   const [editing, setEditing] = useState<string | null>(null);
@@ -207,7 +225,17 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
             {photos.length > 1 && <p className={styles.hint}>옆으로 넘겨 사진을 확인해 보세요.</p>}
           </>}
           <div className="field"><label htmlFor="post-title">제목 <span className="muted">(선택)</span></label><input id="post-title" value={title} disabled={busy} maxLength={24} placeholder="오늘의 순간에 이름을 붙인다면" onChange={(event) => setTitle(event.target.value)} /></div>
-          <div className="field"><label htmlFor="post-caption">함께 나눌 이야기 {!textOnly && <span className="muted">(선택)</span>}</label><textarea id="post-caption" disabled={busy} value={caption} maxLength={280} placeholder="사진에 담긴 마음이나 누군가에게 건네고 싶은 위로를 적어 주세요." onChange={(event) => setCaption(event.target.value)} /><span className={styles.counter}>{caption.length}/280</span></div>
+          <div className="field">
+            <label htmlFor="post-caption">함께 나눌 이야기 {!textOnly && <span className="muted">(선택)</span>}</label>
+            <textarea id="post-caption" ref={captionRef} disabled={busy} value={caption} maxLength={280} placeholder="사진에 담긴 마음이나 누군가에게 건네고 싶은 위로를 적어 주세요." onChange={(event) => setCaption(event.target.value)} />
+            <div className={styles.captionTools}>
+              <button type="button" className={styles.hlBtn} disabled={busy || !caption.trim()} onClick={highlightSelection} title="선택한 글 또는 지금 줄을 형광펜으로 강조">
+                <mark className="hl">형광펜</mark>
+              </button>
+              <span className={styles.hint}>{hasHighlights(caption) ? "표시한 부분이 강조돼요" : "표시가 없으면 마지막 줄이 강조돼요"}</span>
+              <span className={styles.counter}>{caption.length}/280</span>
+            </div>
+          </div>
           {hasCrisisSignal(caption) && <HelpBanner alert />}
           {textOnly && <div className="field"><label>글 배경</label><div className="swatches">{Array.from({ length: FEED_BG_COUNT }, (_, index) => <button type="button" key={index} disabled={busy} className={"swatch bg-" + index + (bg === index ? " on" : "")} aria-label={FEED_BG_LABELS[index]} aria-pressed={bg === index} onClick={() => setBg(index)}><span>{FEED_BG_LABELS[index]}</span></button>)}</div></div>}
           {firstTime && <div className="field"><label htmlFor="post-bio">내 소개 <span className="muted">(선택)</span></label><input id="post-bio" value={bio} maxLength={80} disabled={busy} placeholder="어떤 마음을 나누고 싶나요?" onChange={(event) => setBio(event.target.value)} /></div>}

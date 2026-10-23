@@ -13,6 +13,7 @@ import { useScrollMemory } from "@/lib/scroll-memory";
 import BlockUser from "@/components/BlockUser";
 import SafetyReport from "@/components/SafetyReport";
 import { showToast } from "@/lib/toast";
+import { stripHighlights } from "@/lib/highlight";
 
 type Tab = "feed" | "shout";
 
@@ -107,7 +108,7 @@ export default function PublicProfilePage() {
             <div className="profile-grid">
               {data.feed.map((f) => (
                 <Link key={f.id} href={`/feed?post=${f.id}`} className={`profile-cell bg-${f.bg} ${f.image ? "has-img" : ""}`} style={f.image ? { backgroundImage: `url(${f.image})` } : undefined}>
-                  <span className="t">{f.title ?? f.text.split("\n")[0]}</span>
+                  <span className="t">{f.title ?? stripHighlights(f.text).split("\n")[0]}</span>
                   <span className="c"><IconFist /> {f.cheers}</span>
                 </Link>
               ))}

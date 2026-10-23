@@ -826,6 +826,16 @@ textarea.lined {
 .reel-body button { pointer-events: auto; }
 .reel-title { font-size: 13px; font-weight: 700; letter-spacing: 0.04em; opacity: 0.75; margin-bottom: 12px; }
 .reel-text { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.65; letter-spacing: -0.01em; white-space: pre-wrap; word-break: keep-all; }
+/* 형광펜 강조 (위로글 ==표시== 또는 마지막 줄). 글자 아래쪽 3분의 2에 노란 띠, 줄이 바뀌어도 각 줄에 이어진다 */
+.hl {
+  --hl: #ffe14d;
+  color: inherit;
+  background: linear-gradient(transparent 34%, color-mix(in srgb, var(--hl) 62%, transparent) 34%, color-mix(in srgb, var(--hl) 62%, transparent) 94%, transparent 94%);
+  padding: 0 .14em; margin: 0 -.14em; border-radius: .2em;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.reel-text .hl { color: inherit; }
+.bg-4 .hl, .bg-1 .hl { --hl: #ffd400; }
 .reel-flagged { background: rgba(127, 127, 127, 0.12); color: inherit; border-color: color-mix(in srgb, var(--reel-fg, #fff) 35%, transparent); }
 .reel-flagged b { color: inherit; }
 .reel-meta { position: absolute; left: 18px; right: 84px; bottom: 22px; z-index: 2; display: flex; align-items: center; gap: 10px; }

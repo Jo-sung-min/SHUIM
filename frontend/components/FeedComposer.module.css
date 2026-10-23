@@ -20,7 +20,11 @@
 .hint { margin: 7px 20px 0; color: var(--text-2); font-size: 13px; line-height: 1.7; }
 .form { padding: 18px 20px 0; display: grid; gap: 18px; }.form .hint { text-align: center; margin: -10px 0 0; }.form textarea { min-height: 125px; }
 .review { display: flex; overflow-x: auto; gap: 10px; scroll-snap-type: x mandatory; scrollbar-width: none; }.review figure { flex: 0 0 100%; margin: 0; position: relative; background: var(--surface-2); border-radius: 18px; overflow: hidden; scroll-snap-align: center; height: min(35dvh, 320px); display: grid; place-items: center; }.review img { height: 100%; width: 100%; object-fit: contain; }.review figcaption { position: absolute; bottom: 10px; right: 10px; border-radius: 20px; color: white; background: #17141dbf; padding: 5px 9px; font-size: 12px; }
-.counter { color: var(--text-2); font-size: 13px; text-align: right; }.visibility { font-size: 13px; color: var(--text-2); line-height: 1.7; margin: 0; }
+.counter { color: var(--text-2); font-size: 13px; text-align: right; margin-left: auto; }
+.captionTools { display: flex; align-items: center; gap: 10px; }
+.hlBtn { display: inline-flex; align-items: center; min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; }
+.hlBtn:disabled { opacity: .45; cursor: default; }
+.hint { color: var(--text-3); font-size: 12px; }.visibility { font-size: 13px; color: var(--text-2); line-height: 1.7; margin: 0; }
 .footer { padding: 18px 20px 0; }.error { margin: 16px 20px 0; padding: 13px 15px; border-radius: 14px; color: var(--danger); font-size: 14px; line-height: 1.7; background: var(--danger-soft); }
 .progress { display: grid; gap: 10px; margin: 16px 20px 0; padding: 16px; border-radius: 16px; background: var(--surface-2); font-size: 13px; text-align: center; }.progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .screen button:disabled { opacity: .35; cursor: default; }.screen button:not(:disabled):active { transform: scale(.98); }.screen button { transition: transform .12s ease, opacity .12s ease; touch-action: manipulation; }.screen button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }

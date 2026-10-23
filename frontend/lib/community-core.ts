@@ -4,6 +4,7 @@
  */
 
 import { addDays, todayKey } from "./dates";
+import { stripHighlights } from "./highlight";
 
 export type ShoutCat = "misfortune" | "anxiety" | "money" | "work" | "relation" | "body" | "small-win" | "free";
 
@@ -300,7 +301,7 @@ export function listNotifications(s: CommunityStore, seenAt: number): Notificati
     const p = s.posts.find((x) => x.id === id);
     if (p) return { kind: "post", text: p.text, authorId: p.authorId };
     const f = s.feed.find((x) => x.id === id);
-    if (f) return { kind: "feed", text: f.title ? `${f.title} · ${f.text}` : f.text, authorId: f.authorId };
+    if (f) return { kind: "feed", text: stripHighlights(f.title ? `${f.title} · ${f.text}` : f.text), authorId: f.authorId };
     return null;
   };
   const myFirstComment = new Map<string, number>();
@@ -344,7 +345,7 @@ export function listFlagged(s: CommunityStore): FlaggedItem[] {
         item: c,
         author: userById(s, c.authorId),
         reports: activeReports(c),
-        postText: (s.posts.find((p) => p.id === c.postId) ?? s.feed.find((f) => f.id === c.postId))?.text,
+        postText: stripHighlights((s.posts.find((p) => p.id === c.postId) ?? s.feed.find((f) => f.id === c.postId))?.text ?? ""),
       });
   return out.sort((a, b) => b.reports.length - a.reports.length || b.item.createdAt - a.item.createdAt);
 }

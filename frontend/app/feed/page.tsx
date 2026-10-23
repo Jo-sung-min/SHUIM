@@ -25,6 +25,7 @@ import { IconBookmark, IconBubble, IconFist, IconMore, IconPen } from "@/compone
 import { showToast, toastSuccess } from "@/lib/toast";
 import { readScrollMemory, useElementScrollMemory } from "@/lib/scroll-memory";
 import styles from "./feed-media.module.css";
+import Highlighted from "@/components/Highlighted";
 
 type Filter = "all" | "following" | "saved";
 const FILTERS: [Filter, string][] = [["all", "전체"], ["following", "팔로잉"], ["saved", "저장함"]];
@@ -353,7 +354,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
               </div>}
               <div className="slide-body">
                 {(p.title || (p.image && post.title)) && <div className="reel-title">{p.title || post.title}</div>}
-                {(p.text || (p.image && post.text)) && <p className="reel-text">{p.text || post.text}</p>}
+                {(p.text || (p.image && post.text)) && <p className="reel-text"><Highlighted text={p.text || post.text} /></p>}
               </div>
             </article>
           ))}

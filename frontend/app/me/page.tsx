@@ -12,7 +12,7 @@ import photoStyles from "@/components/PhotoEditor.module.css";
 import { ConfirmSheet, Empty, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
-import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconShield, IconTrophy, IconUser, IconChevronR, IconBubble } from "@/components/Icons";
+import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconShield, IconTrophy, IconUser, IconChevronR, IconBubble, IconBriefcase } from "@/components/Icons";
 import styles from "../account-screens.module.css";
 import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
 
@@ -139,6 +139,8 @@ export default function MePage() {
               <div className={`card ${styles.menu}`}>
                 <Link href="/ranking" className={styles.menuRow}><IconTrophy /><span className={styles.menuLabel}><strong>따뜻한 마음 랭킹</strong></span><IconChevronR /></Link>
                 <Link href="/fund" className={styles.menuRow}><IconCoin /><span className={styles.menuLabel}><strong>함께하는 모금</strong></span><IconChevronR /></Link>
+                {/* 운영자의 부업 추천 사이트(부추). 새 탭으로 연다 */}
+                <a href="https://www.buchu.co.kr" target="_blank" rel="noopener noreferrer" className={styles.menuRow}><IconBriefcase /><span className={styles.menuLabel}><strong>부업하러 가기</strong><small>부업추천 부추 · buchu.co.kr</small></span><IconChevronR /></a>
               </div>
             </section>
             <section className={styles.group} aria-labelledby="me-theme-title">
