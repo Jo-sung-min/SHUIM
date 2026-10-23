@@ -59,13 +59,34 @@
 .homeWrite:global(.icon-btn) { width: 48px; height: 48px; color: var(--text); }
 .homeWrite svg { width: 27px; height: 27px; }
 .homeHeader h1 { margin: 0; padding-left: .16em; text-align: center; color: var(--text); font-size: 22px; font-weight: 750; line-height: 1.2; letter-spacing: .16em; }
-.homeRecord { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; border-block: 1px solid var(--border); }
-.homeRecordCopy { min-width: 0; }
-.homeRecordCopy h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.5; }
-.homeRecordCopy p { margin: 4px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; }
-.homeRecordLink:global(.text-btn) { flex: none; min-height: 48px; gap: 6px; padding: 10px 0 10px 10px; color: var(--text); font-size: 13px; font-weight: 600; border-radius: 12px; }
-.homeRecordLink svg { width: 16px; height: 16px; }
-.homeHero { min-height: 176px; display: flex; flex-direction: column; justify-content: center; }
+/* 오늘의 기록: 글라스 버튼 하나 (나를 위한 시간 타일과 같은 유리). 왼쪽 아이콘 · 제목/진행 · 오른쪽 행동 */
+.recordBtn {
+  --tone: var(--tone-briefing);
+  position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px;
+  padding: 14px 16px; border-radius: 20px; color: var(--text); text-decoration: none;
+  background: linear-gradient(155deg, color-mix(in srgb, var(--surface) 80%, transparent), color-mix(in srgb, var(--surface) 44%, transparent));
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.recordBtn:active { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) { .recordBtn:hover { transform: translateY(-1px); } }
+.recordIcon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 14px; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); }
+.recordIcon svg { width: 22px; height: 22px; }
+.recordDone .recordIcon { background: var(--tone); color: var(--surface); }
+.recordText { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.recordText b { font-size: 15px; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
+.recordText small { color: var(--text-2); font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.recordBar { display: block; height: 4px; margin-top: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
+.recordBar i { display: block; height: 100%; border-radius: 2px; background: var(--tone); transition: width var(--dur-slow) var(--ease); }
+.recordCta { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--text-2); font-size: 13px; font-weight: 650; white-space: nowrap; }
+.recordCta svg { width: 16px; height: 16px; }
+.recordBtn .careDot { top: 10px; right: 10px; }
+@media (prefers-reduced-motion: reduce) { .recordBtn, .recordBar i { transition: none; } .recordBtn:active, .recordBtn:hover { transform: none; } }
+.homeHero { min-height: 0; margin-top: 16px; display: flex; flex-direction: column; justify-content: center; }
 .homeHero :global(.label) { margin-bottom: 4px; }
 .homeHero h2 { font-size: 24px; letter-spacing: -.03em; line-height: 1.35; }
 .homeHero p { max-width: 32ch; font-size: 15px; }

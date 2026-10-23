@@ -39,7 +39,7 @@ import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { SkeletonCard, SkeletonHero, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus, IconHeart, IconStar } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus, IconHeart, IconStar, IconPen } from "@/components/Icons";
 import { useRouter } from "next/navigation";
 import { CARE_BUILTIN, CARE_CATALOG, type CareAction, type CareTone, careDoneToday, loadCareExtras, markCareDone, saveCareExtras } from "@/lib/care";
 import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
@@ -297,33 +297,21 @@ export default function HomePage() {
 
         <DailyQuote />
 
-        {/* 문구는 매일 유지하고, 요청한 오늘의 정리는 따로 보여준다. */}
-        {loading === "briefing" ? (
-          <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘의 기록을 정리하고 있어요">
-            <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px" }} />
-            <div className="skeleton" style={{ height: 14, width: "100%" }} />
-            <div className="skeleton" style={{ height: 14, width: "60%", marginTop: 8 }} />
-          </section>
-        ) : d ? (
-          <section className={`hero ${styles.homeHero}`}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="pill">{dirLabel[d.momentum.direction]}</span>
-              <span className="label">{fmtRelative(briefing!.generatedAt)}</span>
-            </div>
-            <h2>{d.headline}</h2>
-            <p>{d.momentum.text}</p>
-          </section>
-        ) : null}
-
-        <section className={styles.homeRecord} aria-labelledby="home-record-title">
-          <div className={styles.homeRecordCopy}>
-            <h2 id="home-record-title">오늘의 기록</h2>
-            <p>마음 {filled}/{total} · 한 일 {didCount}개</p>
-          </div>
-          <Link href="/log" className={`text-btn ${styles.homeRecordLink}`} aria-label={logDone ? "오늘의 기록 돌아보기" : filled || didCount ? "오늘의 기록 이어 쓰기" : "오늘의 마음 기록하기"}>
-            <span>{logDone ? "돌아보기" : filled || didCount ? "이어 쓰기" : "기록하기"}</span><IconChevronR />
-          </Link>
-        </section>
+        {/* 오늘의 기록: 버튼 하나 (글라스). 아직 아무것도 안 썼으면 빨간 점, 다 채우면 체크 */}
+        <Link
+          href="/log"
+          className={`${styles.recordBtn} ${logDone ? styles.recordDone : ""}`}
+          aria-label={logDone ? `오늘의 기록 돌아보기, 마음 ${filled}/${total}, 한 일 ${didCount}개` : filled || didCount ? `오늘의 기록 이어 쓰기, 마음 ${filled}/${total}, 한 일 ${didCount}개` : "오늘의 마음 기록하기, 아직 쓴 기록이 없어요"}
+        >
+          <span className={styles.recordIcon}>{logDone ? <IconCheck /> : <IconPen />}</span>
+          <span className={styles.recordText}>
+            <b>오늘의 기록</b>
+            <small>마음 {filled}/{total} · 한 일 {didCount}개</small>
+            <span className={styles.recordBar} aria-hidden="true"><i style={{ width: `${total ? Math.round((filled / total) * 100) : 0}%` }} /></span>
+          </span>
+          <span className={styles.recordCta}>{logDone ? "돌아보기" : filled || didCount ? "이어 쓰기" : "기록하기"}<IconChevronR /></span>
+          {!filled && !didCount && <span className={styles.careDot} aria-hidden="true" />}
+        </Link>
 
         {empty && <section aria-labelledby="home-start-title">
           <div className={styles.sectionHeading}><h3 id="home-start-title">나의 속도로 시작해요</h3></div>
@@ -450,9 +438,24 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* 브리핑 본문 */}
+        {/* 정리하기: 결과는 모두 타일 아래로 (불러오는 동안도) */}
+        {loading === "briefing" && (
+          <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘의 기록을 정리하고 있어요">
+            <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px" }} />
+            <div className="skeleton" style={{ height: 14, width: "100%" }} />
+            <div className="skeleton" style={{ height: 14, width: "60%", marginTop: 8 }} />
+          </section>
+        )}
         {d && !open && !reviewOpen && (
           <>
+            <section className={`hero ${styles.homeHero}`}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span className="pill">{dirLabel[d.momentum.direction]}</span>
+                <span className="label">{fmtRelative(briefing!.generatedAt)}</span>
+              </div>
+              <h2>{d.headline}</h2>
+              <p>{d.momentum.text}</p>
+            </section>
             <section className="card" style={{ marginTop: 12 }}>
               <ul className="brief-list">
                 {d.highlights.map((h, i) => (
