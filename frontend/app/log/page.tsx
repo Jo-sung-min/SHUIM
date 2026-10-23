@@ -10,14 +10,15 @@ import { ConfirmSheet, Segmented, SkeletonCard, TopBar, fmtDate } from "@/compon
 import { IconClose, IconPlus } from "@/components/Icons";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { useScrollMemory } from "@/lib/scroll-memory";
+import MemoPad from "@/components/MemoPad";
 
 /** 어제 대비 변화 선택지: -DELTA_MAX(많이 내려감) ~ +DELTA_MAX(많이 올라옴) */
 const DELTA_MAX = 5;
 const DELTAS = Array.from({ length: DELTA_MAX * 2 + 1 }, (_, i) => i - DELTA_MAX);
 const clamp = (v: number) => Math.max(SCORE_MIN, Math.min(SCORE_MAX, v));
 const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-/** 오늘 쓰기 = 오늘 한 일, 기록하기 = 카테고리별 어제 대비 점수. 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다 */
-type View = "today" | "record";
+/** 오늘 쓰기 = 오늘 한 일 + 카테고리별 어제 대비 점수, 기록하기 = 메모장. 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다 */
+type View = "today" | "memo";
 
 /** 상단 현황(연속 일수·채운 수)은 메인 페이지에서 보여주고, 여기선 바로 쓰기부터 시작 */
 export default function LogPage() {
@@ -33,19 +34,19 @@ export default function LogPage() {
             onChange={setView}
             options={[
               { value: "today", label: "오늘 쓰기" },
-              { value: "record", label: "기록하기" },
+              { value: "memo", label: "기록하기" },
             ]}
           />
         </div>
-        <TodayWrite part={view} />
+        {view === "today" ? <TodayWrite /> : <MemoPad scrollKey="/log:memo" />}
       </div>
     </>
   );
 }
 
-/* ================= 오늘 쓰기 · 기록하기 (상태는 공유, 보이는 부분만 다르다) ================= */
+/* ================= 오늘 쓰기 ================= */
 
-function TodayWrite({ part }: { part: View }) {
+function TodayWrite() {
   const date = todayKey();
   const [day, setDay] = useState<DayRecord>({});
   const [did, setDid] = useState<string[]>([]);
@@ -156,7 +157,7 @@ function TodayWrite({ part }: { part: View }) {
     );
   }
 
-  if (part === "today") return (
+  return (
     <>
       <div className="section-title" style={{ marginTop: 16 }}>
         <span>오늘 한 일</span>
@@ -190,13 +191,8 @@ function TodayWrite({ part }: { part: View }) {
           </button>
         </form>
       </section>
-      <p className="tiny muted" style={{ margin: "12px 4px 0" }}>마음·몸·관계·돈·일의 어제 대비 변화는 <b>기록하기</b> 탭에서 남겨요.</p>
-    </>
-  );
 
-  return (
-    <>
-      <div className="section-title" style={{ marginTop: 16 }}>
+      <div className="section-title">
         <span>오늘의 기분 · 어제보다</span>
         <span className={`saved-indicator ${saved ? "on" : ""}`}>{filled === 0 ? "" : saved ? "저장됨" : "저장 중…"}</span>
       </div>
