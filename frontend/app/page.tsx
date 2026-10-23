@@ -258,6 +258,8 @@ export default function HomePage() {
   const dirLabel = { up: "▲ 올라오는 중", flat: "→ 유지 중", down: "▼ 내려간 날" } as const;
   const crisis = briefing?.crisis || moments.praise?.crisis || moments.love?.crisis || review?.crisis;
   const openMoment = open ? moments[open] : undefined;
+  // 지금 화면에 보이는 결과의 출처 (없으면 안내 줄도 없음)
+  const shownSource: "ai" | "local" | null = open && openMoment ? openMoment.source : reviewOpen && review ? review.source : d && !open && !reviewOpen ? briefing!.source : null;
   // 기본 4칸: AI 상태(오늘 캐시)로 done/busy 를 정한다
   const aiState: Record<string, { done: boolean; on: boolean; aria: string; busyLabel: string; doneLabel?: string }> = {
     briefing: { done: Boolean(briefing), on: false, aria: "오늘의 나 정리", busyLabel: "정리 중…", doneLabel: "정리 완료" },
@@ -387,7 +389,6 @@ export default function HomePage() {
               ))}
             </ul>
             {openMoment.data.closing && <p className="closing">{openMoment.data.closing}</p>}
-            <SourceBadge source={openMoment.source} />
           </section>
         )}
 
@@ -432,7 +433,6 @@ export default function HomePage() {
             )}
             {review.data.question && <p className="closing">{review.data.question}</p>}
             <div className="row" style={{ marginTop: 10 }}>
-              <SourceBadge source={review.source} />
               <Link href="/memo" className="text-btn" style={{ marginLeft: "auto" }}>되돌아보기 <IconChevronR /></Link>
             </div>
           </section>
@@ -474,13 +474,15 @@ export default function HomePage() {
               <p className="brief-text"><span className="tiny muted" style={{ fontWeight: 700 }}>목표 · </span>{d.today.goals}</p>
               {d.question && <p className="question muted" style={{ fontSize: 14 }}>{d.question}</p>}
             </section>
-            <div style={{ marginTop: 10 }}><SourceBadge source={briefing!.source} /></div>
           </>
         )}
 
-        {/* AI 안내는 결과(정리·칭찬·사랑·분석)가 화면에 보일 때만 그 아래에 */}
-        {!loading && ((d && !open && !reviewOpen) || (open && openMoment) || (reviewOpen && review)) && (
-          <p className={styles.aiNote}>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></p>
+        {/* 결과(정리·칭찬·사랑·분석)가 보일 때만 그 아래 한 줄: [SOROW AI] 안내 문구 · 이용 안내 */}
+        {!loading && shownSource && (
+          <p className={styles.aiNote}>
+            <SourceBadge source={shownSource} />
+            <span>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></span>
+          </p>
         )}
       </div>
     </>
@@ -498,6 +500,7 @@ function Skeleton() {
   );
 }
 
+/** 결과 아래 한 줄의 출처 뱃지: AI 가 만든 글이면 SOROW AI, 키 없이 규칙으로 만든 글이면 간단 버전 */
 function SourceBadge({ source }: { source: "ai" | "local" }) {
-  return <span className={`badge ${source === "ai" ? "" : "gray"}`}>{source === "ai" ? "AI" : "간단 버전"}</span>;
+  return <span className={`badge ${source === "ai" ? "" : "gray"}`}>{source === "ai" ? "SOROW AI" : "간단 버전"}</span>;
 }

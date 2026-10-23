@@ -176,8 +176,11 @@
 .quickLink > svg { width: 23px; height: 23px; color: var(--text-2); margin-bottom: 5px; }
 .quickLink b { font-size: 15px; }
 .quickLink small { font-size: 13px; color: var(--text-2); line-height: 1.6; word-break: keep-all; }
-.aiNote { margin: 14px 8px 0; text-align: center; color: var(--text-2); font-size: 13px; line-height: 1.7; }
-.aiNote a { text-decoration: underline; text-underline-offset: 3px; }
+/* 결과 아래 한 줄: [SOROW AI] AI 응답은 … AI 이용 안내 */
+.aiNote { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 14px 4px 0; color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.aiNote :global(.badge) { flex: none; font-size: 11px; padding: 3px 8px; letter-spacing: .02em; }
+.aiNote > span { flex: 1; min-width: 0; }
+.aiNote a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .pending { display: grid; gap: 12px; padding-top: 12px; }
 .pending :global(.skeleton) { height: 96px; border-radius: 20px; }
 @media (max-width: 360px) {
