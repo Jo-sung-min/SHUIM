@@ -22,10 +22,29 @@
 .ratios { display: flex; justify-content: center; gap: 10px; margin: 4px 0 15px; }
 .ratios button { min-width: 66px; min-height: 40px; border: 1px solid #3c3c46; border-radius: 12px; color: #bdbdc8; background: #202027; font-size: 13px; }
 .ratios button.selected { background: #393047; border-color: #bca5ff; color: #e4d9ff; }
-.zoom { display: flex; align-items: center; gap: 13px; }
-.zoom label { font-size: 13px; flex: none; }
-.zoom input { width: 100%; min-width: 0; height: 44px; padding: 0; background: transparent; border: 0; accent-color: #c6b4ff; cursor: pointer; }
-.zoom output { min-width: 32px; text-align: right; font-size: 13px; color: #c6b4ff; font-variant-numeric: tabular-nums; }
+.slider { display: flex; align-items: center; gap: 13px; }
+.slider label { font-size: 13px; flex: none; min-width: 52px; }
+.slider input { width: 100%; min-width: 0; height: 44px; padding: 0; background: transparent; border: 0; accent-color: #c6b4ff; cursor: pointer; }
+.slider output { min-width: 36px; text-align: right; font-size: 13px; color: #c6b4ff; font-variant-numeric: tabular-nums; }
+.viewportStill { cursor: default; }
+
+/* 자르기 · 필터 · 조정 탭 */
+.tabs { display: flex; justify-content: center; gap: 4px; margin: 10px 20px 0; padding: 4px; border-radius: 14px; background: #1d1d23; }
+.tabs button { position: relative; flex: 1; min-height: 40px; border: 0; border-radius: 11px; background: transparent; color: #a9a9b4; font-size: 14px; font-weight: 650; }
+.tabs .tabOn { background: #2d2d36; color: #f4f1ff; }
+.tabs button i { position: absolute; top: 9px; right: 10px; width: 6px; height: 6px; border-radius: 50%; background: #c6b4ff; }
+
+/* 필터 썸네일 줄: CSSgram 처럼 img 에 filter, 위에 겹침 레이어 */
+.filters { display: flex; gap: 10px; padding: 4px 20px 6px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
+.filters::-webkit-scrollbar { display: none; }
+.filter { flex: none; display: grid; gap: 6px; justify-items: center; width: 72px; padding: 0; border: 0; background: none; color: #bdbdc8; scroll-snap-align: start; }
+.filter small { font-size: 12px; font-weight: 600; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filterOn { color: #e4d9ff; }
+.filterThumb { position: relative; display: block; width: 72px; height: 72px; border-radius: 14px; overflow: hidden; background: #26262d; isolation: isolate; box-shadow: 0 0 0 2px transparent; transition: box-shadow 120ms ease; }
+.filterOn .filterThumb { box-shadow: 0 0 0 2px #c6b4ff; }
+.filterThumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.filterThumb span { position: absolute; inset: 0; pointer-events: none; }
+.credit { margin: 6px 0 0; text-align: center; font-size: 11px; color: #70707b; }
 .tools { display: flex; justify-content: center; gap: 16px; margin-top: 8px; }
 .tools button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 10px 16px; color: #e2e2e9; background: transparent; border: 0; border-radius: 12px; font-size: 13px; }
 .tools svg { width: 17px; height: 17px; }

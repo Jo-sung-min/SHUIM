@@ -180,7 +180,7 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
               <img src={current.preview} alt={(active + 1) + "번째 사진 미리보기"} onError={() => setError("이 사진을 읽지 못했어요. 다른 사진으로 바꿔 주세요.")} />
               <span className={styles.count}>{active + 1} / {photos.length}</span>
               {active === 0 && <span className={styles.cover}>대표 사진</span>}
-              <button type="button" className={styles.edit} onClick={() => setEditing(current.id)}>자르기 · 회전</button>
+              <button type="button" className={styles.edit} onClick={() => setEditing(current.id)}>편집 · 필터</button>
             </> : <div className={styles.empty}>
               <span className={styles.photoSymbol}><PhotoIcon /></span><h2>나누고 싶은 순간</h2><p>사진 한 장에 오늘의 마음을 담아 보세요.</p>
               <button type="button" className="btn" onClick={() => gallery.current?.click()}>사진 선택</button>

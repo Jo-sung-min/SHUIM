@@ -1,3 +1,5 @@
+import { createLookRenderer, isIdentityLook, type PhotoLook } from "./photo-look";
+
 export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 export const MAX_PHOTO_PIXELS = 40_000_000;
 export const MAX_PHOTO_EDGE = 16_384;
@@ -136,7 +138,8 @@ export function drawPhotoCrop(context: CanvasRenderingContext2D, source: HTMLCan
   context.restore();
 }
 
-export async function exportPhotoCrop(source: HTMLCanvasElement, crop: PhotoCrop, name: string): Promise<File> {
+/** 자른 뒤 색보정(룩)을 WebGL 로 입힌다. WebGL 이 없으면 자르기만 저장하고 알린다 */
+export async function exportPhotoCrop(source: HTMLCanvasElement, crop: PhotoCrop, name: string, look?: PhotoLook): Promise<File> {
   const canvas = document.createElement("canvas");
   const size = photoOutputSize(crop);
   canvas.width = size.width; canvas.height = size.height;
@@ -144,6 +147,13 @@ export async function exportPhotoCrop(source: HTMLCanvasElement, crop: PhotoCrop
     const context = canvas.getContext("2d");
     if (!context) throw new Error("사진을 준비하지 못했어요. 다시 시도해 주세요.");
     drawPhotoCrop(context, source, crop, canvas.width, canvas.height);
+    if (look && !isIdentityLook(look)) {
+      const renderer = createLookRenderer();
+      if (!renderer) throw new Error("이 기기에서는 색보정을 저장할 수 없어요. 필터와 조정을 원래대로 돌려 주세요.");
+      try {
+        context.drawImage(renderer.render(canvas, look, canvas.width, canvas.height), 0, 0);
+      } finally { renderer.dispose(); }
+    }
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
     if (!blob?.size || blob.size > 5 * 1024 * 1024) throw new Error("사진을 저장하지 못했어요. 조금 더 작게 잘라 주세요.");
     const filename = name.replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}_-]/gu, "_").slice(0, 64) || "sorow-photo";

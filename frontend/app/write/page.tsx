@@ -7,6 +7,7 @@ import { hasCrisisSignal } from "@/lib/crisis";
 import { uploadAvailable, uploadImage } from "@/lib/upload";
 import { toastSuccess } from "@/lib/toast";
 import HelpBanner from "@/components/HelpBanner";
+import PhotoEditor from "@/components/PhotoEditor";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { IconClose, IconImage } from "@/components/Icons";
 import styles from "./write.module.css";
@@ -31,6 +32,7 @@ export default function WritePage() {
   const [progress, setProgress] = useState<{ index: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null); // 편집 중인 사진 id (자르기·필터·조정)
   const fileInput = useRef<HTMLInputElement>(null);
   const photosRef = useRef<Photo[]>([]);
   photosRef.current = photos;
@@ -68,6 +70,15 @@ export default function WritePage() {
     if (picked.length) setPhotos((cur) => [...cur, ...picked]);
   };
 
+  const saveEdited = (id: string, file: File) => {
+    setPhotos((cur) => cur.map((p) => {
+      if (p.id !== id) return p;
+      URL.revokeObjectURL(p.preview);
+      return { ...p, file, preview: URL.createObjectURL(file) };
+    }));
+    setEditing(null);
+  };
+
   const removePhoto = (id: string) => {
     setPhotos((cur) => {
       const gone = cur.find((p) => p.id === id);
@@ -99,8 +110,10 @@ export default function WritePage() {
     }
   };
 
+  const editingPhoto = photos.find((p) => p.id === editing);
+
   return (
-    <>
+    <div inert={Boolean(editingPhoto)}>
       <header className={styles.bar}>
         <button type="button" className="icon-btn" aria-label="닫기" onClick={close}><IconClose /></button>
         <h1>새 외침</h1>
@@ -131,8 +144,11 @@ export default function WritePage() {
           <div className={styles.photos}>
             {photos.map((p, i) => (
               <div key={p.id} className={styles.photo}>
-                {/* eslint-disable-next-line @next/next/no-img-element -- 고른 사진 미리보기(blob:) */}
-                <img src={p.preview} alt={`고른 사진 ${i + 1}`} />
+                <button type="button" className={styles.photoEdit} disabled={busy} onClick={() => setEditing(p.id)} aria-label={`사진 ${i + 1} 편집 (자르기·필터·조정)`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- 고른 사진 미리보기(blob:) */}
+                  <img src={p.preview} alt="" />
+                  <span aria-hidden="true">편집</span>
+                </button>
                 {!busy && <button type="button" className={styles.remove} aria-label={`사진 ${i + 1} 빼기`} onClick={() => removePhoto(p.id)}><IconClose /></button>}
                 {progress && progress.index === i && <div className={styles.progress}><span style={{ width: `${progress.percent}%` }} /></div>}
               </div>
@@ -164,6 +180,7 @@ export default function WritePage() {
         {hasCrisisSignal(text) && <HelpBanner alert />}
         {error && <p className={styles.error} role="alert">{error}</p>}
       </div>
-    </>
+      {editingPhoto && <PhotoEditor file={editingPhoto.file} onSave={(file) => saveEdited(editingPhoto.id, file)} onClose={() => setEditing(null)} />}
+    </div>
   );
 }
