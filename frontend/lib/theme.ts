@@ -1,5 +1,5 @@
 /**
- * 화면 모드: 기기 설정(system) · 화이트(light) · 나이트(dark). 마이페이지에서 고른다.
+ * 화면 모드: 기기 설정(system) · 화이트(light) · 나이트(dark). 설정 화면(/settings)에서 고른다.
  * - 고른 값은 이 기기의 localStorage 에만 둔다 (기기마다 밝기 환경이 달라서)
  * - <html data-theme="light|dark"> 로 globals.css 의 색 토큰을 바꾼다. system 이면 속성을 지워 기기 설정을 따른다
  * - THEME_SCRIPT 는 layout <head> 에서 첫 페인트 전에 실행돼 밝은 화면이 번쩍이지 않게 한다

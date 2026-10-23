@@ -12,17 +12,10 @@ import photoStyles from "@/components/PhotoEditor.module.css";
 import { ConfirmSheet, Empty, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
-import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconShield, IconTrophy, IconUser, IconChevronR, IconBubble, IconBriefcase } from "@/components/Icons";
+import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconTrophy, IconUser, IconChevronR, IconBubble, IconBriefcase } from "@/components/Icons";
 import styles from "../account-screens.module.css";
-import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
 
 type View = "profile" | "notif";
-
-const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
-  { value: "system", label: "기기 설정" },
-  { value: "light", label: "화이트" },
-  { value: "dark", label: "나이트" },
-];
 
 export default function MePage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -35,9 +28,7 @@ export default function MePage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<"clear" | "logout" | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [theme, setTheme] = useState<ThemePref>("system"); // 서버 렌더와 맞추려고 기본값으로 시작해 마운트 후 읽는다
   const actionInFlight = useRef(false);
-  useEffect(() => setTheme(loadTheme()), []);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -93,7 +84,7 @@ export default function MePage() {
 
   return (
     <>
-      <TopBar title="내 공간" right={<Link href="/auth" className="icon-btn" aria-label="계정 설정"><IconSettings /></Link>} />
+      <TopBar title="내 공간" right={<Link href="/settings" className="icon-btn" aria-label="설정"><IconSettings /></Link>} />
       <div className="screen">
         <section className={`card ${styles.profileCard}`} aria-label="내 프로필">
         <div className={styles.profileTop}>
@@ -143,17 +134,12 @@ export default function MePage() {
                 <a href="https://www.buchu.co.kr" target="_blank" rel="noopener noreferrer" className={styles.menuRow}><IconBriefcase /><span className={styles.menuLabel}><strong>부업하러 가기</strong><small>부업추천 부추 · buchu.co.kr</small></span><IconChevronR /></a>
               </div>
             </section>
-            <section className={styles.group} aria-labelledby="me-theme-title">
-              <h2 className={styles.groupTitle} id="me-theme-title">화면 모드</h2>
-              <Segmented value={theme} onChange={(v) => { setTheme(v); saveTheme(v); }} options={THEME_OPTIONS} />
-            </section>
+            {/* 화면 모드·차단·서비스 안내·관리자는 설정 화면(/settings)에 모았다 */}
             <section className={styles.group} aria-labelledby="me-settings-title">
-              <h2 className={styles.groupTitle} id="me-settings-title">설정과 안내</h2>
+              <h2 className={styles.groupTitle} id="me-settings-title">설정</h2>
               <div className={`card ${styles.menu}`}>
-                <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>{user ? "계정 설정" : "로그인 · 회원가입"}</strong></span><IconChevronR /></Link>
-                <Link href="/blocks" className={styles.menuRow}><IconShield /><span className={styles.menuLabel}><strong>차단한 사용자</strong></span><IconChevronR /></Link>
-                <Link href="/info" className={styles.menuRow}><IconNote /><span className={styles.menuLabel}><strong>서비스 안내</strong><small>개인정보 · 이용약관 · 도움과 문의</small></span><IconChevronR /></Link>
-                {me.admin && <Link href="/admin" className={styles.menuRow}><IconSettings /><span className={styles.menuLabel}><strong>관리자 화면</strong></span><IconChevronR /></Link>}
+                <Link href="/settings" className={styles.menuRow}><IconSettings /><span className={styles.menuLabel}><strong>설정</strong><small>계정 · 화면 모드 · 편의 기능</small></span><IconChevronR /></Link>
+                {!user && <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>로그인 · 회원가입</strong></span><IconChevronR /></Link>}
               </div>
             </section>
             <div className={styles.quietActions}>

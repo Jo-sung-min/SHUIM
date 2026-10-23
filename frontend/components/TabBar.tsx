@@ -13,7 +13,7 @@ const TABS = [
   { href: "/log", label: "기록", Icon: IconPen },
   { href: "/shout", label: "외침", Icon: IconBubble, match: (p: string) => ["/shout", "/admin", "/ranking", "/fund"].some((x) => p.startsWith(x)) },
   { href: "/feed", label: "위로", Icon: IconReels },
-  { href: "/me", label: "나", Icon: IconUser, match: (p: string) => ["/me", "/memo", "/goals", "/schedule", "/auth", "/messages", "/u/", "/info", "/privacy", "/terms", "/account-deletion", "/blocks"].some((x) => p.startsWith(x)) },
+  { href: "/me", label: "나", Icon: IconUser, match: (p: string) => ["/me", "/settings", "/memo", "/goals", "/schedule", "/auth", "/messages", "/u/", "/info", "/privacy", "/terms", "/account-deletion", "/blocks"].some((x) => p.startsWith(x)) },
 ];
 
 export default function TabBar() {

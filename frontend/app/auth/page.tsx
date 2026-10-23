@@ -8,7 +8,7 @@ import { Empty, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui
 import { toastSuccess } from "@/lib/toast";
 import { todayKey } from "@/lib/storage";
 import { POLICY_VERSION, acceptPolicyConsent, fetchPolicyConsent, type PolicyConsent } from "@/lib/safety";
-import { IconChevronL, IconChevronR, IconKakao, IconNote, IconShield, IconUser } from "@/components/Icons";
+import { IconChevronL, IconChevronR, IconKakao, IconUser } from "@/components/Icons";
 import styles from "../account-screens.module.css";
 
 type Mode = "login" | "signup";
@@ -85,7 +85,7 @@ export default function AuthPage() {
     router.push(new URLSearchParams(window.location.search).get("next") === "delete" ? "/account-deletion" : "/");
   });
 
-  const back = <Link href="/me" className="icon-btn" aria-label="내 공간으로"><IconChevronL /></Link>;
+  const back = <Link href="/settings" className="icon-btn" aria-label="설정으로"><IconChevronL /></Link>;
 
   if (!me) return <><TopBar title="계정" right={back} /><div className="screen" role="status" aria-label="계정을 확인하고 있어요"><SkeletonCard lines={2} head /><div style={{ height: 16 }} /><SkeletonCard lines={3} /></div></>;
 
@@ -94,7 +94,7 @@ export default function AuthPage() {
   if (me.user) {
     const user = me.user;
     return <>
-      <TopBar title="계정 설정" right={back} />
+      <TopBar title="계정" right={back} />
       <div className="screen">
         <section className={`card ${styles.accountCard}`}>
           <span className={styles.accountAvatar} aria-hidden="true">{user.nick.slice(0, 1)}</span>
@@ -115,15 +115,8 @@ export default function AuthPage() {
             </form>}
           </div>
         </section>
-        <section className={styles.group} aria-labelledby="account-manage-title">
-          <h2 className={styles.groupTitle} id="account-manage-title">관리</h2>
-          <div className={`card ${styles.menu}`}>
-            <Link href="/blocks" className={styles.menuRow}><IconShield /><span className={styles.menuLabel}><strong>차단한 사용자</strong></span><IconChevronR /></Link>
-            {me.admin && <Link href="/admin" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>관리자 화면</strong></span><IconChevronR /></Link>}
-            <Link href="/info" className={styles.menuRow}><IconNote /><span className={styles.menuLabel}><strong>서비스 안내</strong><small>이용약관 · 개인정보 · 계정 및 데이터 삭제</small></span><IconChevronR /></Link>
-          </div>
-        </section>
-        <p className={styles.mutedNote}>로그인한 기록은 다른 기기에서도 이어서 볼 수 있어요.</p>
+        {/* 차단한 사용자·서비스 안내·관리자 화면은 설정(/settings)으로 옮겼다 */}
+        <p className={styles.mutedNote}>로그인한 기록은 다른 기기에서도 이어서 볼 수 있어요. 계정 및 데이터 삭제는 <Link href="/info">서비스 안내</Link>에서.</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <button type="button" className={`btn ghost block ${styles.logout}`} disabled={busy} onClick={() => run("logout", async () => { await signOut(); navigatingRef.current = true; router.push("/"); })}>{pending === "logout" ? "로그아웃 중…" : "로그아웃"}</button>
       </div>
