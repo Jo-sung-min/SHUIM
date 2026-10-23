@@ -381,7 +381,6 @@ export default function HomePage() {
         )}
 
         {error && <p className={styles.error} role="alert">{error}</p>}
-        {!empty && <p className={styles.aiNote}>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></p>}
         {(briefing || openMoment || review) && <SafetyReport kind="ai" />}
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
@@ -474,6 +473,11 @@ export default function HomePage() {
             </section>
             <div style={{ marginTop: 10 }}><SourceBadge source={briefing!.source} /></div>
           </>
+        )}
+
+        {/* AI 안내는 결과(정리·칭찬·사랑·분석)가 화면에 보일 때만 그 아래에 */}
+        {!loading && ((d && !open && !reviewOpen) || (open && openMoment) || (reviewOpen && review)) && (
+          <p className={styles.aiNote}>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></p>
         )}
       </div>
     </>
