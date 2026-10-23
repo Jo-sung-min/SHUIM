@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { dailyQuoteIndex, millisecondsUntilNextQuote, PHILOSOPHY_QUOTES } from "@/lib/daily-quote";
+import { dailyQuoteIndex, millisecondsUntilNextQuote, PHILOSOPHY_QUOTES, quoteSourceLabel } from "@/lib/daily-quote";
 
 export default function DailyQuote() {
   // A neutral first render avoids serving yesterday's statically generated quotation.
@@ -29,9 +29,7 @@ export default function DailyQuote() {
   return <figure className="daily-quote" aria-label="소로우의 문장">
       {quote ? <>
         <blockquote className="daily-quote__text"><p>{quote.text}</p></blockquote>
-        <figcaption className="daily-quote__source">
-          {quote.kind === "translation" ? "알베르 카뮈 · 『시지프 신화』" : "『시지프 신화』의 사상을 풀어 쓴 문장"}
-        </figcaption>
+        <figcaption className="daily-quote__source">{quoteSourceLabel(quote)}</figcaption>
       </> : <div className="daily-quote__loading" role="status" aria-label="문장을 준비하고 있어요">
         <div className="skeleton" /><div className="skeleton" /><div className="skeleton" />
       </div>}
