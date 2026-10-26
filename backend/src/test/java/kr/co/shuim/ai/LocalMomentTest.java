@@ -45,14 +45,23 @@ class LocalMomentTest {
     }
 
     @Test
-    void loveIsUnconditionalWithoutAdvice() {
+    void loveIsThreeParagraphsSayingYouDeserveLove() {
         Moment m = TodayService.localLove(req("love", RECENT, List.of()));
-        assertTrue(m.lines().size() >= 3 && m.lines().size() <= 5, m.lines().toString());
-        assertTrue(m.title().contains("사랑해"));
+        assertEquals(3, m.lines().size(), "딱 3문단: " + m.lines());
+        assertTrue(m.title().contains("자격"));
         for (String l : m.lines()) {
+            assertTrue(sentences(l) >= 3, "문단마다 길게(3문장 이상): " + l);
+            assertTrue(l.contains("자격") || l.contains("마땅"), "사랑받을 자격으로 닫는다: " + l);
             assertFalse(l.contains("해봐") || l.contains("해 봐") || l.contains("해보는"), "조언 금지: " + l);
             assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
         }
-        assertTrue(m.lines().stream().anyMatch(l -> l.contains("불안함")), "기록 속 마음 메모를 짚는다");
+        assertTrue(m.lines().get(1).contains("불안함"), "기록 속 마음 메모를 짚는다");
+    }
+
+    @Test
+    void loveStillHasThreeParagraphsWithNoRecords() {
+        Moment m = TodayService.localLove(req("love", List.of(), List.of()));
+        assertEquals(3, m.lines().size());
+        assertTrue(m.lines().get(2).contains("사랑받기를 눌렀다는"));
     }
 }
