@@ -882,8 +882,19 @@ textarea.lined {
 .swatch span { padding-bottom: 5px; }
 .swatch.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
 
-/* 외침 상단 탭은 .segmented a 규칙을 그대로 쓴다 */
-.shout-tabs { margin-bottom: var(--sp-2); }
+/* 외침 영역 상단 탭 (외침·불행 랭킹·불행 모금): 블라인드처럼 글자 탭 + 밑줄. .screen 의 위·좌우 여백을 넘어 화면 끝까지 */
+.ul-tabs {
+  display: flex; gap: 22px;
+  margin: calc(-1 * var(--sp-2)) calc(-1 * var(--gutter)) var(--sp-2);
+  padding: 0 var(--gutter);
+  border-bottom: var(--hairline-w) solid var(--border);
+  overflow-x: auto; scrollbar-width: none;
+}
+.ul-tabs::-webkit-scrollbar { display: none; }
+.ul-tabs a { position: relative; display: inline-flex; align-items: center; min-height: 48px; font-size: 15px; font-weight: 600; color: var(--text-2); white-space: nowrap; transition: color var(--dur-fast) var(--ease); }
+.ul-tabs a.on { color: var(--text); font-weight: 750; }
+.ul-tabs a.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--text); }
+.ul-tabs a:not(.on):active { color: var(--text); }
 
 /* 불행 랭킹 */
 .rank { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--radius); }

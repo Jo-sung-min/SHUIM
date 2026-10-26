@@ -9,15 +9,16 @@ import HelpBanner from "@/components/HelpBanner";
 import { Empty, SkeletonCard, fmtRelative } from "@/components/ui";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { CheerButton, CommentComposer, CommentRow, LineAction, LoadError, ReplyTarget, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
-import { IconBubble, IconChevronL, IconMore } from "@/components/Icons";
+import { IconBubble, IconChevronL, IconChevronR, IconClock, IconMore, IconSort } from "@/components/Icons";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "../shout.module.css";
+import { splitShout } from "../split";
 
 type Sort = "top" | "new";
 
 /**
- * 외침 글 화면. 글(사진이 있으면 사진부터)이 맨 위, 바로 아래 댓글 카드가 올라오며 들어오자마자 댓글이 쭉 보인다.
- * 댓글마다 "답글 달기"로 대댓글(한 단계), 댓글 입력은 화면 아래 고정.
+ * 외침 글 화면 (블라인드 글 화면처럼). 경로 → 제목(첫 문장) → 닉네임·시간·댓글 수 → 본문·사진 → 힘내요/댓글,
+ * 회색 띠 아래 "댓글 N"과 정렬, 평평한 댓글 목록. 댓글마다 "답글 달기"로 대댓글(한 단계), 댓글 입력은 화면 아래 고정.
  */
 export default function ShoutPostPage() {
   const { id } = useParams<{ id: string }>();
@@ -89,6 +90,7 @@ export default function ShoutPostPage() {
   const images = post.images ?? [];
   const author = mine ? "나" : userById(s, post.authorId).nick;
   const hiddenByReports = isFlagged(post) && !revealed && !mine;
+  const { title, rest } = splitShout(post.text);
 
   return (
     <>
@@ -103,7 +105,22 @@ export default function ShoutPostPage() {
         </div>
       ) : (
         <>
-          <article aria-label="외침 글">
+          <article aria-label="외침 글" className={styles.detail}>
+            <nav className={styles.crumb} aria-label="위치">
+              <Link href="/shout">외침</Link>
+              <IconChevronR aria-hidden="true" />
+              <span className={styles.chan}><ShoutCatIcon id={cat.id} />{cat.label}</span>
+            </nav>
+            <h2 className={styles.detailTitle}>{title}</h2>
+            <p className={styles.byline}>
+              <Link href={`/u/${post.authorId}`} className={styles.author}>{author}</Link>
+            </p>
+            <div className={styles.metaRow}>
+              <span className={styles.metaItem}><IconClock aria-hidden="true" />{fmtRelative(post.createdAt)}</span>
+              <button type="button" className={styles.metaItem} onClick={scrollToComments} aria-label={`댓글 ${total}개로 이동`}><IconBubble aria-hidden="true" />{total}</button>
+            </div>
+
+            {rest && <p className={`post-text ${styles.detailText}`}>{rest}</p>}
             {images.length > 0 && (
               <div className={styles.media}>
                 <div
@@ -126,32 +143,24 @@ export default function ShoutPostPage() {
                 )}
               </div>
             )}
-            <div className={styles.body}>
-              <div className="post-head">
-                <span className="cat"><ShoutCatIcon id={cat.id} /> {cat.label}</span>
-                <span>·</span>
-                <Link href={`/u/${post.authorId}`} className="nick">{author}</Link>
-                <span>·</span>
-                <span>{fmtRelative(post.createdAt)}</span>
-              </div>
-              <p className="post-text">{post.text}</p>
-              <div className="post-foot">
-                <CheerButton count={post.cheers.length} on={post.cheers.includes(s.me.id)} onClick={() => run(setS, () => api.toggleCheer({ kind: "post", id: post.id }))} />
-                <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={total} onClick={scrollToComments} ariaLabel="위로 댓글로 이동" />
-              </div>
-              {hasCrisisSignal(post.text) && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
+            {hasCrisisSignal(post.text) && <div className={styles.detailHelp}><HelpBanner alert /></div>}
+            <div className={`post-foot ${styles.detailFoot}`}>
+              <CheerButton count={post.cheers.length} on={post.cheers.includes(s.me.id)} onClick={() => run(setS, () => api.toggleCheer({ kind: "post", id: post.id }))} />
+              <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={total} onClick={scrollToComments} ariaLabel="위로 댓글로 이동" />
             </div>
           </article>
 
-          {/* 댓글: 들어오자마자 펼쳐져 있다 */}
+          <div className={styles.band} aria-hidden="true" />
+
+          {/* 댓글: 회색 띠 아래 "댓글 N"과 정렬, 평평한 목록 */}
           <section className={styles.panel} aria-labelledby="comments-title">
             <div className={styles.panelHead}>
               <h2 id="comments-title">댓글<span>{total}</span></h2>
               {comments.length > 1 && (
-                <div className="chips" role="radiogroup" aria-label="댓글 정렬" style={{ padding: 0, margin: 0 }}>
-                  <button type="button" role="radio" aria-checked={sort === "top"} className={`chip ${sort === "top" ? "on" : ""}`} onClick={() => setSort("top")}>힘내요순</button>
-                  <button type="button" role="radio" aria-checked={sort === "new"} className={`chip ${sort === "new" ? "on" : ""}`} onClick={() => setSort("new")}>최신순</button>
-                </div>
+                <button type="button" className={styles.sort} onClick={() => setSort((v) => (v === "top" ? "new" : "top"))} aria-label={`댓글 정렬 바꾸기, 지금 ${sort === "top" ? "힘내요순" : "최신순"}`}>
+                  <IconSort />
+                  {sort === "top" ? "힘내요순" : "최신순"}
+                </button>
               )}
             </div>
             {comments.length === 0 ? (
