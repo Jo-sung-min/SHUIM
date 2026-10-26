@@ -4,7 +4,35 @@
 */
 
 /* .screen 의 좌우 여백(--gutter)을 넘어 화면 끝까지 닿게 하는 공통 규칙 */
-.band, .rows, .filterBar, .prompt { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
+.band, .rows, .filterBar, .moreBtn { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
+
+.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---------- 맨 위 검색창 (제목 대신) ---------- */
+.searchBar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 10px;
+  background: var(--bg);
+}
+.searchBox {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 6px 0 14px;
+  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.searchBox:focus-within { border-color: var(--text); }
+.searchBox > svg { flex: none; width: 18px; height: 18px; color: var(--text-2); }
+.searchBar .searchBox input[type="search"] {
+  flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  font-size: 16px; /* iOS 확대 방지 */
+}
+.searchBar .searchBox input[type="search"]:focus { border: 0; box-shadow: none; background: transparent; }
+.searchBox input::placeholder { color: var(--text-3); }
+.searchBox input::-webkit-search-cancel-button { display: none; }
+.clear { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text-2); }
+.clear svg { width: 14px; height: 14px; }
+.resultCount { margin: 2px 0 10px; color: var(--text-2); font-size: 13px; }
 
 /* ---------- 목록 ---------- */
 .list { padding-bottom: calc(var(--tabbar-h) + 96px + env(safe-area-inset-bottom)); }
@@ -38,20 +66,21 @@
 
 .catDesc { margin: 2px 0 8px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
 
-/* 쓰기 안내 상자 (블라인드의 "댓글을 남겨주세요" 상자처럼) */
-.prompt {
-  display: flex;
-  width: calc(100% + 2 * var(--gutter)); margin-top: 8px; margin-bottom: 14px;
-  padding: 0 var(--gutter); background: none; border: 0; text-align: left;
+/* ---------- 전체 화면: 카테고리별 구역 ---------- */
+.section { padding-top: 6px; }
+.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; }
+.sectionHead h2 { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
+.sectionHead h2 svg { width: 18px; height: 18px; }
+.sectionHead span { color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.section .rows > .row:first-child > * { border-top: 1px solid var(--border); }
+.moreBtn {
+  display: flex; align-items: center; justify-content: center; gap: 2px;
+  width: calc(100% + 2 * var(--gutter)); min-height: 52px; margin-top: 4px;
+  border: 0; border-top: 1px solid var(--border); background: none;
+  color: var(--text-2); font-size: 14px; font-weight: 650;
 }
-.prompt > span {
-  flex: 1; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px;
-  border: 1px solid var(--border); border-radius: 4px; background: var(--surface);
-  color: var(--text-2); font-size: 14px;
-}
-.prompt > span svg { flex: none; width: 18px; height: 18px; color: var(--text-2); }
-.prompt > span b { color: var(--text); font-weight: 650; margin-right: -8px; }
-.prompt:active > span { background: var(--surface-2); }
+.moreBtn svg { width: 16px; height: 16px; }
+.moreBtn:active { background: var(--surface-2); color: var(--text); }
 
 /* 구역 사이 회색 띠 */
 .band { height: 8px; background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }

@@ -21,12 +21,12 @@ import {
   userById,
 } from "@/lib/community";
 import HelpBanner from "@/components/HelpBanner";
-import { Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, SkeletonList, fmtRelative } from "@/components/ui";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import ShoutTabs from "@/components/ShoutTabs";
 import { CheerButton, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
-import { IconBubble, IconMore, IconPen, IconPlus, IconShield, IconSort } from "@/components/Icons";
+import { IconBubble, IconChevronR, IconClose, IconMore, IconPlus, IconSearch, IconShield, IconSort } from "@/components/Icons";
 import styles from "./shout.module.css";
 import { splitShout } from "./split";
 
@@ -35,6 +35,8 @@ type Sort = "new" | "top";
 type Badge = "hot" | "new" | null;
 
 const DAY = 86_400_000;
+/** 전체 화면에서 카테고리 구역마다 보여 줄 글 수 */
+const SECTION_SIZE = 3;
 /** 힘내요 + 댓글(×2) 점수. 목록의 "힘내요순" 정렬과 HOT 표시에 쓴다 */
 const score = (s: CommunityStore, p: Post) => p.cheers.length + commentsOf(s, p.id).length * 2;
 
@@ -44,6 +46,7 @@ export default function ShoutPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("new");
+  const [query, setQuery] = useState("");
   const [reporting, setReporting] = useState<Target | null>(null);
   const [menu, setMenu] = useState<Target | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -66,13 +69,17 @@ export default function ShoutPage() {
     load();
   }, [load]);
 
+  const q = query.trim().toLowerCase();
   const posts = useMemo(() => {
     if (!s) return [];
-    const list = s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter));
+    // 검색: 글 내용·닉네임·카테고리 이름에 검색어가 들어간 글
+    const matches = (p: Post) =>
+      !q || p.text.toLowerCase().includes(q) || userById(s, p.authorId).nick.toLowerCase().includes(q) || shoutCatById(p.cat).label.toLowerCase().includes(q);
+    const list = s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter) && matches(p));
     return sort === "top"
       ? list.sort((a, b) => score(s, b) - score(s, a) || b.createdAt - a.createdAt)
       : list.sort((a, b) => b.createdAt - a.createdAt);
-  }, [s, filter, sort]);
+  }, [s, filter, sort, q]);
   /** HOT: 최근 7일 글 중 점수 6 이상인 상위 3개. NEW: 하루 안에 올라온 글 */
   const hot = useMemo(() => {
     if (!s) return new Set<string>();
@@ -91,15 +98,15 @@ export default function ShoutPage() {
   if (loadError) {
     return (
       <>
-        <TopBar title="외침" />
-        <div className="screen"><LoadError message={loadError} onRetry={load} /></div>
+        <SearchBar value={query} onChange={setQuery} />
+        <div className="screen"><ShoutTabs /><LoadError message={loadError} onRetry={load} /></div>
       </>
     );
   }
   if (!s) {
     return (
       <>
-        <TopBar title="외침" />
+        <SearchBar value={query} onChange={setQuery} />
         <div className="screen" role="status" aria-label="외침을 불러오고 있어요">
           <ShoutTabs />
           <SkeletonList count={4} lines={3} />
@@ -111,12 +118,37 @@ export default function ShoutPage() {
   const blocked = isBlocked(s.me);
   const flaggedCount = listFlagged(s).length;
   const write = () => router.push(`/write?cat=${filter === "all" ? "misfortune" : filter}`);
+  /** 구역의 "더보기": 그 카테고리 목록으로 바꾸고 맨 위로 */
+  const openCategory = (id: ShoutCat) => {
+    setFilter(id);
+    window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
+  const renderRow = (p: Post) => (
+    <li key={p.id} className={styles.row}>
+      {isFlagged(p) && !revealed.has(p.id) ? (
+        <button className="flagged-box" onClick={() => setRevealed((r) => new Set(r).add(p.id))}>
+          <b>신고가 누적되어 검토 중인 글이에요</b>
+          위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 들어왔어요. 눌러서 볼 수 있어요.
+        </button>
+      ) : (
+        <PostRow
+          s={s}
+          post={p}
+          badge={badgeOf(p)}
+          commentCount={commentsOf(s, p.id).length}
+          onCheer={() => run(setS, () => api.toggleCheer({ kind: "post", id: p.id }))}
+          onOpen={() => router.push(`/shout/${p.id}`)}
+          onMenu={() => setMenu({ kind: "post", id: p.id })}
+        />
+      )}
+    </li>
+  );
 
   return (
     <>
-      <TopBar
-        title="외침"
-        eyebrow="익명"
+      <SearchBar
+        value={query}
+        onChange={setQuery}
         right={
           // 관리자 검토 아이콘은 관리자에게만 (일반 회원·익명에겐 없음)
           s.me.role === "admin" ? (
@@ -150,40 +182,40 @@ export default function ShoutPage() {
         </div>
         {filter !== "all" && <p className={styles.catDesc}>{shoutCatById(filter).desc}</p>}
 
-        {!blocked && (
-          <button type="button" className={styles.prompt} onClick={write}>
-            <span><IconPen /><b>{s.me.nick}</b> 님, 오늘의 불행을 털어내요</span>
-          </button>
-        )}
+        {q && <p className={styles.resultCount} role="status">‘{query.trim()}’ 검색 결과 {posts.length}개</p>}
         <div className={styles.band} aria-hidden="true" />
 
         {posts.length === 0 ? (
-          <Empty icon={<IconBubble />} title="아직 외침이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={write}>첫 외침 남기기</button>}>
-            첫 외침을 남기면 누군가 힘내요를 보낼 거예요.
-          </Empty>
+          q ? (
+            <Empty icon={<IconSearch />} title="검색 결과가 없어요" action={<button type="button" className="btn ghost" onClick={() => setQuery("")}>검색어 지우기</button>}>
+              다른 말로 찾아보거나 카테고리를 바꿔 보세요.
+            </Empty>
+          ) : (
+            <Empty icon={<IconBubble />} title="아직 외침이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={write}>첫 외침 남기기</button>}>
+              오른쪽 아래 + 를 눌러 첫 외침을 남겨 보세요.
+            </Empty>
+          )
+        ) : filter === "all" && !q ? (
+          // 전체: 블라인드 홈처럼 카테고리별 구역. 구역마다 몇 개만 보여 주고 "더보기"로 그 카테고리 목록으로
+          SHOUT_CATEGORIES.map((c) => {
+            const list = posts.filter((p) => p.cat === c.id);
+            if (list.length === 0) return null;
+            return (
+              <section key={c.id} className={styles.section} aria-labelledby={`sec-${c.id}`}>
+                <div className={styles.sectionHead}>
+                  <h2 id={`sec-${c.id}`}><ShoutCatIcon id={c.id} />{c.label}</h2>
+                  <span>{list.length}개</span>
+                </div>
+                <ul className={styles.rows}>{list.slice(0, SECTION_SIZE).map(renderRow)}</ul>
+                <button type="button" className={styles.moreBtn} onClick={() => openCategory(c.id)}>
+                  {c.label} 더보기<IconChevronR aria-hidden="true" />
+                </button>
+                <div className={styles.band} aria-hidden="true" />
+              </section>
+            );
+          })
         ) : (
-          <ul className={styles.rows}>
-            {posts.map((p) => (
-              <li key={p.id} className={styles.row}>
-                {isFlagged(p) && !revealed.has(p.id) ? (
-                  <button className="flagged-box" onClick={() => setRevealed((r) => new Set(r).add(p.id))}>
-                    <b>신고가 누적되어 검토 중인 글이에요</b>
-                    위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 들어왔어요. 눌러서 볼 수 있어요.
-                  </button>
-                ) : (
-                  <PostRow
-                    s={s}
-                    post={p}
-                    badge={badgeOf(p)}
-                    commentCount={commentsOf(s, p.id).length}
-                    onCheer={() => run(setS, () => api.toggleCheer({ kind: "post", id: p.id }))}
-                    onOpen={() => router.push(`/shout/${p.id}`)}
-                    onMenu={() => setMenu({ kind: "post", id: p.id })}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
+          <ul className={styles.rows}>{posts.map(renderRow)}</ul>
         )}
 
         <div className={styles.help}><HelpBanner /></div>
@@ -207,6 +239,32 @@ export default function ShoutPage() {
         }}
       />
     </>
+  );
+}
+
+/** 맨 위 검색창 (블라인드처럼 제목 대신). 입력하는 대로 목록을 거른다. 글쓰기는 오른쪽 아래 + 버튼 */
+function SearchBar({ value, onChange, right }: { value: string; onChange: (v: string) => void; right?: React.ReactNode }) {
+  return (
+    <header className={styles.searchBar}>
+      <h1 className={styles.srOnly}>외침</h1>
+      <form
+        role="search"
+        className={styles.searchBox}
+        onSubmit={(e) => {
+          e.preventDefault();
+          (document.activeElement as HTMLElement | null)?.blur(); // 모바일 키보드 닫기
+        }}
+      >
+        <IconSearch aria-hidden="true" />
+        <input type="search" enterKeyHint="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder="관심 있는 외침을 검색해 보세요" aria-label="외침 검색" maxLength={50} />
+        {value && (
+          <button type="button" className={styles.clear} aria-label="검색어 지우기" onClick={() => onChange("")}>
+            <IconClose />
+          </button>
+        )}
+      </form>
+      {right}
+    </header>
   );
 }
 
