@@ -45,7 +45,7 @@ public class SummarizeService {
         }
         try {
             String scope = b.category() == null || "all".equals(b.category()) ? "전체 카테고리" : Categories.byId(b.category(), b.categories()).label() + " 카테고리";
-            String summary = claude.complete(claude.resolveModel(null), 1200, Prompts.SUMMARY, "최근 " + b.days() + "일, " + scope + " 기록이야. 흐름을 정리해줘.\n\n" + text).strip();
+            String summary = claude.complete(claude.resolveModel(null), 3000, Prompts.SUMMARY, "최근 " + b.days() + "일, " + scope + " 기록이야. 흐름을 정리해줘.\n\n" + text).strip();
             out.put("summary", summary);
             out.put("source", "ai");
         } catch (Exception e) {

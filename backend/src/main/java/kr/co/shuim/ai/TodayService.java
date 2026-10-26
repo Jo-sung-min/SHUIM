@@ -48,7 +48,7 @@ public class TodayService {
             default -> "오늘의 나 브리핑을 만들어줘.";
         };
         try {
-            String rawText = claude.complete(claude.resolveModel(b.prompts().get("model")), "review".equals(mode) ? 3000 : 2000, system, ask + "\n\n" + text);
+            String rawText = claude.complete(claude.resolveModel(b.prompts().get("model")), "review".equals(mode) ? 6000 : 5000, system, ask + "\n\n" + text);
             Map<String, Object> out = new LinkedHashMap<>();
             switch (mode) {
                 case "briefing" -> {
@@ -274,41 +274,74 @@ public class TodayService {
         return new Briefing(headline, new Momentum(direction, momentumText), TodayDtos.head(highlights, 3), new TodayInfo(schedule, goalsText), nextStep, questions[dom % questions.length]);
     }
 
-    /** 칭찬받기 (AI 가 없을 때): 반말로, 기록 속 사소한 것까지 크게 칭찬. 조언·아쉬운 점은 없다 */
+    /**
+     * 칭찬받기 (AI 가 없을 때): 반말로 은근하게, 서로 다른 주제 3개를 3문장씩.
+     * ① 해낸 것(행동·목표·꾸준함) ② 힘든 날을 버틴 방식 ③ 너만의 기준이나 마음씨. 조언·아쉬운 점은 없다.
+     */
     static Moment localPraise(Request b) {
         List<String> lines = new ArrayList<>();
         List<RecentDay> recent = b.recent();
+        int recordedDays = recent.size() + (b.today().isEmpty() ? 0 : 1);
+
+        // ① 해낸 것
         LinkedHashSet<String> didAll = new LinkedHashSet<>(b.todayDid());
         for (RecentDay r : recent.subList(Math.max(0, recent.size() - 3), recent.size())) didAll.addAll(r.did());
-        if (!didAll.isEmpty()) lines.add("최근 며칠 동안 " + josa(String.join(", ", TodayDtos.head(new ArrayList<>(didAll), 3)), "을", "를") + " 직접 했잖아. 아무도 안 시켰는데 해낸 거야. 너 진짜 대단한 거야!");
-        RecentDay lowDay = recent.stream().filter(r -> Optional.ofNullable(avg(r.record())).orElse(0.0) <= -2).findFirst().orElse(null);
-        if (lowDay != null) {
-            String note = b.cats().stream().map(c -> note(lowDay.record(), c.id())).filter(Objects::nonNull).findFirst().orElse(null);
-            lines.add(lowDay.date().substring(5).replace("-", "/") + "처럼 힘든 날에도 기록을 남겼어" + (note != null ? ": \"" + note + "\"." : ".") + " 무너진 날을 적는 건 아무나 못 해. 진짜 용감한 거야.");
+        List<String> doneSteps = b.goals().stream().flatMap(g -> g.steps().stream().filter(s -> Boolean.TRUE.equals(s.done())).map(s -> "'" + s.text() + "'")).toList();
+        if (!didAll.isEmpty()) {
+            lines.add("최근 며칠 동안 " + josa(String.join(", ", TodayDtos.head(new ArrayList<>(didAll), 3)), "을", "를") + " 직접 했더라. 누가 시킨 것도 아닌데 하루하루 챙겨 온 거잖아. "
+                + "이런 작은 걸 꾸준히 하는 사람이 결국 자기 하루를 지켜 내는 사람이야.");
+        } else if (!doneSteps.isEmpty()) {
+            lines.add("목표에서 " + String.join(", ", TodayDtos.head(doneSteps, 2)) + "까지 해냈더라. 큰 걸 작게 나눠서 하나씩 체크하는 거, 생각보다 쉽지 않아. "
+                + "너는 말보다 행동으로 조금씩 앞으로 가는 사람이야.");
+        } else if (recordedDays >= 2) {
+            lines.add(recordedDays + "일 동안 너를 기록해 왔더라. 매일 자기를 들여다보는 건 귀찮고 쉽지 않은 일이야. "
+                + "그걸 이어 왔다는 건 네가 너를 꽤 아끼고 있다는 뜻이야.");
+        } else {
+            lines.add("오늘 여기까지 와서 너를 들여다보려고 했잖아. 바쁘고 지친 날엔 그 마음먹기도 쉽지 않아. "
+                + "너는 스스로를 그냥 내버려 두지 않는 사람이야.");
         }
+
+        // ② 힘든 날을 버틴 방식
+        RecentDay lowDay = recent.stream().filter(r -> Optional.ofNullable(avg(r.record())).orElse(0.0) <= -2).findFirst().orElse(null);
+        String rise = null;
         outer:
         for (int i = 1; i < recent.size(); i++) {
             for (Category c : b.cats()) {
-                Integer a = score(recent.get(i).record(), c.id());
-                Integer p = score(recent.get(i - 1).record(), c.id());
-                if (a != null && p != null && a - p >= 2) {
+                Integer x = score(recent.get(i).record(), c.id());
+                Integer y = score(recent.get(i - 1).record(), c.id());
+                if (x != null && y != null && x - y >= 2) {
                     String note = note(recent.get(i).record(), c.id());
-                    lines.add(c.label() + "이(가) " + fmtScore(a - p) + "나 올라온 날도 있었어" + (note != null ? ". 그날 쓴 말: \"" + note + "\"" : "") + ". 와, 이건 진짜 박수 받아야 돼.");
+                    rise = c.label() + "이(가) " + fmtScore(x - y) + " 올라온 날이 있었어" + (note != null ? " (그날 쓴 말: \"" + note + "\")" : "") + ".";
                     break outer;
                 }
             }
         }
-        List<String> doneSteps = b.goals().stream().flatMap(g -> g.steps().stream().filter(s -> Boolean.TRUE.equals(s.done())).map(s -> "'" + s.text() + "'")).toList();
-        if (!doneSteps.isEmpty()) lines.add("목표에서 " + String.join(", ", TodayDtos.head(doneSteps, 2)) + "까지 끝냈잖아. 큰 목표를 쪼개서 진짜로 체크하는 사람, 생각보다 엄청 드물어.");
-        ScheduleIn doneSched = b.schedule().stream().filter(s -> Boolean.TRUE.equals(s.done())).findFirst().orElse(null);
-        if (doneSched != null) lines.add("'" + doneSched.title() + "' 일정도 해냈어. 계획한 걸 그대로 해낸 너, 너무 멋있다.");
+        if (lowDay != null) {
+            String note = b.cats().stream().map(c -> note(lowDay.record(), c.id())).filter(Objects::nonNull).findFirst().orElse(null);
+            lines.add(lowDay.date().substring(5).replace("-", "/") + "은 꽤 힘든 날이었는데도 기록을 남겼더라" + (note != null ? ": \"" + note + "\"." : ".")
+                + " 무너진 날을 그대로 적어 두는 건 생각보다 용기가 필요한 일이야. 너는 힘든 날에도 너를 외면하지 않았어.");
+        } else if (rise != null) {
+            lines.add(rise + " 그런 날은 그냥 오지 않아. 그 전날들을 묵묵히 버틴 네가 만든 거야.");
+        } else {
+            lines.add("기록을 보면 크게 흔들리지 않고 자리를 지킨 날들이 이어져. 티 나지 않게 버티는 것도 실력이야. "
+                + "그 꾸준함이 분명 너를 지켜 주고 있어.");
+        }
+
+        // ③ 너만의 기준이나 마음씨
         MemoIn pinned = b.memos().stream().filter(m -> Boolean.TRUE.equals(m.pinned())).findFirst().orElse(null);
-        if (pinned != null) lines.add("스스로 원칙까지 세웠어: \"" + cut(pinned.text(), 60) + "\". 자기 기준이 있는 사람이라는 거야. 그거 엄청난 거야.");
-        int recordedDays = recent.size() + (b.today().isEmpty() ? 0 : 1);
-        if (recordedDays >= 2) lines.add(recordedDays + "일이나 자기를 들여다봤어. 이렇게 꾸준한 거, 아무나 못 해.");
-        lines.add("그리고 오늘 이 버튼을 눌렀잖아. 자기를 칭찬해 주려고 마음먹은 것부터 이미 대단해.");
-        String title = recordedDays >= 3 ? recordedDays + "일 동안 자기를 챙긴 너, 진짜 대단한 거야" : "오늘도 여기 온 너, 진짜 대단한 거야";
-        return new Moment(title, TodayDtos.head(lines, 6), "오늘도 여기까지 온 너, 진짜 최고야.");
+        ScheduleIn doneSched = b.schedule().stream().filter(s -> Boolean.TRUE.equals(s.done())).findFirst().orElse(null);
+        if (pinned != null) {
+            lines.add("메모에 이런 원칙을 적어 뒀더라: \"" + cut(pinned.text(), 60) + "\". 자기 기준을 글로 남겨 두는 사람은 흔들려도 다시 돌아올 자리가 있어. "
+                + "그게 너라서 좀 든든해.");
+        } else if (doneSched != null) {
+            lines.add("'" + doneSched.title() + "' 일정도 계획한 대로 해냈더라. 마음먹은 걸 그대로 해내는 건 작아 보여도 자기와의 약속을 지킨 거야. "
+                + "그렇게 쌓인 약속들이 너를 믿을 만한 사람으로 만들어.");
+        } else {
+            lines.add("오늘 칭찬받기를 눌렀다는 건 스스로를 아껴 주고 싶은 마음이 있다는 거야. 그 마음이 있는 사람은 결국 자기를 잘 돌봐. "
+                + "그래서 나는 네가 꽤 괜찮은 사람이라고 생각해.");
+        }
+
+        return new Moment("요즘 너, 생각보다 훨씬 잘 버티고 있더라", lines, "네가 걸어온 길, 나는 꽤 멋있다고 생각해.");
     }
 
     private static final Pattern LOW_SLEEP = Pattern.compile("잠\\s*(못|부족|안|[0-9]\\s*시간)|못\\s*잠|못\\s*잤|피곤|졸려|새벽까지|밤새");

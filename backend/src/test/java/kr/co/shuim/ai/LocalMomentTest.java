@@ -19,21 +19,29 @@ class LocalMomentTest {
         new RecentDay("2026-10-25", Map.of("mind", new Entry(0, null, "조금 괜찮아짐")), List.of("일찍 잠"))
     );
 
+    private static long sentences(String s) {
+        return s.chars().filter(ch -> ch == '.').count();
+    }
+
     @Test
-    void praiseIsCasualAndGenerous() {
+    void praiseIsThreeLongGentleThemes() {
         Moment m = TodayService.localPraise(req("praise", RECENT, List.of("운동")));
-        assertTrue(m.lines().size() >= 4, "칭찬은 넉넉하게: " + m.lines());
-        assertTrue(m.lines().size() <= 6);
-        assertTrue(m.title().contains("대단한 거야"));
-        for (String l : m.lines()) assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
+        assertEquals(3, m.lines().size(), "주제는 딱 3개: " + m.lines());
+        for (String l : m.lines()) {
+            assertTrue(sentences(l) >= 3, "주제마다 길게(3문장 이상): " + l);
+            assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
+            assertFalse(l.contains("최고") || l.contains("대단한 거야") || l.contains("박수"), "억지로 띄우지 않기: " + l);
+        }
+        assertTrue(m.lines().get(0).contains("운동"), "해낸 행동을 짚는다");
+        assertTrue(m.lines().get(1).contains("불안함"), "힘든 날의 기록을 짚는다");
         assertFalse(m.closing().contains("=="));
     }
 
     @Test
-    void praiseStillWorksWithNoRecords() {
+    void praiseStillHasThreeThemesWithNoRecords() {
         Moment m = TodayService.localPraise(req("praise", List.of(), List.of()));
-        assertFalse(m.lines().isEmpty());
-        assertTrue(m.lines().get(m.lines().size() - 1).contains("버튼을 눌렀잖아"));
+        assertEquals(3, m.lines().size());
+        assertTrue(m.lines().get(2).contains("칭찬받기를 눌렀다는"));
     }
 
     @Test

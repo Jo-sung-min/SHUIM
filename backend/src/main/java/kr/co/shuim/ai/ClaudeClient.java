@@ -14,6 +14,7 @@ import java.util.Map;
 /** Anthropic Messages API 호출. 키가 없으면 configured() 가 false 이고, 호출자는 규칙 기반 대체 결과를 쓴다 */
 @Service
 public class ClaudeClient {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ClaudeClient.class);
     private final RestClient client;
     private final String apiKey;
     private final String defaultModel;
@@ -45,6 +46,10 @@ public class ClaudeClient {
             .body(Map.of("model", model, "max_tokens", maxTokens, "system", system, "messages", List.of(Map.of("role", "user", "content", user))))
             .retrieve()
             .body(JsonNode.class);
+        // 모델이 먼저 생각(thinking)을 하면 그 토큰도 max_tokens 에 들어간다. 다 못 쓰고 잘리면 남겨 둔다 (JsonText 가 꼬리를 닫아 문장이 중간에서 끊겨 보인다)
+        if (res != null && "max_tokens".equals(res.path("stop_reason").asText())) {
+            log.warn("claude 응답이 max_tokens({})에서 잘림: model={} usage={}", maxTokens, model, res.path("usage"));
+        }
         StringBuilder sb = new StringBuilder();
         if (res != null && res.has("content")) {
             for (JsonNode b : res.get("content")) {
