@@ -274,16 +274,17 @@ public class TodayService {
         return new Briefing(headline, new Momentum(direction, momentumText), TodayDtos.head(highlights, 3), new TodayInfo(schedule, goalsText), nextStep, questions[dom % questions.length]);
     }
 
+    /** 칭찬받기 (AI 가 없을 때): 반말로, 기록 속 사소한 것까지 크게 칭찬. 조언·아쉬운 점은 없다 */
     static Moment localPraise(Request b) {
         List<String> lines = new ArrayList<>();
         List<RecentDay> recent = b.recent();
         LinkedHashSet<String> didAll = new LinkedHashSet<>(b.todayDid());
         for (RecentDay r : recent.subList(Math.max(0, recent.size() - 3), recent.size())) didAll.addAll(r.did());
-        if (!didAll.isEmpty()) lines.add("최근 며칠 동안 " + josa(String.join(", ", TodayDtos.head(new ArrayList<>(didAll), 3)), "을", "를") + " 직접 했어요. 아무도 시키지 않았는데 움직인 거예요.");
+        if (!didAll.isEmpty()) lines.add("최근 며칠 동안 " + josa(String.join(", ", TodayDtos.head(new ArrayList<>(didAll), 3)), "을", "를") + " 직접 했잖아. 아무도 안 시켰는데 해낸 거야. 너 진짜 대단한 거야!");
         RecentDay lowDay = recent.stream().filter(r -> Optional.ofNullable(avg(r.record())).orElse(0.0) <= -2).findFirst().orElse(null);
         if (lowDay != null) {
             String note = b.cats().stream().map(c -> note(lowDay.record(), c.id())).filter(Objects::nonNull).findFirst().orElse(null);
-            lines.add(lowDay.date().substring(5).replace("-", "/") + "처럼 힘든 날에도 기록을 남겼어요" + (note != null ? ": \"" + note + "\"" : ".") + " 내려간 날을 적어두는 건 쉬운 일이 아니에요.");
+            lines.add(lowDay.date().substring(5).replace("-", "/") + "처럼 힘든 날에도 기록을 남겼어" + (note != null ? ": \"" + note + "\"." : ".") + " 무너진 날을 적는 건 아무나 못 해. 진짜 용감한 거야.");
         }
         outer:
         for (int i = 1; i < recent.size(); i++) {
@@ -292,26 +293,29 @@ public class TodayService {
                 Integer p = score(recent.get(i - 1).record(), c.id());
                 if (a != null && p != null && a - p >= 2) {
                     String note = note(recent.get(i).record(), c.id());
-                    lines.add(c.label() + "이(가) " + fmtScore(a - p) + " 올라온 날이 있었어요" + (note != null ? ". 그날 쓴 말: \"" + note + "\"" : "."));
+                    lines.add(c.label() + "이(가) " + fmtScore(a - p) + "나 올라온 날도 있었어" + (note != null ? ". 그날 쓴 말: \"" + note + "\"" : "") + ". 와, 이건 진짜 박수 받아야 돼.");
                     break outer;
                 }
             }
         }
         List<String> doneSteps = b.goals().stream().flatMap(g -> g.steps().stream().filter(s -> Boolean.TRUE.equals(s.done())).map(s -> "'" + s.text() + "'")).toList();
-        if (!doneSteps.isEmpty()) lines.add("목표에서 " + String.join(", ", TodayDtos.head(doneSteps, 2)) + "까지 끝냈어요. 큰 목표를 작게 쪼개서 실제로 체크한 사람은 생각보다 드물어요.");
+        if (!doneSteps.isEmpty()) lines.add("목표에서 " + String.join(", ", TodayDtos.head(doneSteps, 2)) + "까지 끝냈잖아. 큰 목표를 쪼개서 진짜로 체크하는 사람, 생각보다 엄청 드물어.");
         ScheduleIn doneSched = b.schedule().stream().filter(s -> Boolean.TRUE.equals(s.done())).findFirst().orElse(null);
-        if (doneSched != null) lines.add("'" + doneSched.title() + "' 일정을 해냈어요. 계획한 걸 실제로 한 거예요.");
+        if (doneSched != null) lines.add("'" + doneSched.title() + "' 일정도 해냈어. 계획한 걸 그대로 해낸 너, 너무 멋있다.");
         MemoIn pinned = b.memos().stream().filter(m -> Boolean.TRUE.equals(m.pinned())).findFirst().orElse(null);
-        if (pinned != null) lines.add("스스로 원칙을 세웠어요: \"" + cut(pinned.text(), 60) + "\". 원칙을 글로 적어둔 것 자체가 자기를 돌보는 일이에요.");
-        if (lines.isEmpty()) lines.add("오늘 이 앱을 열고 자기를 돌아보려 한 것, 그게 첫 칭찬거리예요.");
+        if (pinned != null) lines.add("스스로 원칙까지 세웠어: \"" + cut(pinned.text(), 60) + "\". 자기 기준이 있는 사람이라는 거야. 그거 엄청난 거야.");
         int recordedDays = recent.size() + (b.today().isEmpty() ? 0 : 1);
-        return new Moment(recordedDays >= 3 ? recordedDays + "일 동안 자기를 들여다본 사람이에요" : "오늘도 자기를 들여다봤어요", TodayDtos.head(lines, 4), "내일의 나는 오늘 한 작은 행동 위에서 시작해요.");
+        if (recordedDays >= 2) lines.add(recordedDays + "일이나 자기를 들여다봤어. 이렇게 꾸준한 거, 아무나 못 해.");
+        lines.add("그리고 오늘 이 버튼을 눌렀잖아. 자기를 칭찬해 주려고 마음먹은 것부터 이미 대단해.");
+        String title = recordedDays >= 3 ? recordedDays + "일 동안 자기를 챙긴 너, 진짜 대단한 거야" : "오늘도 여기 온 너, 진짜 대단한 거야";
+        return new Moment(title, TodayDtos.head(lines, 6), "오늘도 여기까지 온 너, 진짜 최고야.");
     }
 
     private static final Pattern LOW_SLEEP = Pattern.compile("잠\\s*(못|부족|안|[0-9]\\s*시간)|못\\s*잠|못\\s*잤|피곤|졸려|새벽까지|밤새");
     private static final Pattern COFFEE = Pattern.compile("커피|카페인");
     private static final Pattern HARD = Pattern.compile("불안|막막|힘들|못하|싫");
 
+    /** 사랑받기 (AI 가 없을 때): 반말로, 조건 없이. 기록 속 모습을 짚되 조언·숙제는 없다 */
     static Moment localLove(Request b) {
         List<String> lines = new ArrayList<>();
         List<String> bodyNotes = new ArrayList<>();
@@ -320,24 +324,25 @@ public class TodayService {
         if (tb != null) bodyNotes.add(tb);
         String lowSleep = bodyNotes.stream().filter(n -> LOW_SLEEP.matcher(n).find()).findFirst().orElse(null);
         String coffee = bodyNotes.stream().filter(n -> COFFEE.matcher(n).find()).findFirst().orElse(null);
-        if (lowSleep != null) lines.add("몸 기록에 " + josa("\"" + lowSleep + "\"", "이라고", "라고") + " 썼어요. 오늘은 10분만 일찍 눕는 걸로 몸한테 미안함을 갚아봐도 좋아요.");
-        else if (coffee != null) lines.add(josa("\"" + coffee + "\"", "이라고", "라고") + " 적어뒀죠. 오늘 커피 한 잔을 물이나 산책으로 바꾸면 그 메모가 몸을 지키는 방법이 돼요.");
-        else lines.add("오늘 밥 한 끼는 폰 없이, 맛을 느끼면서 먹어봐요. 몸한테 '너를 챙기고 있어'라고 말하는 가장 쉬운 방법이에요.");
+        if (lowSleep != null) lines.add("몸 기록에 " + josa("\"" + lowSleep + "\"", "이라고", "라고") + " 썼더라. 그렇게 지친 몸으로도 하루를 버텨 준 너, 너무 고맙고 사랑해.");
+        else if (coffee != null) lines.add(josa("\"" + coffee + "\"", "이라고", "라고") + " 적어 뒀더라. 커피로 버텨야 했던 날의 너까지 나는 다 좋아.");
         List<String> mindNotes = new ArrayList<>();
         String tm = note(b.today(), "mind");
         if (tm != null) mindNotes.add(tm);
         for (int i = b.recent().size() - 1; i >= 0; i--) { String n = note(b.recent().get(i).record(), "mind"); if (n != null) mindNotes.add(n); }
         String mindNote = mindNotes.stream().filter(n -> HARD.matcher(n).find()).findFirst().orElse(null);
-        if (mindNote != null) lines.add(josa("\"" + mindNote + "\"", "이라고", "라고") + " 쓴 날이 있어요. 친구가 그렇게 말했다면 \"그럴 만했어\"라고 했을 거예요. 오늘은 그 말을 나한테 해줘요.");
-        MemoIn pinned = b.memos().stream().filter(m -> Boolean.TRUE.equals(m.pinned())).findFirst().orElse(b.memos().isEmpty() ? null : b.memos().get(0));
-        if (pinned != null) lines.add("직접 정한 원칙이 있어요: \"" + cut(pinned.text(), 60) + "\". 이걸 지키는 건 자기를 통제하는 게 아니라 자기를 지키는 거예요.");
-        List<ScheduleIn> todaySched = b.schedule().stream().filter(s -> b.date().equals(s.date()) && !Boolean.TRUE.equals(s.done())).toList();
-        if (todaySched.size() >= 3) lines.add("오늘 일정이 " + todaySched.size() + "개예요. 그중 하나는 못 해도 괜찮다고 미리 정해두면 하루가 덜 무거워요.");
-        else if (todaySched.isEmpty()) lines.add("오늘은 남은 일정이 없어요. 비어 있는 시간을 '아무것도 안 한 시간'이 아니라 '회복한 시간'이라고 불러줘요.");
+        if (mindNote != null) lines.add(josa("\"" + mindNote + "\"", "이라고", "라고") + " 쓴 날이 있었지. 그런 마음이 드는 날의 너도 하나도 모자라지 않아. 그대로 사랑해.");
         String relNote = note(b.today(), "relation");
         if (relNote == null) for (int i = b.recent().size() - 1; i >= 0 && relNote == null; i--) relNote = note(b.recent().get(i).record(), "relation");
-        if (relNote != null && lines.size() < 4) lines.add("관계 기록에 " + josa("\"" + relNote + "\"", "이", "가") + " 있어요. 나를 사랑하는 건 혼자 버티는 게 아니라 한 사람에게 짧게 연락하는 걸로도 시작돼요.");
-        return new Moment("오늘은 나를 친구처럼 대해봐요", TodayDtos.head(lines, 4), "잘하고 있어서가 아니라, 나라서 괜찮아요.");
+        if (relNote != null) lines.add("관계 기록에 " + josa("\"" + relNote + "\"", "이", "가") + " 있더라. 누구와 어떤 하루를 보냈든, 너는 사랑받아야 하는 사람이야.");
+        MemoIn pinned = b.memos().stream().filter(m -> Boolean.TRUE.equals(m.pinned())).findFirst().orElse(null);
+        if (pinned != null) lines.add("스스로 정한 원칙도 있지: \"" + cut(pinned.text(), 60) + "\". 지켰든 못 지켰든 상관없어. 그걸 정한 너를 사랑해.");
+        List<ScheduleIn> todaySched = b.schedule().stream().filter(s -> b.date().equals(s.date()) && !Boolean.TRUE.equals(s.done())).toList();
+        if (todaySched.size() >= 3) lines.add("오늘 할 일이 " + todaySched.size() + "개나 있네. 하나도 못 해도 괜찮아. 나는 할 일 말고 너를 사랑하니까.");
+        else if (todaySched.isEmpty()) lines.add("오늘은 비어 있는 날이네. 아무것도 안 해도 돼. 아무것도 안 하는 너도 나는 좋아.");
+        lines.add("점수가 높든 낮든, 기록을 했든 못 했든 상관없어. 너는 있는 그대로 충분해.");
+        lines.add("오늘 힘들었던 너, 지친 너, 잘 웃은 너까지 통째로 사랑해.");
+        return new Moment("뭘 했든 안 했든, 오늘의 너를 사랑해", TodayDtos.head(lines, 5), "넌 있는 그대로 사랑받아 마땅한 사람이야.");
     }
 
     private static final Set<String> STOP = Set.of("오늘", "내일", "어제", "그때", "지금", "생각", "하루", "다시", "보기", "하기", "말기", "것이", "같은데", "같아도", "그냥", "조금", "많이", "정말", "너무", "오늘은", "오늘도", "나를", "내가", "나는", "있다", "없다", "했다", "한다", "것", "수", "더");
@@ -423,7 +428,7 @@ public class TodayService {
     Moment parseMoment(String raw) {
         JsonNode o = parse(raw);
         if (o == null || text(o, "title").isEmpty() || !o.path("lines").isArray() || o.get("lines").isEmpty()) return null;
-        return new Moment(text(o, "title"), strings(o.get("lines"), 5), text(o, "closing"));
+        return new Moment(text(o, "title"), strings(o.get("lines"), 6), text(o, "closing"));
     }
 
     Review parseReview(String raw) {

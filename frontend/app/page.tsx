@@ -44,6 +44,7 @@ import { useRouter } from "next/navigation";
 import { CARE_BUILTIN, CARE_CATALOG, type CareAction, type CareTone, careDoneToday, loadCareExtras, markCareDone, saveCareExtras } from "@/lib/care";
 import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
 import Highlighted from "@/components/Highlighted";
+import { stripHighlights } from "@/lib/highlight";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "./account-screens.module.css";
 
@@ -74,7 +75,7 @@ interface CareTile { action: CareAction; label: string; done: boolean; on: boole
 
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
-  love: { label: "사랑받기", heading: "나를 사랑하는 법" },
+  love: { label: "사랑받기", heading: "오늘의 사랑" },
 };
 
 /** API로 보낼 재료: 최근 기록, 오늘 한 일, 메모, 목표, 일정 */
@@ -392,8 +393,8 @@ export default function HomePage() {
                 <li key={i}><span><Highlighted text={l} fallback="none" /></span></li>
               ))}
             </ul>
-            {/* 마지막 한마디는 문장 자체가 위로라 AI 표시가 없어도 통째로 형광펜 */}
-            {openMoment.data.closing && <p className="closing"><Highlighted text={openMoment.data.closing} fallback="all" /></p>}
+            {/* 마지막 한마디는 문장 자체가 위로라 통째로 형광펜. AI 가 일부만 ==표시== 해도 중간에서 끊기지 않게 표시를 떼고 문장 전체를 칠한다 */}
+            {openMoment.data.closing && <p className="closing"><mark className="hl">{stripHighlights(openMoment.data.closing)}</mark></p>}
           </section>
         )}
 
