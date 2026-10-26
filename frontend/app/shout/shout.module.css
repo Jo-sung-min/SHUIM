@@ -6,15 +6,8 @@
 /* .screen 의 좌우 여백(--gutter)을 넘어 화면 끝까지 닿게 하는 공통 규칙 */
 .band, .rows, .filterBar, .moreBtn { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
 
-.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-
-/* ---------- 맨 위 검색창 (제목 대신) ---------- */
-.searchBar {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 8px;
-  padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 10px;
-  background: var(--bg);
-}
+/* ---------- 탭 바로 아래 검색창 ---------- */
+.searchBar { display: flex; align-items: center; margin: -4px 0 12px; }
 .searchBox {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
   height: 44px; padding: 0 6px 0 14px;

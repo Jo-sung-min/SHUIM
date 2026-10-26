@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, RankRow, WeeklyBatch, api, currentWeekKey, fetchCommunity, fmtWon, pastWeeks, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
-import { Empty, Hero, LoadError, Segmented, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Hero, LoadError, Segmented, SkeletonHero, SkeletonList, fmtRelative } from "@/components/ui";
 import { run } from "@/components/CommunityUI";
 import { IconRefresh, IconTrophy } from "@/components/Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
@@ -32,8 +32,8 @@ export default function RankingPage() {
   }, [load]);
   useScrollMemory(s !== null);
 
-  if (loadError) return <><TopBar title="불행 랭킹" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!s) return <><TopBar title="불행 랭킹" /><div className="screen" role="status" aria-label="랭킹을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={3} lines={2} /></div></>;
+  if (loadError) return <div className="screen"><ShoutTabs /><LoadError message={loadError} onRetry={load} /></div>;
+  if (!s) return <div className="screen" role="status" aria-label="랭킹을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={3} lines={2} /></div>;
 
   const cur = currentWeekKey();
   const batch: WeeklyBatch | undefined = view === "current" ? weeklyOf(s, cur) : pastWeek ? weeklyOf(s, pastWeek) : undefined;
@@ -42,12 +42,8 @@ export default function RankingPage() {
 
   return (
     <>
-      <TopBar
-        title="불행 랭킹"
-        right={view === "current" ? <button className="icon-btn" aria-label="지금 집계" title="지금 집계" onClick={() => run(setS, () => api.refreshCurrentWeek())}><IconRefresh /></button> : undefined}
-      />
       <div className="screen">
-        <ShoutTabs />
+        <ShoutTabs right={view === "current" ? <button className="icon-btn" aria-label="지금 집계" title="지금 집계" onClick={() => run(setS, () => api.refreshCurrentWeek())}><IconRefresh /></button> : undefined} />
         <div style={{ height: 12 }} />
         <Hero
           label={batch ? `${weekLabel(batch.week)} · ${batch.finalized ? "확정" : `잠정 · ${fmtRelative(batch.computedAt)} 집계`}` : "집계 전"}

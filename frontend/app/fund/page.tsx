@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, DONATION_PRESETS, RANK_SHARES, api, currentWeekKey, fetchCommunity, fmtWon, myPayouts, pastWeeks, userById, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
-import { Empty, Hero, LoadError, Sheet, SkeletonHero, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Hero, LoadError, Sheet, SkeletonHero, SkeletonList, fmtRelative } from "@/components/ui";
 import { run } from "@/components/CommunityUI";
 import { IconCoin } from "@/components/Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
@@ -28,8 +28,8 @@ export default function FundPage() {
   }, [load]);
   useScrollMemory(s !== null);
 
-  if (loadError) return <><TopBar title="불행 모금" /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!s) return <><TopBar title="불행 모금" /><div className="screen" role="status" aria-label="모금 현황을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div></>;
+  if (loadError) return <div className="screen"><ShoutTabs /><LoadError message={loadError} onRetry={load} /></div>;
+  if (!s) return <div className="screen" role="status" aria-label="모금 현황을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div>;
 
   const cur = currentWeekKey();
   const batch = weeklyOf(s, cur);
@@ -43,7 +43,6 @@ export default function FundPage() {
 
   return (
     <>
-      <TopBar title="불행 모금" />
       <div className="screen">
         <ShoutTabs />
         <div style={{ height: 12 }} />

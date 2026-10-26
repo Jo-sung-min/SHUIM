@@ -98,17 +98,16 @@ export default function ShoutPage() {
   if (loadError) {
     return (
       <>
-        <SearchBar value={query} onChange={setQuery} />
-        <div className="screen"><ShoutTabs /><LoadError message={loadError} onRetry={load} /></div>
+        <div className="screen"><ShoutTabs /><SearchBar value={query} onChange={setQuery} /><LoadError message={loadError} onRetry={load} /></div>
       </>
     );
   }
   if (!s) {
     return (
       <>
-        <SearchBar value={query} onChange={setQuery} />
         <div className="screen" role="status" aria-label="외침을 불러오고 있어요">
           <ShoutTabs />
+          <SearchBar value={query} onChange={setQuery} />
           <SkeletonList count={4} lines={3} />
         </div>
       </>
@@ -146,21 +145,19 @@ export default function ShoutPage() {
 
   return (
     <>
-      <SearchBar
-        value={query}
-        onChange={setQuery}
-        right={
-          // 관리자 검토 아이콘은 관리자에게만 (일반 회원·익명에겐 없음)
-          s.me.role === "admin" ? (
-            <Link href="/admin" className="icon-btn" aria-label="관리자 검토" style={{ position: "relative" }}>
-              <IconShield />
-              {flaggedCount > 0 && <span className="count-badge">{flaggedCount}</span>}
-            </Link>
-          ) : undefined
-        }
-      />
       <div className={`screen ${styles.list}`}>
-        <ShoutTabs />
+        <ShoutTabs
+          right={
+            // 관리자 검토 아이콘은 관리자에게만 (일반 회원·익명에겐 없음)
+            s.me.role === "admin" ? (
+              <Link href="/admin" className="icon-btn" aria-label="관리자 검토" style={{ position: "relative" }}>
+                <IconShield />
+                {flaggedCount > 0 && <span className="count-badge">{flaggedCount}</span>}
+              </Link>
+            ) : undefined
+          }
+        />
+        <SearchBar value={query} onChange={setQuery} />
 
         {blocked && <div className="notice warn">이 계정은 신고 누적으로 차단되어 글과 댓글을 쓸 수 없어요. 읽는 건 가능해요.</div>}
 
@@ -242,11 +239,10 @@ export default function ShoutPage() {
   );
 }
 
-/** 맨 위 검색창 (블라인드처럼 제목 대신). 입력하는 대로 목록을 거른다. 글쓰기는 오른쪽 아래 + 버튼 */
-function SearchBar({ value, onChange, right }: { value: string; onChange: (v: string) => void; right?: React.ReactNode }) {
+/** 탭 바로 아래 검색창. 입력하는 대로 목록을 거른다. 글쓰기는 오른쪽 아래 + 버튼 */
+function SearchBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <header className={styles.searchBar}>
-      <h1 className={styles.srOnly}>외침</h1>
+    <div className={styles.searchBar}>
       <form
         role="search"
         className={styles.searchBox}
@@ -263,8 +259,7 @@ function SearchBar({ value, onChange, right }: { value: string; onChange: (v: st
           </button>
         )}
       </form>
-      {right}
-    </header>
+    </div>
   );
 }
 
