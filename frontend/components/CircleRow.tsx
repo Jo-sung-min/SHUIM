@@ -10,6 +10,11 @@ export function Verified() {
   return <span className={styles.verified} title="소속 인증 소로우" aria-label="소속 인증 소로우"><IconCheck aria-hidden="true" /></span>;
 }
 
+/** 예시 데이터 소로우 표시 */
+export function SampleTag() {
+  return <span className={styles.pill} title="예시로 넣어 둔 소로우예요">샘플</span>;
+}
+
 /** 소로우 머리글자 (이름의 첫 글자) */
 export const circleInitial = (name: string) => name.replace(/\s*소로우$/, "").slice(0, 1);
 
@@ -19,7 +24,7 @@ export function CircleRow({ c, rank }: { c: Circle; rank?: number }) {
     <Link href={`/c/${c.slug}`} className={styles.circleRow}>
       <span className={styles.mark} data-rank={rank ? "" : undefined} aria-hidden="true">{rank ?? circleInitial(c.name)}</span>
       <span className={styles.circleMain}>
-        <b>{c.name}{c.verified && <Verified />}</b>
+        <b>{c.name}{c.verified && <Verified />}{c.sample && <SampleTag />}</b>
         <p>{kindLabel(c.kind)} · 멤버 {c.memberCount}명{c.postCount ? ` · 사연 ${c.postCount}개` : ""}{c.intro ? ` · ${c.intro}` : ""}</p>
       </span>
       <IconChevronR aria-hidden="true" />

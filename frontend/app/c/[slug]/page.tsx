@@ -8,7 +8,7 @@ import {
   CircleDetail, JOIN_MODE_LABEL, confirmVerify, fetchCircle, joinCircle, kindLabel, leaveCircle, setPrimaryCircle, startVerify, toggleCircleFollow,
 } from "@/lib/circles";
 import CirclePosts, { circlePostsOf } from "@/components/CirclePosts";
-import { Verified, circleInitial } from "@/components/CircleRow";
+import { SampleTag, Verified, circleInitial } from "@/components/CircleRow";
 import { LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar } from "@/components/ui";
 import { IconChevronL, IconLeaf, IconLock, IconMegaphone, IconMore, IconPen, IconShare, IconShield } from "@/components/Icons";
@@ -94,7 +94,7 @@ export default function CirclePage() {
           <div className={styles.heroTop}>
             <span className={styles.mark} aria-hidden="true">{circleInitial(c.name)}</span>
             <div style={{ minWidth: 0 }}>
-              <h2>{c.name}{c.verified && <Verified />}</h2>
+              <h2>{c.name}{c.verified && <Verified />}{c.sample && <SampleTag />}</h2>
               <p className={styles.meta}>
                 {kindLabel(c.kind)} · 멤버 {c.memberCount}명 · 리스너 {c.listenerCount}명 · 사연 {c.postCount}개
               </p>

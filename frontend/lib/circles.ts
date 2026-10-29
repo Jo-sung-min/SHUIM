@@ -41,6 +41,8 @@ export interface Circle {
   postCount: number;
   /** 둘러보기에 나오는지 (멤버 10명 이상, 학교·회사는 인증까지) */
   listed: boolean;
+  /** 예시 데이터로 넣은 소로우 (메일 인증과 관계없이 둘러보기에 나오고 "샘플" 표시) */
+  sample?: boolean;
   createdAt: number;
   /** 이번 주 가장 따뜻한 소로우 순위 */
   rank?: number;

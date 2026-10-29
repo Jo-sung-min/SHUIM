@@ -48,9 +48,10 @@ public class CircleService {
     /* ---------- 모양 ---------- */
 
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
-                         String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount) {
+                         String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample) {
+        /** 샘플 소로우(V19 예시 데이터)는 메일 인증 없이도 둘러보기에 나오고, 화면에 '샘플'로 표시된다 */
         public boolean listed() {
-            return memberCount >= CircleLogic.LISTED_MIN_MEMBERS && (!CircleLogic.isSchoolOrCompany(kind) || verified);
+            return memberCount >= CircleLogic.LISTED_MIN_MEMBERS && (!CircleLogic.isSchoolOrCompany(kind) || verified || sample);
         }
     }
 
@@ -77,6 +78,7 @@ public class CircleService {
         m.put("listenerCount", c.listenerCount());
         m.put("postCount", c.postSeq());
         m.put("listed", c.listed());
+        if (c.sample()) m.put("sample", true);
         m.put("createdAt", c.createdAt());
         return m;
     }
@@ -90,7 +92,7 @@ public class CircleService {
     private static Circle circleRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Circle(rs.getString("id"), rs.getString("slug"), rs.getString("name"), rs.getString("kind"), rs.getString("domain"), rs.getBoolean("verified"),
             rs.getString("join_mode"), rs.getString("visibility"), rs.getString("intro"), rs.getString("notice"), rs.getString("created_by"), rs.getInt("post_seq"),
-            Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"));
+            Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"), rs.getBoolean("sample"));
     }
 
     public Circle bySlug(String slug) {
