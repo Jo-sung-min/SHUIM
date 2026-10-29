@@ -10,6 +10,11 @@ node_modules/
 .pnp.js
 .next/
 out/
+# 앱인토스 미니앱 빌드 (npm run build:ait)
+out-ait/
+.ait-stash/
+*.ait
+.env.ait
 next-env.d.ts
 *.tsbuildinfo
 .vercel

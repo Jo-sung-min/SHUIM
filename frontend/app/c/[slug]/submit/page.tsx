@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { SHOUT_CATEGORIES, ShoutCat } from "@/lib/community";
 import { CircleDetail, Draft, fetchCircle, personalInfoHints, previewSubmission, sendSubmission } from "@/lib/circles";
 import { hasCrisisSignal } from "@/lib/crisis";
@@ -12,6 +12,7 @@ import { SkeletonList, TopBar } from "@/components/ui";
 import { IconChevronL, IconSparkle } from "@/components/Icons";
 import styles from "../../circle.module.css";
 import shout from "../../../shout/shout.module.css";
+import { route, useRouteParam } from "@/lib/routes";
 
 const MAX = 1200;
 
@@ -20,7 +21,7 @@ const MAX = 1200;
  * 보낸 사연은 소로우지기가 검토해 '#번호'로 올린다 (게시 시각은 10~90분 늦춰져 보낸 시각으로 짐작할 수 없다).
  */
 export default function SubmitPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const slug = useRouteParam("slug");
   const router = useRouter();
   const [c, setC] = useState<CircleDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function SubmitPage() {
         <div className={`screen ${styles.locked}`}>
           <b>멤버만 사연을 보낼 수 있어요</b>
           {c.name}에 먼저 가입해 주세요.
-          <Link href={`/c/${c.slug}`} className="btn" style={{ marginTop: 8 }}>{c.name}로 가기</Link>
+          <Link href={route(`/c/${c.slug}`)} className="btn" style={{ marginTop: 8 }}>{c.name}로 가기</Link>
         </div>
       </>
     );
@@ -69,7 +70,7 @@ export default function SubmitPage() {
           )}
           <div className={styles.actions} style={{ width: "100%" }}>
             <Link href="/c/submissions" className="btn">내 사연함</Link>
-            <Link href={`/c/${c.slug}`} className="btn ghost">{c.name}로</Link>
+            <Link href={route(`/c/${c.slug}`)} className="btn ghost">{c.name}로</Link>
           </div>
         </div>
       </>

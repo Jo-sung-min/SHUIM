@@ -18,6 +18,7 @@ import ProfileTabs from "@/components/ProfileTabs";
 import { shareProfile } from "@/lib/share-profile";
 import styles from "../account-screens.module.css";
 import profileStyles from "@/components/Profile.module.css";
+import { route } from "@/lib/routes";
 
 type View = "profile" | "notif";
 
@@ -180,7 +181,7 @@ export default function MePage() {
               <Empty icon={<IconBubble />} title="아직 도착한 알림이 없어요">내 이야기에 달린 위로와 답글을<br />이곳에 모아드릴게요.</Empty>
             ) : (
               notifs.map((n) => (
-                <Link key={n.id} href={n.postKind === "post" ? `/shout/${n.postId}` : `/feed?post=${n.postId}`} className={`notif ${n.read ? "" : "unread"}`}>
+                <Link key={n.id} href={n.postKind === "post" ? route(`/shout/${n.postId}`) : `/feed?post=${n.postId}`} className={`notif ${n.read ? "" : "unread"}`}>
                   <span className="avatar sm">{n.actorNick.slice(0, 1)}</span>
                   <span className="grow" style={{ minWidth: 0 }}>
                     <span className="who"><b>{n.actorNick}</b>{n.kind === "comment_on_post" ? " 님이 내 글에 위로를 남겼어요" : n.kind === "reply_to_comment" ? " 님이 내 댓글에 답글을 남겼어요" : " 님이 내가 위로한 글에 답했어요"}<small>{fmtRelative(n.at)}</small></span>

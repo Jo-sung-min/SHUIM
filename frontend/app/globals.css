@@ -1155,3 +1155,6 @@ html[data-keyboard="open"] .app-toasts { bottom: calc(var(--kb) + 12px); }
 .saved-indicator.on { display: inline-block; animation: saved-pop 360ms var(--ease); }
 @keyframes saved-pop { 0% { opacity: 0; transform: translateY(3px); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .saved-indicator.on { animation: none; } }
+
+/* 앱인토스 미니앱: 뒤로가기는 토스 내비게이션 바가 맡는다. 상단바의 자체 ‹ 버튼은 숨겨 둘이 함께 보이지 않게 한다 (출시 체크리스트) */
+html[data-ait] .topbar .right > .icon-btn:has(> svg[data-icon="back"]) { display: none; }

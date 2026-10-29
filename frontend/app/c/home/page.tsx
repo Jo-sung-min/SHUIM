@@ -12,6 +12,7 @@ import { Empty, SkeletonList } from "@/components/ui";
 import { IconChevronR, IconInbox, IconLeaf, IconPlus, IconSearch } from "@/components/Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import styles from "../circle.module.css";
+import { route } from "@/lib/routes";
 
 /**
  * 내 소로우: 내가 속한 소로우와 리스닝 중인 소로우의 사연을 한 줄로.
@@ -66,7 +67,7 @@ export default function CircleHomePage() {
 
         <div className={styles.mine} aria-label="내 소로우">
           {chips.map((c) => (
-            <Link key={c.id} href={`/c/${c.slug}`} className={styles.mineChip} data-primary={"primary" in c && c.primary ? "" : undefined}>
+            <Link key={c.id} href={route(`/c/${c.slug}`)} className={styles.mineChip} data-primary={"primary" in c && c.primary ? "" : undefined}>
               {c.name}
               {"status" in c && c.status === "pending" && <small>승인 대기</small>}
               {"role" in c && c.role !== "member" && <small>소로우지기</small>}

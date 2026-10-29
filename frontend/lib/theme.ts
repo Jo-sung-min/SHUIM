@@ -5,6 +5,7 @@
  * - THEME_SCRIPT 는 layout <head> 에서 첫 페인트 전에 실행돼 밝은 화면이 번쩍이지 않게 한다
  */
 import { SITE } from "./site";
+import { IS_AIT } from "./ait";
 
 export type ThemePref = "system" | "light" | "dark";
 export const THEME_KEY = "sorow:theme";
@@ -12,6 +13,7 @@ export const THEME_KEY = "sorow:theme";
 const BAR_COLOR = { light: SITE.themeLight, dark: SITE.themeDark } as const;
 
 export function loadTheme(): ThemePref {
+  if (IS_AIT) return "light"; // 앱인토스 미니앱은 라이트 모드만 (출시 체크리스트)
   try {
     const v = window.localStorage.getItem(THEME_KEY);
     return v === "light" || v === "dark" ? v : "system";
@@ -41,4 +43,4 @@ export function saveTheme(pref: ThemePref) {
   applyTheme(pref);
 }
 
-export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${THEME_KEY}");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}})()`;
+export const THEME_SCRIPT = IS_AIT ? `document.documentElement.setAttribute("data-theme","light")` : `(function(){try{var t=localStorage.getItem("${THEME_KEY}");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}})()`;

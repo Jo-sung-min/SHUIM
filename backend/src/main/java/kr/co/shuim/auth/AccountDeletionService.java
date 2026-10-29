@@ -26,12 +26,15 @@ public class AccountDeletionService {
     public void delete(DbUser user, String confirmation) {
         if (user == null) throw ApiException.unauthorized("로그인이 필요해요");
         if (!"계정 삭제".equals(confirmation)) throw ApiException.badRequest("확인란에 계정 삭제를 입력해 주세요.");
+        if (!deleteAccount(user.id())) throw ApiException.unauthorized("이미 삭제된 계정이에요");
+    }
+
+    /** 확인 문구 없이 계정 하나를 지운다 (토스 연결 끊기 콜백). 이미 없으면 false */
+    @Transactional
+    public boolean deleteAccount(String id) {
         Db.lockCommunity(jdbc);
-        String id = user.id();
         // Serializes deletion with concurrent FK-backed writes and upload registration.
-        if (jdbc.sql("SELECT id FROM users WHERE id = ? FOR UPDATE").param(id).query(String.class).optional().isEmpty()) {
-            throw ApiException.unauthorized("이미 삭제된 계정이에요");
-        }
+        if (jdbc.sql("SELECT id FROM users WHERE id = ? FOR UPDATE").param(id).query(String.class).optional().isEmpty()) return false;
         Set<String> keys = new LinkedHashSet<>(jdbc.sql("SELECT object_key FROM uploaded_objects WHERE user_id = ?")
             .param(id).query(String.class).list());
         // Backfill attached media uploaded before uploaded_objects was introduced.
@@ -87,5 +90,6 @@ public class AccountDeletionService {
             """).param(id).update();
         // Cascades cover profiles, records/goals, settings, sessions, follows/saves, personal blocks and uploads.
         jdbc.sql("DELETE FROM users WHERE id = ?").param(id).update();
+        return true;
     }
 }

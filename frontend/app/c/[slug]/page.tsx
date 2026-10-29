@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { CommunityStore, Target, api, fetchCommunity } from "@/lib/community";
 import {
   CircleDetail, JOIN_MODE_LABEL, confirmVerify, fetchCircle, joinCircle, kindLabel, leaveCircle, setPrimaryCircle, startVerify, toggleCircleFollow,
@@ -14,10 +14,11 @@ import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar } from "@/components/u
 import { IconChevronL, IconLeaf, IconLock, IconMegaphone, IconMore, IconPen, IconShare, IconShield } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../circle.module.css";
+import { route, useRouteParam } from "@/lib/routes";
 
 /** 소로우 하나: 소개·공지, 가입(누구나/승인/초대 코드/소속 메일 인증), 리스닝, 사연 보내기, '#번호' 사연 목록 */
 export default function CirclePage() {
-  const { slug } = useParams<{ slug: string }>();
+  const slug = useRouteParam("slug");
   const router = useRouter();
   const [c, setC] = useState<CircleDetail | null>(null);
   const [s, setS] = useState<CommunityStore | null>(null);
@@ -105,7 +106,7 @@ export default function CirclePage() {
 
           <div className={styles.actions}>
             {member ? (
-              <Link href={`/c/${c.slug}/submit`} className="btn"><IconPen />사연 보내기</Link>
+              <Link href={route(`/c/${c.slug}/submit`)} className="btn"><IconPen />사연 보내기</Link>
             ) : waiting ? (
               <button className="btn ghost" disabled>승인 기다리는 중</button>
             ) : (
@@ -120,7 +121,7 @@ export default function CirclePage() {
               </button>
             )}
             {c.me.keeper && (
-              <Link href={`/c/${c.slug}/admin`} className="btn ghost">
+              <Link href={route(`/c/${c.slug}/admin`)} className="btn ghost">
                 <IconShield />소로우지기{(c.pendingCount ?? 0) + (c.waitingMembers ?? 0) > 0 ? ` · ${(c.pendingCount ?? 0) + (c.waitingMembers ?? 0)}` : ""}
               </Link>
             )}

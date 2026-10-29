@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Me, fetchMe, signIn, signOut, signUp, startKakaoLogin, updateNick } from "@/lib/auth";
+import { Me, fetchMe, signIn, signInWithToss, signOut, signUp, startKakaoLogin, updateNick } from "@/lib/auth";
+import { IS_AIT } from "@/lib/ait";
 import { Empty, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui";
 import { toastSuccess } from "@/lib/toast";
 import { todayKey } from "@/lib/storage";
@@ -12,7 +13,7 @@ import { IconChevronL, IconChevronR, IconKakao, IconUser } from "@/components/Ic
 import styles from "../account-screens.module.css";
 
 type Mode = "login" | "signup";
-type Pending = "submit" | "nick" | "logout" | "kakao" | null;
+type Pending = "submit" | "nick" | "logout" | "kakao" | "toss" | null;
 
 export default function AuthPage() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function AuthPage() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [aiAccepted, setAiAccepted] = useState(false);
   const [kakaoSignup, setKakaoSignup] = useState(false);
+  const [tossSignup, setTossSignup] = useState(false);
   const [policy, setPolicy] = useState<PolicyConsent | null>(null);
   const busy = pending !== null;
 
@@ -86,6 +88,23 @@ export default function AuthPage() {
   });
 
   const back = <Link href="/settings" className="icon-btn" aria-label="설정으로"><IconChevronL /></Link>;
+  const afterLogin = () => new URLSearchParams(window.location.search).get("next") === "delete" ? "/account-deletion" : "/";
+
+  /** 미니앱: 토스 로그인만. 처음이면 서버가 동의를 요구하고, 동의를 저장한 뒤 한 번 더 부른다 */
+  const tossStart = () => run("toss", async () => {
+    if (tossSignup) {
+      if (!termsAccepted || !policy) return;
+      setPolicy(await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: aiAccepted, expectedUserId: policy.userId }));
+    }
+    const result = await signInWithToss();
+    if (!result.ok) {
+      if (result.consentRequired && !tossSignup) setTossSignup(true);
+      else setError(result.error);
+      return;
+    }
+    navigatingRef.current = true;
+    router.push(afterLogin());
+  });
 
   if (!me) return <><TopBar title="계정" right={back} /><div className="screen" role="status" aria-label="계정을 확인하고 있어요"><SkeletonCard lines={2} head /><div style={{ height: 16 }} /><SkeletonCard lines={3} /></div></>;
 
@@ -98,7 +117,7 @@ export default function AuthPage() {
       <div className="screen">
         <section className={`card ${styles.accountCard}`}>
           <span className={styles.accountAvatar} aria-hidden="true">{user.nick.slice(0, 1)}</span>
-          <div><h2>{user.nick}</h2><p>{user.email ?? "카카오로 연결된 계정"}</p><p>{fmtDate(todayKey(new Date(user.createdAt)), false)}부터 함께했어요</p></div>
+          <div><h2>{user.nick}</h2><p>{user.email ?? (IS_AIT ? "토스로 연결된 계정" : "카카오로 연결된 계정")}</p><p>{fmtDate(todayKey(new Date(user.createdAt)), false)}부터 함께했어요</p></div>
         </section>
         <section className={styles.group} aria-labelledby="account-profile-title">
           <h2 className={styles.groupTitle} id="account-profile-title">내 정보</h2>
@@ -122,6 +141,32 @@ export default function AuthPage() {
       </div>
     </>;
   }
+
+  // 미니앱은 토스 로그인 외 로그인 방식을 둘 수 없다. 첫 화면에 서비스 소개를 보여 주고, 로그인 창을 저절로 띄우지 않는다 (출시 체크리스트)
+  if (IS_AIT) return <>
+    <TopBar title="소로우" right={<Link href="/" className="icon-btn" aria-label="홈으로"><IconChevronL /></Link>} />
+    <div className="screen">
+      <section className={styles.intro}>
+        <div className={styles.brandMark} aria-hidden="true" />
+        <h2>마음을 기록하고,<br />익명으로 위로를 나눠요.</h2>
+        <p>{tossSignup ? "토스로 처음 오셨네요. 가입 안내를 확인해 주세요." : "하루의 마음을 적으면 흐름을 보여 주고, 털어놓은 고민에는 다른 사람들이 위로를 남겨요. 토스로 시작하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요."}</p>
+      </section>
+      {tossSignup && <section className={styles.consent} aria-labelledby="signup-consent-title">
+        <h3 id="signup-consent-title">가입 전 확인해 주세요</h3>
+        <label className={styles.check}><input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} disabled={busy} /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고<br /><Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</strong></span></label>
+        <p>토스에서는 사용자를 구분하는 값만 받고, 이름·연락처 같은 정보는 받지 않아요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요.</p>
+        <label className={styles.check}><input type="checkbox" checked={aiAccepted} onChange={(e) => setAiAccepted(e.target.checked)} disabled={busy} /><span><strong>[선택] AI 기능의 정보 처리에 동의해요.</strong></span></label>
+        <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 Anthropic의 AI 서비스 Claude에 전달해 답변을 만들어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
+      </section>}
+      {error && <p className={styles.error} role="alert">{error}</p>}
+      {!me.toss && <p className={styles.mutedNote} role="status">지금은 토스 로그인을 준비하고 있어요. 잠시 후 다시 시도해 주세요.</p>}
+      <button type="button" className="btn block" disabled={busy || !me.toss || (tossSignup && (!termsAccepted || !policy))} aria-busy={pending === "toss"} onClick={tossStart}>
+        {pending === "toss" ? "토스로 연결 중…" : tossSignup ? "동의하고 토스로 시작하기" : "토스로 시작하기"}
+      </button>
+      <p className={styles.mutedNote}>로그인하지 않아도 기록은 이 기기에 저장돼요.</p>
+      <nav className={styles.support} aria-label="서비스 안내"><Link href="/info">서비스 안내와 개인정보 보호<IconChevronR /></Link></nav>
+    </div>
+  </>;
 
   return <>
     <TopBar title="소로우" right={<Link href="/" className="icon-btn" aria-label="홈으로"><IconChevronL /></Link>} />

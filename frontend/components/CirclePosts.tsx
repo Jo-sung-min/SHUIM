@@ -10,6 +10,7 @@ import { CheerButton, LineAction, run } from "./CommunityUI";
 import { IconBubble, IconMore } from "./Icons";
 import styles from "@/app/shout/shout.module.css";
 import { splitShout } from "@/app/shout/split";
+import { route } from "@/lib/routes";
 
 /** 소로우 사연 목록 (외침 목록과 같은 줄 모양). 닉네임 자리에는 "OO 소로우 #번호" */
 export function circlePostsOf(s: CommunityStore, circleIds: Set<string>): Post[] {
@@ -40,7 +41,7 @@ export default function CirclePosts({
         return (
           <li key={p.id} className={styles.row}>
             <article className={styles.item}>
-              <Link href={`/shout/${p.id}`} className={styles.itemLink}>
+              <Link href={route(`/shout/${p.id}`)} className={styles.itemLink}>
                 <div className={styles.itemText}>
                   {isFlagged(p) ? <p className={styles.preview}>신고가 누적되어 검토 중인 사연이에요. 눌러서 볼 수 있어요.</p> : (
                     <>
@@ -58,7 +59,7 @@ export default function CirclePosts({
               </Link>
               <div className={`post-foot ${styles.foot}`}>
                 <CheerButton small count={p.cheers.length} on={p.cheers.includes(s.me.id)} onClick={() => run(onChange, () => api.toggleCheer({ kind: "post", id: p.id }))} />
-                <LineAction icon={<IconBubble style={{ width: 18, height: 18 }} />} label={comments} onClick={() => router.push(`/shout/${p.id}`)} ariaLabel={`위로 댓글 ${comments}개`} />
+                <LineAction icon={<IconBubble style={{ width: 18, height: 18 }} />} label={comments} onClick={() => router.push(route(`/shout/${p.id}`))} ariaLabel={`위로 댓글 ${comments}개`} />
                 <span className={styles.time}>{fmtRelative(p.createdAt)}</span>
                 <button type="button" className={`icon-btn ${styles.more}`} aria-label="더보기" onClick={() => onMenu(p.id)}><IconMore style={{ width: 16, height: 16 }} /></button>
               </div>

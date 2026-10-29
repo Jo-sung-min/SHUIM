@@ -9,6 +9,7 @@ import { LoadError } from "@/components/CommunityUI";
 import { Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { IconChevronL, IconChevronR, IconInbox } from "@/components/Icons";
 import styles from "../circle.module.css";
+import { route } from "@/lib/routes";
 
 /** 내 사연함: 보낸 사연의 상태, 보류·반려 사유, 소로우지기의 익명 답장, 게시된 #번호 */
 export default function MySubmissionsPage() {
@@ -57,7 +58,7 @@ export default function MySubmissionsPage() {
                   {sub.reply && <p className={styles.subNote}><b>소로우지기의 답장</b>{sub.reply}</p>}
                   {sub.postId && !waitingPublish && (
                     <div className={styles.subActions}>
-                      <Link href={`/shout/${sub.postId}`} className="btn ghost sm">게시된 사연 보기<IconChevronR /></Link>
+                      <Link href={route(`/shout/${sub.postId}`)} className="btn ghost sm">게시된 사연 보기<IconChevronR /></Link>
                     </div>
                   )}
                 </article>

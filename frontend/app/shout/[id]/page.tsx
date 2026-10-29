@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { CommunityStore, Target, api, commentsOf, fetchCommunity, isFlagged, isVisible, repliesOf, shoutCatById, topCommentsOf, userById } from "@/lib/community";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
@@ -15,6 +15,7 @@ import styles from "../shout.module.css";
 import { splitShout } from "../split";
 import TitleChip from "@/components/TitleChip";
 import { circleTag } from "@/lib/circles";
+import { route, useRouteParam } from "@/lib/routes";
 
 type Sort = "top" | "new";
 
@@ -23,7 +24,7 @@ type Sort = "top" | "new";
  * 회색 띠 아래 "댓글 N"과 정렬, 평평한 댓글 목록. 댓글마다 "답글 달기"로 대댓글(한 단계), 댓글 입력은 화면 아래 고정.
  */
 export default function ShoutPostPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteParam("id");
   const router = useRouter();
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -110,7 +111,7 @@ export default function ShoutPostPage() {
           <article aria-label="외침 글" className={styles.detail}>
             <nav className={styles.crumb} aria-label="위치">
               {post.communityId && post.circleSlug ? (
-                <Link href={`/c/${post.circleSlug}`}>{post.circle ?? "소로우"}</Link>
+                <Link href={route(`/c/${post.circleSlug}`)}>{post.circle ?? "소로우"}</Link>
               ) : (
                 <Link href="/shout">광장</Link>
               )}
@@ -124,7 +125,7 @@ export default function ShoutPostPage() {
                 <span className={styles.circleTag}>{circleTag(post)}{mine && " · 내가 보낸 사연"}</span>
               ) : (
                 <>
-                  <Link href={`/u/${post.authorId}`} className={styles.author}>{author}</Link>
+                  <Link href={route(`/u/${post.authorId}`)} className={styles.author}>{author}</Link>
                   <TitleChip title={userById(s, post.authorId).title} small />
                 </>
               )}

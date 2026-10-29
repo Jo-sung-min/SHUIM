@@ -11,6 +11,7 @@ import PhotoEditor from "@/components/PhotoEditor";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { IconClose, IconImage } from "@/components/Icons";
 import styles from "./write.module.css";
+import { route } from "@/lib/routes";
 
 const MAX_TEXT = 600;
 const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -102,7 +103,7 @@ export default function WritePage() {
       const store = await api.createPost(cat, text.trim(), urls);
       const created = store.posts.filter((p) => p.authorId === store.me.id).sort((a, b) => b.createdAt - a.createdAt)[0];
       toastSuccess("외침을 올렸어요");
-      router.replace(created ? `/shout/${created.id}` : "/shout");
+      router.replace(created ? route(`/shout/${created.id}`) : "/shout");
     } catch (e) {
       setError(e instanceof Error ? e.message : "올리지 못했어요. 잠시 후 다시 시도해 주세요.");
       setProgress(null);

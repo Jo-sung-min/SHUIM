@@ -1,5 +1,7 @@
 "use client";
 
+import { IS_AIT, tossHaptic } from "./ait";
+
 export type NoticeKind = "error" | "success" | "info";
 export interface AppNotice { id: number; message: string; kind: NoticeKind }
 const EMPTY_NOTICES: readonly AppNotice[] = [];
@@ -31,8 +33,9 @@ export const toastSuccess = (message: string) => {
 /** 손끝 피드백: 짧은 진동 한 번 (지원하지 않거나 동작 줄이기 설정이면 아무것도 안 한다) */
 export function tick(ms = 12) {
   try {
-    if (typeof navigator === "undefined" || !("vibrate" in navigator)) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (IS_AIT) { tossHaptic(); return; } // 아이폰 WebView 에는 vibrate 가 없어 토스 햅틱으로
+    if (!("vibrate" in navigator)) return;
     navigator.vibrate(ms);
   } catch { /* 진동 실패는 무시 */ }
 }

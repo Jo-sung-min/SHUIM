@@ -6,6 +6,7 @@ import { ConversationSummary, fetchConversations } from "@/lib/social";
 import { Empty, LoadError, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { IconChevronL, IconMessage, IconUser } from "@/components/Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
+import { route } from "@/lib/routes";
 
 /** 메시지함: 대화 목록 */
 export default function MessagesPage() {
@@ -41,7 +42,7 @@ export default function MessagesPage() {
         ) : (
           <div className="stack" style={{ gap: 8, marginTop: 6 }}>
             {list.map((c) => (
-              <Link key={c.id} href={`/messages/${c.id}`} className={`conv ${c.unread ? "unread" : ""}`}>
+              <Link key={c.id} href={route(`/messages/${c.id}`)} className={`conv ${c.unread ? "unread" : ""}`}>
                 <span className="avatar sm" style={c.other.avatarUrl ? { backgroundImage: `url(${c.other.avatarUrl})` } : undefined}>
                   {!c.other.avatarUrl && (c.other.nick ? c.other.nick.slice(0, 1) : <IconUser />)}
                 </span>

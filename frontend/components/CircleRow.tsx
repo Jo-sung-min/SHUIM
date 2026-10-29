@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Circle, kindLabel } from "@/lib/circles";
 import { IconCheck, IconChevronR } from "./Icons";
 import styles from "@/app/c/circle.module.css";
+import { route } from "@/lib/routes";
 
 /** 인증 소로우 표시 (학교·회사 메일로 연 사람이 인증을 마친 곳) */
 export function Verified() {
@@ -21,7 +22,7 @@ export const circleInitial = (name: string) => name.replace(/\s*소로우$/, "")
 /** 둘러보기·따뜻한 소로우 목록 한 줄. rank 가 있으면 순위만 보여 준다 (횟수는 보여 주지 않는다) */
 export function CircleRow({ c, rank }: { c: Circle; rank?: number }) {
   return (
-    <Link href={`/c/${c.slug}`} className={styles.circleRow}>
+    <Link href={route(`/c/${c.slug}`)} className={styles.circleRow}>
       <span className={styles.mark} data-rank={rank ? "" : undefined} aria-hidden="true">{rank ?? circleInitial(c.name)}</span>
       <span className={styles.circleMain}>
         <b>{c.name}{c.verified && <Verified />}{c.sample && <SampleTag />}</b>

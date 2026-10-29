@@ -118,6 +118,7 @@ test("an unavailable account endpoint does not log out the device or cache a fak
   let requests = 0;
   const authContext = {
     fetch: async () => ++requests === 1 ? response({ error: "unavailable" }, 503) : response({ configured: true, user: { id: "alice" }, admin: false, kakao: true }),
+    IS_AIT: false, // 웹 빌드 기준 (미니앱 분기는 타지 않는다)
     SESSION_KEY: "session", sessionUserId: () => JSON.parse(store.get("session") ?? "null")?.userId ?? null,
     resetCommunityCache: () => { throw new Error("A network error must not switch the local account."); },
     window: { localStorage: {

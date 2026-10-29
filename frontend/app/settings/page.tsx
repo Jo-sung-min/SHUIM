@@ -6,6 +6,7 @@ import { Me, fetchMe } from "@/lib/auth";
 import { Segmented, TopBar } from "@/components/ui";
 import { IconBriefcase, IconChevronL, IconChevronR, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
 import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
+import { IS_AIT } from "@/lib/ait";
 import styles from "../account-screens.module.css";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
@@ -43,11 +44,12 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className={styles.group} aria-labelledby="settings-theme-title">
+        {/* 앱인토스 미니앱은 라이트 모드만 써서 화면 모드를 고르지 않는다 */}
+        {!IS_AIT && <section className={styles.group} aria-labelledby="settings-theme-title">
           <h2 className={styles.groupTitle} id="settings-theme-title">화면 모드</h2>
           <Segmented value={theme} onChange={(v) => { setTheme(v); saveTheme(v); }} options={THEME_OPTIONS} />
           <p className={styles.mutedNote} style={{ marginTop: 8 }}>이 기기에만 저장돼요.</p>
-        </section>
+        </section>}
 
         <section className={styles.group} aria-labelledby="settings-tools-title">
           <h2 className={styles.groupTitle} id="settings-tools-title">편의 기능</h2>
@@ -58,13 +60,14 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* 운영자의 부업 추천 사이트(부추). 개인 공간(나 페이지)과 성격이 달라 설정 맨 아래에 둔다. 새 탭으로 연다 */}
-        <section className={styles.group} aria-labelledby="settings-more-title">
+        {/* 운영자의 부업 추천 사이트(부추). 개인 공간(나 페이지)과 성격이 달라 설정 맨 아래에 둔다. 새 탭으로 연다.
+            앱인토스 미니앱은 자사 서비스로 보내는 링크를 둘 수 없어 뺀다 */}
+        {!IS_AIT && <section className={styles.group} aria-labelledby="settings-more-title">
           <h2 className={styles.groupTitle} id="settings-more-title">더 보기</h2>
           <div className={`card ${styles.menu}`}>
             <a href="https://www.buchu.co.kr" target="_blank" rel="noopener noreferrer" className={styles.menuRow}><IconBriefcase /><span className={styles.menuLabel}><strong>부업하러 가기</strong><small>부업추천 부추 · buchu.co.kr</small></span><IconChevronR /></a>
           </div>
-        </section>
+        </section>}
       </div>
     </>
   );

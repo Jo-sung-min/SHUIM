@@ -31,6 +31,7 @@ import styles from "./shout.module.css";
 import { splitShout } from "./split";
 import TitleChip from "@/components/TitleChip";
 import { circleTag } from "@/lib/circles";
+import { route } from "@/lib/routes";
 
 type Filter = ShoutCat | "all";
 type Sort = "new" | "top";
@@ -59,7 +60,7 @@ export default function ShoutPage() {
       // 예전 주소(/shout?post=아이디)는 글 화면(/shout/아이디)으로
       const legacy = new URLSearchParams(window.location.search).get("post");
       if (legacy) {
-        router.replace(`/shout/${encodeURIComponent(legacy)}`);
+        router.replace(route(`/shout/${encodeURIComponent(legacy)}`));
         return;
       }
       setS(await fetchCommunity(true));
@@ -138,7 +139,7 @@ export default function ShoutPage() {
           badge={badgeOf(p)}
           commentCount={commentsOf(s, p.id).length}
           onCheer={() => run(setS, () => api.toggleCheer({ kind: "post", id: p.id }))}
-          onOpen={() => router.push(`/shout/${p.id}`)}
+          onOpen={() => router.push(route(`/shout/${p.id}`))}
           onMenu={() => setMenu({ kind: "post", id: p.id })}
         />
       )}
@@ -274,7 +275,7 @@ function PostRow({ s, post, badge, commentCount, onCheer, onOpen, onMenu }: { s:
   const { title, rest } = splitShout(post.text);
   return (
     <article className={styles.item}>
-      <Link href={`/shout/${post.id}`} className={styles.itemLink}>
+      <Link href={route(`/shout/${post.id}`)} className={styles.itemLink}>
         <div className={styles.itemText}>
           {badge && <span className={styles.badge} data-kind={badge}>{badge === "hot" ? "HOT" : "NEW"}</span>}
           <h3 className={styles.title}>{title}</h3>

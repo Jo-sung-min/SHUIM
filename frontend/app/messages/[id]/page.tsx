@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { Message, Thread, fetchThread, markThreadRead, sendMessage } from "@/lib/social";
 import { Empty, LoadError, TopBar } from "@/components/ui";
 import { IconChevronL, IconMessage, IconSend } from "@/components/Icons";
 import BlockUser from "@/components/BlockUser";
 import SafetyReport from "@/components/SafetyReport";
 import { showToast } from "@/lib/toast";
+import { route, useRouteParam } from "@/lib/routes";
 
 /** 1:1 대화. 5초마다 새 메시지를 가져온다. */
 export default function ThreadPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteParam("id");
   const [thread, setThread] = useState<Thread | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [text, setText] = useState("");
@@ -91,7 +91,7 @@ export default function ThreadPage() {
     <>
       <TopBar
         title={thread.other.nick}
-        eyebrow={<Link href={`/u/${thread.other.id}`} style={{ textDecoration: "underline" }}>프로필 보기</Link>}
+        eyebrow={<Link href={route(`/u/${thread.other.id}`)} style={{ textDecoration: "underline" }}>프로필 보기</Link>}
         right={<Link href="/messages" className="icon-btn" aria-label="메시지함"><IconChevronL /></Link>}
       />
       <div className="screen thread">

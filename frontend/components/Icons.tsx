@@ -111,7 +111,7 @@ export const IconPin = (p: P) => (
   </svg>
 );
 export const IconChevronL = (p: P) => (
-  <svg {...base(p)}>
+  <svg {...base(p)} data-icon="back">
     <path d="M15 5l-7 7 7 7" />
   </svg>
 );

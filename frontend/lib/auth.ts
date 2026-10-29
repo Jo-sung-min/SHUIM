@@ -6,6 +6,7 @@
  */
 import { SESSION_KEY, adoptGuestData, clearAccountCache, flushRecords, resetRecordsSync, sessionUserId } from "./storage";
 import { resetCommunityCache } from "./community";
+import { IS_AIT, tossLogin } from "./ait";
 
 export type Role = "admin" | "user";
 
@@ -23,6 +24,8 @@ export interface Me {
   configured: boolean;
   /** 서버에 KAKAO_CLIENT_ID 가 있어 카카오 로그인이 켜져 있는지 (false 면 버튼 숨김) */
   kakao: boolean;
+  /** 앱인토스 미니앱의 토스 로그인이 서버에서 켜져 있는지 (mTLS 인증서가 있을 때) */
+  toss: boolean;
   /** 로그인 전 방문자의 익명 유저 id (서버가 세션으로 만든 것, 없으면 빠진다) */
   anonymousId?: string;
 }
@@ -66,10 +69,15 @@ export async function fetchMe(force = false): Promise<Me> {
     const json = (await res.json()) as Me;
     // Java omits null fields, so a valid guest response has no `user` property.
     if (!res.ok || !json || json.configured !== true || typeof json.admin !== "boolean" || typeof json.kakao !== "boolean") throw new Error("계정 연결을 확인하지 못했어요.");
-    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao), anonymousId: json.anonymousId ?? undefined };
+    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao), toss: Boolean(json.toss), anonymousId: json.anonymousId ?? undefined };
   } catch {
     // A network failure is not a logout. Keep the local account namespace and do not cache this failure.
-    return { user: null, admin: false, configured: false, kakao: false };
+    return { user: null, admin: false, configured: false, kakao: false, toss: false };
+  }
+  // 미니앱: 토스에서 연결을 끊으면 서버가 계정을 지운다. 세션이 사라졌으면 이 기기에 남은 그 계정의 기록도 지운다 (출시 체크리스트)
+  if (IS_AIT && !meCache.user) {
+    const previous = sessionUserId();
+    if (previous) clearAccountCache(previous);
   }
   syncSessionKey(meCache.user);
   return meCache;
@@ -88,7 +96,7 @@ export async function signUp(email: string, nick: string, password: string, cons
   if (err) return { ok: false, error: err };
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/signup", { email, nick, password, ...consent });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "가입하지 못했어요" };
-  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false };
+  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false };
   resetRecordsSync();
   syncSessionKey(r.user);
   adoptGuestData(r.user.id); // 가입 전 이 기기에서 쓰던 기록을 새 계정으로 (서버에도 한 번 올린다)
@@ -98,7 +106,7 @@ export async function signUp(email: string, nick: string, password: string, cons
 export async function signIn(email: string, password: string): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/login", { email, password });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "로그인하지 못했어요" };
-  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false };
+  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false };
   resetRecordsSync();
   syncSessionKey(r.user);
   adoptGuestData(r.user.id); // 게스트 기록은 계정(서버)에 아직 없는 부분에만 들어간다
@@ -128,6 +136,27 @@ export async function deleteAccount(confirmation: string, expectedUserId: string
   clearAccountCache(expectedUserId);
   syncSessionKey(null);
   meCache = null;
+}
+
+/**
+ * 미니앱 "토스로 시작하기": TossAuth.login() 의 인가 코드를 서버로 보낸다.
+ * 처음 온 사람이 가입 안내에 아직 동의하지 않았으면 consentRequired — 동의를 저장한 뒤 다시 부르면 된다 (두 번째부터는 토스 화면 없이 코드가 온다)
+ */
+export async function signInWithToss(): Promise<{ ok: true; account: Account } | { ok: false; error: string; consentRequired?: boolean }> {
+  let code: { authorizationCode: string; referrer: string };
+  try {
+    code = await tossLogin();
+  } catch {
+    return { ok: false, error: "토스 로그인을 마치지 못했어요. 다시 시도해 주세요." };
+  }
+  const r = await post<{ user: Account | null; admin: boolean; consentRequired?: boolean }>("/api/auth/toss", code);
+  if (r.consentRequired) return { ok: false, error: r.error ?? "가입 안내를 확인해 주세요.", consentRequired: true };
+  if (r.error || !r.user) return { ok: false, error: r.error ?? "로그인하지 못했어요" };
+  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: false, toss: true };
+  resetRecordsSync();
+  syncSessionKey(r.user);
+  adoptGuestData(r.user.id); // 로그인 전 이 기기에서 쓰던 기록을 계정으로
+  return { ok: true, account: r.user };
 }
 
 /** "카카오로 시작하기": 서버가 state 쿠키를 심고 카카오 동의 화면으로 보낸다. 끝나면 /?kakao=1 로 돌아온다 */

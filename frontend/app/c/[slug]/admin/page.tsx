@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { shoutCatById } from "@/lib/community";
 import {
   CircleDetail, CircleMember, Submission, decideSubmission, draftSubmission, fetchCircle, fetchMembers, fetchQueue, memberAction, updateCircle,
@@ -11,6 +11,7 @@ import { Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { IconAlert, IconChevronL, IconInbox, IconSparkle, IconUsers } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../../circle.module.css";
+import { useRouteParam } from "@/lib/routes";
 
 type Tab = "queue" | "members" | "settings";
 type QueueStatus = "pending" | "held" | "done";
@@ -20,7 +21,7 @@ type QueueStatus = "pending" | "held" | "done";
  * 보낸 사람은 여기에도 나오지 않는다. 멤버 승인·내보내기, 공지·소개·가입 방식.
  */
 export default function CircleAdminPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const slug = useRouteParam("slug");
   const router = useRouter();
   const [c, setC] = useState<CircleDetail | null>(null);
   const [tab, setTab] = useState<Tab>("queue");

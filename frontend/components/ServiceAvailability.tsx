@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { IconRefresh } from "./Icons";
 import { resetCommunityCache } from "@/lib/community";
 import { resetAuthCache } from "@/lib/auth";
+import { appPath } from "@/lib/routes";
 import {
   isServicePublicPath, observeApiFailures, probeServiceHealth,
   SERVICE_CHECK_INTERVAL_MS, SERVICE_RETRY_INTERVAL_MS,
@@ -15,7 +16,7 @@ type Status = "checking" | "ready" | "unavailable";
 
 /** Gate the first connection, then preserve drafts while an outage hides the application. */
 export default function ServiceAvailability({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = appPath(usePathname());
   const [status, setStatus] = useState<Status>("checking");
   const [hasConnected, setHasConnected] = useState(false);
   const [pending, setPending] = useState(true);

@@ -9,6 +9,7 @@ import { IconChevronL } from "@/components/Icons";
 import { toastSuccess } from "@/lib/toast";
 import Link from "next/link";
 import styles from "../circle.module.css";
+import { route } from "@/lib/routes";
 
 /** 소로우 열기. 가입한 계정만, 한 사람이 3개까지. 학교·회사는 그 메일 도메인으로만 멤버가 된다 */
 export default function NewCirclePage() {
@@ -37,7 +38,7 @@ export default function NewCirclePage() {
     try {
       const c = await createCircle({ name, slug, kind, intro, joinMode: org ? "domain" : joinMode, visibility, domain: org ? domain : undefined });
       toastSuccess(`${c.name}이 열렸어요`);
-      router.replace(`/c/${c.slug}`);
+      router.replace(route(`/c/${c.slug}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "잠시 후 다시 시도해요");
       setBusy(false);

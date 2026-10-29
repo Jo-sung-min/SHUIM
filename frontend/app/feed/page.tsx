@@ -27,6 +27,7 @@ import { showToast, toastSuccess } from "@/lib/toast";
 import { readScrollMemory, useElementScrollMemory } from "@/lib/scroll-memory";
 import styles from "./feed-media.module.css";
 import Highlighted from "@/components/Highlighted";
+import { route } from "@/lib/routes";
 
 type Filter = "all" | "following" | "saved";
 const FILTERS: [Filter, string][] = [["all", "전체"], ["following", "리스닝"], ["saved", "저장함"]];
@@ -451,7 +452,7 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
           {mine && <button className="text-btn" style={{ marginLeft: 6 }} onClick={() => setEditing(true)}>수정</button>}
         </p>
       )}
-      <Link href={`/u/${userId}`} className="btn ghost block sm">프로필 전체 보기 · 메시지 보내기</Link>
+      <Link href={route(`/u/${userId}`)} className="btn ghost block sm">프로필 전체 보기 · 메시지 보내기</Link>
       {posts.length > 0 && (
         <div className="stack" style={{ gap: 6 }}>
           {posts.slice(0, 5).map((f) => (

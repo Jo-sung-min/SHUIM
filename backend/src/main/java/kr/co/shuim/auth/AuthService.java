@@ -13,6 +13,8 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,11 +28,15 @@ import java.util.regex.Pattern;
 
 /**
  * 세션 인증. 쿠키(shuim_session)에 토큰을 두고 DB(auth_sessions)에는 SHA-256 해시만 저장.
+ * 앱인토스 미니앱은 출처가 달라(*.tossmini.com) 쿠키를 못 쓰므로 X-Session-Transport: bearer 를 보낸다.
+ * 그러면 세션을 만들거나 지울 때 X-Session-Token 응답 헤더로 토큰을 주고, 이후 Authorization: Bearer 로 받는다.
  * 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1, 64바이트, 소금은 hex 문자열 그대로)라 기존 계정이 그대로 로그인된다.
  */
 @Service
 public class AuthService {
     public static final String COOKIE = "shuim_session";
+    public static final String TRANSPORT_HEADER = "X-Session-Transport";
+    public static final String TOKEN_HEADER = "X-Session-Token";
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final JdbcClient jdbc;
@@ -47,11 +53,22 @@ public class AuthService {
 
     /* ---------- 세션 ---------- */
 
+    /** 쿠키가 먼저, 없으면 Authorization: Bearer (미니앱) */
     private static String cookieToken(HttpServletRequest req) {
         Cookie[] cs = req.getCookies();
-        if (cs == null) return null;
-        for (Cookie c : cs) if (COOKIE.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) return c.getValue();
+        if (cs != null) for (Cookie c : cs) if (COOKIE.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) return c.getValue();
+        String h = req.getHeader(HttpHeaders.AUTHORIZATION);
+        if (h != null && h.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            String t = h.substring(7).strip();
+            if (t.matches("[0-9a-f]{64}")) return t;
+        }
         return null;
+    }
+
+    /** 이번 요청이 토큰을 헤더로 받겠다고 했는지. 웹은 보내지 않아 토큰이 스크립트에 드러나지 않는다 */
+    private static boolean wantsBearer() {
+        if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes a)) return false;
+        return "bearer".equalsIgnoreCase(a.getRequest().getHeader(TRANSPORT_HEADER));
     }
 
     /** 세션을 새로 만들고 쿠키를 내려준다 */
@@ -73,11 +90,13 @@ public class AuthService {
         ResponseCookie c = ResponseCookie.from(COOKIE, token)
             .httpOnly(true).sameSite("Lax").secure(secureCookie).path("/").maxAge(ttl).build();
         res.addHeader(HttpHeaders.SET_COOKIE, c.toString());
+        if (wantsBearer()) res.setHeader(TOKEN_HEADER, token);
     }
 
     private void clearSessionCookie(HttpServletResponse res) {
         ResponseCookie c = ResponseCookie.from(COOKIE, "").httpOnly(true).sameSite("Lax").secure(secureCookie).path("/").maxAge(0).build();
         res.addHeader(HttpHeaders.SET_COOKIE, c.toString());
+        if (wantsBearer()) res.setHeader(TOKEN_HEADER, ""); // 빈 값 = 저장한 토큰을 지워라
     }
 
     /** 쿠키의 세션으로 유저를 찾는다. 없거나 만료면 비어 있음 */

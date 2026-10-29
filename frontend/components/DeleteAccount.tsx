@@ -14,7 +14,7 @@ export default function DeleteAccount() {
   useEffect(() => {
     let active = true;
     fetchMe(true).then((current) => { if (active) setMe(current); }).catch(() => {
-      if (active) setMe({ user: null, admin: false, configured: false, kakao: false });
+      if (active) setMe({ user: null, admin: false, configured: false, kakao: false, toss: false });
     });
     return () => { active = false; };
   }, []);

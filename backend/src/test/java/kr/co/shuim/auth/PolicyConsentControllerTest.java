@@ -112,7 +112,7 @@ class PolicyConsentControllerTest {
     @Test
     void signupWithoutCurrentRequiredConsentNeverCreatesAnAccount() {
         AuthService auth = mock(AuthService.class);
-        AuthController controller = new AuthController(auth, mock(KakaoLoginService.class), policies());
+        AuthController controller = new AuthController(auth, mock(KakaoLoginService.class), mock(TossLoginService.class), policies());
         assertEquals(400, assertThrows(ApiException.class, () -> controller.post("signup",
             Map.of("email", "a@example.com", "nick", "닉네임", "password", "secret1", "aiDisclosureAccepted", true),
             new MockHttpServletRequest(), new MockHttpServletResponse())).status());
@@ -123,7 +123,7 @@ class PolicyConsentControllerTest {
     void signupUsesBooleanChoiceWithoutTreatingStringFalseAsTrue() {
         AuthService auth = mock(AuthService.class);
         PolicyConsentService policies = policies();
-        AuthController controller = new AuthController(auth, mock(KakaoLoginService.class), policies);
+        AuthController controller = new AuthController(auth, mock(KakaoLoginService.class), mock(TossLoginService.class), policies);
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         DbUser user = new DbUser("created", "a@example.com", "닉네임", "user", false, null, null, 0);

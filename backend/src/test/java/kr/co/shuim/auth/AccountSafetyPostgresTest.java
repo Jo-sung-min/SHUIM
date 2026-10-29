@@ -244,7 +244,7 @@ class AccountSafetyPostgresTest {
         AuthService auth = new AuthService(jdbc, false, 90);
         PolicyConsentService policies = spy(new PolicyConsentService(jdbc, auth));
         doThrow(new IllegalStateException("consent write unavailable")).when(policies).accept(any(), eq(PolicyConsentService.VERSION), eq(false));
-        AuthController target = new AuthController(auth, mock(KakaoLoginService.class), policies);
+        AuthController target = new AuthController(auth, mock(KakaoLoginService.class), mock(TossLoginService.class), policies);
         ProxyFactory factory = new ProxyFactory(target);
         factory.addAdvice(new TransactionInterceptor(tx.getTransactionManager(), new AnnotationTransactionAttributeSource()));
         AuthController controller = (AuthController) factory.getProxy();

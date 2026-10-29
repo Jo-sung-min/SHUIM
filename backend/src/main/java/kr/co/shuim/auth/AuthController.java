@@ -14,11 +14,13 @@ import java.util.Optional;
 public class AuthController {
     private final AuthService auth;
     private final KakaoLoginService kakao;
+    private final TossLoginService toss;
     private final PolicyConsentService policies;
 
-    public AuthController(AuthService auth, KakaoLoginService kakao, PolicyConsentService policies) {
+    public AuthController(AuthService auth, KakaoLoginService kakao, TossLoginService toss, PolicyConsentService policies) {
         this.auth = auth;
         this.kakao = kakao;
+        this.toss = toss;
         this.policies = policies;
     }
 
@@ -33,7 +35,7 @@ public class AuthController {
         return m;
     }
 
-    /** GET /api/auth/me — 로그인한 계정(익명 제외), 관리자 여부, 카카오 로그인이 켜져 있는지 */
+    /** GET /api/auth/me — 로그인한 계정(익명 제외), 관리자 여부, 카카오·토스 로그인이 켜져 있는지 */
     @GetMapping("/api/auth/me")
     public Map<String, Object> me(HttpServletRequest req) {
         Optional<DbUser> u = auth.currentUser(req);
@@ -42,6 +44,7 @@ public class AuthController {
         out.put("admin", auth.isAdmin(u.orElse(null)));
         out.put("configured", true);
         out.put("kakao", kakao.configured()); // KAKAO_CLIENT_ID 가 비어 있으면 false → 프론트가 버튼을 숨긴다
+        out.put("toss", toss.configured()); // 미니앱 토스 로그인 (mTLS 인증서가 있을 때만)
         out.put("anonymousId", u.filter(DbUser::anonymous).map(DbUser::id).orElse(null));
         return out;
     }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ProfilePage, fetchProfilePage, sendMessage } from "@/lib/social";
 import { api } from "@/lib/community";
 import { LoadError, Sheet, TopBar } from "@/components/ui";
@@ -15,13 +15,14 @@ import BadgeShelf from "@/components/BadgeShelf";
 import ProfileTabs from "@/components/ProfileTabs";
 import { shareProfile } from "@/lib/share-profile";
 import { showToast, toastSuccess } from "@/lib/toast";
+import { route, useRouteParam } from "@/lib/routes";
 
 /**
  * 공개 프로필: 누구나 볼 수 있다. 머리(위로글 · 리스너 · 리스닝) · 칭호 · 위로 배지 · 콘텐츠 탭.
  * 다른 사람이면 리스닝하기 · 메시지, 내 프로필이면 나 페이지로.
  */
 export default function PublicProfilePage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteParam("id");
   const router = useRouter();
   const [data, setData] = useState<ProfilePage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export default function PublicProfilePage() {
   useEffect(() => {
     load();
   }, [load]);
-  useScrollMemory(data !== null);
+  useScrollMemory(data !== null, `/u/${id}`); // 미니앱은 모든 프로필이 /u/_ 라 id 로 나눈다
 
   const back = <button className="icon-btn" onClick={() => router.back()} aria-label="뒤로"><IconChevronL /></button>;
   if (loadError) return <><TopBar title="프로필" right={back} /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
@@ -100,7 +101,7 @@ export default function PublicProfilePage() {
       <DmSheet key={dm ? "open" : "closed"} open={dm} toNick={p.nick} onClose={() => setDm(false)} onSend={async (text) => {
         const r = await sendMessage(p.id, text);
         setDm(false);
-        router.push(`/messages/${r.conversationId}`);
+        router.push(route(`/messages/${r.conversationId}`));
       }} />
     </>
   );

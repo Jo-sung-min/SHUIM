@@ -24,6 +24,7 @@ export { LoadError } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
 import Fist3D from "./Fist3D";
 import { showToast, tick, toastSuccess } from "@/lib/toast";
+import { route } from "@/lib/routes";
 
 /** 변경 결과(최신 store)를 화면에 반영하고, 실패하면 알림 */
 export async function run(onChange: (s: CommunityStore) => void, fn: () => Promise<CommunityStore>, onError?: (m: string) => void) {
@@ -119,7 +120,7 @@ export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onRe
     <>
       <div className={`comment${justAdded ? " just-added" : ""}`}>
         <div className="meta">
-          <Link href={`/u/${comment.authorId}`} style={{ color: "var(--text)", fontWeight: 600 }}>{nick}</Link>
+          <Link href={route(`/u/${comment.authorId}`)} style={{ color: "var(--text)", fontWeight: 600 }}>{nick}</Link>
           <TitleChip title={author.title} small />
           <span>·</span>
           <span>{fmtRelative(comment.createdAt)}</span>

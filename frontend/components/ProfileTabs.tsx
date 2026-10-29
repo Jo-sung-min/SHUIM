@@ -10,6 +10,7 @@ import { Empty, fmtRelative } from "./ui";
 import { ShoutCatIcon } from "./CategoryIcon";
 import { IconBookmark, IconBubble, IconFilm, IconFist, IconMessage } from "./Icons";
 import styles from "./Profile.module.css";
+import { route } from "@/lib/routes";
 
 type Tab = "feed" | "shout" | "comfort" | "saved";
 
@@ -59,7 +60,7 @@ export default function ProfileTabs({ data }: { data: ProfilePage }) {
               {data.shout.map((s) => {
                 const c = shoutCatById(s.cat as ShoutCat);
                 return (
-                  <Link key={s.id} href={`/shout/${s.id}`} className="card post" style={{ display: "block" }}>
+                  <Link key={s.id} href={route(`/shout/${s.id}`)} className="card post" style={{ display: "block" }}>
                     <div className="post-head"><span className="cat"><ShoutCatIcon id={c.id} /> {c.label}</span><span>·</span><span>{fmtRelative(s.createdAt)}</span><span className="inline-fist" style={{ marginLeft: "auto" }}><IconFist /> {s.cheers}</span></div>
                     <p className="post-text" style={{ marginBottom: 0 }}>{s.text}</p>
                   </Link>
@@ -76,7 +77,7 @@ export default function ProfileTabs({ data }: { data: ProfilePage }) {
           ) : (
             <div className={styles.list}>
               {data.comments.map((c) => (
-                <Link key={c.id} href={c.postKind === "post" ? `/shout/${c.postId}` : `/feed?post=${c.postId}`} className={styles.comfort}>
+                <Link key={c.id} href={c.postKind === "post" ? route(`/shout/${c.postId}`) : `/feed?post=${c.postId}`} className={styles.comfort}>
                   <span className={styles.comfortCtx}><IconBubble aria-hidden /> {c.postSnippet}</span>
                   <p className={styles.comfortText}>{stripHighlights(c.text)}</p>
                   <span className={styles.comfortFoot}><span className="inline-fist"><IconFist /> {c.cheers}</span><span>{fmtRelative(c.createdAt)}</span></span>

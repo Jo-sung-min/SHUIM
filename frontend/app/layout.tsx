@@ -9,6 +9,8 @@ import NavProgress from "@/components/NavProgress";
 import Splash from "@/components/Splash";
 import { THEME_SCRIPT } from "@/lib/theme";
 import InlineScript from "@/components/InlineScript";
+import AitRuntime from "@/components/AitRuntime";
+import { IS_AIT } from "@/lib/ait";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
 
 /**
@@ -70,6 +72,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // 앱인토스 미니앱은 지도 같은 경우가 아니면 확대·축소 제스처를 끈다 (출시 체크리스트)
+  ...(IS_AIT ? { maximumScale: 1, userScalable: false } : {}),
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: SITE.themeLight },
@@ -96,7 +100,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   };
   return (
     // data-theme 은 아래 인라인 스크립트가 첫 페인트 전에 붙인다 (React 가 그대로 두도록 suppressHydrationWarning)
-    <html lang="ko" suppressHydrationWarning>
+    // 미니앱(data-ait)은 라이트 모드로 고정하고, 토스 내비게이션 바와 겹치는 자체 뒤로가기를 CSS 로 숨긴다
+    <html lang="ko" data-ait={IS_AIT ? "" : undefined} data-theme={IS_AIT ? "light" : undefined} suppressHydrationWarning>
       <head>
         <InlineScript html={THEME_SCRIPT} />
         <link
@@ -106,6 +111,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body>
+        <AitRuntime />
         <Splash />
         <AppRuntime />
         <AppToast />

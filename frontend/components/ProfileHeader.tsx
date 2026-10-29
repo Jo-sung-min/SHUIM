@@ -6,6 +6,7 @@ import type { PublicProfile } from "@/lib/social";
 import { IconUser } from "./Icons";
 import TitleChip from "./TitleChip";
 import styles from "./Profile.module.css";
+import { route } from "@/lib/routes";
 
 /**
  * 프로필 머리: 사진 · 숫자 줄(위로글 · 리스너 · 리스닝) · 닉네임 + 칭호 · 소개 · 버튼 줄.
@@ -28,7 +29,7 @@ export default function ProfileHeader({ profile, onAvatar, extra, actions }: {
     </>
   );
   const avatarStyle = p.avatarUrl ? { backgroundImage: `url(${p.avatarUrl})` } : undefined;
-  const people = (kind: "listeners" | "listening") => `/u/${encodeURIComponent(p.id)}/${kind}`;
+  const people = (kind: "listeners" | "listening") => route(`/u/${encodeURIComponent(p.id)}/${kind}`);
   return (
     <section className={styles.header} aria-label={`${p.nick} 프로필`}>
       <div className={styles.top}>

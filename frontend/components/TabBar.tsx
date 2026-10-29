@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { IconBubble, IconPen, IconReels, IconSun, IconUser } from "./Icons";
 import { loadNotifSeen } from "@/lib/storage";
 import { fetchNotifications, unreadMessages } from "@/lib/social";
+import { appPath } from "@/lib/routes";
 
 /** 짧은 이름과 선택 표시를 함께 제공하는 앱 탐색. */
 const TABS = [
@@ -17,7 +18,7 @@ const TABS = [
 ];
 
 export default function TabBar() {
-  const path = usePathname();
+  const path = appPath(usePathname());
   const [unread, setUnread] = useState(0);
 
   // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (알림 전용 API: 커뮤니티 전체를 받지 않는다)

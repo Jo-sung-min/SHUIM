@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ListUser, fetchPeople } from "@/lib/social";
 import { api } from "@/lib/community";
 import { fetchMe } from "@/lib/auth";
@@ -11,12 +11,13 @@ import { IconChevronL, IconUsers } from "./Icons";
 import TitleChip from "./TitleChip";
 import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "./Profile.module.css";
+import { route, useRouteParam } from "@/lib/routes";
 
 type Kind = "listeners" | "listening";
 
 /** 리스너(이 사람을 듣는 사람) · 리스닝(이 사람이 듣는 사람) 목록. 줄마다 리스닝하기, 서로 리스닝 중이면 표시 */
 export default function PeopleList({ kind }: { kind: Kind }) {
-  const { id } = useParams<{ id: string }>();
+  const id = useRouteParam("id");
   const router = useRouter();
   const [users, setUsers] = useState<ListUser[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -66,8 +67,8 @@ export default function PeopleList({ kind }: { kind: Kind }) {
       <TopBar title={title} right={back} />
       <div className="screen">
         <nav className="ul-tabs" aria-label="리스너와 리스닝" style={{ position: "relative" }}>
-          <Link href={`/u/${encodeURIComponent(id)}/listeners`} replace className={kind === "listeners" ? "on" : ""} aria-current={kind === "listeners" ? "page" : undefined}>리스너</Link>
-          <Link href={`/u/${encodeURIComponent(id)}/listening`} replace className={kind === "listening" ? "on" : ""} aria-current={kind === "listening" ? "page" : undefined}>리스닝</Link>
+          <Link href={route(`/u/${encodeURIComponent(id)}/listeners`)} replace className={kind === "listeners" ? "on" : ""} aria-current={kind === "listeners" ? "page" : undefined}>리스너</Link>
+          <Link href={route(`/u/${encodeURIComponent(id)}/listening`)} replace className={kind === "listening" ? "on" : ""} aria-current={kind === "listening" ? "page" : undefined}>리스닝</Link>
         </nav>
         {loadError ? (
           <LoadError message={loadError} onRetry={() => load(0)} />
@@ -81,10 +82,10 @@ export default function PeopleList({ kind }: { kind: Kind }) {
           <div className={styles.people}>
             {users.map((u) => (
               <div key={u.id} className={styles.person}>
-                <Link href={`/u/${encodeURIComponent(u.id)}`} className="avatar" style={u.avatarUrl ? { backgroundImage: `url(${u.avatarUrl})` } : undefined} aria-hidden="true" tabIndex={-1}>
+                <Link href={route(`/u/${encodeURIComponent(u.id)}`)} className="avatar" style={u.avatarUrl ? { backgroundImage: `url(${u.avatarUrl})` } : undefined} aria-hidden="true" tabIndex={-1}>
                   {!u.avatarUrl && u.nick.slice(0, 1)}
                 </Link>
-                <Link href={`/u/${encodeURIComponent(u.id)}`} className={styles.personMain}>
+                <Link href={route(`/u/${encodeURIComponent(u.id)}`)} className={styles.personMain}>
                   <b>{u.nick}<TitleChip title={u.title} small /></b>
                   {u.listensToViewer && <small>나를 리스닝 중</small>}
                 </Link>
