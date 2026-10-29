@@ -5,7 +5,7 @@
 
 .edge { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
 .band { height: 8px; margin: var(--sp-2) calc(-1 * var(--gutter)); background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.list { padding-bottom: calc(var(--tabbar-h) + 96px + env(safe-area-inset-bottom)); }
+.list { padding-bottom: calc(var(--tabbar-space) + 96px); }
 .plain { padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
 
 /* ---------- 내 소로우 칩 줄 ---------- */

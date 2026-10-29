@@ -28,7 +28,7 @@
 .resultCount { margin: 2px 0 10px; color: var(--text-2); font-size: 13px; }
 
 /* ---------- 목록 ---------- */
-.list { padding-bottom: calc(var(--tabbar-h) + 96px + env(safe-area-inset-bottom)); }
+.list { padding-bottom: calc(var(--tabbar-space) + 96px); }
 
 /* 카테고리 + 정렬 줄 */
 .filterBar {
