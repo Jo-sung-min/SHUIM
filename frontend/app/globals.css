@@ -1109,3 +1109,49 @@ html[data-keyboard="open"] .app-toasts { bottom: calc(var(--kb) + 12px); }
 @media (prefers-reduced-motion: reduce) {
   .splash[data-state="play"] { animation-duration: 300ms; }
 }
+
+/* ---------- 움직임 피드백: 누름·이동·올림이 바로 느껴지게 (동작 줄이기 설정이면 대부분 끈다) ---------- */
+
+/* 화면 맨 위 이동 진행 막대 (components/NavProgress.tsx) */
+.nav-progress { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 2px; pointer-events: none; }
+.nav-progress i { display: block; width: 0; height: 100%; background: var(--accent); opacity: 0; border-radius: 0 2px 2px 0; }
+.nav-progress[data-state="loading"] i { width: 82%; opacity: 1; transition: width 6s cubic-bezier(0.05, 0.75, 0.15, 1); }
+.nav-progress[data-state="done"] i { width: 100%; opacity: 0; transition: width 180ms var(--ease), opacity 220ms ease 140ms; }
+
+/* 새 화면은 살짝 떠오르듯 (투명도만: transform 은 안쪽 fixed 요소 위치를 흔든다) */
+.screen { animation: screen-in 200ms var(--ease) both; }
+@keyframes screen-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* 처리 중인 버튼: 글자 앞에 작은 돌림 표시 */
+.btn[aria-busy="true"]::before {
+  content: ""; flex: none; width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent; opacity: 0.8;
+  animation: rotate 0.7s linear infinite;
+}
+
+/* 하단 탭: 고른 아이콘이 톡 튀어 오른다 */
+.tabbar a.active .tabbar-icon svg { animation: tab-pop 320ms var(--ease); }
+@keyframes tab-pop { 0% { scale: 0.82; } 55% { scale: 1.12; } 100% { scale: 1; } }
+
+/* 글자 탭(외침·소로우·리스너 등): 밑줄이 가운데서 펼쳐진다 */
+.ul-tabs a.on::after { animation: tab-underline 240ms var(--ease); }
+@keyframes tab-underline { from { transform: scaleX(0.3); opacity: 0.4; } to { transform: scaleX(1); opacity: 1; } }
+
+/* 방금 남긴 내 댓글은 잠깐 물들었다가 가라앉는다 */
+.comment.just-added { animation: just-added 1.6s ease-out; border-radius: 8px; }
+@keyframes just-added { 0%, 30% { background: var(--accent-soft); } 100% { background: transparent; } }
+
+/* 누르면 눌리는 칩·선택지 (모듈 CSS 쪽 줄 단위 반응은 각 모듈에) */
+:is(.chip, .segmented button):not(:disabled):active { scale: 0.96; }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen, .tabbar a.active .tabbar-icon svg, .ul-tabs a.on::after, .comment.just-added { animation: none; }
+  .nav-progress[data-state="loading"] i { width: 100%; opacity: 0.6; transition: none; }
+  .nav-progress[data-state="done"] i { transition: none; }
+  .btn[aria-busy="true"]::before { animation-duration: 1.6s; }
+}
+
+/* 기록 자동 저장: "저장됨"이 뜰 때 살짝 튄다 */
+.saved-indicator.on { display: inline-block; animation: saved-pop 360ms var(--ease); }
+@keyframes saved-pop { 0% { opacity: 0; transform: translateY(3px); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .saved-indicator.on { animation: none; } }

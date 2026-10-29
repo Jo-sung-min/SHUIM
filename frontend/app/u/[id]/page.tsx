@@ -14,7 +14,7 @@ import ProfileHeader from "@/components/ProfileHeader";
 import BadgeShelf from "@/components/BadgeShelf";
 import ProfileTabs from "@/components/ProfileTabs";
 import { shareProfile } from "@/lib/share-profile";
-import { showToast } from "@/lib/toast";
+import { showToast, toastSuccess } from "@/lib/toast";
 
 /**
  * 공개 프로필: 누구나 볼 수 있다. 머리(위로글 · 리스너 · 리스닝) · 칭호 · 위로 배지 · 콘텐츠 탭.
@@ -57,8 +57,10 @@ export default function PublicProfilePage() {
     followLocked.current = true;
     setFollowing(true);
     try {
+      const was = p.isFollowing;
       await api.toggleFollow(p.id);
       await load();
+      toastSuccess(was ? "리스닝을 그만했어요" : `이제 ${p.nick}님의 이야기를 들어요`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
     } finally {

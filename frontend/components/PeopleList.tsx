@@ -9,7 +9,7 @@ import { fetchMe } from "@/lib/auth";
 import { Empty, LoadError, SkeletonList, TopBar } from "./ui";
 import { IconChevronL, IconUsers } from "./Icons";
 import TitleChip from "./TitleChip";
-import { showToast } from "@/lib/toast";
+import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "./Profile.module.css";
 
 type Kind = "listeners" | "listening";
@@ -50,6 +50,7 @@ export default function PeopleList({ kind }: { kind: Kind }) {
     try {
       await api.toggleFollow(u.id);
       setUsers((cur) => cur?.map((x) => (x.id === u.id ? { ...x, viewerListens: !x.viewerListens } : x)) ?? cur);
+      toastSuccess(u.viewerListens ? "리스닝을 그만했어요" : `이제 ${u.nick}님의 이야기를 들어요`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
     } finally {

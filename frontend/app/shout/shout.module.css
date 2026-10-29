@@ -190,3 +190,10 @@
 
 /* 소로우 사연: 닉네임 자리에 "고려대 소로우 #128" */
 .circleTag { color: var(--text); font-weight: 650; }
+
+/* 누름 반응: 줄 전체가 살짝 회색으로, 칩은 살짝 작아진다 */
+.row { transition: background-color var(--dur-fast) var(--ease); }
+.row:has(.itemLink:active) { background: var(--surface-2); }
+.cat, .sort, .moreBtn { transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), scale var(--dur-fast) var(--ease); }
+.cat:active { scale: 0.95; }
+@media (prefers-reduced-motion: reduce) { .cat:active { scale: 1; } }

@@ -5,6 +5,7 @@ import AppRuntime from "@/components/AppRuntime";
 import CommunityConsent from "@/components/CommunityConsent";
 import ServiceAvailability from "@/components/ServiceAvailability";
 import AppToast from "@/components/AppToast";
+import NavProgress from "@/components/NavProgress";
 import Splash from "@/components/Splash";
 import { THEME_SCRIPT } from "@/lib/theme";
 import InlineScript from "@/components/InlineScript";
@@ -108,6 +109,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Splash />
         <AppRuntime />
         <AppToast />
+        <NavProgress />
         <ServiceAvailability>
           <CommunityConsent />
           <div className="app">

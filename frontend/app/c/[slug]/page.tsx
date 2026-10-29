@@ -12,7 +12,7 @@ import { SampleTag, Verified, circleInitial } from "@/components/CircleRow";
 import { LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar } from "@/components/ui";
 import { IconChevronL, IconLeaf, IconLock, IconMegaphone, IconMore, IconPen, IconShare, IconShield } from "@/components/Icons";
-import { showToast } from "@/lib/toast";
+import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../circle.module.css";
 
 /** 소로우 하나: 소개·공지, 가입(누구나/승인/초대 코드/소속 메일 인증), 리스닝, 사연 보내기, '#번호' 사연 목록 */
@@ -51,7 +51,7 @@ export default function CirclePage() {
     try {
       const next = await fn();
       setC(next);
-      if (done) showToast(done);
+      if (done) toastSuccess(done);
       setS(await fetchCommunity(true));
     } catch (e) {
       showToast(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
@@ -73,7 +73,7 @@ export default function CirclePage() {
     const url = `${location.origin}/c/${c.slug}`;
     try {
       if (navigator.share) await navigator.share({ title: c.name, url });
-      else { await navigator.clipboard.writeText(url); showToast("주소를 복사했어요"); }
+      else { await navigator.clipboard.writeText(url); toastSuccess("주소를 복사했어요"); }
     } catch { /* 공유 취소 */ }
   };
 
@@ -212,19 +212,19 @@ function JoinSheet({ open, c, onClose, onJoined }: { open: boolean; c: CircleDet
               <p className={styles.sub} style={{ margin: 0 }}>{email} 로 보낸 6자리 코드를 10분 안에 입력해 주세요.</p>
               {sent.devCode && <p className={styles.devCode}>개발 환경이라 메일 대신 여기 보여요 · <b>{sent.devCode}</b></p>}
               <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="000000" aria-label="인증 코드" />
-              <button className="btn block" disabled={busy || code.length !== 6} onClick={() => go(async () => { onJoined(await confirmVerify(c.slug, code)); showToast("인증을 마쳤어요. 이제 멤버예요"); })}>{busy ? "확인하는 중…" : "인증하기"}</button>
+              <button className="btn block" disabled={busy || code.length !== 6} onClick={() => go(async () => { onJoined(await confirmVerify(c.slug, code)); toastSuccess("인증을 마쳤어요. 이제 멤버예요"); })}>{busy ? "확인하는 중…" : "인증하기"}</button>
               <button className="btn ghost block" disabled={busy} onClick={() => { setSent(null); setCode(""); }}>메일 다시 입력</button>
             </>
           )
         ) : c.joinMode === "invite" ? (
           <>
             <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={16} placeholder="초대 코드" aria-label="초대 코드" autoCapitalize="characters" />
-            <button className="btn block" disabled={busy || !code.trim()} onClick={() => go(async () => { onJoined(await joinCircle(c.slug, code)); showToast("멤버가 됐어요"); })}>가입하기</button>
+            <button className="btn block" disabled={busy || !code.trim()} onClick={() => go(async () => { onJoined(await joinCircle(c.slug, code)); toastSuccess("멤버가 됐어요"); })}>가입하기</button>
           </>
         ) : (
           <>
             <p className={styles.sub} style={{ margin: 0 }}>소로우지기가 승인하면 멤버가 돼요.</p>
-            <button className="btn block" disabled={busy} onClick={() => go(async () => { onJoined(await joinCircle(c.slug)); showToast("가입을 신청했어요"); })}>가입 신청하기</button>
+            <button className="btn block" disabled={busy} onClick={() => go(async () => { onJoined(await joinCircle(c.slug)); toastSuccess("가입을 신청했어요"); })}>가입 신청하기</button>
           </>
         )}
         {error && <div className="notice warn" role="alert">{error}</div>}

@@ -6,7 +6,7 @@ import { CIRCLE_KINDS, CircleKind, JoinMode, Visibility, createCircle } from "@/
 import { fetchMe } from "@/lib/auth";
 import { TopBar } from "@/components/ui";
 import { IconChevronL } from "@/components/Icons";
-import { showToast } from "@/lib/toast";
+import { toastSuccess } from "@/lib/toast";
 import Link from "next/link";
 import styles from "../circle.module.css";
 
@@ -36,7 +36,7 @@ export default function NewCirclePage() {
     setError(null);
     try {
       const c = await createCircle({ name, slug, kind, intro, joinMode: org ? "domain" : joinMode, visibility, domain: org ? domain : undefined });
-      showToast(`${c.name}이 열렸어요`);
+      toastSuccess(`${c.name}이 열렸어요`);
       router.replace(`/c/${c.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "잠시 후 다시 시도해요");

@@ -146,15 +146,15 @@ export default function SubmitPage() {
           <div className="stack">
             {draft ? (
               <>
-                <button className="btn block" disabled={busy} onClick={() => send(draft.text)}>{busy ? "보내는 중…" : "다듬은 사연으로 보내기"}</button>
+                <button className="btn block" disabled={busy} aria-busy={busy} onClick={() => send(draft.text)}>{busy ? "보내는 중…" : "다듬은 사연으로 보내기"}</button>
                 <button className="btn ghost block" disabled={busy} onClick={() => send(text)}>내가 쓴 그대로 보내기</button>
               </>
             ) : (
               <>
-                <button className="btn soft block" disabled={previewing || text.trim().length < 5} onClick={preview}>
+                <button className="btn soft block" disabled={previewing || text.trim().length < 5} aria-busy={previewing} onClick={preview}>
                   <IconSparkle />{previewing ? "다듬는 중…" : "다듬어 보기 (실명·연락처 가리기)"}
                 </button>
-                <button className="btn block" disabled={busy || text.trim().length < 5} onClick={() => send(text)}>{busy ? "보내는 중…" : "사연 보내기"}</button>
+                <button className="btn block" disabled={busy || text.trim().length < 5} aria-busy={busy} onClick={() => send(text)}>{busy ? "보내는 중…" : "사연 보내기"}</button>
               </>
             )}
           </div>

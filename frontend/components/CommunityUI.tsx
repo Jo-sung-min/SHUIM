@@ -23,7 +23,7 @@ import { Sheet, fmtRelative } from "./ui";
 export { LoadError } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
 import Fist3D from "./Fist3D";
-import { showToast } from "@/lib/toast";
+import { showToast, tick, toastSuccess } from "@/lib/toast";
 
 /** 변경 결과(최신 store)를 화면에 반영하고, 실패하면 알림 */
 export async function run(onChange: (s: CommunityStore) => void, fn: () => Promise<CommunityStore>, onError?: (m: string) => void) {
@@ -74,7 +74,7 @@ export function CheerButton({ count, on, onClick, small, vertical }: { count: nu
       icon={<Fist3D on={on} burst={burst} size={vertical ? 30 : small ? 18 : 22} />}
       label={count}
       onClick={() => {
-        if (!on) setBurst(true);
+        if (!on) { setBurst(true); tick(); }
         return onClick();
       }}
     />
@@ -113,9 +113,11 @@ export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onRe
     );
   }
   const list = replies ?? [];
+  // 방금(몇 초 안에) 내가 남긴 댓글은 한 번 물들었다 가라앉는다
+  const justAdded = comment.authorId === me && Math.abs(Date.now() - comment.createdAt) < 8000;
   return (
     <>
-      <div className="comment">
+      <div className={`comment${justAdded ? " just-added" : ""}`}>
         <div className="meta">
           <Link href={`/u/${comment.authorId}`} style={{ color: "var(--text)", fontWeight: 600 }}>{nick}</Link>
           <TitleChip title={author.title} small />
@@ -226,7 +228,12 @@ export function CommentComposer({
     setBusy(true);
     try {
       const saved = await run(onChange, () => api.addComment(postId, t, replyTo?.parentId));
-      if (saved) { setText(""); onCancelReply?.(); if (field.current) field.current.style.height = "auto"; }
+      if (saved) {
+        setText("");
+        onCancelReply?.();
+        if (field.current) field.current.style.height = "auto";
+        toastSuccess(replyTo ? "답글을 남겼어요" : "위로를 남겼어요");
+      }
     } finally {
       locked.current = false;
       setBusy(false);

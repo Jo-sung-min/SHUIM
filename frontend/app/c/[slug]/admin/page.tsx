@@ -9,7 +9,7 @@ import {
 import { LoadError } from "@/components/CommunityUI";
 import { Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { IconAlert, IconChevronL, IconInbox, IconSparkle, IconUsers } from "@/components/Icons";
-import { showToast } from "@/lib/toast";
+import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../../circle.module.css";
 
 type Tab = "queue" | "members" | "settings";
@@ -128,7 +128,7 @@ function QueueItem({ slug, sub, onDone }: { slug: string; sub: Submission; onDon
     setBusy(action);
     try {
       const next = await decideSubmission(slug, sub.id, { action, text: action === "publish" ? text : undefined, reason: action !== "publish" ? reason : undefined, reply: reply || undefined });
-      showToast(action === "publish" ? "게시했어요. 잠시 뒤 사연이 올라가요" : action === "hold" ? "보류했어요" : "반려했어요");
+      toastSuccess(action === "publish" ? "게시했어요. 잠시 뒤 사연이 올라가요" : action === "hold" ? "보류했어요" : "반려했어요");
       onDone(next);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "처리하지 못했어요");
@@ -158,7 +158,7 @@ function QueueItem({ slug, sub, onDone }: { slug: string; sub: Submission; onDon
       ) : (
         <div className={styles.editor}>
           {sub.aiDraft || masked.length ? null : <p className={styles.subText} style={{ marginTop: 0 }}>{sub.text}</p>}
-          <button type="button" className="btn soft sm" disabled={busy !== null} onClick={draft}><IconSparkle />{busy === "draft" ? "다듬는 중…" : "AI 로 다듬고 가리기"}</button>
+          <button type="button" className="btn soft sm" disabled={busy !== null} aria-busy={busy === "draft"} onClick={draft}><IconSparkle />{busy === "draft" ? "다듬는 중…" : "AI 로 다듬고 가리기"}</button>
           {masked.length > 0 && <span className={`${styles.pill} ${styles.ok}`}>가림: {masked.join(", ")}</span>}
           <label className={styles.field}>
             <span>게시할 사연 (고칠 수 있어요)</span>
@@ -173,7 +173,7 @@ function QueueItem({ slug, sub, onDone }: { slug: string; sub: Submission; onDon
             <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} placeholder="예: 특정인이 드러날 수 있어요" />
           </label>
           <div className={styles.subActions}>
-            <button className="btn sm" disabled={busy !== null || !text.trim()} onClick={() => decide("publish")}>{busy === "publish" ? "게시하는 중…" : "게시"}</button>
+            <button className="btn sm" disabled={busy !== null || !text.trim()} aria-busy={busy === "publish"} onClick={() => decide("publish")}>{busy === "publish" ? "게시하는 중…" : "게시"}</button>
             {sub.status !== "held" && <button className="btn ghost sm" disabled={busy !== null} onClick={() => decide("hold")}>보류</button>}
             <button className="btn ghost danger sm" disabled={busy !== null} onClick={() => decide("reject")}>반려</button>
           </div>
@@ -245,7 +245,7 @@ function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) 
     setBusy(true);
     try {
       onSaved(await updateCircle(c.slug, input));
-      showToast(done);
+      toastSuccess(done);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "저장하지 못했어요");
     } finally {

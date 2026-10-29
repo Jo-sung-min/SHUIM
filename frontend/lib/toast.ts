@@ -22,8 +22,20 @@ export function showToast(message: string, options: { kind?: NoticeKind; duratio
   if (duration > 0) setTimeout(() => dismissToast(id), duration);
 }
 
-/** 저장·전송이 끝났을 때의 작은 완료 안내 */
-export const toastSuccess = (message: string) => showToast(message, { kind: "success" });
+/** 저장·전송이 끝났을 때의 작은 완료 안내. 지원 기기에서는 아주 짧게 진동한다 */
+export const toastSuccess = (message: string) => {
+  showToast(message, { kind: "success" });
+  tick();
+};
+
+/** 손끝 피드백: 짧은 진동 한 번 (지원하지 않거나 동작 줄이기 설정이면 아무것도 안 한다) */
+export function tick(ms = 12) {
+  try {
+    if (typeof navigator === "undefined" || !("vibrate" in navigator)) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    navigator.vibrate(ms);
+  } catch { /* 진동 실패는 무시 */ }
+}
 
 export function dismissToast(id: number) {
   if (!notices.some((notice) => notice.id === id)) return;

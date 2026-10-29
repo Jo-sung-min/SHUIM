@@ -117,3 +117,10 @@
 .locked { display: grid; justify-items: center; gap: 8px; padding: 40px 12px; text-align: center; color: var(--text-2); font-size: 14px; line-height: 1.55; }
 .locked svg { width: 28px; height: 28px; color: var(--text-3); }
 .locked b { color: var(--text); font-size: 16px; }
+
+/* ---------- 누름 반응 ---------- */
+.mineChip, .kind, .opt, .circleRow { transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), scale var(--dur-fast) var(--ease); }
+.mineChip:active, .kind:active { scale: 0.95; background: var(--surface-2); }
+.kind[aria-checked="true"]:active { background: var(--text); }
+.opt:not(:disabled):active { scale: 0.98; background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .mineChip:active, .kind:active, .opt:active { scale: 1; } }
