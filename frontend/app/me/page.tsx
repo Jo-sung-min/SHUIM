@@ -11,7 +11,7 @@ import photoStyles from "@/components/PhotoEditor.module.css";
 import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
-import { IconBell, IconBubble, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconMessage, IconNote, IconSettings, IconShare, IconUser } from "@/components/Icons";
+import { IconInbox, IconBell, IconBubble, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconMessage, IconNote, IconSettings, IconShare, IconUser } from "@/components/Icons";
 import ProfileHeader from "@/components/ProfileHeader";
 import BadgeShelf, { BadgeCelebration, BadgeIcon } from "@/components/BadgeShelf";
 import ProfileTabs from "@/components/ProfileTabs";
@@ -93,6 +93,7 @@ export default function MePage() {
   const nick = profile?.nick ?? user?.nick ?? "내 공간";
   const tools = [
     { href: "/messages", label: "메시지", Icon: IconMessage, n: dmUnread },
+    { href: "/c/submissions", label: "사연함", Icon: IconInbox, n: 0 },
     { href: "/memo", label: "메모", Icon: IconNote, n: stats.memos },
     { href: "/goals", label: "목표", Icon: IconFlag, n: stats.goals },
     { href: "/schedule", label: "일정", Icon: IconCalendar, n: stats.today },

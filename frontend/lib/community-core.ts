@@ -86,6 +86,13 @@ export interface Post extends Base {
   cat: ShoutCat;
   /** 사진 주소 (최대 SHOUT_MAX_IMAGES 장). 옛 글은 빈 배열 */
   images?: string[];
+  /** 커뮤니티 소로우에 게시된 사연이면 그 소로우 (작성자는 "c:<소로우 id>" 로 가려져 온다) */
+  communityId?: string;
+  /** 소로우 안의 #번호 */
+  postNo?: number;
+  /** 소로우 이름·주소 (화면 표시용) */
+  circle?: string;
+  circleSlug?: string;
 }
 
 export const SHOUT_MAX_IMAGES = 4;

@@ -29,11 +29,25 @@ public final class Model {
         Long reviewedAt();
     }
 
-    /** 외침. images 는 사진 주소(최대 CommunityLogic.SHOUT_MAX_IMAGES 장, 없으면 빈 목록) */
-    public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images) implements Item {
+    /**
+     * 외침. images 는 사진 주소(최대 CommunityLogic.SHOUT_MAX_IMAGES 장, 없으면 빈 목록).
+     * communityId 가 있으면 커뮤니티 소로우에 게시된 사연(#postNo). circle/circleSlug 는 화면 표시용 소로우 이름·주소.
+     * 사연의 authorId 는 보낸 사람 본인과 관리자에게만 실제 값이고, 다른 사람에게는 "c:<소로우 id>" 로 가려진다.
+     */
+    public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
+                       String communityId, Integer postNo, String circle, String circleSlug) implements Item {
+        /** 광장의 자유 외침 */
+        public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images) {
+            this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, null, null, null, null);
+        }
         /** 사진 없는 외침 (테스트·옛 호출) */
         public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt) {
             this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, List.of());
+        }
+        public boolean inCircle() { return communityId != null; }
+        /** 같은 글, 작성자만 바꿔서 (소로우 사연의 작성자 가리기) */
+        public Post withAuthor(String author, List<Report> reports) {
+            return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug);
         }
     }
 

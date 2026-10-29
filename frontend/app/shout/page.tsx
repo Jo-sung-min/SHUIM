@@ -30,6 +30,7 @@ import { IconBubble, IconChevronR, IconClose, IconMore, IconPlus, IconSearch, Ic
 import styles from "./shout.module.css";
 import { splitShout } from "./split";
 import TitleChip from "@/components/TitleChip";
+import { circleTag } from "@/lib/circles";
 
 type Filter = ShoutCat | "all";
 type Sort = "new" | "top";
@@ -75,7 +76,7 @@ export default function ShoutPage() {
     if (!s) return [];
     // 검색: 글 내용·닉네임·카테고리 이름에 검색어가 들어간 글
     const matches = (p: Post) =>
-      !q || p.text.toLowerCase().includes(q) || userById(s, p.authorId).nick.toLowerCase().includes(q) || shoutCatById(p.cat).label.toLowerCase().includes(q);
+      !q || p.text.toLowerCase().includes(q) || (p.communityId ? circleTag(p) : userById(s, p.authorId).nick).toLowerCase().includes(q) || shoutCatById(p.cat).label.toLowerCase().includes(q);
     const list = s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter) && matches(p));
     return sort === "top"
       ? list.sort((a, b) => score(s, b) - score(s, a) || b.createdAt - a.createdAt)
@@ -281,8 +282,15 @@ function PostRow({ s, post, badge, commentCount, onCheer, onOpen, onMenu }: { s:
           <p className={styles.byline}>
             <span className={styles.chan}><ShoutCatIcon id={c.id} />{c.label}</span>
             <span aria-hidden="true">·</span>
-            <span>{mine ? "나" : author.nick}</span>
-            <TitleChip title={author.title} small />
+            {post.communityId ? (
+              // 소로우 사연: 보낸 사람 대신 소로우 이름과 #번호
+              <span className={styles.circleTag}>{circleTag(post)}{mine && " · 내 사연"}</span>
+            ) : (
+              <>
+                <span>{mine ? "나" : author.nick}</span>
+                <TitleChip title={author.title} small />
+              </>
+            )}
           </p>
         </div>
         {images.length > 0 && (

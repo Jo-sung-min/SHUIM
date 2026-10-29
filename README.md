@@ -60,6 +60,7 @@ npm run dev
 | `AUTH_SECURE_COOKIE` | HTTPS 운영에서 `true` (세션 쿠키 Secure) |
 | `COMMUNITY_SIMULATE` | 개발용 샘플 유저 자동 답글 (운영 `false`) |
 | `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET` | 카카오 로그인 (아래 참고). `KAKAO_CLIENT_ID` 가 비면 `GET /api/auth/me` 가 `kakao: false` 를 내려 카카오 버튼 숨김 |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | 커뮤니티 소로우 소속 인증 메일. 비우면 메일을 보내지 않고, 개발(prod 프로필이 아닐 때)에서는 인증 코드를 화면에 보여 준다. 운영(prod)에서 비우면 인증 시작이 503 |
 
 ### 카카오 로그인 설정
 
@@ -94,11 +95,17 @@ npm run dev
 | **사진 편집기** (`components/PhotoEditor.tsx`) | 외침·위로 피드·프로필 사진 공용. **자르기**(드래그 위치·핀치 확대·90° 회전·4:5/1:1/원본) · **필터**(인스타그램식 프리셋 21개 + 세기) · **조정**(밝기·대비·채도·따뜻함·선명하게·페이드·비네트). 프리셋 레시피는 [CSSgram](https://github.com/una/CSSgram)(MIT)에서 가져왔고 썸네일은 그 CSS 그대로, 미리보기·저장은 같은 수식을 `lib/photo-look.ts` 의 WebGL 셰이더로 계산해 보이는 대로 저장된다 (Safari 는 canvas `filter` 미지원이라 WebGL). WebGL 이 없는 기기에서는 자르기만 |
 | **외침 글** (`/shout/아이디`) | 글(사진 슬라이드·본문·힘내요)이 맨 위, 바로 아래 댓글 카드가 올라오며 들어오자마자 댓글이 펼쳐져 있다(힘내요순·최신순). 댓글마다 **답글 달기** → 인스타그램처럼 한 단계 대댓글(`comments.parent_id`, V16, 답글의 답글은 같은 부모에), "답글 N개 보기"로 접고 펼침, 내 댓글에 달린 답글은 알림. 댓글 입력은 화면 아래 고정(답글 중엔 대상 띠). 목록 카드는 누르면 살짝 눌리는 효과. 예전 `/shout?post=아이디` 는 여기로 |
 | **화면 모드** | 나 › 설정(`/settings`) › 화면 모드에서 기기 설정·화이트·나이트. 이 기기에만 저장(`localStorage`), `<html data-theme>` 로 즉시 적용, 첫 페인트 전 인라인 스크립트로 번쩍임 없음 |
-| **하단 탭** | 아이콘만 5개(이름은 접근성 라벨). 선택·누름은 인스타그램처럼 회색 바탕에 먹색 아이콘. 글쓰기·외침 글 화면에서는 숨김 |
+| **하단 탭** | 아이콘만 5개(이름은 접근성 라벨). 선택·누름은 인스타그램처럼 회색 바탕에 먹색 아이콘. 글쓰기·외침 글·사연 보내기·소로우지기 화면에서는 숨김 |
 | **기록** | `오늘 쓰기`: 오늘 한 일(칩) + 카테고리(마음·몸·관계·돈·일·커리어)별 **어제보다 얼마나(−5~+5)** 와 한 줄. 숫자 줄 위를 보라 블럭이 미끄러져 선택 위치를 보여줌. 카드를 꾹 눌러 끌면 순서 변경(계정별 저장), `+ 카테고리 추가`로 내 카테고리(최대 5개). `기록하기`: 메모장(`components/MemoPad.tsx`, 메모 화면과 같은 본문 — 카테고리별 메모·되돌아보기·새 메모 FAB). 흐름 보기는 별도 화면 `/flow` (홈의 "나를 위한 시간 › 흐름 보기" 타일에서 이동, `components/FlowView.tsx`: 전체 평균 위치 라인 + 가속도 막대, 7/14/30일, AI 흐름 정리) |
 | **메모** | 카테고리별 메모(노트 UI, 기록 › 기록하기 탭과 같은 `MemoPad`). 고정(📌)하면 오늘의 나에서 우선 반영. `되돌아보기`: 카테고리마다 처음 메모와 최근 메모를 나란히 + 타임라인 |
 | **오늘의 나 › 분석하기** | 메모 **전체**(날짜·카테고리)를 컨텍스트로 보내 과거의 다짐·원칙과 오늘 기록을 대조 → 주의할 점, 그때와 다른 점, 움직인 거리, 질문 |
-| **외침** | 익명 커뮤니티. 카테고리별로 글을 올리면 다른 사람이 위로 댓글을 남김. 좋아요 대신 **힘내요**(선 주먹 → 누르면 3D 주먹). 신고 5회면 가려지고 `/admin` 검토 대기열로. 관리자는 숨기기/유저 차단. 목록 상단의 관리자 검토(방패) 아이콘은 관리자 계정에게만 보인다 |
+| **외침 › 소로우** (`/c/home`) | **커뮤니티 소로우** — 옛 페이스북 대나무숲처럼 학교·회사·지역·관심사마다 'OO 소로우'. 하단 탭 외침의 첫 화면. 내가 속한 소로우(대표 먼저)·리스닝 중인 소로우의 사연을 한 줄로, 아래에 **이번 주 가장 따뜻한 소로우**(멤버들이 다른 소로우·광장 글에 남긴 위로가 많은 순, 순위만). 위 탭: 소로우 · 광장 · 불행 랭킹 · 불행 모금 |
+| **소로우 둘러보기·열기** (`/c`, `/c/new`) | 종류·이름으로 찾기. 멤버 10명이 넘어야(학교·회사는 연 사람의 메일 인증까지) 목록에 나오고, 그 전엔 링크(`/c/주소`)로만. 열기는 가입한 계정만, 한 사람 3개까지. 학교·회사는 메일 도메인(예: `korea.ac.kr`)으로만 가입, 그 외는 누구나·승인 후·초대 코드. 사연 공개는 모두에게 / 멤버에게만 |
+| **소로우** (`/c/주소`) | 소개·공지·멤버/리스너/사연 수, 가입(소속 메일 6자리 코드 인증 — 메일 주소는 저장하지 않고 해시만, 같은 메일로 두 번 인증 불가)·리스닝·대표 소로우·나가기, '#번호' 사연 목록. 멤버에게만 공개인 소로우는 방문자에게 잠금 |
+| **사연 보내기** (`/c/주소/submit`) | 멤버만. 실명·연락처·학번처럼 보이면 바로 경고, **다듬어 보기**(AI 가 띄어쓰기·문단을 다듬고 실명·연락처를 ○○ 로, AI 가 없으면 규칙 기반) 후 다듬은 사연 / 쓴 그대로 보내기. 위기 신호면 109 안내 |
+| **소로우지기** (`/c/주소/admin`) | 연 사람과 임명된 소로우지기. 검토 큐(위기 신호 먼저) → AI 로 다듬고 가리기 → 고쳐서 **게시**(그 소로우의 다음 #번호) · 보류 · 반려(사유는 보낸 사람에게 보임) + 익명 답장. 멤버 승인·내보내기·소로우지기 임명, 공지·소개·가입 방식·초대 코드. **보낸 사람은 소로우지기에게도 보이지 않는다** |
+| **내 사연함** (`/c/submissions`, 나 › 나만 보여요) | 보낸 사연의 상태·보류/반려 사유·소로우지기의 답장·게시된 #번호 |
+| **외침 › 광장** | 익명 커뮤니티. 카테고리별로 글을 올리면 다른 사람이 위로 댓글을 남김. 좋아요 대신 **힘내요**(선 주먹 → 누르면 3D 주먹). 신고 5회면 가려지고 `/admin` 검토 대기열로. 관리자는 숨기기/유저 차단. 목록 상단의 관리자 검토(방패) 아이콘은 관리자 계정에게만 보인다 |
 | **외침 › 불행 랭킹** | 불행 털어내기 글의 힘내요를 사람별로 더한 주간 순위. 지난 주는 확정, 이번 주는 5분마다 잠정 집계(`weekly_batches`) |
 | **외침 › 불행 모금** | 모금액을 그 주 1~10위에게 25/18/14/11/9/7/6/4/3/3% 로 분배. **프로토타입, 실제 결제 없음** |
 | **위로** | 쇼츠형 세로 스냅 피드. 본문의 위로 문장은 형광펜으로 강조(작성 때 "형광펜" 버튼으로 `==문장==` 표시, 표시가 없으면 마지막 줄 자동, `lib/highlight.ts`). 글 하나에 콘텐츠(사진+제목+글) 최대 10개, 가로로 넘기면 함께 바뀜. 인스타식 3단계 작성(사진 선택 → 슬라이드별 편집 → 공유). 힘내요·위로 댓글·저장·리스닝, ⋯ 메뉴에서 전체/리스닝/저장함·위로글 쓰기 |
@@ -123,6 +130,14 @@ npm run dev
 | `POST /api/community/consent` | 커뮤니티 약관 동의 버전·시각 저장. 게시·사진 업로드·메시지 전송 전 필요 |
 | `POST/GET /api/safety-reports`, `POST /api/safety-reports/{id}/review` | 사용자·메시지·AI 신고 / 관리자 조회 / 관리자 검토 |
 | `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create `{ cat, text, images? }` — 사진은 본인이 올린 S3 주소만 최대 4장, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
+| `GET /api/circles?kind=&q=`, `GET /api/circles/warm`, `GET /api/circles/mine` | 소로우 둘러보기(멤버 10명 이상) / 이번 주 가장 따뜻한 소로우(순위만) / 내 소로우·리스닝 중인 소로우 |
+| `POST /api/circles`, `GET/PUT /api/circles/{주소}` | 소로우 열기(가입한 계정, 3개까지) / 소로우 + 나와의 관계 / 공지(소로우지기)·소개·공개 범위·가입 방식·초대 코드(연 사람) |
+| `POST /api/circles/{주소}/{join,leave,primary,follow}` | 가입(`{ code? }`)·나가기·대표 소로우·리스닝 켜고 끄기 |
+| `POST /api/circles/{주소}/verify/{start,confirm}` | 소속 메일 인증: `{ email }` → 6자리 코드(10분, 5번까지, 한 시간 5통) / `{ code }` → 멤버. 연 사람이 인증하면 '인증 소로우' |
+| `GET /api/circles/{주소}/members`, `POST …/members/{userId}` | 소로우지기: 멤버 목록 / `{ action: approve·remove·keeper·unkeeper }` |
+| `POST /api/circles/{주소}/preview`, `POST …/submissions` | 사연 미리보기(AI 정리·가림) / 사연 보내기 `{ cat, text }` (멤버) |
+| `GET …/submissions?status=pending·held·done`, `POST …/submissions/{id}/{draft,decide}` | 소로우지기 검토 큐(보낸 사람 없음, 위기 먼저) / AI 정리본 / `{ action: publish·hold·reject, text?, reason?, reply? }` — 게시는 다음 #번호로 `shout_posts` 에, 게시 시각은 10~90분 무작위로 늦춘다 |
+| `POST /api/circles/{주소}/posts/{postId}/hide`, `GET /api/submissions/mine` | 소로우지기의 사연 가리기·되돌리기 / 내 사연함 |
 | `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필(칭호·새 배지·배지 목록 포함, PUT 에 `titleBadge`) / 공개 프로필 + 콘텐츠 탭(위로글·외침·위로 댓글·본인이면 저장함) |
 | `GET /api/profile/{id}/listeners`, `GET /api/profile/{id}/listening` | 리스너(이 사람을 듣는 사람) · 리스닝(이 사람이 듣는 사람) 목록, 50명씩 `?offset=` |
 | `POST /api/profile/badges/seen` | 새 배지 축하 시트를 봤다 |
@@ -139,7 +154,7 @@ npm run dev
 
 ## DB (PostgreSQL)
 
-- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘) … `V15__shout_post_images.sql`(외침 사진), `V16__comment_replies.sql`(대댓글), `V17__profile_badges.sql`(위로 배지 `user_badges`, 칭호 `profiles.title_badge`, 리스너 목록 인덱스). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
+- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘) … `V15__shout_post_images.sql`(외침 사진), `V16__comment_replies.sql`(대댓글), `V17__profile_badges.sql`(위로 배지 `user_badges`, 칭호 `profiles.title_badge`, 리스너 목록 인덱스), `V18__circles.sql`(커뮤니티 소로우: `communities`·`community_members`·`community_email_codes`·`community_verifications`·`submissions`·`community_follows`, `shout_posts.community_id`·`post_no`). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
 - 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
 - 로그인 전에도 익명 유저가 자동 생성되어(세션 쿠키 `shuim_session`, DB 에는 SHA-256 해시만) 글·힘내요를 쓸 수 있고, 가입하면 승격된다. 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1) 라 기존 계정이 그대로 로그인된다
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches` 에 저장. 샘플 유저 자동 답글은 `COMMUNITY_SIMULATE=true` 일 때만
@@ -180,6 +195,7 @@ backend/
     community/           Model(Store 레코드), CommunityLogic(가시성·주간 집계·자동 답글), CommunityService(SQL), CommunityController
     profile/ message/ upload/   프로필(Badges·BadgeService = 위로 배지·칭호, 리스너·리스닝 목록) · 1:1 메시지 · S3 프리사인
     notify/              NotificationController (알림 전용 API)
+    circle/              커뮤니티 소로우: CircleLogic(이름·주소·도메인 검사, 실명·연락처 가리기, 공개 범위), CircleService(가입·인증·사연·검토·게시), MailService(SMTP)
     records/             RecordsService(개인 기록 SQL), RecordsLogic(저장 전 정리), RecordsController(/api/records)
     ai/                  ClaudeClient, Prompts, TodayService(브리핑·칭찬·사랑·점검 + 규칙 기반 대체), SummarizeService, AiController
   src/main/resources/
@@ -188,6 +204,8 @@ backend/
 ```
 
 ## 설계 메모
+
+- **커뮤니티 소로우의 익명성**: 게시된 사연은 `shout_posts`(author_id = 보낸 사람)에 들어가 힘내요·댓글·신고·알림을 외침과 함께 쓰지만, 커뮤니티 상태를 내려줄 때 보낸 사람 본인과 관리자가 아니면 작성자를 `c:<소로우 id>` 로 바꾼다. 차단 목록으로 거르지 않고(걸리면 누가 보냈는지 짐작된다), 사연에 댓글·힘내요를 남길 때도 차단 검사를 하지 않는다. 주간 불행 랭킹·프로필 외침 탭·외침 수·'용기 낸 외침' 배지에서 빠지고, 게시 시각은 10~90분 무작위로 늦춰 보낸 시각과 떨어뜨린다. 멤버에게만 공개인 소로우의 사연과 그 댓글은 멤버가 아닌 사람의 상태·프로필 댓글 탭에서 빠진다. 소로우지기 화면·멤버 목록에도 보낸 사람은 없다. 소로우별 불행 모금 분배는 아직 없다(광장 랭킹만)
 
 - 브리핑은 하루 한 번 캐시해서 "새로운 주식창"처럼 자꾸 열어보게 만들지 않음
 - 브리핑 프롬프트: 사용자의 말을 인용, 떨어진 날에도 "다시 올라온 순간·지켜낸 것"을 먼저, 진단·투자 조언 금지

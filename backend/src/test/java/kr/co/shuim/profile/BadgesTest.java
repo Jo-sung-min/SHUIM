@@ -22,7 +22,7 @@ class BadgesTest {
     void thresholdsAreInclusive() {
         assertEquals(Set.of("first_comfort"), Badges.earned(new Counts(1, 9, 0, false, 0, 0, 9, false)));
         assertEquals(Set.of("first_comfort", "comfort_steady", "cheer_first", "listened"), Badges.earned(new Counts(10, 10, 0, false, 0, 0, 10, false)));
-        Set<String> all = Badges.earned(new Counts(50, 100, 10, true, 1, 1, 10, true));
+        Set<String> all = Badges.earned(new Counts(50, 100, 10, true, 1, 1, 10, true, true, 5));
         assertEquals(Badges.ALL.size(), all.size(), "모든 조건을 넘으면 모든 배지");
     }
 

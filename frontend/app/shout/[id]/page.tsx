@@ -14,6 +14,7 @@ import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "../shout.module.css";
 import { splitShout } from "../split";
 import TitleChip from "@/components/TitleChip";
+import { circleTag } from "@/lib/circles";
 
 type Sort = "top" | "new";
 
@@ -108,14 +109,25 @@ export default function ShoutPostPage() {
         <>
           <article aria-label="외침 글" className={styles.detail}>
             <nav className={styles.crumb} aria-label="위치">
-              <Link href="/shout">외침</Link>
+              {post.communityId && post.circleSlug ? (
+                <Link href={`/c/${post.circleSlug}`}>{post.circle ?? "소로우"}</Link>
+              ) : (
+                <Link href="/shout">광장</Link>
+              )}
               <IconChevronR aria-hidden="true" />
               <span className={styles.chan}><ShoutCatIcon id={cat.id} />{cat.label}</span>
             </nav>
             <h2 className={styles.detailTitle}>{title}</h2>
             <p className={styles.byline}>
-              <Link href={`/u/${post.authorId}`} className={styles.author}>{author}</Link>
-              <TitleChip title={userById(s, post.authorId).title} small />
+              {post.communityId ? (
+                // 소로우 사연: 보낸 사람은 어디에도 드러나지 않는다
+                <span className={styles.circleTag}>{circleTag(post)}{mine && " · 내가 보낸 사연"}</span>
+              ) : (
+                <>
+                  <Link href={`/u/${post.authorId}`} className={styles.author}>{author}</Link>
+                  <TitleChip title={userById(s, post.authorId).title} small />
+                </>
+              )}
             </p>
             <div className={styles.metaRow}>
               <span className={styles.metaItem}><IconClock aria-hidden="true" />{fmtRelative(post.createdAt)}</span>

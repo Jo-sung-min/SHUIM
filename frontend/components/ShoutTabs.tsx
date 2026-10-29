@@ -4,25 +4,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+/** 소로우 = 내가 속한 커뮤니티 소로우(대나무숲), 광장 = 누구나 바로 외치는 곳 */
 const TABS = [
-  { href: "/shout", label: "외침" },
-  { href: "/ranking", label: "불행 랭킹" },
-  { href: "/fund", label: "불행 모금" },
+  { href: "/c/home", label: "소로우", match: (p: string) => p === "/c" || p.startsWith("/c/") },
+  { href: "/shout", label: "광장", match: (p: string) => p === "/shout" },
+  { href: "/ranking", label: "불행 랭킹", match: (p: string) => p === "/ranking" },
+  { href: "/fund", label: "불행 모금", match: (p: string) => p === "/fund" },
 ];
 
 /**
- * 외침 영역 맨 위 (외침 / 불행 랭킹 / 불행 모금). 따로 제목 줄 없이 이 탭 줄이 화면 머리 역할을 한다.
+ * 외침 영역 맨 위 (소로우 / 광장 / 불행 랭킹 / 불행 모금). 따로 제목 줄 없이 이 탭 줄이 화면 머리 역할을 한다.
  * 블라인드처럼 글자 탭 + 선택된 탭 아래 밑줄, 오른쪽에 화면별 버튼(right). 세 화면 모두 같은 높이에 있다.
  */
 export default function ShoutTabs({ right }: { right?: ReactNode }) {
   const path = usePathname();
-  const current = TABS.find((t) => t.href === path);
+  const current = TABS.find((t) => t.match(path));
   return (
     <div className="ul-tabs">
       {current && <h1 className="sr-only">{current.label}</h1>}
       <nav aria-label="외침 메뉴">
         {TABS.map((t) => (
-          <Link key={t.href} href={t.href} aria-current={path === t.href ? "page" : undefined} className={path === t.href ? "on" : ""}>
+          <Link key={t.href} href={t.href} aria-current={t.match(path) ? "page" : undefined} className={t.match(path) ? "on" : ""}>
             {t.label}
           </Link>
         ))}

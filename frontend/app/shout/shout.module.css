@@ -187,3 +187,6 @@
 }
 .dock :global(.composer) { margin-top: 0; }
 .dock :global(.notice) { margin: 0; }
+
+/* 소로우 사연: 닉네임 자리에 "고려대 소로우 #128" */
+.circleTag { color: var(--text); font-weight: 650; }

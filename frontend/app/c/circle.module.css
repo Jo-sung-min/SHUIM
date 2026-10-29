@@ -1,0 +1,119 @@
+/*
+  커뮤니티 소로우 (대나무숲). 외침 목록과 같은 평평한 줄·회색 띠를 쓰고,
+  소로우 머리(이름·인증·멤버 수)와 사연 보내기·소로우지기 화면만 따로 둔다.
+*/
+
+.edge { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
+.band { height: 8px; margin: var(--sp-2) calc(-1 * var(--gutter)); background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.list { padding-bottom: calc(var(--tabbar-h) + 96px + env(safe-area-inset-bottom)); }
+.plain { padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+
+/* ---------- 내 소로우 칩 줄 ---------- */
+.mine { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)); padding: 2px var(--gutter) 6px; }
+.mine::-webkit-scrollbar { display: none; }
+.mineChip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--text); font-size: 14px; font-weight: 650; white-space: nowrap;
+}
+.mineChip[data-primary] { border-color: var(--text); }
+.mineChip small { color: var(--text-3); font-size: 12px; font-weight: 600; }
+.mineChip svg { width: 16px; height: 16px; color: var(--text-2); }
+.mineChip.add { color: var(--text-2); border-style: dashed; }
+
+/* ---------- 구역 머리 ---------- */
+.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; margin-top: 4px; }
+.head h2 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
+.head a, .head button { color: var(--text-2); font-size: 14px; font-weight: 600; background: none; border: 0; padding: 0; display: inline-flex; align-items: center; gap: 2px; }
+.head a svg, .head button svg { width: 16px; height: 16px; }
+.sub { margin: 0 0 12px; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+
+/* ---------- 소로우 카드 (둘러보기·따뜻한 소로우) ---------- */
+.circles { list-style: none; margin: 0 calc(-1 * var(--gutter)); padding: 0; }
+.circleRow { display: flex; align-items: center; gap: 12px; padding: 14px var(--gutter); color: inherit; border-top: 1px solid var(--border); }
+.circles > li:first-child .circleRow { border-top: 0; }
+.circleRow:active { background: var(--surface-2); }
+.mark {
+  flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px;
+  background: var(--surface-2); color: var(--text); font-size: 17px; font-weight: 800;
+}
+.mark[data-rank] { background: var(--text); color: var(--bg); font-variant-numeric: tabular-nums; }
+.circleMain { flex: 1; min-width: 0; }
+.circleMain b { display: flex; align-items: center; gap: 4px; font-size: 16px; font-weight: 750; letter-spacing: -0.02em; }
+.circleMain p { margin: 3px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.verified { display: inline-flex; color: var(--accent); }
+.verified svg { width: 16px; height: 16px; }
+.circleRow > svg { flex: none; width: 18px; height: 18px; color: var(--text-3); }
+
+.kinds { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)) 8px; padding: 2px var(--gutter); }
+.kinds::-webkit-scrollbar { display: none; }
+.kind {
+  flex: none; min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  color: var(--text-2); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.kind[aria-checked="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+
+/* ---------- 소로우 머리 ---------- */
+.hero { padding: 6px 0 4px; }
+.heroTop { display: flex; align-items: center; gap: 12px; }
+.heroTop .mark { width: 56px; height: 56px; border-radius: 16px; font-size: 22px; }
+.heroTop h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; }
+.heroTop h2 .verified svg { width: 20px; height: 20px; }
+.meta { margin: 4px 0 0; color: var(--text-2); font-size: 13px; }
+.intro { margin: 14px 0 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.notice {
+  display: flex; gap: 8px; align-items: flex-start; margin: 14px 0 0; padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--surface-2); font-size: 14px; line-height: 1.5;
+}
+.notice svg { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--text-2); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.actions > * { flex: 1 1 auto; }
+.pill { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 650; }
+.pill.warn { background: var(--danger-soft); color: var(--danger); }
+.pill.ok { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- 폼 ---------- */
+.form { display: grid; gap: 18px; }
+.field { display: grid; gap: 8px; }
+.field > span { font-size: 14px; font-weight: 700; }
+.field small { color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.field textarea { min-height: 220px; resize: vertical; line-height: 1.6; }
+.count { justify-self: end; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.opt {
+  display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  text-align: left; color: var(--text); font-size: 15px; font-weight: 700;
+}
+.opt small { font-weight: 500; }
+.opt[aria-checked="true"] { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.warnBox { padding: 12px 14px; border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--text); font-size: 14px; line-height: 1.55; }
+.warnBox b { color: var(--danger); }
+.preview { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 15px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+.previewHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); }
+.devCode { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px; color: var(--text-2); }
+.devCode b { color: var(--text); font-size: 16px; letter-spacing: 0.1em; }
+
+/* ---------- 사연 카드 (검토 큐 · 내 사연함) ---------- */
+.subs { display: grid; gap: 12px; }
+.sub-card, .subCard { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.subCard[data-crisis] { border-color: var(--danger); }
+.subHead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
+.subHead time { margin-left: auto; color: var(--text-3); font-size: 12px; }
+.subText { margin: 10px 0 0; font-size: 15px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+.subNote { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 14px; line-height: 1.5; }
+.subNote b { display: block; margin-bottom: 2px; font-size: 12px; color: var(--text-2); }
+.subActions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.subActions > * { flex: 1 1 auto; }
+.editor { display: grid; gap: 10px; margin-top: 12px; }
+.editor textarea { min-height: 160px; line-height: 1.6; }
+.editor input { width: 100%; }
+
+/* ---------- 멤버 ---------- */
+.member { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border); }
+.member:first-child { border-top: 0; }
+.member b { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memberBtns { display: flex; gap: 6px; flex: none; }
+
+.locked { display: grid; justify-items: center; gap: 8px; padding: 40px 12px; text-align: center; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+.locked svg { width: 28px; height: 28px; color: var(--text-3); }
+.locked b { color: var(--text); font-size: 16px; }

@@ -14,9 +14,16 @@ public final class Badges {
 
     public record Badge(String id, String name, String desc) {}
 
-    /** 판정 재료: 한 사람의 활동 집계 (숨김 처리된 글·댓글은 빼고 센다) */
+    /**
+     * 판정 재료: 한 사람의 활동 집계 (숨김 처리된 글·댓글은 빼고 센다).
+     * keeper = 소로우지기(연 사람 포함), neighborComments = 내 소로우가 아닌 소로우의 사연에 남긴 위로
+     */
     public record Counts(int comments, int cheersSent, int cheersOnMyComments, boolean nightComment,
-                         int shoutPosts, int feedPosts, int listeners, boolean weeklyTop10) {}
+                         int shoutPosts, int feedPosts, int listeners, boolean weeklyTop10, boolean keeper, int neighborComments) {
+        public Counts(int comments, int cheersSent, int cheersOnMyComments, boolean nightComment, int shoutPosts, int feedPosts, int listeners, boolean weeklyTop10) {
+            this(comments, cheersSent, cheersOnMyComments, nightComment, shoutPosts, feedPosts, listeners, weeklyTop10, false, 0);
+        }
+    }
 
     /** 선반에 놓이는 순서 그대로 */
     public static final List<Badge> ALL = List.of(
@@ -31,7 +38,9 @@ public final class Badges {
         new Badge("first_shout", "용기 낸 외침", "처음으로 마음을 털어놓았어요"),
         new Badge("first_feed", "첫 위로글", "처음으로 위로글을 올렸어요"),
         new Badge("listened", "함께 듣는 사람들", "내 이야기를 들어 주는 리스너가 제법 모였어요"),
-        new Badge("weekly_top10", "따뜻한 마음 Top 10", "주간 따뜻한 마음 랭킹 10위 안에 들었어요")
+        new Badge("weekly_top10", "따뜻한 마음 Top 10", "주간 따뜻한 마음 랭킹 10위 안에 들었어요"),
+        new Badge("keeper", "소로우지기", "소로우의 사연을 정성껏 정리하고 지켜요"),
+        new Badge("neighbor", "이웃 소로우의 위로", "다른 소로우의 사연에도 마음을 보탰어요")
     );
 
     public static Optional<Badge> byId(String id) {
@@ -53,6 +62,8 @@ public final class Badges {
         if (c.feedPosts() >= 1) out.add("first_feed");
         if (c.listeners() >= 10) out.add("listened");
         if (c.weeklyTop10()) out.add("weekly_top10");
+        if (c.keeper()) out.add("keeper");
+        if (c.neighborComments() >= 5) out.add("neighbor");
         Set<String> ordered = new LinkedHashSet<>();
         for (Badge b : ALL) if (out.contains(b.id())) ordered.add(b.id());
         return ordered;

@@ -51,3 +51,10 @@ app:
     base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-haiku-5-5}
+  mail:
+    # 커뮤니티 소로우 소속 인증 메일. 비우면 메일을 보내지 않고, 개발 환경에서만 인증 코드를 화면에 보여 준다
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    from: ${MAIL_FROM:no-reply@sorow.co.kr}

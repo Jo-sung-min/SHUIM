@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BadgeDef, EarnedBadge } from "@/lib/social";
 import { Sheet } from "./ui";
 import Fist3D from "./Fist3D";
-import { IconBubble, IconBubbles, IconFilm, IconFist, IconHeart, IconLock, IconLotus, IconMegaphone, IconMoon, IconTrophy, IconUsers } from "./Icons";
+import { IconBubble, IconBubbles, IconFilm, IconFist, IconHeart, IconLeaf, IconLock, IconLotus, IconMegaphone, IconMoon, IconShield, IconTrophy, IconUsers } from "./Icons";
 import styles from "./Profile.module.css";
 
 /** 배지마다 아이콘 (선 아이콘 한 세트) */
@@ -21,6 +21,8 @@ const ICONS: Record<string, (p: { "aria-hidden"?: boolean }) => React.ReactEleme
   first_feed: IconFilm,
   listened: IconUsers,
   weekly_top10: IconTrophy,
+  keeper: IconShield,
+  neighbor: IconLeaf,
 };
 export function BadgeIcon({ id, locked }: { id: string; locked?: boolean }) {
   const Icon = locked ? IconLock : ICONS[id] ?? IconHeart;

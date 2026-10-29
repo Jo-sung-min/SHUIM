@@ -40,6 +40,33 @@ class CommunityVisibilityTest {
     }
 
     @Test
+    void circlePostsHideTheirSenderAndIgnoreBlocks() {
+        Post plaza = new Post("p", "free", "hello", "ok", 0, List.of(), List.of(), false, null);
+        Post open = new Post("o", "free", "story", "sender", 0, List.of(), List.of(), false, null, List.of(), "c1", 1, "고려대 소로우", "korea");
+        Post closed = new Post("m", "free", "story", "sender", 0, List.of(), List.of(), false, null, List.of(), "c2", 1, "회사 소로우", "corp");
+        Post later = new Post("l", "free", "story", "sender", 5_000, List.of(), List.of(), false, null, List.of(), "c1", 2, "고려대 소로우", "korea");
+        Store source = store(List.of(new User("sender", "sender", "user", null, null)), List.of(plaza, open, closed, later), List.of(), List.of(), List.of());
+        Map<String, String> vis = Map.of("c1", "public", "c2", "members");
+
+        // 보낸 사람을 차단했어도 사연은 그대로 보이고, 작성자는 소로우로 가려진다
+        Store outsider = CommunityService.visibleStore(source, Set.of("sender"), false, Set.of(), vis, 1_000);
+        assertEquals(List.of("p", "o"), outsider.posts().stream().map(Post::id).toList());
+        Post seen = outsider.posts().get(1);
+        assertEquals("c:c1", seen.authorId());
+        assertEquals(1, seen.postNo());
+        assertEquals("korea", seen.circleSlug());
+
+        Store member = CommunityService.visibleStore(source, Set.of(), false, Set.of("c2"), vis, 1_000);
+        assertEquals(List.of("p", "o", "m"), member.posts().stream().map(Post::id).toList());
+        assertTrue(member.posts().stream().filter(Post::inCircle).allMatch(p -> p.authorId().startsWith("c:")));
+
+        Store sender = new Store(new User("sender", "sender", "user", null, null), List.of(), source.posts(), List.of(), List.of(), Map.of(), List.of(), List.of(), source.weekly());
+        Store own = CommunityService.visibleStore(sender, Set.of(), false, Set.of(), vis, 1_000);
+        assertEquals(List.of("p", "o", "m", "l"), own.posts().stream().map(Post::id).toList());
+        assertEquals("sender", own.posts().get(1).authorId());
+    }
+
+    @Test
     void ordinaryUsersOnlySeeTheirOwnReportDetailsAndPrivateSaves() {
         Report own = new Report("me", "abuse", 80);
         List<Report> reports = List.of(own, new Report("reporter-one", "spam", 90), new Report("reporter-two", "not_comfort", 30));

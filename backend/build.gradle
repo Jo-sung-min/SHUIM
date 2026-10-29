@@ -15,6 +15,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    // 커뮤니티 소로우 소속 인증 메일 (SMTP_HOST 가 있을 때만 보낸다)
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
     // Node(scryptSync)로 만든 기존 비밀번호 해시와 호환되는 scrypt

@@ -3,6 +3,7 @@ package kr.co.shuim.community;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.co.shuim.auth.DbUser;
+import kr.co.shuim.circle.CircleLogic;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.community.Model.*;
@@ -59,7 +60,10 @@ public class CommunityService {
     }
 
     private Store forViewer(Store store, DbUser me) {
-        return visibleStore(store, blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked());
+        Set<String> myCircles = new HashSet<>(jdbc.sql("SELECT community_id FROM community_members WHERE user_id = ? AND status = 'active'").param(me.id()).query(String.class).list());
+        Map<String, String> circleVisibility = new HashMap<>();
+        jdbc.sql("SELECT id, visibility FROM communities").query(rs -> { circleVisibility.put(rs.getString("id"), rs.getString("visibility")); });
+        return visibleStore(store, blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked(), myCircles, circleVisibility, System.currentTimeMillis());
     }
 
     private Store loadUnfilteredStore(DbUser me) {
@@ -90,10 +94,11 @@ public class CommunityService {
         User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null));
         List<User> users = new ArrayList<>(allUsers.stream().filter(u -> !u.id().equals(me.id())).toList());
 
-        List<Post> posts = jdbc.sql("SELECT * FROM shout_posts").query((rs, i) -> new Post(
+        List<Post> posts = jdbc.sql("SELECT p.*, c.name AS circle_name, c.slug AS circle_slug FROM shout_posts p LEFT JOIN communities c ON c.id = p.community_id")
+            .query((rs, i) -> new Post(
             rs.getString("id"), rs.getString("cat"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "post:" + rs.getString("id")), reportsOf(reportMap, "post:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
-            Db.textArray(rs, "images"))).list();
+            Db.textArray(rs, "images"), rs.getString("community_id"), rs.getObject("post_no", Integer.class), rs.getString("circle_name"), rs.getString("circle_slug"))).list();
         List<Comment> comments = new ArrayList<>(jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
             rs.getString("id"), rs.getString("post_id"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
@@ -135,9 +140,10 @@ public class CommunityService {
             }
         }
 
-        // 주간 집계 (지난 주 확정, 이번 주 잠정)
-        for (CommunityLogic.WeekTodo w : CommunityLogic.weeksNeedingCompute(store)) {
-            WeeklyBatch b = CommunityLogic.computeWeekly(store, w.week(), w.finalized());
+        // 주간 집계 (지난 주 확정, 이번 주 잠정). 소로우 사연은 보낸 사람이 드러나면 안 되니 광장의 외침만 센다
+        Store plaza = new Store(meUser, users, posts.stream().filter(p -> !p.inCircle()).toList(), comments, feed, creators, following, donations, weekly);
+        for (CommunityLogic.WeekTodo w : CommunityLogic.weeksNeedingCompute(plaza)) {
+            WeeklyBatch b = CommunityLogic.computeWeekly(plaza, w.week(), w.finalized());
             upsertWeekly(b);
             store.weekly().put(w.week(), b);
         }
@@ -146,9 +152,21 @@ public class CommunityService {
 
     /** Filter only after global ranking computation, so personal blocks cannot change shared rankings. */
     static Store visibleStore(Store store, Set<String> excluded, boolean admin) {
+        return visibleStore(store, excluded, admin, Set.of(), Map.of(), Long.MAX_VALUE);
+    }
+
+    /**
+     * 소로우 사연: 멤버만 보기 소로우는 멤버에게만, 늦춘 게시 시각 전에는 보낸 사람·관리자에게만.
+     * 차단 목록으로 거르지 않고(걸러지면 누가 보냈는지 짐작된다) 작성자는 "c:<소로우 id>" 로 가린다.
+     */
+    static Store visibleStore(Store store, Set<String> excluded, boolean admin, Set<String> myCircles, Map<String, String> circleVisibility, long now) {
         String viewer = store.me().id();
-        List<Post> posts = store.posts().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
-            .map(p -> new Post(p.id(), p.cat(), p.text(), p.authorId(), p.createdAt(), p.cheers(), publicReports(p, viewer, admin), p.hidden(), p.reviewedAt(), p.images())).toList();
+        List<Post> posts = store.posts().stream()
+            .filter(p -> p.inCircle()
+                ? (admin || CommunityLogic.isVisible(store, p)) && CircleLogic.canSee(p.communityId(), circleVisibility.get(p.communityId()), myCircles, admin, viewer.equals(p.authorId()), p.createdAt(), now)
+                : !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
+            .map(p -> p.withAuthor(p.inCircle() && !admin && !viewer.equals(p.authorId()) ? CircleLogic.maskedAuthor(p.communityId()) : p.authorId(),
+                publicReports(p, viewer, admin))).toList();
         List<FeedPost> feed = store.feed().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
             .map(p -> new FeedPost(p.id(), p.title(), p.text(), p.bg(), p.image(), p.images(), p.pages(), p.authorId(), p.createdAt(), p.cheers(),
                 publicReports(p, viewer, admin), p.saves().stream().filter(viewer::equals).toList(), p.hidden(), p.reviewedAt())).toList();
@@ -160,7 +178,7 @@ public class CommunityService {
         Map<String, WeeklyBatch> weekly = new LinkedHashMap<>();
         // A finalized snapshot must never resurrect a deleted/hidden/suspended/flagged post.
         Set<String> rankablePostIds = new HashSet<>();
-        store.posts().stream().filter(p -> !excluded.contains(p.authorId()) && CommunityLogic.isVisible(store, p) && !CommunityLogic.isFlagged(p))
+        store.posts().stream().filter(p -> !p.inCircle() && !excluded.contains(p.authorId()) && CommunityLogic.isVisible(store, p) && !CommunityLogic.isFlagged(p))
             .forEach(p -> rankablePostIds.add(p.id()));
         store.weekly().forEach((key, w) -> weekly.put(key, new WeeklyBatch(w.week(), w.computedAt(), w.finalized(),
             w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund())));
@@ -512,6 +530,24 @@ public class CommunityService {
     private void assertTargetAccessible(DbUser me, String kind, String id) {
         String author = jdbc.sql("SELECT author_id FROM " + tableOf(kind) + " WHERE id = ? AND hidden = FALSE").param(id)
             .query(String.class).optional().orElseThrow(() -> ApiException.notFound("글을 찾을 수 없어요"));
+        // 소로우 사연(또는 그 댓글): 볼 수 있는 사람만, 차단 여부는 보지 않는다 (막히면 보낸 사람이 짐작된다)
+        String postId = "post".equals(kind) ? id
+            : "comment".equals(kind) ? jdbc.sql("SELECT post_id FROM comments WHERE id = ? AND post_kind = 'post'").param(id).query(String.class).optional().orElse(null) : null;
+        if (postId != null) {
+            record CirclePost(String communityId, String visibility, String authorId, long createdAt) {}
+            Optional<CirclePost> cp = jdbc.sql("""
+                SELECT p.community_id, c.visibility, p.author_id, p.created_at FROM shout_posts p JOIN communities c ON c.id = p.community_id WHERE p.id = ?""")
+                .param(postId).query((rs, i) -> new CirclePost(rs.getString("community_id"), rs.getString("visibility"), rs.getString("author_id"), Db.msReq(rs, "created_at"))).optional();
+            if (cp.isPresent()) {
+                CirclePost c = cp.get();
+                Set<String> mine = new HashSet<>(jdbc.sql("SELECT community_id FROM community_members WHERE user_id = ? AND status = 'active'").param(me.id()).query(String.class).list());
+                boolean admin = "admin".equals(me.role()) && !me.anonymous() && !me.blocked();
+                if (!CircleLogic.canSee(c.communityId(), c.visibility(), mine, admin, me.id().equals(c.authorId()), c.createdAt(), System.currentTimeMillis())) {
+                    throw ApiException.notFound("글을 찾을 수 없어요");
+                }
+                if ("post".equals(kind)) return;
+            }
+        }
         blocks.assertInteractionAllowed(me.id(), author);
     }
 

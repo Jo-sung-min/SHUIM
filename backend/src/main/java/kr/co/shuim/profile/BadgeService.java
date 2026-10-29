@@ -31,14 +31,19 @@ public class BadgeService {
                  WHERE c.author_id = :u AND c.hidden = FALSE AND ch.user_id <> :u)::int AS cheers_on_comments,
               EXISTS (SELECT 1 FROM comments WHERE author_id = :u AND hidden = FALSE
                         AND EXTRACT(HOUR FROM created_at + INTERVAL '9 hours') < 5) AS night_comment,
-              (SELECT count(*) FROM shout_posts WHERE author_id = :u AND hidden = FALSE)::int AS shout_posts,
+              (SELECT count(*) FROM shout_posts WHERE author_id = :u AND hidden = FALSE AND community_id IS NULL)::int AS shout_posts,
               (SELECT count(*) FROM feed_posts WHERE author_id = :u AND hidden = FALSE)::int AS feed_posts,
               (SELECT count(*) FROM follows WHERE creator_id = :u)::int AS listeners,
               EXISTS (SELECT 1 FROM weekly_batches w, jsonb_array_elements(w.rows) r
-                        WHERE w.finalized AND r->>'userId' = :u AND (r->>'rank')::int <= 10) AS weekly_top10
+                        WHERE w.finalized AND r->>'userId' = :u AND (r->>'rank')::int <= 10) AS weekly_top10,
+              EXISTS (SELECT 1 FROM community_members WHERE user_id = :u AND status = 'active' AND role IN ('owner', 'keeper')) AS keeper,
+              (SELECT count(*) FROM comments c JOIN shout_posts sp ON c.post_kind = 'post' AND sp.id = c.post_id
+                 WHERE c.author_id = :u AND c.hidden = FALSE AND sp.community_id IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM community_members m WHERE m.user_id = :u AND m.community_id = sp.community_id))::int AS neighbor_comments
             """).param("u", userId)
             .query((rs, i) -> new Counts(rs.getInt("comments"), rs.getInt("cheers_sent"), rs.getInt("cheers_on_comments"), rs.getBoolean("night_comment"),
-                rs.getInt("shout_posts"), rs.getInt("feed_posts"), rs.getInt("listeners"), rs.getBoolean("weekly_top10"))).single();
+                rs.getInt("shout_posts"), rs.getInt("feed_posts"), rs.getInt("listeners"), rs.getBoolean("weekly_top10"),
+                rs.getBoolean("keeper"), rs.getInt("neighbor_comments"))).single();
     }
 
     /** 다시 판정해서 새로 얻은 배지만 저장하고 그 id 를 돌려준다. 이미 얻은 배지는 조건이 사라져도 남긴다 */

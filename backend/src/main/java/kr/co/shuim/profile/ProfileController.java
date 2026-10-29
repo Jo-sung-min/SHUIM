@@ -112,7 +112,7 @@ public class ProfileController {
             shout = jdbc.sql("""
                 SELECT s.id, s.cat, s.text, s.created_at,
                        (SELECT count(*) FROM cheers c WHERE c.target_kind = 'post' AND c.target_id = s.id)::int AS cheers
-                  FROM shout_posts s WHERE s.author_id = ? AND s.hidden = FALSE ORDER BY s.created_at DESC LIMIT 50
+                  FROM shout_posts s WHERE s.author_id = ? AND s.hidden = FALSE AND s.community_id IS NULL ORDER BY s.created_at DESC LIMIT 50
                 """).param(id).query((rs, i) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getString("id"));
@@ -124,15 +124,18 @@ public class ProfileController {
                 }).list();
             comments = jdbc.sql("""
                 SELECT c.id, c.post_kind, c.post_id, c.text, c.created_at,
-                       COALESCE(sp.author_id, fp.author_id) AS post_author,
+                       CASE WHEN sp.community_id IS NOT NULL THEN 'c:' || sp.community_id ELSE COALESCE(sp.author_id, fp.author_id) END AS post_author,
                        COALESCE(sp.text, CASE WHEN fp.title IS NOT NULL AND fp.title <> '' THEN fp.title || ' · ' || fp.text ELSE fp.text END) AS post_text,
                        (SELECT count(*) FROM cheers ch WHERE ch.target_kind = 'comment' AND ch.target_id = c.id)::int AS cheers
                   FROM comments c
                   LEFT JOIN shout_posts sp ON c.post_kind = 'post' AND sp.id = c.post_id AND sp.hidden = FALSE
                   LEFT JOIN feed_posts fp ON c.post_kind = 'feed' AND fp.id = c.post_id AND fp.hidden = FALSE
+                  LEFT JOIN communities cc ON cc.id = sp.community_id
                  WHERE c.author_id = ? AND c.hidden = FALSE AND (sp.id IS NOT NULL OR fp.id IS NOT NULL)
+                   AND (cc.id IS NULL OR (sp.created_at <= now() AND (cc.visibility = 'public'
+                        OR EXISTS (SELECT 1 FROM community_members m WHERE m.community_id = cc.id AND m.user_id = ? AND m.status = 'active'))))
                  ORDER BY c.created_at DESC LIMIT 50
-                """).param(id).query((rs, i) -> {
+                """).param(id).param(viewer.map(DbUser::id).orElse("")).query((rs, i) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getString("id"));
                     m.put("postKind", rs.getString("post_kind"));

@@ -56,7 +56,7 @@ public class ProfileService {
               (SELECT count(*) FROM follows WHERE creator_id = :u)::int AS followers,
               (SELECT count(*) FROM follows WHERE follower_id = :u)::int AS following,
               (SELECT count(*) FROM feed_posts WHERE author_id = :u AND hidden = FALSE)::int AS feed_posts,
-              (SELECT count(*) FROM shout_posts WHERE author_id = :u AND hidden = FALSE)::int AS shout_posts
+              (SELECT count(*) FROM shout_posts WHERE author_id = :u AND hidden = FALSE AND community_id IS NULL)::int AS shout_posts
             """).param("u", userId)
             .query((rs, i) -> new Stats(rs.getInt("followers"), rs.getInt("following"), rs.getInt("feed_posts"), rs.getInt("shout_posts"))).single();
         boolean following = viewerId != null && follows(viewerId, userId);
