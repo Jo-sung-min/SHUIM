@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Me, fetchMe } from "@/lib/auth";
 import { Segmented, TopBar } from "@/components/ui";
-import { IconChevronL, IconChevronR, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
+import { IconBriefcase, IconChevronL, IconChevronR, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
 import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
 import styles from "../account-screens.module.css";
 
@@ -55,6 +55,14 @@ export default function SettingsPage() {
             <Link href="/blocks" className={styles.menuRow}><IconShield /><span className={styles.menuLabel}><strong>차단한 사용자</strong></span><IconChevronR /></Link>
             <Link href="/info" className={styles.menuRow}><IconNote /><span className={styles.menuLabel}><strong>서비스 안내</strong><small>개인정보 · 이용약관 · 도움과 문의 · 계정 및 데이터 삭제</small></span><IconChevronR /></Link>
             {me?.admin && <Link href="/admin" className={styles.menuRow}><IconSettings /><span className={styles.menuLabel}><strong>관리자 화면</strong></span><IconChevronR /></Link>}
+          </div>
+        </section>
+
+        {/* 운영자의 부업 추천 사이트(부추). 개인 공간(나 페이지)과 성격이 달라 설정 맨 아래에 둔다. 새 탭으로 연다 */}
+        <section className={styles.group} aria-labelledby="settings-more-title">
+          <h2 className={styles.groupTitle} id="settings-more-title">더 보기</h2>
+          <div className={`card ${styles.menu}`}>
+            <a href="https://www.buchu.co.kr" target="_blank" rel="noopener noreferrer" className={styles.menuRow}><IconBriefcase /><span className={styles.menuLabel}><strong>부업하러 가기</strong><small>부업추천 부추 · buchu.co.kr</small></span><IconChevronR /></a>
           </div>
         </section>
       </div>

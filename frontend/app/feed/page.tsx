@@ -1,5 +1,6 @@
 "use client";
 
+import TitleChip from "@/components/TitleChip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CommunityStore,
@@ -28,7 +29,7 @@ import styles from "./feed-media.module.css";
 import Highlighted from "@/components/Highlighted";
 
 type Filter = "all" | "following" | "saved";
-const FILTERS: [Filter, string][] = [["all", "전체"], ["following", "팔로잉"], ["saved", "저장함"]];
+const FILTERS: [Filter, string][] = [["all", "전체"], ["following", "리스닝"], ["saved", "저장함"]];
 const PAGE = 5;
 
 export default function FeedPage() {
@@ -199,9 +200,9 @@ export default function FeedPage() {
         {items.length === 0 ? (
           <section className="reel bg-1">
             <div className="reel-body">
-              <div className="reel-title">{filter === "saved" ? "저장함" : filter === "following" ? "팔로잉" : "위로 피드"}</div>
+              <div className="reel-title">{filter === "saved" ? "저장함" : filter === "following" ? "리스닝" : "위로 피드"}</div>
               <p className="reel-text">
-                {filter === "saved" ? "저장한 위로글이 아직 없어요.\n마음에 닿는 글에서 저장을 눌러요." : filter === "following" ? "팔로우한 크리에이터가 없어요.\n전체에서 마음에 드는 글쓴이를 팔로우해요." : "아직 위로글이 없어요.\n첫 크리에이터가 되어볼까요."}
+                {filter === "saved" ? "저장한 위로글이 아직 없어요.\n마음에 닿는 글에서 저장을 눌러요." : filter === "following" ? "리스닝 중인 크리에이터가 없어요.\n전체에서 마음에 드는 글쓴이를 리스닝해요." : "아직 위로글이 없어요.\n첫 크리에이터가 되어볼까요."}
               </p>
               {filter === "following" ? (
                 <button type="button" className="btn ghost" style={{ marginTop: 16 }} onClick={() => setFilter("all")}>전체 피드 보기</button>
@@ -256,7 +257,7 @@ export default function FeedPage() {
           {FILTERS.map(([v, l]) => (
             <button key={v} type="button" className={`reason glass ${filter === v ? "on" : ""}`} onClick={() => { setFilter(v); setTopMenu(false); feedRef.current?.scrollTo({ top: 0 }); }}>
               <span className="radio" />
-              <span><b>{l}</b><small>{v === "all" ? "모든 크리에이터의 위로글" : v === "following" ? "팔로우한 크리에이터만" : "내가 저장한 글"}</small></span>
+              <span><b>{l}</b><small>{v === "all" ? "모든 크리에이터의 위로글" : v === "following" ? "리스닝 중인 크리에이터만" : "내가 저장한 글"}</small></span>
             </button>
           ))}
           {!blocked && (
@@ -326,7 +327,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
     followLock.current = true;
     setFollowingBusy(true);
     try { await onFollow(); }
-    catch { showToast("팔로우를 변경하지 못했어요. 다시 시도해 주세요."); }
+    catch { showToast("리스닝을 변경하지 못했어요. 다시 시도해 주세요."); }
     finally { followLock.current = false; setFollowingBusy(false); }
   };
   const onSlidesScroll = () => {
@@ -370,13 +371,13 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
         <button className="reel-author" onClick={onProfile}>
           <span className="avatar">{author.nick.slice(0, 1)}</span>
           <span>
-            <b>{mine ? `${author.nick} (나)` : author.nick}</b>
-            <small>크리에이터 · 팔로워 {creator.followers.length} · {fmtRelative(post.createdAt)}</small>
+            <b>{mine ? `${author.nick} (나)` : author.nick} <TitleChip title={author.title} small /></b>
+            <small>크리에이터 · 리스너 {creator.followers.length} · {fmtRelative(post.createdAt)}</small>
           </span>
         </button>
         {!mine && (
           <button type="button" className={`pillbtn follow ${following ? "on" : ""}`} onClick={handleFollow} aria-pressed={following} aria-busy={followingBusy} disabled={followingBusy}>
-            {followingBusy ? "변경 중…" : following ? "팔로잉" : "팔로우"}
+            {followingBusy ? "변경 중…" : following ? "리스닝 중" : "리스닝"}
           </button>
         )}
       </div>
@@ -409,7 +410,7 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
     followLock.current = true;
     setFollowingBusy(true);
     try { await onFollow(); }
-    catch { showToast("팔로우를 변경하지 못했어요. 다시 시도해 주세요."); }
+    catch { showToast("리스닝을 변경하지 못했어요. 다시 시도해 주세요."); }
     finally { followLock.current = false; setFollowingBusy(false); }
   };
   const saveBio = async () => {
@@ -426,12 +427,12 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
       <div className="row" style={{ gap: 12 }}>
         <span className="avatar lg">{u.nick.slice(0, 1)}</span>
         <div className="grow">
-          <b style={{ fontSize: 17 }}>{u.nick}{mine ? " (나)" : ""}</b>
-          <div className="tiny muted">팔로워 {c.followers.length} · 위로글 {posts.length} · 받은 힘내요 {cheers}</div>
+          <b style={{ fontSize: 17 }}>{u.nick}{mine ? " (나)" : ""} <TitleChip title={u.title} small /></b>
+          <div className="tiny muted">리스너 {c.followers.length} · 위로글 {posts.length} · 받은 힘내요 {cheers}</div>
         </div>
         {!mine && (
           <button type="button" className={`pillbtn follow ${s.following.includes(userId) ? "on" : ""}`} onClick={handleFollow} aria-pressed={s.following.includes(userId)} aria-busy={followingBusy} disabled={followingBusy}>
-            {followingBusy ? "변경 중…" : s.following.includes(userId) ? "팔로잉" : "팔로우"}
+            {followingBusy ? "변경 중…" : s.following.includes(userId) ? "리스닝 중" : "리스닝"}
           </button>
         )}
       </div>

@@ -101,10 +101,10 @@ npm run dev
 | **외침** | 익명 커뮤니티. 카테고리별로 글을 올리면 다른 사람이 위로 댓글을 남김. 좋아요 대신 **힘내요**(선 주먹 → 누르면 3D 주먹). 신고 5회면 가려지고 `/admin` 검토 대기열로. 관리자는 숨기기/유저 차단. 목록 상단의 관리자 검토(방패) 아이콘은 관리자 계정에게만 보인다 |
 | **외침 › 불행 랭킹** | 불행 털어내기 글의 힘내요를 사람별로 더한 주간 순위. 지난 주는 확정, 이번 주는 5분마다 잠정 집계(`weekly_batches`) |
 | **외침 › 불행 모금** | 모금액을 그 주 1~10위에게 25/18/14/11/9/7/6/4/3/3% 로 분배. **프로토타입, 실제 결제 없음** |
-| **위로** | 쇼츠형 세로 스냅 피드. 본문의 위로 문장은 형광펜으로 강조(작성 때 "형광펜" 버튼으로 `==문장==` 표시, 표시가 없으면 마지막 줄 자동, `lib/highlight.ts`). 글 하나에 콘텐츠(사진+제목+글) 최대 10개, 가로로 넘기면 함께 바뀜. 인스타식 3단계 작성(사진 선택 → 슬라이드별 편집 → 공유). 힘내요·위로 댓글·저장·팔로우, ⋯ 메뉴에서 전체/팔로잉/저장함·위로글 쓰기 |
-| **공개 프로필** (`/u/아이디`) | 사진·닉네임·소개·크리에이터 배지, 활동 수, 위로글/외침 목록, 팔로우·메시지 보내기 |
+| **위로** | 쇼츠형 세로 스냅 피드. 본문의 위로 문장은 형광펜으로 강조(작성 때 "형광펜" 버튼으로 `==문장==` 표시, 표시가 없으면 마지막 줄 자동, `lib/highlight.ts`). 글 하나에 콘텐츠(사진+제목+글) 최대 10개, 가로로 넘기면 함께 바뀜. 인스타식 3단계 작성(사진 선택 → 슬라이드별 편집 → 공유). 힘내요·위로 댓글·저장·리스닝, ⋯ 메뉴에서 전체/리스닝/저장함·위로글 쓰기 |
+| **공개 프로필** (`/u/아이디`) | 나 페이지와 같은 머리: 사진·숫자 줄(위로글 · 리스너 · 리스닝, 누르면 목록 `/u/아이디/listeners` · `/listening`)·닉네임 + 칭호·소개·크리에이터 배지, 위로 배지 선반, 콘텐츠 탭(위로글 · 외침 · 위로), 리스닝하기·메시지 보내기. 서로 리스닝이면 "나를 리스닝 중" |
 | **메시지** (`/messages`) | 1:1 대화함과 대화 화면(5초 폴링, 읽음 표시) |
-| **나** (`/me`) | 프로필 편집(사진 업로드/주소, 닉네임, 소개 = 공개 / 이름·전화 = 나만), 내 공간 그리드, 알림(내 글의 댓글·내가 위로한 글의 새 댓글). 함께하는 소로우 아래 **부업하러 가기**(운영자 사이트 부추 https://www.buchu.co.kr, 새 탭). 상단 톱니와 아래 **설정** 행은 `/settings` 로 |
+| **나** (`/me`) | 인스타그램처럼 내 프로필 = 남이 보는 화면. 머리(위로글 · 리스너 · 리스닝, 칭호, 소개)·프로필 편집/공유·위로 배지 선반(못 얻은 배지는 흐리게)·**나만 보여요** 도구 줄(메시지·메모·목표·일정)·콘텐츠 탭(위로글 · 외침 · 내 위로 · 저장함). 프로필 편집에서 사진·닉네임·소개·칭호(공개) / 이름·전화(나만). 새 배지는 한 번만 축하 시트(3D 주먹) + 바로 칭호로 달기. 위쪽 종 = 알림(내 글의 댓글·내 댓글의 답글·내가 위로한 글의 새 댓글, 알림 전용 API), 공유, 톱니 = `/settings`. **부업하러 가기**(부추)는 설정 맨 아래로 옮김 |
 | **설정** (`/settings`) | 계정(닉네임 변경·로그아웃은 `/auth` "계정"), 화면 모드, 편의 기능(차단한 사용자·서비스 안내·관리자 화면)을 한곳에. 로그인 없이도 열린다(화면 모드는 기기 설정이라서) |
 | **계정** | 회원가입·로그인(세션 쿠키, scrypt)과 **카카오로 시작하기**(서버 사이드 인가 코드, `KAKAO_CLIENT_ID` 가 있을 때만 보임). 로그인 전엔 익명 유저로 활동하고 가입·카카오 로그인 시 그 유저가 승격. 계정 삭제와 차단 관리 제공. 관리자는 별도 지정 |
 | **관리자 › 프롬프트** | 브리핑·칭찬·사랑하기·점검 4개 시스템 프롬프트와 모델을 화면에서 변경. 요청마다 서버로 전달되어 기본값 대신 사용 |
@@ -123,7 +123,10 @@ npm run dev
 | `POST /api/community/consent` | 커뮤니티 약관 동의 버전·시각 저장. 게시·사진 업로드·메시지 전송 전 필요 |
 | `POST/GET /api/safety-reports`, `POST /api/safety-reports/{id}/review` | 사용자·메시지·AI 신고 / 관리자 조회 / 관리자 검토 |
 | `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create `{ cat, text, images? }` — 사진은 본인이 올린 S3 주소만 최대 4장, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
-| `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필 / 공개 프로필 |
+| `GET/PUT /api/profile`, `GET /api/profile/{id}` | 내 프로필(칭호·새 배지·배지 목록 포함, PUT 에 `titleBadge`) / 공개 프로필 + 콘텐츠 탭(위로글·외침·위로 댓글·본인이면 저장함) |
+| `GET /api/profile/{id}/listeners`, `GET /api/profile/{id}/listening` | 리스너(이 사람을 듣는 사람) · 리스닝(이 사람이 듣는 사람) 목록, 50명씩 `?offset=` |
+| `POST /api/profile/badges/seen` | 새 배지 축하 시트를 봤다 |
+| `GET /api/notifications?seenAt=` | 알림 최근 50개 + 읽지 않은 수 (예전에는 커뮤니티 전체를 받아 브라우저에서 계산) |
 | `GET/POST /api/messages`, `GET/POST /api/messages/{id}` | 대화 목록·보내기 / 대화 내용·읽음 |
 | `GET/POST /api/upload/presign` | 사진 업로드 프리사인 URL |
 | `GET/PUT /api/site`, `GET /api/site/{favicon,og}` | 사이트 설정(제목·설명·이미지 바뀐 시각) 읽기 / 관리자 변경 `{ title?, description?, favicon?: dataUrl\|null, og?: dataUrl\|null }` / 올린 파비콘·공유 이미지 바이트 |
@@ -136,7 +139,7 @@ npm run dev
 
 ## DB (PostgreSQL)
 
-- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘) … `V15__shout_post_images.sql`(외침 사진). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
+- 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘) … `V15__shout_post_images.sql`(외침 사진), `V16__comment_replies.sql`(대댓글), `V17__profile_badges.sql`(위로 배지 `user_badges`, 칭호 `profiles.title_badge`, 리스너 목록 인덱스). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
 - 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
 - 로그인 전에도 익명 유저가 자동 생성되어(세션 쿠키 `shuim_session`, DB 에는 SHA-256 해시만) 글·힘내요를 쓸 수 있고, 가입하면 승격된다. 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1) 라 기존 계정이 그대로 로그인된다
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches` 에 저장. 샘플 유저 자동 답글은 `COMMUNITY_SIMULATE=true` 일 때만
@@ -175,12 +178,13 @@ backend/
     config/              DataSourceConfig(DB_URL 파싱·풀러 보정), WebConfig(CORS), ApiException(+Handler), DbHealthController
     auth/                AuthService(세션 쿠키·scrypt), AuthController
     community/           Model(Store 레코드), CommunityLogic(가시성·주간 집계·자동 답글), CommunityService(SQL), CommunityController
-    profile/ message/ upload/   프로필 · 1:1 메시지 · S3 프리사인
+    profile/ message/ upload/   프로필(Badges·BadgeService = 위로 배지·칭호, 리스너·리스닝 목록) · 1:1 메시지 · S3 프리사인
+    notify/              NotificationController (알림 전용 API)
     records/             RecordsService(개인 기록 SQL), RecordsLogic(저장 전 정리), RecordsController(/api/records)
     ai/                  ClaudeClient, Prompts, TodayService(브리핑·칭찬·사랑·점검 + 규칙 기반 대체), SummarizeService, AiController
   src/main/resources/
     application.yml      설정 (환경 변수 → app.*)
-    db/migration/        Flyway SQL V1~V7
+    db/migration/        Flyway SQL V1~V17
 ```
 
 ## 설계 메모

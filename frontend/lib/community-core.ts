@@ -61,6 +61,8 @@ export interface User {
   role?: "admin" | "user";
   blockedAt?: number;
   blockedReason?: string;
+  /** 대표 칭호 (얻은 위로 배지 이름). 닉네임 옆에 작게 */
+  title?: string;
 }
 
 export interface Creator {

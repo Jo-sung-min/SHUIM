@@ -7,7 +7,9 @@ import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.community.Model.*;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.profile.BadgeService;
 import kr.co.shuim.upload.S3Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -31,14 +33,22 @@ public class CommunityService {
     private final S3Service s3;
     private final boolean simulate;
     private final BlockService blocks;
+    private final BadgeService badges;
 
+    @Autowired
     public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env,
-                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks) {
+                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks, BadgeService badges) {
         this.jdbc = jdbc;
         this.json = json;
         this.s3 = s3;
         this.simulate = simulate && !Arrays.asList(env.getActiveProfiles()).contains("prod");
         this.blocks = blocks;
+        this.badges = badges;
+    }
+
+    /** 테스트용: 배지 판정까지 같은 DB 로 */
+    public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env, boolean simulate, BlockService blocks) {
+        this(jdbc, json, s3, env, simulate, blocks, new BadgeService(jdbc));
     }
 
     /* ---------- 읽기 ---------- */
@@ -74,8 +84,9 @@ public class CommunityService {
             if (rs.getString("follower_id").equals(me.id())) following.add(rs.getString("creator_id"));
         });
 
+        Map<String, String> titles = badges.allTitles(); // 닉네임 옆 칭호
         List<User> allUsers = jdbc.sql("SELECT id, nick, role, blocked_at, blocked_reason FROM users")
-            .query((rs, i) -> new User(rs.getString("id"), rs.getString("nick"), "admin".equals(rs.getString("role")) ? "admin" : "user", Db.ms(rs, "blocked_at"), rs.getString("blocked_reason"))).list();
+            .query((rs, i) -> new User(rs.getString("id"), rs.getString("nick"), "admin".equals(rs.getString("role")) ? "admin" : "user", Db.ms(rs, "blocked_at"), rs.getString("blocked_reason"), titles.get(rs.getString("id")))).list();
         User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null));
         List<User> users = new ArrayList<>(allUsers.stream().filter(u -> !u.id().equals(me.id())).toList());
 
@@ -260,6 +271,7 @@ public class CommunityService {
         List<String> imgs = CommunityLogic.cleanImageList(images, CommunityLogic.SHOUT_MAX_IMAGES, u -> s3.ownedKeyFromUrl(u, me.id()) != null);
         jdbc.sql("INSERT INTO shout_posts (id, author_id, cat, text, images) VALUES (?, ?, ?, ?, ?)")
             .param(Ids.uid()).param(me.id()).param(c).param(t).param(imgs.toArray(String[]::new)).update();
+        badges.refresh(me.id());
         return loadStore(me);
     }
 
@@ -299,6 +311,7 @@ public class CommunityService {
         }
         jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text, parent_id) VALUES (?, ?, ?, ?, ?, ?)")
             .param(Ids.uid()).param(kind).param(postId).param(me.id()).param(text(body, 300)).param(parent).update();
+        badges.refresh(me.id());
         return loadStore(me);
     }
 
@@ -316,7 +329,12 @@ public class CommunityService {
         String kind = assertKind(target.kind());
         assertTargetAccessible(me, kind, target.id());
         int del = jdbc.sql("DELETE FROM cheers WHERE user_id = ? AND target_kind = ? AND target_id = ?").param(me.id()).param(kind).param(target.id()).update();
-        if (del == 0) jdbc.sql("INSERT INTO cheers (user_id, target_kind, target_id) VALUES (?, ?, ?)").param(me.id()).param(kind).param(target.id()).update();
+        if (del == 0) {
+            jdbc.sql("INSERT INTO cheers (user_id, target_kind, target_id) VALUES (?, ?, ?)").param(me.id()).param(kind).param(target.id()).update();
+            badges.refresh(me.id());
+            // 내 위로(댓글)에 힘내요가 닿으면 그 댓글 쓴 사람의 배지도 다시 본다
+            if ("comment".equals(kind)) jdbc.sql("SELECT author_id FROM comments WHERE id = ?").param(target.id()).query(String.class).optional().ifPresent(badges::refresh);
+        }
         return loadStore(me);
     }
 
@@ -392,6 +410,7 @@ public class CommunityService {
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
+        badges.refresh(me.id());
         return loadStore(me);
     }
 
@@ -426,10 +445,13 @@ public class CommunityService {
     @Transactional
     public Store toggleFollow(DbUser me, String creatorId) {
         Db.lockCommunity(jdbc);
-        if (creatorId.equals(me.id())) throw ApiException.badRequest("자기 자신은 팔로우할 수 없어요");
+        if (creatorId.equals(me.id())) throw ApiException.badRequest("자기 자신은 리스닝할 수 없어요");
         blocks.assertInteractionAllowed(me.id(), creatorId);
         int del = jdbc.sql("DELETE FROM follows WHERE follower_id = ? AND creator_id = ?").param(me.id()).param(creatorId).update();
-        if (del == 0) jdbc.sql("INSERT INTO follows (follower_id, creator_id) VALUES (?, ?)").param(me.id()).param(creatorId).update();
+        if (del == 0) {
+            jdbc.sql("INSERT INTO follows (follower_id, creator_id) VALUES (?, ?)").param(me.id()).param(creatorId).update();
+            badges.refresh(creatorId); // 리스너가 모이면 받는 배지
+        }
         return loadStore(me);
     }
 

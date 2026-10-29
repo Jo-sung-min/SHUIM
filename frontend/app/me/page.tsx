@@ -4,25 +4,37 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Me, fetchMe, signOut } from "@/lib/auth";
 import { clearAll, formatPhone, loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, streak, syncRecords, todayKey } from "@/lib/storage";
-import { Notification, fetchCommunity, listNotifications } from "@/lib/community";
-import { MyProfile, fetchMyProfile, unreadMessages, updateMyProfile } from "@/lib/social";
+import { MyProfile, ProfilePage, ServerNotification, fetchMyProfile, fetchNotifications, fetchProfilePage, markBadgesSeen, unreadMessages, updateMyProfile } from "@/lib/social";
 import { uploadImage } from "@/lib/upload";
 import PhotoEditor from "@/components/PhotoEditor";
 import photoStyles from "@/components/PhotoEditor.module.css";
-import { ConfirmSheet, Empty, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
+import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
-import { IconCalendar, IconCoin, IconFlag, IconMessage, IconNote, IconSettings, IconTrophy, IconUser, IconChevronR, IconBubble, IconBriefcase } from "@/components/Icons";
+import { IconBell, IconBubble, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconMessage, IconNote, IconSettings, IconShare, IconUser } from "@/components/Icons";
+import ProfileHeader from "@/components/ProfileHeader";
+import BadgeShelf, { BadgeCelebration, BadgeIcon } from "@/components/BadgeShelf";
+import ProfileTabs from "@/components/ProfileTabs";
+import { shareProfile } from "@/lib/share-profile";
 import styles from "../account-screens.module.css";
+import profileStyles from "@/components/Profile.module.css";
 
 type View = "profile" | "notif";
 
+/**
+ * 나 페이지 = 남이 보는 내 프로필 + 나만 보이는 도구.
+ * 위: 프로필 머리(위로글 · 리스너 · 리스닝, 칭호, 소개) · 편집/공유 · 위로 배지 선반
+ * 가운데: 나만 보이는 도구 줄(메시지·메모·목표·일정, 점선)
+ * 아래: 콘텐츠 탭(위로글 · 외침 · 내 위로 · 저장함)
+ * 알림은 위쪽 종 아이콘. 서로 기다릴 필요 없는 요청은 동시에 보낸다.
+ */
 export default function MePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [profile, setProfile] = useState<MyProfile | null>(null);
+  const [page, setPage] = useState<ProfilePage | null>(null);
   const [view, setView] = useState<View>("profile");
   const [editing, setEditing] = useState(false);
-  const [notifs, setNotifs] = useState<Notification[]>([]);
+  const [notifs, setNotifs] = useState<ServerNotification[]>([]);
   const [dmUnread, setDmUnread] = useState(0);
   const [stats, setStats] = useState({ streak: 0, memos: 0, goals: 0, today: 0 });
   const [error, setError] = useState<string | null>(null);
@@ -34,18 +46,21 @@ export default function MePage() {
     setError(null);
     const m = await fetchMe(true);
     setMe(m);
-    await syncRecords();
-    const j = loadJournal();
-    const t = todayKey();
-    setStats({ streak: streak(j), memos: loadMemos().length, goals: loadGoals().filter((g) => !g.doneAt).length, today: loadSchedule().filter((s) => s.date === t && !s.done).length });
-    try {
-      const [p, c, u] = await Promise.all([fetchMyProfile(), fetchCommunity(), unreadMessages()]);
+    // 계정 확인 뒤로는 서로 기다리지 않는다: 기록 동기화 · 프로필 · 알림 · 메시지
+    const records = syncRecords().catch(() => false).then(() => {
+      const j = loadJournal();
+      const t = todayKey();
+      setStats({ streak: streak(j), memos: loadMemos().length, goals: loadGoals().filter((g) => !g.doneAt).length, today: loadSchedule().filter((s) => s.date === t && !s.done).length });
+    });
+    const prof = fetchMyProfile().then((p) => {
       setProfile(p);
-      setNotifs(listNotifications(c, loadNotifSeen()));
-      setDmUnread(u);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "연결이 잠시 원활하지 않아요. 다시 시도해 주세요.");
-    }
+      return fetchProfilePage(p.id).then(setPage);
+    });
+    const notif = fetchNotifications(loadNotifSeen()).then((r) => setNotifs(r.items)).catch(() => setNotifs([]));
+    const dm = unreadMessages().then(setDmUnread);
+    const results = await Promise.allSettled([records, prof, notif, dm]);
+    const failed = results.find((r) => r.status === "rejected");
+    if (failed && failed.status === "rejected") setError(failed.reason instanceof Error ? failed.reason.message : "연결이 잠시 원활하지 않아요. 다시 시도해 주세요.");
   }, []);
   useEffect(() => {
     reload();
@@ -56,6 +71,7 @@ export default function MePage() {
     setView("notif");
     markNotifSeen();
     setNotifs((current) => current.map((notification) => ({ ...notification, read: true })));
+    window.scrollTo({ top: 0 });
   };
 
   const runAction = async (action: "clear" | "logout", work: () => Promise<void>) => {
@@ -73,69 +89,70 @@ export default function MePage() {
   </div></>;
 
   const user = me.user;
-  const unread = notifs.filter((n) => !n.read).length;
-  const nick = profile?.nick ?? user?.nick ?? "나";
-  const tiles = [
+  const unread = notifs.filter((n) => !n.read).length + dmUnread;
+  const nick = profile?.nick ?? user?.nick ?? "내 공간";
+  const tools = [
     { href: "/messages", label: "메시지", Icon: IconMessage, n: dmUnread },
     { href: "/memo", label: "메모", Icon: IconNote, n: stats.memos },
     { href: "/goals", label: "목표", Icon: IconFlag, n: stats.goals },
     { href: "/schedule", label: "일정", Icon: IconCalendar, n: stats.today },
   ];
 
+  const topRight = (
+    <div className="row" style={{ gap: 0 }}>
+      <button type="button" className="icon-btn" aria-label={unread ? `알림 ${unread}개` : "알림"} aria-pressed={view === "notif"} onClick={() => (view === "notif" ? setView("profile") : openNotif())} style={{ position: "relative" }}>
+        <IconBell />
+        {unread > 0 && <span className="count-badge">{unread > 99 ? "99+" : unread}</span>}
+      </button>
+      {profile && <button type="button" className="icon-btn" aria-label="프로필 공유" onClick={() => shareProfile(profile.id, profile.nick)}><IconShare /></button>}
+      <Link href="/settings" className="icon-btn" aria-label="설정"><IconSettings /></Link>
+    </div>
+  );
+
   return (
     <>
-      <TopBar title="내 공간" right={<Link href="/settings" className="icon-btn" aria-label="설정"><IconSettings /></Link>} />
+      <TopBar title={view === "notif" ? "알림" : nick} right={topRight} />
       <div className="screen">
-        <section className={`card ${styles.profileCard}`} aria-label="내 프로필">
-        <div className={styles.profileTop}>
-          <button type="button" className="avatar xl" disabled={!profile} aria-label="프로필 사진과 정보 수정" onClick={() => setEditing(true)} style={profile?.avatarUrl ? { backgroundImage: `url(${profile.avatarUrl})` } : undefined}>
-            {!profile?.avatarUrl && (nick !== "나" ? nick.slice(0, 1) : <IconUser />)}
-          </button>
-          <div className="grow">
-            {profile?.isCreator && <span className="badge">크리에이터</span>}
-            <h2>{nick === "나" ? "나만의 공간" : nick}</h2>
-            <p>{profile?.bio || "나를 알아가는 작은 기록들"}</p>
-            {profile && <button type="button" className={`text-btn ${styles.profileEdit}`} onClick={() => setEditing(true)}>프로필 수정</button>}
-          </div>
-        </div>
-          <div className={styles.profileMetrics}>
-            <div><b>{profile?.stats.feedPosts ?? 0}</b><small>위로글</small></div>
-            <div><b>{profile?.stats.followers ?? 0}</b><small>팔로워</small></div>
-            <div><b>{stats.streak}<span className="tiny">일</span></b><small>연속 기록</small></div>
-          </div>
-        {profile && (
-          <div className={styles.profileActions}>
-            <Link href={`/u/${profile.id}`} className="btn ghost sm">공개 프로필</Link>
-            {!user && <Link href="/auth" className="btn sm">로그인 · 회원가입</Link>}
-          </div>
-        )}
-        </section>
-        {error && <div className={styles.error} role="alert">{error}</div>}
-
-        <Segmented value={view} onChange={(v) => (v === "notif" ? openNotif() : setView("profile"))} options={[{ value: "profile", label: "모아보기" }, { value: "notif", label: unread ? `알림 ${unread}` : "알림" }]} />
+        {error && <div className={styles.error} role="alert" style={{ marginBottom: 12 }}>{error}</div>}
 
         {view === "profile" && (
           <>
-            <div className={styles.utilityGrid}>
-              {tiles.map(({ href, label, Icon, n }) => (
-                <Link key={href} href={href} className="me-tile">
-                  <span className="ico"><Icon /></span>
-                  <span className="lbl">{label}</span>
-                  {typeof n === "number" && n > 0 && <span className="n">{n}</span>}
-                </Link>
-              ))}
-            </div>
-            <section className={styles.group} aria-labelledby="me-together-title">
-              <h2 className={styles.groupTitle} id="me-together-title">함께하는 소로우</h2>
-              <div className={`card ${styles.menu}`}>
-                <Link href="/ranking" className={styles.menuRow}><IconTrophy /><span className={styles.menuLabel}><strong>따뜻한 마음 랭킹</strong></span><IconChevronR /></Link>
-                <Link href="/fund" className={styles.menuRow}><IconCoin /><span className={styles.menuLabel}><strong>함께하는 모금</strong></span><IconChevronR /></Link>
-                {/* 운영자의 부업 추천 사이트(부추). 새 탭으로 연다 */}
-                <a href="https://www.buchu.co.kr" target="_blank" rel="noopener noreferrer" className={styles.menuRow}><IconBriefcase /><span className={styles.menuLabel}><strong>부업하러 가기</strong><small>부업추천 부추 · buchu.co.kr</small></span><IconChevronR /></a>
+            {profile ? (
+              <ProfileHeader
+                profile={profile}
+                onAvatar={() => setEditing(true)}
+                extra={<p className={profileStyles.meta}>연속 기록 {stats.streak}일 · 나만 보여요</p>}
+                actions={
+                  <>
+                    <button type="button" className="btn ghost sm" onClick={() => setEditing(true)}>프로필 편집</button>
+                    <button type="button" className="btn ghost sm" onClick={() => shareProfile(profile.id, profile.nick)}>프로필 공유</button>
+                  </>
+                }
+              />
+            ) : (
+              <div className="sk-card" role="status" aria-label="프로필을 불러오고 있어요"><div className="sk-row"><div className="sk sk-circle lg" /><div className="sk-col"><div className="sk sk-line lg w60" /><div className="sk w80" /></div></div></div>
+            )}
+            {!user && <Link href="/auth" className="btn block sm" style={{ marginTop: 10 }}>로그인 · 회원가입하고 기록 보관하기</Link>}
+
+            {profile && <BadgeShelf earned={profile.badges} catalog={profile.badgeCatalog} />}
+
+            {/* 나만 보이는 도구 줄 (다른 사람이 내 프로필을 열면 이 줄은 없다) */}
+            <section className={profileStyles.tools} aria-label="나만 보이는 도구">
+              <p className={profileStyles.toolsHead}>나만 보여요</p>
+              <div className={profileStyles.toolGrid}>
+                {tools.map(({ href, label, Icon, n }) => (
+                  <Link key={href} href={href} className={profileStyles.tool}>
+                    <Icon />
+                    <span>{label}</span>
+                    {n > 0 && <i>{n}</i>}
+                  </Link>
+                ))}
               </div>
             </section>
-            {/* 화면 모드·차단·서비스 안내·관리자는 설정 화면(/settings)에 모았다 */}
-            <section className={styles.group} aria-labelledby="me-settings-title">
+
+            {page ? <ProfileTabs data={page} /> : <div style={{ marginTop: 20 }} role="status" aria-label="내 글을 불러오고 있어요"><SkeletonList count={2} lines={2} /></div>}
+
+            <section className={styles.group} aria-labelledby="me-settings-title" style={{ marginTop: 28 }}>
               <h2 className={styles.groupTitle} id="me-settings-title">설정</h2>
               <div className={`card ${styles.menu}`}>
                 <Link href="/settings" className={styles.menuRow}><IconSettings /><span className={styles.menuLabel}><strong>설정</strong><small>계정 · 화면 모드 · 편의 기능</small></span><IconChevronR /></Link>
@@ -150,7 +167,8 @@ export default function MePage() {
         )}
 
         {view === "notif" && (
-          <div className="stack" style={{ marginTop: 12, gap: 6 }}>
+          <div className="stack" style={{ gap: 6 }}>
+            <button type="button" className="text-btn muted" style={{ alignSelf: "flex-start", marginBottom: 4 }} onClick={() => setView("profile")}><IconChevronL /> 내 공간으로</button>
             {dmUnread > 0 && (
               <Link href="/messages" className="notif unread">
                 <span className="avatar sm"><IconMessage style={{ width: 16, height: 16 }} /></span>
@@ -181,7 +199,18 @@ export default function MePage() {
           open={editing}
           profile={profile}
           onClose={() => setEditing(false)}
-          onSaved={(p) => { setProfile(p); setEditing(false); toastSuccess("프로필을 저장했어요"); fetchMe(true).then(setMe); }}
+          onSaved={(p) => { setProfile(p); setEditing(false); toastSuccess("프로필을 저장했어요"); fetchMe(true).then(setMe); fetchProfilePage(p.id).then(setPage).catch(() => undefined); }}
+        />
+      )}
+      {profile && profile.newBadges.length > 0 && (
+        <BadgeCelebration
+          key={profile.newBadges.map((b) => b.id).join(",")}
+          badges={profile.newBadges}
+          onDone={() => { markBadgesSeen(); setProfile((cur) => (cur ? { ...cur, newBadges: [] } : cur)); }}
+          onUseAsTitle={async (id) => {
+            try { const p = await updateMyProfile({ titleBadge: id }); setProfile({ ...p, newBadges: [] }); toastSuccess("칭호를 달았어요"); }
+            catch (e) { setError(e instanceof Error ? e.message : "칭호를 달지 못했어요"); }
+          }}
         />
       )}
       <ConfirmSheet
@@ -198,7 +227,7 @@ export default function MePage() {
   );
 }
 
-/* ================= 프로필 편집: 사진·닉네임·소개(공개) + 이름·전화(비공개) ================= */
+/* ================= 프로필 편집: 사진·닉네임·소개·칭호(공개) + 이름·전화(비공개) ================= */
 
 function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; profile: MyProfile; onClose: () => void; onSaved: (p: MyProfile) => void }) {
   const [nick, setNick] = useState(profile.nick);
@@ -206,6 +235,7 @@ function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; prof
   const [avatar, setAvatar] = useState(profile.avatarUrl ?? "");
   const [name, setName] = useState(profile.name);
   const [phone, setPhone] = useState(formatPhone(profile.phone));
+  const [titleBadge, setTitleBadge] = useState(profile.titleBadge ?? "");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [editingPhoto, setEditingPhoto] = useState<File | null>(null);
@@ -255,7 +285,7 @@ function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; prof
           setUploading(null);
         }
       }
-      const saved = await updateMyProfile({ nick: nick.trim(), bio, avatarUrl: avatarUrl || null, name, phone: digits });
+      const saved = await updateMyProfile({ nick: nick.trim(), bio, avatarUrl: avatarUrl || null, name, phone: digits, titleBadge });
       if (mountedRef.current) onSaved(saved);
     } catch (e) {
       if (mountedRef.current) setError(e instanceof Error && e.name === "AbortError" ? "사진 전송을 취소했어요. 편집한 사진은 그대로 있어요." : e instanceof Error ? e.message : "저장하지 못했어요. 작성한 내용은 그대로 있어요.");
@@ -289,6 +319,21 @@ function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; prof
           <label htmlFor="profile-bio">소개</label>
           <textarea id="profile-bio" value={bio} disabled={busy} onChange={(e) => setBio(e.target.value)} maxLength={160} placeholder="나를 소개하는 짧은 한마디" style={{ minHeight: 80 }} />
           <span className="tiny muted" style={{ textAlign: "right" }}>{bio.length}/160</span>
+        </div>
+        <div className="field">
+          <span className={profileStyles.fieldLabel} id="profile-title-label">칭호</span>
+          {profile.badges.length === 0 ? (
+            <span className="tiny muted">위로 배지를 얻으면 닉네임 옆에 칭호로 달 수 있어요.</span>
+          ) : (
+            <div className="chips wrap" role="radiogroup" aria-labelledby="profile-title-label">
+              <button type="button" role="radio" aria-checked={titleBadge === ""} className={`chip ${titleBadge === "" ? "on" : ""}`} disabled={busy} onClick={() => setTitleBadge("")}>칭호 없음</button>
+              {profile.badges.map((b) => (
+                <button key={b.id} type="button" role="radio" aria-checked={titleBadge === b.id} className={`chip ${titleBadge === b.id ? "on" : ""}`} disabled={busy} onClick={() => setTitleBadge(b.id)}>
+                  <span className={profileStyles.chipIco}><BadgeIcon id={b.id} /></span>{b.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="field"><label htmlFor="profile-name">이름 (나만 보기)</label><input id="profile-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} maxLength={20} placeholder="이름" autoComplete="name" /></div>
         <div className="field">

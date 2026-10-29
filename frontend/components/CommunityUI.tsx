@@ -1,5 +1,6 @@
 "use client";
 
+import TitleChip from "./TitleChip";
 import { useEffect, useRef, useState } from "react";
 import {
   Comment,
@@ -117,6 +118,7 @@ export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onRe
       <div className="comment">
         <div className="meta">
           <Link href={`/u/${comment.authorId}`} style={{ color: "var(--text)", fontWeight: 600 }}>{nick}</Link>
+          <TitleChip title={author.title} small />
           <span>·</span>
           <span>{fmtRelative(comment.createdAt)}</span>
           <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 15, height: 15 }} /></button>

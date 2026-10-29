@@ -29,6 +29,7 @@ import { CheerButton, LineAction, LoadError, ReportSheet, TargetMenuSheet, run }
 import { IconBubble, IconChevronR, IconClose, IconMore, IconPlus, IconSearch, IconShield, IconSort } from "@/components/Icons";
 import styles from "./shout.module.css";
 import { splitShout } from "./split";
+import TitleChip from "@/components/TitleChip";
 
 type Filter = ShoutCat | "all";
 type Sort = "new" | "top";
@@ -281,6 +282,7 @@ function PostRow({ s, post, badge, commentCount, onCheer, onOpen, onMenu }: { s:
             <span className={styles.chan}><ShoutCatIcon id={c.id} />{c.label}</span>
             <span aria-hidden="true">·</span>
             <span>{mine ? "나" : author.nick}</span>
+            <TitleChip title={author.title} small />
           </p>
         </div>
         {images.length > 0 && (

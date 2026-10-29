@@ -7,7 +7,11 @@ import java.util.Map;
 public final class Model {
     private Model() {}
 
-    public record User(String id, String nick, String role, Long blockedAt, String blockedReason) {
+    /** title = 대표 칭호(얻은 위로 배지 이름, 없으면 null 이라 JSON 에서 빠진다) */
+    public record User(String id, String nick, String role, Long blockedAt, String blockedReason, String title) {
+        public User(String id, String nick, String role, Long blockedAt, String blockedReason) {
+            this(id, nick, role, blockedAt, blockedReason, null);
+        }
         public boolean blocked() { return blockedAt != null; }
     }
 

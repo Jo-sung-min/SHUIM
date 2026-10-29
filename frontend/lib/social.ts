@@ -3,6 +3,14 @@ import { requireCommunityConsent } from "./consent";
 
 /** 프로필·메시지 클라이언트 (서버 API 호출) */
 
+/** 위로 배지: 이름과 한 줄 설명만 (얻는 조건의 횟수는 어디에도 보이지 않는다) */
+export interface EarnedBadge { id: string; name: string; desc: string; earnedAt: number }
+export interface BadgeDef { id: string; name: string; desc: string }
+
+/**
+ * 공개 프로필. 리스너 = 나를 듣는 사람(예전 팔로워), 리스닝 = 내가 듣는 사람(예전 팔로잉).
+ * stats.followers = 리스너 수, stats.following = 리스닝 수 (서버 필드 이름은 그대로)
+ */
 export interface PublicProfile {
   id: string;
   nick: string;
@@ -12,19 +20,51 @@ export interface PublicProfile {
   creatorBio: string;
   blocked: boolean;
   createdAt: number;
-  stats: { followers: number; following: number; feedPosts: number; shoutPosts: number; cheers: number };
+  stats: { followers: number; following: number; feedPosts: number; shoutPosts: number };
+  /** 보는 사람이 이 사람을 리스닝 중 */
   isFollowing: boolean;
+  /** 이 사람이 보는 사람을 리스닝 중 (서로 리스닝 표시) */
+  followsMe: boolean;
+  /** 대표 칭호 (없으면 빠진다) */
+  title?: string;
+  badges: EarnedBadge[];
 }
 export interface MyProfile extends PublicProfile {
   name: string;
   phone: string;
   email: string | null;
+  /** 칭호로 고른 배지 id */
+  titleBadge?: string;
+  /** 아직 축하 시트를 보지 않은 새 배지 */
+  newBadges: EarnedBadge[];
+  /** 배지 전체 (내 선반에 아직 못 얻은 배지를 흐리게) */
+  badgeCatalog: BadgeDef[];
 }
+export interface ProfileFeedItem { id: string; title?: string; text: string; bg: number; image?: string; cheers: number; createdAt: number }
+export interface ProfileComment { id: string; postKind: "post" | "feed"; postId: string; postSnippet: string; text: string; cheers: number; createdAt: number }
 export interface ProfilePage {
   profile: PublicProfile;
   isMe: boolean;
-  feed: { id: string; title?: string; text: string; bg: number; image?: string; cheers: number; createdAt: number }[];
+  feed: ProfileFeedItem[];
   shout: { id: string; cat: string; text: string; cheers: number; createdAt: number }[];
+  /** 내 위로: 이 사람이 남긴 위로 댓글 (원글은 앞부분만) */
+  comments: ProfileComment[];
+  /** 저장함: 본인일 때만 */
+  saved?: ProfileFeedItem[];
+}
+export interface ListUser { id: string; nick: string; avatarUrl: string | null; title?: string; viewerListens: boolean; listensToViewer: boolean }
+export interface PeoplePage { users: ListUser[]; hasMore: boolean; nextOffset: number }
+export interface ServerNotification {
+  id: string;
+  kind: "comment_on_post" | "reply_on_thread" | "reply_to_comment";
+  postKind: "post" | "feed";
+  postId: string;
+  postText: string;
+  actorId: string;
+  actorNick: string;
+  text: string;
+  at: number;
+  read: boolean;
 }
 export interface ConversationSummary {
   id: string;
@@ -61,11 +101,19 @@ const opts = (method: string, body?: unknown): RequestInit => ({
 });
 
 export const fetchMyProfile = () => fetch("/api/profile", opts("GET")).then((r) => j<MyProfile>(r));
-export const updateMyProfile = async (input: { nick?: string; bio?: string; avatarUrl?: string | null; name?: string; phone?: string }) => {
+export const updateMyProfile = async (input: { nick?: string; bio?: string; avatarUrl?: string | null; name?: string; phone?: string; titleBadge?: string }) => {
   await requireCommunityConsent();
   return fetch("/api/profile", opts("PUT", input)).then((r) => j<MyProfile>(r));
 };
 export const fetchProfilePage = (id: string) => fetch(`/api/profile/${encodeURIComponent(id)}`, opts("GET")).then((r) => j<ProfilePage>(r));
+/** 리스너(나를 듣는 사람) 또는 리스닝(내가 듣는 사람) 목록, 50명씩 */
+export const fetchPeople = (id: string, kind: "listeners" | "listening", offset = 0) =>
+  fetch(`/api/profile/${encodeURIComponent(id)}/${kind}?offset=${offset}`, opts("GET")).then((r) => j<PeoplePage>(r));
+/** 새 배지 축하 시트를 봤다 (실패해도 다음에 다시 보일 뿐) */
+export const markBadgesSeen = () => fetch("/api/profile/badges/seen", opts("POST", {})).then((r) => j<{ ok: boolean }>(r)).catch(() => ({ ok: false }));
+/** 알림 (서버가 최근 50개만 계산해 준다). seenAt = 이 기기에서 마지막으로 알림을 본 시각 */
+export const fetchNotifications = (seenAt: number) =>
+  fetch(`/api/notifications?seenAt=${Math.max(0, Math.floor(seenAt))}`, opts("GET")).then((r) => j<{ items: ServerNotification[]; unread: number }>(r));
 
 export const fetchConversations = () => fetch("/api/messages", opts("GET")).then((r) => j<{ conversations: ConversationSummary[]; unread: number }>(r));
 export const fetchThread = (id: string, after?: number) =>

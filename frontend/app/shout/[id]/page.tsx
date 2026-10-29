@@ -13,6 +13,7 @@ import { IconBubble, IconChevronL, IconChevronR, IconClock, IconMore, IconSort }
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import styles from "../shout.module.css";
 import { splitShout } from "../split";
+import TitleChip from "@/components/TitleChip";
 
 type Sort = "top" | "new";
 
@@ -114,6 +115,7 @@ export default function ShoutPostPage() {
             <h2 className={styles.detailTitle}>{title}</h2>
             <p className={styles.byline}>
               <Link href={`/u/${post.authorId}`} className={styles.author}>{author}</Link>
+              <TitleChip title={userById(s, post.authorId).title} small />
             </p>
             <div className={styles.metaRow}>
               <span className={styles.metaItem}><IconClock aria-hidden="true" />{fmtRelative(post.createdAt)}</span>

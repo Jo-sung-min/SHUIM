@@ -1,0 +1,105 @@
+/*
+  나 페이지·공개 프로필이 같이 쓰는 머리(사진·숫자 줄·이름·칭호·소개), 위로 배지 선반, 콘텐츠 탭.
+  인스타그램처럼 내 프로필 = 남이 보는 화면. 숫자는 위로글·리스너·리스닝 (내가 위로한 횟수는 보여 주지 않는다).
+*/
+
+/* ---------- 머리 ---------- */
+.header { padding: 4px 0 0; }
+.top { display: flex; align-items: center; gap: 18px; }
+.top :global(.avatar.xl) { flex: none; width: 80px; height: 80px; border-radius: 50%; font-size: 28px; }
+.numbers { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; }
+.number { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; padding: 4px 0; border-radius: 12px; color: var(--text); }
+a.number:active { background: var(--surface-2); }
+.number b { font-size: 19px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.number small { font-size: 12.5px; color: var(--text-2); }
+
+.who { margin-top: 12px; }
+.nameRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nameRow h2 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.bio { margin: 6px 0 0; font-size: 14.5px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; color: var(--text); }
+.bio.empty { color: var(--text-3); }
+.meta { margin: 6px 0 0; font-size: 12.5px; color: var(--text-3); }
+.mutual { display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; }
+
+.actions { display: flex; gap: 8px; margin-top: 14px; }
+.actions > :global(.btn) { flex: 1; min-height: 38px; font-size: 14px; }
+
+/* ---------- 칭호 칩 (닉네임 옆) ---------- */
+.title {
+  display: inline-flex; align-items: center; gap: 3px; flex: none;
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 11.5px; font-weight: 700; line-height: 1.6; letter-spacing: -0.01em; white-space: nowrap;
+}
+.title.sm { padding: 0 6px; font-size: 10.5px; }
+
+/* ---------- 위로 배지 선반 ---------- */
+.shelf { margin-top: 18px; }
+.shelfHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.shelfHead h3 { margin: 0; font-size: 14px; font-weight: 750; }
+.shelfHead small { color: var(--text-3); font-size: 12px; }
+.badges { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 4px; margin: 0 -2px; }
+.badges::-webkit-scrollbar { display: none; }
+.badge { flex: none; width: 64px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--text); }
+.badgeIco {
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.badgeIco svg { width: 24px; height: 24px; }
+.badge[aria-pressed="true"] .badgeIco { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+.badgeName { font-size: 11.5px; font-weight: 650; line-height: 1.3; text-align: center; word-break: keep-all; }
+.badge.locked .badgeIco { background: transparent; color: var(--text-3); border: 2px dashed var(--border-strong); }
+.badge.locked .badgeName { color: var(--text-3); font-weight: 500; }
+.badgeDesc { margin: 6px 2px 0; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.badgeDesc b { color: var(--text); }
+
+/* ---------- 나만 보이는 도구 줄 ---------- */
+.tools { margin-top: 18px; padding: 10px; border: 1.5px dashed var(--border-strong); border-radius: 16px; }
+.toolsHead { margin: 0 4px 8px; font-size: 12px; color: var(--text-3); }
+.toolGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.tool { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0 8px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.tool:active { background: var(--surface-2); }
+.tool svg { width: 22px; height: 22px; }
+.tool span { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.tool i { position: absolute; top: 4px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--text); color: var(--bg); font-size: 11px; font-style: normal; font-weight: 700; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* ---------- 콘텐츠 탭 ---------- */
+.tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 20px calc(-1 * var(--gutter)) 0; padding: 0 var(--gutter); border-bottom: 1px solid var(--border); }
+.tab { position: relative; min-height: 46px; padding: 0 4px; border: 0; background: none; color: var(--text-3); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--text); font-weight: 750; }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: -1px; height: 2px; background: var(--text); border-radius: 2px; }
+.tab small { margin-left: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.panel { padding-top: 4px; }
+
+.list { display: grid; gap: 8px; margin-top: 12px; }
+.comfort { display: block; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.comfort:active { background: var(--surface-2); }
+.comfortCtx { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.comfortCtx svg { flex: none; width: 12px; height: 12px; }
+.comfortText { margin: 6px 0 0; font-size: 15px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.comfortFoot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--text-3); }
+.comfortFoot :global(.inline-fist) { color: var(--text-2); }
+
+/* ---------- 새 배지 축하 ---------- */
+.celebrate { display: grid; gap: 14px; text-align: center; }
+.celebrateFist { display: grid; place-items: center; height: 72px; }
+.celebrateList { display: grid; gap: 10px; }
+.celebrateItem { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: var(--surface-2); text-align: left; }
+.celebrateItem .badgeIco { width: 48px; height: 48px; flex: none; }
+.celebrateItem b { display: block; font-size: 15px; }
+.celebrateItem small { display: block; margin-top: 2px; font-size: 13px; color: var(--text-2); }
+
+/* ---------- 리스너·리스닝 목록 ---------- */
+.people { display: grid; margin-top: 4px; }
+.person { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.person :global(.avatar) { flex: none; width: 44px; height: 44px; border-radius: 50%; }
+.personMain { flex: 1; min-width: 0; color: var(--text); }
+.personMain b { display: flex; align-items: center; gap: 6px; font-size: 15px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.personMain small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--text-3); }
+.person :global(.btn) { flex: none; min-height: 34px; padding: 0 14px; font-size: 13px; }
+
+/* ---------- 프로필 편집: 칭호 고르기 ---------- */
+.fieldLabel { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.chipIco { display: inline-flex; }
+.chipIco .badgeIco { width: 20px; height: 20px; border-width: 1px; background: transparent; color: inherit; }
+.chipIco .badgeIco svg { width: 13px; height: 13px; }

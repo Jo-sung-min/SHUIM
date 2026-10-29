@@ -23,6 +23,8 @@ export interface Me {
   configured: boolean;
   /** 서버에 KAKAO_CLIENT_ID 가 있어 카카오 로그인이 켜져 있는지 (false 면 버튼 숨김) */
   kakao: boolean;
+  /** 로그인 전 방문자의 익명 유저 id (서버가 세션으로 만든 것, 없으면 빠진다) */
+  anonymousId?: string;
 }
 
 function syncSessionKey(user: Account | null) {
@@ -64,7 +66,7 @@ export async function fetchMe(force = false): Promise<Me> {
     const json = (await res.json()) as Me;
     // Java omits null fields, so a valid guest response has no `user` property.
     if (!res.ok || !json || json.configured !== true || typeof json.admin !== "boolean" || typeof json.kakao !== "boolean") throw new Error("계정 연결을 확인하지 못했어요.");
-    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao) };
+    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao), anonymousId: json.anonymousId ?? undefined };
   } catch {
     // A network failure is not a logout. Keep the local account namespace and do not cache this failure.
     return { user: null, admin: false, configured: false, kakao: false };

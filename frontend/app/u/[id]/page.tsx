@@ -4,26 +4,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ProfilePage, fetchProfilePage, sendMessage } from "@/lib/social";
-import { api, shoutCatById } from "@/lib/community";
-import type { ShoutCat } from "@/lib/community-core";
-import { Empty, LoadError, Segmented, Sheet, TopBar, fmtRelative } from "@/components/ui";
-import { IconBubble, IconChevronL, IconFilm, IconFist, IconMessage, IconUser } from "@/components/Icons";
-import { ShoutCatIcon } from "@/components/CategoryIcon";
+import { api } from "@/lib/community";
+import { LoadError, Sheet, TopBar } from "@/components/ui";
+import { IconChevronL, IconMessage, IconShare } from "@/components/Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import BlockUser from "@/components/BlockUser";
 import SafetyReport from "@/components/SafetyReport";
+import ProfileHeader from "@/components/ProfileHeader";
+import BadgeShelf from "@/components/BadgeShelf";
+import ProfileTabs from "@/components/ProfileTabs";
+import { shareProfile } from "@/lib/share-profile";
 import { showToast } from "@/lib/toast";
-import { stripHighlights } from "@/lib/highlight";
 
-type Tab = "feed" | "shout";
-
-/** 공개 프로필: 누구나 볼 수 있고, 팔로우·메시지 보내기 가능 */
+/**
+ * 공개 프로필: 누구나 볼 수 있다. 머리(위로글 · 리스너 · 리스닝) · 칭호 · 위로 배지 · 콘텐츠 탭.
+ * 다른 사람이면 리스닝하기 · 메시지, 내 프로필이면 나 페이지로.
+ */
 export default function PublicProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<ProfilePage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("feed");
   const [dm, setDm] = useState(false);
   const [following, setFollowing] = useState(false);
   const followLocked = useRef(false);
@@ -41,8 +42,9 @@ export default function PublicProfilePage() {
   }, [load]);
   useScrollMemory(data !== null);
 
-  if (loadError) return <><TopBar title="프로필" right={<button className="icon-btn" onClick={() => router.back()} aria-label="뒤로"><IconChevronL /></button>} /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
-  if (!data) return <><TopBar title="프로필" right={<button className="icon-btn" onClick={() => router.back()} aria-label="뒤로"><IconChevronL /></button>} /><div className="screen" role="status" aria-label="프로필을 불러오고 있어요">
+  const back = <button className="icon-btn" onClick={() => router.back()} aria-label="뒤로"><IconChevronL /></button>;
+  if (loadError) return <><TopBar title="프로필" right={back} /><div className="screen"><LoadError message={loadError} onRetry={load} /></div></>;
+  if (!data) return <><TopBar title="프로필" right={back} /><div className="screen" role="status" aria-label="프로필을 불러오고 있어요">
     <div className="sk-row"><div className="sk sk-circle lg" /><div className="sk-col"><div className="sk sk-line lg w60" /><div className="sk w80" /></div></div>
     <div className="sk sk-block" style={{ marginTop: 16 }} />
     <div className="sk-tiles" style={{ marginTop: 16 }}><div className="sk" /><div className="sk" /><div className="sk" /></div>
@@ -67,70 +69,30 @@ export default function PublicProfilePage() {
 
   return (
     <>
-      <TopBar title={p.nick} right={<button className="icon-btn" onClick={() => router.back()} aria-label="뒤로"><IconChevronL /></button>} />
+      <TopBar title={p.nick} right={back} />
       <div className="screen">
-        <div className="profile">
-          <span className="avatar xl" style={p.avatarUrl ? { backgroundImage: `url(${p.avatarUrl})` } : undefined}>
-            {!p.avatarUrl && (p.nick ? p.nick.slice(0, 1) : <IconUser />)}
-          </span>
-          <div className="profile-stats">
-            <div><b>{p.stats.feedPosts}</b><small>위로글</small></div>
-            <div><b>{p.stats.followers}</b><small>팔로워</small></div>
-            <div><b>{p.stats.cheers}</b><small>힘내요</small></div>
-          </div>
-        </div>
-        <div className="profile-bio">
-          {p.isCreator && <span className="badge">크리에이터</span>}
-          {p.bio ? <p>{p.bio}</p> : p.creatorBio ? <p>{p.creatorBio}</p> : <p className="muted">소개가 아직 없어요.</p>}
-          {p.blocked && <p className="tiny muted">신고 누적으로 차단된 사용자예요.</p>}
-        </div>
-
-        {isMe ? (
-          <Link href="/me" className="btn ghost block sm" style={{ marginTop: 10 }}>내 프로필 수정</Link>
-        ) : (
-          <div className="row" style={{ gap: 8, marginTop: 10 }}>
-            <button type="button" className={`btn block sm ${p.isFollowing ? "ghost" : ""}`} style={{ flex: 1 }} onClick={follow} disabled={following} aria-busy={following} aria-pressed={p.isFollowing}>{following ? "변경 중…" : p.isFollowing ? "팔로잉" : "팔로우"}</button>
-            <button className="btn ghost block sm" style={{ flex: 1 }} onClick={() => setDm(true)} disabled={p.blocked}>
-              <IconMessage style={{ width: 16, height: 16 }} /> 메시지
-            </button>
-          </div>
-        )}
-
-        <div style={{ marginTop: 14 }}>
-          {!isMe && <div className="row" style={{ gap: 20, marginBottom: 14 }}><BlockUser userId={p.id} /><SafetyReport kind="user" targetId={p.id} /></div>}
-          <Segmented value={tab} onChange={setTab} options={[{ value: "feed", label: `위로글 ${data.feed.length}` }, { value: "shout", label: `외침 ${data.shout.length}` }]} />
-        </div>
-
-        {tab === "feed" &&
-          (data.feed.length === 0 ? (
-            <Empty icon={<IconFilm />} title="아직 위로글이 없어요" />
+        <ProfileHeader
+          profile={p}
+          actions={isMe ? (
+            <>
+              <Link href="/me" className="btn ghost sm">내 공간으로</Link>
+              <button type="button" className="btn ghost sm" onClick={() => shareProfile(p.id, p.nick)}><IconShare style={{ width: 16, height: 16 }} /> 프로필 공유</button>
+            </>
           ) : (
-            <div className="profile-grid">
-              {data.feed.map((f) => (
-                <Link key={f.id} href={`/feed?post=${f.id}`} className={`profile-cell bg-${f.bg} ${f.image ? "has-img" : ""}`} style={f.image ? { backgroundImage: `url(${f.image})` } : undefined}>
-                  <span className="t">{f.title ?? stripHighlights(f.text).split("\n")[0]}</span>
-                  <span className="c"><IconFist /> {f.cheers}</span>
-                </Link>
-              ))}
-            </div>
-          ))}
+            <>
+              <button type="button" className={`btn sm ${p.isFollowing ? "ghost" : ""}`} onClick={follow} disabled={following} aria-busy={following} aria-pressed={p.isFollowing}>
+                {following ? "변경 중…" : p.isFollowing ? "리스닝 중" : p.followsMe ? "나도 리스닝" : "리스닝"}
+              </button>
+              <button type="button" className="btn ghost sm" onClick={() => setDm(true)} disabled={p.blocked}>
+                <IconMessage style={{ width: 16, height: 16 }} /> 메시지
+              </button>
+            </>
+          )}
+        />
+        {!isMe && <div className="row" style={{ gap: 20, marginTop: 12 }}><BlockUser userId={p.id} /><SafetyReport kind="user" targetId={p.id} /></div>}
 
-        {tab === "shout" &&
-          (data.shout.length === 0 ? (
-            <Empty icon={<IconBubble />} title="아직 외침이 없어요" />
-          ) : (
-            <div className="stack" style={{ marginTop: 12 }}>
-              {data.shout.map((s) => {
-                const c = shoutCatById(s.cat as ShoutCat);
-                return (
-                  <Link key={s.id} href={`/shout/${s.id}`} className="card post" style={{ display: "block" }}>
-                    <div className="post-head"><span className="cat"><ShoutCatIcon id={c.id} /> {c.label}</span><span>·</span><span>{fmtRelative(s.createdAt)}</span><span className="inline-fist" style={{ marginLeft: "auto" }}><IconFist /> {s.cheers}</span></div>
-                    <p className="post-text" style={{ marginBottom: 0 }}>{s.text}</p>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+        <BadgeShelf earned={p.badges} />
+        <ProfileTabs data={data} />
       </div>
 
       <DmSheet key={dm ? "open" : "closed"} open={dm} toNick={p.nick} onClose={() => setDm(false)} onSend={async (text) => {

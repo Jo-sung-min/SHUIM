@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconBubble, IconPen, IconReels, IconSun, IconUser } from "./Icons";
-import { fetchCommunity, unreadCount } from "@/lib/community";
-import { unreadMessages } from "@/lib/social";
+import { loadNotifSeen } from "@/lib/storage";
+import { fetchNotifications, unreadMessages } from "@/lib/social";
 
 /** 짧은 이름과 선택 표시를 함께 제공하는 앱 탐색. */
 const TABS = [
@@ -20,11 +20,11 @@ export default function TabBar() {
   const path = usePathname();
   const [unread, setUnread] = useState(0);
 
-  // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (서버 상태는 30초 캐시)
+  // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (알림 전용 API: 커뮤니티 전체를 받지 않는다)
   useEffect(() => {
     let alive = true;
     if (["/auth", "/info", "/privacy", "/terms", "/account-deletion"].some((route) => path === route || path.startsWith(`${route}/`))) return;
-    Promise.all([fetchCommunity().then(unreadCount).catch(() => 0), unreadMessages()])
+    Promise.all([fetchNotifications(loadNotifSeen()).then((r) => r.unread).catch(() => 0), unreadMessages()])
       .then(([a, b]) => alive && setUnread(a + b))
       .catch(() => alive && setUnread(0));
     return () => {

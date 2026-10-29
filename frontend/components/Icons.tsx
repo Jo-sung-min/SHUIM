@@ -18,6 +18,20 @@ export const IconKakao = (p: P) => (
     <path d="M12 3C6.5 3 2 6.5 2 10.8c0 2.7 1.8 5.1 4.5 6.5l-1 3.7c-.1.3.2.5.5.4l4.4-2.9c.5.1 1 .1 1.6.1 5.5 0 10-3.5 10-7.8S17.5 3 12 3Z" />
   </svg>
 );
+/** 알림 (종) */
+export const IconBell = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z" />
+    <path d="M10.3 20a1.9 1.9 0 0 0 3.4 0" />
+  </svg>
+);
+/** 공유 (상자에서 위로 나가는 화살표) */
+export const IconShare = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3v12M8 7l4-4 4 4" />
+    <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+  </svg>
+);
 /** 검색 (돋보기) */
 export const IconSearch = (p: P) => (
   <svg {...base(p)}>
