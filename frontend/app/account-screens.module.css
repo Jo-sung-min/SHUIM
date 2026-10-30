@@ -64,10 +64,9 @@
 }
 .homeWrite:global(.icon-btn):active { background-color: var(--lg-fill-strong); }
 .homeWrite svg { width: 27px; height: 27px; }
-.homeHeader h1 { margin: 0; padding-left: .16em; text-align: center; color: var(--text); font-size: 22px; font-weight: 750; line-height: 1.2; letter-spacing: .16em; }
+.homeHeader h1 { margin: 0; padding-left: .16em; text-align: center; color: var(--text); font-size: 22px; font-weight: 900; line-height: 1.2; letter-spacing: .16em; }
 /* 로고의 O 자리에 넣는 얼굴: 글자 O 와 같은 높이·간격 (자간 .16em 을 오른쪽 여백으로) */
-.logoO { display: inline-block; width: .84em; height: .84em; margin-right: .16em; vertical-align: -.1em; }
-.logoTear { fill: var(--tone-review); }
+.logoO { display: inline-block; width: .8em; height: .8em; margin-right: .16em; vertical-align: -.1em; }
 /* 오늘의 기록: 글라스 버튼 하나 (나를 위한 시간 타일과 같은 유리). 왼쪽 아이콘 · 제목/진행 · 오른쪽 행동 */
 .recordBtn {
   --tone: var(--tone-briefing);
