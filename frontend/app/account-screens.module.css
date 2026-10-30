@@ -64,9 +64,9 @@
 }
 .homeWrite:global(.icon-btn):active { background-color: var(--lg-fill-strong); }
 .homeWrite svg { width: 27px; height: 27px; }
-.homeHeader h1 { margin: 0; padding-left: .16em; text-align: center; color: var(--text); font-size: 22px; font-weight: 900; line-height: 1.2; letter-spacing: .16em; }
-/* 로고의 O 자리에 넣는 얼굴: 글자 O 와 같은 높이·간격 (자간 .16em 을 오른쪽 여백으로) */
-.logoO { display: inline-block; width: .8em; height: .8em; margin-right: .16em; vertical-align: -.1em; }
+.homeHeader h1 { margin: 0; display: flex; justify-content: center; }
+/* 로고 이미지(public/sorow-logo.png, 흰 글자 누끼)를 마스크로만 써서 글자색(--text)으로 칠한다: 밝은·나이트 모드 모두 맞음 */
+.logoMark { display: block; height: 22px; aspect-ratio: 640 / 125; background-color: var(--text); -webkit-mask: url("/sorow-logo.png") center / contain no-repeat; mask: url("/sorow-logo.png") center / contain no-repeat; }
 /* 오늘의 기록: 글라스 버튼 하나 (나를 위한 시간 타일과 같은 유리). 왼쪽 아이콘 · 제목/진행 · 오른쪽 행동 */
 .recordBtn {
   --tone: var(--tone-briefing);

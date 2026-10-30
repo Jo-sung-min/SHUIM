@@ -5,7 +5,6 @@ import DailyQuote from "@/components/DailyQuote";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Nunito } from "next/font/google";
 import {
   Briefing,
   Goal,
@@ -66,37 +65,10 @@ function HomeHeader() {
   const hidden = useHideOnScroll();
   return <header className={styles.homeHeader} data-hidden={hidden || undefined}>
     <span aria-hidden="true" />
-    <h1 aria-label="소로우"><span aria-hidden="true" className={logoFont.className}>S<LogoFace mood="smile" />R<LogoFace mood="tear" />W</span></h1>
+    {/* SOROW 로고: 두 O 는 웃는 얼굴과 우는 얼굴 (웃다가도 울고, 울다가도 웃는 곳) */}
+    <h1 aria-label="소로우"><span aria-hidden="true" className={styles.logoMark} /></h1>
     <Link href="/write" className={`icon-btn ${styles.homeWrite}`} aria-label="새 외침 쓰기" title="새 외침 쓰기"><IconSquarePlus /></Link>
   </header>;
-}
-
-/** 로고 글자(S·R·W)만 쓰는 둥글고 두꺼운 글꼴 */
-const logoFont = Nunito({ subsets: ["latin"], weight: "900" });
-
-/** 로고의 O 두 개: 꽉 찬 원에 눈·입을 뚫은 얼굴. 앞은 웃고, 뒤는 입꼬리가 내려가고 눈물 한 방울 (웃다가도 울고, 울다가도 웃는 곳) */
-function LogoFace({ mood }: { mood: "smile" | "tear" }) {
-  const mask = `logo-face-${mood}`;
-  return (
-    <svg className={styles.logoO} viewBox="0 0 36 36">
-      <mask id={mask}>
-        <rect width="36" height="36" fill="#fff" />
-        <g fill="#000" stroke="#000" strokeWidth="3" strokeLinecap="round">
-          <circle cx="11" cy="15" r="2.4" stroke="none" />
-          <circle cx="25" cy="15" r="2.4" stroke="none" />
-          {mood === "smile" ? (
-            <path d="M12 21.5q6 6 12 0" fill="none" />
-          ) : (
-            <>
-              <path d="M12.5 26q5.5-5 11 0" fill="none" />
-              <path d="M28.6 17.6c-1.3 1.9-1.9 3-1.9 3.9a1.9 1.9 0 0 0 3.8 0c0-.9-.6-2-1.9-3.9Z" stroke="none" />
-            </>
-          )}
-        </g>
-      </mask>
-      <circle cx="18" cy="18" r="17.5" fill="currentColor" mask={`url(#${mask})`} />
-    </svg>
-  );
 }
 
 /** 나를 위한 시간 한 칸. 기본 4칸은 AI 상태에서, 추가한 칸은 lib/care 의 오늘 기록에서 done 을 정한다 (안 했으면 빨간 점) */
