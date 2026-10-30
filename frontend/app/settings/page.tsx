@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Me, fetchMe } from "@/lib/auth";
-import { Segmented, TopBar } from "@/components/ui";
-import { IconBriefcase, IconChevronL, IconChevronR, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
+import { ConfirmSheet, Segmented, TopBar } from "@/components/ui";
+import { IconBook, IconBriefcase, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
 import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
+import { RecordKind, clearRecordKind, loadGoals, loadJournal, loadMemos, loadSchedule, syncRecords } from "@/lib/storage";
+import { toastSuccess } from "@/lib/toast";
 import { IS_AIT } from "@/lib/ait";
 import styles from "../account-screens.module.css";
 
@@ -15,19 +17,32 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "dark", label: "나이트" },
 ];
 
+/** 기록 관리에서 종류별로 지울 수 있는 것들 */
+const RECORD_KINDS: { kind: RecordKind; label: string; obj: string; unit: string; Icon: typeof IconBook }[] = [
+  { kind: "journal", label: "하루 기록", obj: "하루 기록을", unit: "일", Icon: IconBook },
+  { kind: "memos", label: "메모", obj: "메모를", unit: "개", Icon: IconNote },
+  { kind: "goals", label: "목표", obj: "목표를", unit: "개", Icon: IconFlag },
+  { kind: "schedule", label: "일정", obj: "일정을", unit: "개", Icon: IconCalendar },
+];
+
 /**
- * 설정: 나 화면의 톱니(와 "설정" 행)에서 들어온다.
- * 계정(닉네임·로그아웃은 /auth), 화면 모드, 편의 기능(차단한 사용자·서비스 안내·관리자)을 한곳에 모았다.
+ * 설정: 나 화면의 톱니에서 들어온다.
+ * 계정(닉네임·로그아웃은 /auth), 화면 모드, 기록 관리(종류별 삭제), 편의 기능(차단한 사용자·서비스 안내·관리자)을 한곳에 모았다.
  * 로그인하지 않아도 열린다 — 화면 모드는 이 기기에만 저장되는 설정이라서.
  */
 export default function SettingsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [theme, setTheme] = useState<ThemePref>("system"); // 서버 렌더와 맞추려고 기본값으로 시작해 마운트 후 읽는다
+  const [counts, setCounts] = useState<Record<RecordKind, number> | null>(null);
+  const [clearing, setClearing] = useState<RecordKind | null>(null);
   useEffect(() => {
     setTheme(loadTheme());
     fetchMe().then(setMe).catch(() => setMe(null));
+    // 서버 기록을 먼저 맞춘 뒤 센다 (실패해도 이 기기 기록으로)
+    syncRecords().catch(() => false).then(() => setCounts({ journal: Object.keys(loadJournal()).length, memos: loadMemos().length, goals: loadGoals().length, schedule: loadSchedule().length }));
   }, []);
   const user = me?.user ?? null;
+  const clearingInfo = RECORD_KINDS.find((k) => k.kind === clearing);
 
   return (
     <>
@@ -51,6 +66,20 @@ export default function SettingsPage() {
           <p className={styles.mutedNote} style={{ marginTop: 8 }}>이 기기에만 저장돼요.</p>
         </section>}
 
+        <section className={styles.group} aria-labelledby="settings-records-title">
+          <h2 className={styles.groupTitle} id="settings-records-title">기록 관리</h2>
+          <div className={`card ${styles.menu}`}>
+            {RECORD_KINDS.map(({ kind, label, unit, Icon }) => (
+              <div key={kind} className={styles.menuRow}>
+                <Icon />
+                <span className={styles.menuLabel}><strong>{label}</strong><small>{counts ? `${counts[kind]}${unit}` : "확인하고 있어요…"}</small></span>
+                <button type="button" className="text-btn danger" disabled={!counts || counts[kind] === 0} onClick={() => setClearing(kind)}>지우기</button>
+              </div>
+            ))}
+          </div>
+          <p className={styles.mutedNote} style={{ marginTop: 8 }}>{user ? "이 계정의 기록에서 지워져요." : "이 기기의 기록에서 지워져요."}</p>
+        </section>
+
         <section className={styles.group} aria-labelledby="settings-tools-title">
           <h2 className={styles.groupTitle} id="settings-tools-title">편의 기능</h2>
           <div className={`card ${styles.menu}`}>
@@ -69,6 +98,21 @@ export default function SettingsPage() {
           </div>
         </section>}
       </div>
+      <ConfirmSheet
+        open={clearing !== null}
+        title={`${clearingInfo?.obj ?? "기록을"} 모두 지울까요?`}
+        message="지운 기록은 되돌릴 수 없어요."
+        confirmLabel="지우기"
+        danger
+        onClose={() => setClearing(null)}
+        onConfirm={() => {
+          if (!clearing) return;
+          clearRecordKind(clearing);
+          setCounts((c) => (c ? { ...c, [clearing]: 0 } : c));
+          toastSuccess(`${clearingInfo?.obj ?? "기록을"} 지웠어요`);
+          setClearing(null);
+        }}
+      />
     </>
   );
 }

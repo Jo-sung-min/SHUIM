@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Me, fetchMe, signOut } from "@/lib/auth";
-import { clearAll, formatPhone, loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, streak, syncRecords, todayKey } from "@/lib/storage";
+import { formatPhone, loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, streak, syncRecords, todayKey } from "@/lib/storage";
 import { MyProfile, ProfilePage, ServerNotification, fetchMyProfile, fetchNotifications, fetchProfilePage, markBadgesSeen, unreadMessages, updateMyProfile } from "@/lib/social";
 import { uploadImage } from "@/lib/upload";
 import PhotoEditor from "@/components/PhotoEditor";
 import photoStyles from "@/components/PhotoEditor.module.css";
-import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { Empty, Sheet, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
-import { IconInbox, IconBell, IconBubble, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconMessage, IconNote, IconSettings, IconShare, IconUser } from "@/components/Icons";
+import { IconInbox, IconBell, IconBubble, IconCalendar, IconChevronL, IconFlag, IconMessage, IconNote, IconSettings, IconShare } from "@/components/Icons";
 import ProfileHeader from "@/components/ProfileHeader";
 import BadgeShelf, { BadgeCelebration, BadgeIcon } from "@/components/BadgeShelf";
 import ProfileTabs from "@/components/ProfileTabs";
@@ -39,13 +40,14 @@ export default function MePage() {
   const [dmUnread, setDmUnread] = useState(0);
   const [stats, setStats] = useState({ streak: 0, memos: 0, goals: 0, today: 0 });
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState<"clear" | "logout" | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const actionInFlight = useRef(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const router = useRouter();
 
   const reload = useCallback(async () => {
     setError(null);
     const m = await fetchMe(true);
+    // 로그인하지 않았으면 이 화면은 보여 줄 게 없어 바로 로그인으로 (로그인하면 다시 여기로)
+    if (!m.user) { router.replace("/auth?next=me"); return; }
     setMe(m);
     // 계정 확인 뒤로는 서로 기다리지 않는다: 기록 동기화 · 프로필 · 알림 · 메시지
     const records = syncRecords().catch(() => false).then(() => {
@@ -62,7 +64,7 @@ export default function MePage() {
     const results = await Promise.allSettled([records, prof, notif, dm]);
     const failed = results.find((r) => r.status === "rejected");
     if (failed && failed.status === "rejected") setError(failed.reason instanceof Error ? failed.reason.message : "연결이 잠시 원활하지 않아요. 다시 시도해 주세요.");
-  }, []);
+  }, [router]);
   useEffect(() => {
     reload();
   }, [reload]);
@@ -75,13 +77,12 @@ export default function MePage() {
     window.scrollTo({ top: 0 });
   };
 
-  const runAction = async (action: "clear" | "logout", work: () => Promise<void>) => {
-    if (actionInFlight.current) return;
-    actionInFlight.current = true;
-    setPending(action);
+  const logout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
     setError(null);
-    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "요청을 완료하지 못했어요."); }
-    finally { actionInFlight.current = false; setPending(null); }
+    try { await signOut(); router.replace("/"); }
+    catch (e) { setError(e instanceof Error ? e.message : "로그아웃하지 못했어요."); setLoggingOut(false); }
   };
 
   if (!me) return <><TopBar title="내 공간" /><div className="screen" role="status" aria-label="내 공간을 불러오고 있어요">
@@ -134,7 +135,6 @@ export default function MePage() {
             ) : (
               <div className="sk-card" role="status" aria-label="프로필을 불러오고 있어요"><div className="sk-row"><div className="sk sk-circle lg" /><div className="sk-col"><div className="sk sk-line lg w60" /><div className="sk w80" /></div></div></div>
             )}
-            {!user && <Link href="/auth" className="btn block sm" style={{ marginTop: 10 }}>로그인 · 회원가입하고 기록 보관하기</Link>}
 
             {profile && <BadgeShelf earned={profile.badges} catalog={profile.badgeCatalog} />}
 
@@ -154,16 +154,8 @@ export default function MePage() {
 
             {page ? <ProfileTabs data={page} /> : <div style={{ marginTop: 20 }} role="status" aria-label="내 글을 불러오고 있어요"><SkeletonList count={2} lines={2} /></div>}
 
-            <section className={styles.group} aria-labelledby="me-settings-title" style={{ marginTop: 28 }}>
-              <h2 className={styles.groupTitle} id="me-settings-title">설정</h2>
-              <div className={`card ${styles.menu}`}>
-                <Link href="/settings" className={styles.menuRow}><IconSettings /><span className={styles.menuLabel}><strong>설정</strong><small>계정 · 화면 모드 · 편의 기능</small></span><IconChevronR /></Link>
-                {!user && <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>로그인 · 회원가입</strong></span><IconChevronR /></Link>}
-              </div>
-            </section>
             <div className={styles.quietActions}>
-              <button type="button" className="text-btn muted" disabled={pending !== null} onClick={() => setConfirmClear(true)}>{pending === "clear" ? "삭제 중…" : "기록 전체 삭제"}</button>
-              {user && <button type="button" className="text-btn muted" disabled={pending !== null} onClick={() => runAction("logout", async () => { await signOut(); await reload(); })}>{pending === "logout" ? "로그아웃 중…" : "로그아웃"}</button>}
+              <button type="button" className="text-btn muted" disabled={loggingOut} onClick={logout}>{loggingOut ? "로그아웃 중…" : "로그아웃"}</button>
             </div>
           </>
         )}
@@ -215,16 +207,6 @@ export default function MePage() {
           }}
         />
       )}
-      <ConfirmSheet
-        open={confirmClear}
-        title={user ? "이 계정의 기록을 모두 지울까요?" : "이 기기의 기록을 모두 지울까요?"}
-        message="기록·메모·목표·일정이 모두 사라지고 되돌릴 수 없어요."
-        confirmLabel="모두 지우기"
-        danger
-        busy={pending === "clear"}
-        onClose={() => setConfirmClear(false)}
-        onConfirm={() => runAction("clear", async () => { clearAll(); await reload(); setConfirmClear(false); })}
-      />
     </>
   );
 }

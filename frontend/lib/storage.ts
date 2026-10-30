@@ -442,6 +442,19 @@ export function clearAll() {
   pushRecords(["journal", "memos", "goals", "schedule", "categories"], "clear", "DELETE", "/api/records");
 }
 
+/* ---------- 종류별 삭제 (설정 › 기록 관리) ---------- */
+
+export type RecordKind = "journal" | "memos" | "goals" | "schedule";
+/** 한 종류만 지운다. 하루 기록은 그 날 한 행동도 함께. 로그인 계정이면 서버의 같은 종류도 비운다 */
+export function clearRecordKind(kind: RecordKind) {
+  if (kind === "journal") {
+    write(K.log, {});
+    saveJournal({});
+  } else if (kind === "memos") saveMemos([]);
+  else if (kind === "goals") saveGoals([]);
+  else saveSchedule([]);
+}
+
 /* ---------- 데모용 샘플 ---------- */
 
 export function seedSampleData() {

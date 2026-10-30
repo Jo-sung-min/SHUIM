@@ -84,11 +84,15 @@ export default function AuthPage() {
       return;
     }
     navigatingRef.current = true;
-    router.push(new URLSearchParams(window.location.search).get("next") === "delete" ? "/account-deletion" : "/");
+    router.push(afterLogin());
   });
 
   const back = <Link href="/settings" className="icon-btn" aria-label="설정으로"><IconChevronL /></Link>;
-  const afterLogin = () => new URLSearchParams(window.location.search).get("next") === "delete" ? "/account-deletion" : "/";
+  /** 로그인 뒤 갈 곳: ?next= 는 정해 둔 값만 받는다 (delete → 계정 삭제, me → 나 화면) */
+  const afterLogin = () => {
+    const next = new URLSearchParams(window.location.search).get("next");
+    return next === "delete" ? "/account-deletion" : next === "me" ? "/me" : "/";
+  };
 
   /** 미니앱: 토스 로그인만. 처음이면 서버가 동의를 요구하고, 동의를 저장한 뒤 한 번 더 부른다 */
   const tossStart = () => run("toss", async () => {
