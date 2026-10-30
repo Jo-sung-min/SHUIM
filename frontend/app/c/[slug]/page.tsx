@@ -141,9 +141,7 @@ export default function CirclePage() {
             {member ? "첫 사연을 보내 보세요. 소로우지기가 다듬어 #1로 올려 줘요." : "멤버들이 보낸 사연이 소로우지기의 검토를 거쳐 여기에 올라와요."}
           </Empty>
         ) : (
-          <div className={styles.edge}>
-            <CirclePosts s={s} posts={posts} onChange={setS} onMenu={(id) => setMenu({ kind: "post", id })} showCircle={false} />
-          </div>
+          <CirclePosts s={s} posts={posts} onChange={setS} onMenu={(id) => setMenu({ kind: "post", id })} showCircle={false} />
         )}
       </div>
 

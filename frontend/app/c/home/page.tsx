@@ -97,9 +97,7 @@ export default function CircleHomePage() {
             내 소로우에 첫 사연을 보내 보세요. 소로우지기가 검토한 뒤 올려 줘요.
           </Empty>
         ) : (
-          <div className={styles.edge}>
-            <CirclePosts s={s} posts={posts} onChange={setS} onMenu={(id) => setMenu({ kind: "post", id })} />
-          </div>
+          <CirclePosts s={s} posts={posts} onChange={setS} onMenu={(id) => setMenu({ kind: "post", id })} />
         )}
 
         {warm.length > 0 && (
