@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Me, fetchMe, signOut } from "@/lib/auth";
+import { Me, fetchMe } from "@/lib/auth";
 import { formatPhone, loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, streak, syncRecords, todayKey } from "@/lib/storage";
 import { MyProfile, ProfilePage, ServerNotification, fetchMyProfile, fetchNotifications, fetchProfilePage, markBadgesSeen, unreadMessages, updateMyProfile } from "@/lib/social";
 import { uploadImage } from "@/lib/upload";
@@ -40,7 +40,6 @@ export default function MePage() {
   const [dmUnread, setDmUnread] = useState(0);
   const [stats, setStats] = useState({ streak: 0, memos: 0, goals: 0, today: 0 });
   const [error, setError] = useState<string | null>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
   const router = useRouter();
 
   const reload = useCallback(async () => {
@@ -77,13 +76,6 @@ export default function MePage() {
     window.scrollTo({ top: 0 });
   };
 
-  const logout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    setError(null);
-    try { await signOut(); router.replace("/"); }
-    catch (e) { setError(e instanceof Error ? e.message : "로그아웃하지 못했어요."); setLoggingOut(false); }
-  };
 
   if (!me) return <><TopBar title="내 공간" /><div className="screen" role="status" aria-label="내 공간을 불러오고 있어요">
     <div className="sk-card"><div className="sk-row"><div className="sk sk-circle lg" /><div className="sk-col"><div className="sk sk-line lg w60" /><div className="sk w80" /></div></div></div>
@@ -154,9 +146,6 @@ export default function MePage() {
 
             {page ? <ProfileTabs data={page} /> : <div style={{ marginTop: 20 }} role="status" aria-label="내 글을 불러오고 있어요"><SkeletonList count={2} lines={2} /></div>}
 
-            <div className={styles.quietActions}>
-              <button type="button" className="text-btn muted" disabled={loggingOut} onClick={logout}>{loggingOut ? "로그아웃 중…" : "로그아웃"}</button>
-            </div>
           </>
         )}
 

@@ -33,6 +33,7 @@
 .menuRow strong { display: block; font-size: 15px; font-weight: 650; }
 .menuRow small { display: block; margin-top: 3px; font-size: 13px; color: var(--text-2); }
 .menuRow .menuLabel { flex: 1; min-width: 0; }
+.dangerText { color: var(--danger); }
 .mutedNote { color: var(--text-2); font-size: 13px; line-height: 1.7; text-align: center; margin: 18px 12px; }
 .logout { margin-top: 20px; }
 .profileCard { padding: 22px 20px 18px; margin: 2px 0 20px; }

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Me, fetchMe } from "@/lib/auth";
+import { useRouter } from "next/navigation";
+import { Me, fetchMe, signOut } from "@/lib/auth";
 import { ConfirmSheet, Segmented, TopBar } from "@/components/ui";
 import { IconBook, IconBriefcase, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
 import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
@@ -27,7 +28,7 @@ const RECORD_KINDS: { kind: RecordKind; label: string; obj: string; unit: string
 
 /**
  * 설정: 나 화면의 톱니에서 들어온다.
- * 계정(닉네임·로그아웃은 /auth), 화면 모드, 기록 관리(종류별 삭제), 편의 기능(차단한 사용자·서비스 안내·관리자)을 한곳에 모았다.
+ * 계정(닉네임은 /auth), 화면 모드, 기록 관리(종류별 삭제), 편의 기능(차단한 사용자·서비스 안내·관리자), 맨 아래 로그아웃을 한곳에 모았다.
  * 로그인하지 않아도 열린다 — 화면 모드는 이 기기에만 저장되는 설정이라서.
  */
 export default function SettingsPage() {
@@ -43,6 +44,16 @@ export default function SettingsPage() {
   }, []);
   const user = me?.user ?? null;
   const clearingInfo = RECORD_KINDS.find((k) => k.kind === clearing);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const router = useRouter();
+  const logout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setLogoutError(null);
+    try { await signOut(); router.replace("/"); }
+    catch (e) { setLogoutError(e instanceof Error ? e.message : "로그아웃하지 못했어요."); setLoggingOut(false); }
+  };
 
   return (
     <>
@@ -52,7 +63,7 @@ export default function SettingsPage() {
           <h2 className={styles.groupTitle} id="settings-account-title">계정</h2>
           <div className={`card ${styles.menu}`}>
             {user ? (
-              <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>{user.nick}</strong><small>{user.email ?? "카카오로 연결된 계정"} · 닉네임 변경 · 로그아웃</small></span><IconChevronR /></Link>
+              <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>{user.nick}</strong><small>{user.email ?? "카카오로 연결된 계정"} · 닉네임 변경</small></span><IconChevronR /></Link>
             ) : (
               <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>{me ? "로그인 · 회원가입" : "계정"}</strong><small>{me ? "기록을 보관하고 다른 기기에서도 이어서 봐요" : "확인하고 있어요…"}</small></span><IconChevronR /></Link>
             )}
@@ -96,6 +107,14 @@ export default function SettingsPage() {
           <div className={`card ${styles.menu}`}>
             <a href="https://www.buchu.co.kr" target="_blank" rel="noopener noreferrer" className={styles.menuRow}><IconBriefcase /><span className={styles.menuLabel}><strong>부업하러 가기</strong><small>부업추천 부추 · buchu.co.kr</small></span><IconChevronR /></a>
           </div>
+        </section>}
+
+        {/* 인스타처럼 계속 로그인된 채로 쓰고, 로그아웃은 설정 맨 아래에만 */}
+        {user && <section className={styles.group} aria-label="로그아웃">
+          <div className={`card ${styles.menu}`}>
+            <button type="button" className={styles.menuRow} disabled={loggingOut} onClick={logout}><span className={styles.menuLabel}><strong className={styles.dangerText}>{loggingOut ? "로그아웃 중…" : "로그아웃"}</strong><small>{user.nick}</small></span></button>
+          </div>
+          {logoutError && <p className={styles.error} role="alert" style={{ marginTop: 8 }}>{logoutError}</p>}
         </section>}
       </div>
       <ConfirmSheet
