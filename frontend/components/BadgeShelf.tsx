@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { BadgeDef, EarnedBadge } from "@/lib/social";
 import { Sheet } from "./ui";
-import Fist3D from "./Fist3D";
-import { IconBubble, IconBubbles, IconFilm, IconFist, IconHeart, IconLeaf, IconLock, IconLotus, IconMegaphone, IconMoon, IconShield, IconTrophy, IconUsers } from "./Icons";
+import CheerFlame from "./CheerFlame";
+import { IconBubble, IconBubbles, IconFilm, IconFlame, IconHeart, IconLeaf, IconLock, IconLotus, IconMegaphone, IconMoon, IconShield, IconTrophy, IconUsers } from "./Icons";
 import styles from "./Profile.module.css";
 
 /** 배지마다 아이콘 (선 아이콘 한 세트) */
@@ -12,8 +12,8 @@ const ICONS: Record<string, (p: { "aria-hidden"?: boolean }) => React.ReactEleme
   first_comfort: IconBubble,
   comfort_steady: IconBubbles,
   comfort_master: IconLotus,
-  cheer_first: IconFist,
-  cheer_rich: IconFist,
+  cheer_first: IconFlame,
+  cheer_rich: IconFlame,
   thanked: IconHeart,
   thanked_much: IconHeart,
   night_owl: IconMoon,
@@ -69,7 +69,7 @@ export default function BadgeShelf({ earned, catalog }: { earned: EarnedBadge[];
 }
 
 /**
- * 새 배지 축하 시트: 처음 볼 때 한 번만. 3D 주먹이 톡 튀어나오고, 첫 배지를 바로 칭호로 달 수 있다.
+ * 새 배지 축하 시트: 처음 볼 때 한 번만. 불꽃이 화르륵 타오르고, 첫 배지를 바로 칭호로 달 수 있다.
  * 닫으면 onDone (서버에 '봤다'를 남긴다).
  */
 export function BadgeCelebration({ badges, onDone, onUseAsTitle }: { badges: EarnedBadge[]; onDone: () => void; onUseAsTitle?: (id: string) => Promise<void> }) {
@@ -92,7 +92,7 @@ export function BadgeCelebration({ badges, onDone, onUseAsTitle }: { badges: Ear
   return (
     <Sheet open={open} onClose={close} title={badges.length > 1 ? `새 위로 배지 ${badges.length}개` : "새 위로 배지"}>
       <div className={styles.celebrate}>
-        <div className={styles.celebrateFist}><Fist3D on burst={burst} size={64} /></div>
+        <div className={styles.celebrateCheer}><CheerFlame on burst={burst} size={64} /></div>
         <div className={styles.celebrateList}>
           {badges.map((b) => (
             <div key={b.id} className={styles.celebrateItem}>

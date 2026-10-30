@@ -22,7 +22,7 @@ import { Sheet, fmtRelative } from "@/components/ui";
 import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import FeedComposer from "@/components/FeedComposer";
 import Link from "next/link";
-import { IconBookmark, IconBubble, IconFist, IconMore, IconPen } from "@/components/Icons";
+import { IconBookmark, IconBubble, IconFlame, IconMore, IconPen } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
 import { readScrollMemory, useElementScrollMemory } from "@/lib/scroll-memory";
 import styles from "./feed-media.module.css";
@@ -459,7 +459,7 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
             <div key={f.id} className="card flat" style={{ padding: "10px 12px", fontSize: 13.5 }}>
               {f.title && <b style={{ display: "block", fontSize: 12, color: "var(--text-2)" }}>{f.title}</b>}
               <span style={{ whiteSpace: "pre-wrap" }}>{f.text.slice(0, 60)}{f.text.length > 60 ? "…" : ""}</span>
-              <div className="tiny muted" style={{ marginTop: 4 }}><span className="inline-fist"><IconFist /> {f.cheers.length}</span> · {fmtRelative(f.createdAt)}</div>
+              <div className="tiny muted" style={{ marginTop: 4 }}><span className="inline-cheer"><IconFlame /> {f.cheers.length}</span> · {fmtRelative(f.createdAt)}</div>
             </div>
           ))}
         </div>

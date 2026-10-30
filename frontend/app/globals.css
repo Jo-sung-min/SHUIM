@@ -1050,22 +1050,29 @@ textarea.lined {
 .post-foot .lact.on { color: var(--text); }
 .comment .lact { font-size: 13px; min-height: 36px; }
 .comment .lact .ico svg { width: 18px; height: 18px; }
-.inline-fist { display: inline-flex; align-items: center; gap: 3px; }
-.inline-fist svg { width: 14px; height: 14px; }
+.inline-cheer { display: inline-flex; align-items: center; gap: 3px; }
+.inline-cheer svg { width: 14px; height: 14px; }
 
-/* ---------- 3D 주먹 (힘내요) ---------- */
-.cheer3d { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 0; perspective: 120px; }
-.cheer3d svg { filter: drop-shadow(0 2px 3px rgba(200, 110, 20, 0.35)); transform-origin: 50% 55%; }
-.cheer3d.burst svg { animation: cheer-pop 0.6s var(--ease) both; }
-@keyframes cheer-pop {
-  0% { transform: scale(0.6) rotateY(0deg); }
-  50% { transform: scale(1.15) rotateY(180deg); }
-  100% { transform: scale(1) rotateY(360deg); }
+/* ---------- 타는 불꽃 (힘내요, components/CheerFlame.tsx) ---------- */
+/* 누르면 아래에서 화르륵 솟고(flare), 켜진 동안은 밑동을 축으로 천천히 일렁인다 */
+.cheer3d { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+.cheer3d svg { filter: drop-shadow(0 2px 3px rgba(220, 70, 30, 0.35)); transform-origin: 50% 92%; animation: cheer-flicker 2.4s ease-in-out infinite; }
+.cheer3d.burst svg { animation: cheer-flare 0.55s var(--ease) both, cheer-flicker 2.4s ease-in-out 0.55s infinite; }
+@keyframes cheer-flare {
+  0% { transform: scale(0.3, 0.1); opacity: 0.4; }
+  55% { transform: scale(1.12, 1.25); opacity: 1; }
+  100% { transform: scale(1); }
 }
+@keyframes cheer-flicker {
+  0%, 100% { transform: scale(1) skewX(0deg); }
+  30% { transform: scale(0.97, 1.04) skewX(-2deg); }
+  65% { transform: scale(1.02, 0.98) skewX(1.5deg); }
+}
+@media (prefers-reduced-motion: reduce) { .cheer3d svg, .cheer3d.burst svg { animation: none; } }
 .cheer3d-sparks { position: absolute; inset: 0; pointer-events: none; }
 .cheer3d-sparks i {
   position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
-  background: #f9a826; opacity: 0;
+  background: #ff8a3c; opacity: 0;
   transform: rotate(var(--a)) translateY(0) scale(0.4);
   animation: cheer-spark 0.6s ease-out var(--d) both;
 }

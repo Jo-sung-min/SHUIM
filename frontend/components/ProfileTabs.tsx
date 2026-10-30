@@ -8,7 +8,7 @@ import type { ShoutCat } from "@/lib/community-core";
 import { stripHighlights } from "@/lib/highlight";
 import { Empty, fmtRelative } from "./ui";
 import { ShoutCatIcon } from "./CategoryIcon";
-import { IconBookmark, IconBubble, IconFilm, IconFist, IconMessage } from "./Icons";
+import { IconBookmark, IconBubble, IconFilm, IconFlame, IconMessage } from "./Icons";
 import styles from "./Profile.module.css";
 import { route } from "@/lib/routes";
 
@@ -34,7 +34,7 @@ export default function ProfileTabs({ data }: { data: ProfilePage }) {
         {items.map((f) => (
           <Link key={f.id} href={`/feed?post=${f.id}`} className={`profile-cell bg-${f.bg} ${f.image ? "has-img" : ""}`} style={f.image ? { backgroundImage: `url(${f.image})` } : undefined}>
             <span className="t">{f.title ?? stripHighlights(f.text).split("\n")[0]}</span>
-            <span className="c"><IconFist /> {f.cheers}</span>
+            <span className="c"><IconFlame /> {f.cheers}</span>
           </Link>
         ))}
       </div>
@@ -61,7 +61,7 @@ export default function ProfileTabs({ data }: { data: ProfilePage }) {
                 const c = shoutCatById(s.cat as ShoutCat);
                 return (
                   <Link key={s.id} href={route(`/shout/${s.id}`)} className="card post" style={{ display: "block" }}>
-                    <div className="post-head"><span className="cat"><ShoutCatIcon id={c.id} /> {c.label}</span><span>·</span><span>{fmtRelative(s.createdAt)}</span><span className="inline-fist" style={{ marginLeft: "auto" }}><IconFist /> {s.cheers}</span></div>
+                    <div className="post-head"><span className="cat"><ShoutCatIcon id={c.id} /> {c.label}</span><span>·</span><span>{fmtRelative(s.createdAt)}</span><span className="inline-cheer" style={{ marginLeft: "auto" }}><IconFlame /> {s.cheers}</span></div>
                     <p className="post-text" style={{ marginBottom: 0 }}>{s.text}</p>
                   </Link>
                 );
@@ -80,7 +80,7 @@ export default function ProfileTabs({ data }: { data: ProfilePage }) {
                 <Link key={c.id} href={c.postKind === "post" ? route(`/shout/${c.postId}`) : `/feed?post=${c.postId}`} className={styles.comfort}>
                   <span className={styles.comfortCtx}><IconBubble aria-hidden /> {c.postSnippet}</span>
                   <p className={styles.comfortText}>{stripHighlights(c.text)}</p>
-                  <span className={styles.comfortFoot}><span className="inline-fist"><IconFist /> {c.cheers}</span><span>{fmtRelative(c.createdAt)}</span></span>
+                  <span className={styles.comfortFoot}><span className="inline-cheer"><IconFlame /> {c.cheers}</span><span>{fmtRelative(c.createdAt)}</span></span>
                 </Link>
               ))}
             </div>

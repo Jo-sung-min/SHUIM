@@ -22,7 +22,7 @@ import Link from "next/link";
 import { Sheet, fmtRelative } from "./ui";
 export { LoadError } from "./ui";
 import { IconFlag, IconMore, IconSend, IconTrash } from "./Icons";
-import Fist3D from "./Fist3D";
+import CheerFlame from "./CheerFlame";
 import { showToast, tick, toastSuccess } from "@/lib/toast";
 import { route } from "@/lib/routes";
 
@@ -72,7 +72,7 @@ export function CheerButton({ count, on, onClick, small, vertical }: { count: nu
       vertical={vertical}
       on={on}
       ariaLabel="힘내요"
-      icon={<Fist3D on={on} burst={burst} size={vertical ? 30 : small ? 18 : 22} />}
+      icon={<CheerFlame on={on} burst={burst} size={vertical ? 30 : small ? 18 : 22} />}
       label={count}
       onClick={() => {
         if (!on) { setBurst(true); tick(); }
