@@ -23,7 +23,8 @@ import java.time.ZoneOffset;
 import java.util.*;
 
 /**
- * 커뮤니티 소로우: 소로우 만들기·가입·소속 인증·리스닝, 사연 보내기, 소로우지기 검토와 '#번호' 게시.
+ * 커뮤니티 소로우: 회사원·자영업·취준생·쉬는 중처럼 처지별로 모여 힘든 점을 털어놓는 곳.
+ * 소로우는 서비스(관리자)가 열고, 누구나 가입·리스닝하고 사연을 보내면 소로우지기가 검토해 '#번호'로 게시한다.
  * 게시된 사연은 shout_posts(community_id, post_no)로 들어가 외침과 같은 힘내요·댓글·신고·배지를 쓴다.
  * 보낸 사람(author_id)은 소로우지기 화면과 다른 사람의 화면 어디에도 내려가지 않는다.
  */
@@ -48,12 +49,7 @@ public class CircleService {
     /* ---------- 모양 ---------- */
 
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
-                         String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample) {
-        /** 샘플 소로우(V19 예시 데이터)는 메일 인증 없이도 둘러보기에 나오고, 화면에 '샘플'로 표시된다 */
-        public boolean listed() {
-            return memberCount >= CircleLogic.LISTED_MIN_MEMBERS && (!CircleLogic.isSchoolOrCompany(kind) || verified || sample);
-        }
-    }
+                         String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample) {}
 
     public record Member(String role, String status, boolean primary, boolean verified) {
         public boolean active() { return "active".equals(status); }
@@ -77,7 +73,6 @@ public class CircleService {
         m.put("memberCount", c.memberCount());
         m.put("listenerCount", c.listenerCount());
         m.put("postCount", c.postSeq());
-        m.put("listed", c.listed());
         if (c.sample()) m.put("sample", true);
         m.put("createdAt", c.createdAt());
         return m;
@@ -127,16 +122,14 @@ public class CircleService {
 
     /* ---------- 읽기 ---------- */
 
-    /** 둘러보기: 멤버 10명 이상(학교·회사는 인증까지 마친) 소로우만. kind·이름 검색 */
+    /** 둘러보기: 모든 처지 소로우를 연 순서대로 (멤버 수로 줄 세우지 않는다). 처지 묶음·이름 검색 */
     public List<Map<String, Object>> browse(String kind, String q) {
         String k = kind != null && CircleLogic.KINDS.contains(kind) ? kind : null;
         String query = q == null ? "" : q.strip();
-        return jdbc.sql(CIRCLE_SELECT + " WHERE (CAST(:kind AS VARCHAR) IS NULL OR c.kind = :kind) AND (:q = '' OR c.name ILIKE '%' || :q || '%')")
+        return jdbc.sql(CIRCLE_SELECT + " WHERE (CAST(:kind AS VARCHAR) IS NULL OR c.kind = :kind) AND (:q = '' OR c.name ILIKE '%' || :q || '%') ORDER BY c.created_at, c.slug LIMIT 60")
             .param("kind", k).param("q", query)
             .query((rs, i) -> circleRow(rs)).list().stream()
-            .filter(Circle::listed)
-            .sorted(Comparator.comparingInt(Circle::memberCount).reversed())
-            .limit(60).map(this::view).toList();
+            .map(this::view).toList();
     }
 
     /** 내가 속한 소로우 (대표 먼저) + 리스닝 중인 소로우 */
@@ -174,7 +167,7 @@ public class CircleService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (String id : ids) {
             Circle c = byId.get(id);
-            if (c == null || !c.listed()) continue;
+            if (c == null) continue;
             Map<String, Object> v = view(c);
             v.put("rank", out.size() + 1);
             out.add(v);
@@ -212,8 +205,8 @@ public class CircleService {
 
     @Transactional
     public Map<String, Object> create(DbUser me, CreateInput in) {
-        if (me.anonymous()) throw ApiException.unauthorized("로그인한 계정만 소로우를 열 수 있어요");
-        assertNotBlocked(me);
+        // 처지 소로우는 서비스가 연다 (회사·학교 이름을 단 소로우가 생기지 않게)
+        if (!appAdmin(me)) throw ApiException.forbidden("소로우는 소로우 운영진이 열어요. 필요한 처지가 있으면 알려 주세요");
         String name = CircleLogic.normalizeName(in.name());
         if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
         String slug = CircleLogic.normalizeSlug(in.slug());
@@ -225,16 +218,9 @@ public class CircleService {
         String key = CircleLogic.nameKey(name);
         if (jdbc.sql("SELECT count(*) FROM communities WHERE name_key = ?").param(key).query(Long.class).single() > 0) throw ApiException.badRequest("같은 이름의 소로우가 이미 있어요");
         if (jdbc.sql("SELECT count(*) FROM communities WHERE slug = ?").param(slug).query(Long.class).single() > 0) throw ApiException.badRequest("이미 쓰고 있는 주소예요");
-        String domain = null;
-        String joinMode = in.joinMode() != null && CircleLogic.JOIN_MODES.contains(in.joinMode()) ? in.joinMode() : "open";
-        if (CircleLogic.isSchoolOrCompany(kind)) {
-            domain = CircleLogic.normalizeDomain(in.domain());
-            if (domain == null) throw ApiException.badRequest("학교·회사 소로우는 메일 도메인이 필요해요 (예: korea.ac.kr)");
-            joinMode = "domain";
-        } else if ("domain".equals(joinMode)) {
-            joinMode = "open";
-        }
-        String visibility = in.visibility() != null && CircleLogic.VISIBILITIES.contains(in.visibility()) ? in.visibility() : ("company".equals(kind) ? "members" : "public");
+        String domain = null; // 소속 메일 인증은 쓰지 않는다
+        String joinMode = in.joinMode() != null && CircleLogic.JOIN_MODES.contains(in.joinMode()) && !"domain".equals(in.joinMode()) ? in.joinMode() : "open";
+        String visibility = in.visibility() != null && CircleLogic.VISIBILITIES.contains(in.visibility()) ? in.visibility() : "public";
         String intro = in.intro() == null ? "" : in.intro().strip();
         if (intro.length() > 200) intro = intro.substring(0, 200);
         String id = Ids.uid();
@@ -275,7 +261,7 @@ public class CircleService {
             if (b.get("visibility") instanceof String v && CircleLogic.VISIBILITIES.contains(v)) {
                 jdbc.sql("UPDATE communities SET visibility = ? WHERE id = ?").param(v).param(c.id()).update();
             }
-            if (b.get("joinMode") instanceof String j && CircleLogic.JOIN_MODES.contains(j) && !CircleLogic.isSchoolOrCompany(c.kind()) && !"domain".equals(j)) {
+            if (b.get("joinMode") instanceof String j && CircleLogic.JOIN_MODES.contains(j) && !"domain".equals(j)) {
                 jdbc.sql("UPDATE communities SET join_mode = ?, invite_code = CASE WHEN ? = 'invite' THEN COALESCE(invite_code, ?) ELSE invite_code END WHERE id = ?")
                     .param(j).param(j).param(inviteCode()).param(c.id()).update();
             }
@@ -460,10 +446,11 @@ public class CircleService {
     public record Draft(String text, List<String> masked, String source) {}
 
     private static final String DRAFT_PROMPT = """
-        너는 커뮤니티 소로우(대나무숲 같은 익명 사연 공간)의 사연 정리 도우미야.
+        너는 커뮤니티 소로우(회사원·자영업·취준생·쉬는 중처럼 처지별로 모인 익명 사연 공간)의 사연 정리 도우미야.
         사용자가 보낸 사연을 게시하기 좋게 다듬되, 쓴 사람의 말투와 1인칭 시점과 내용은 그대로 둬.
         - 띄어쓰기·맞춤법·문단만 정리해. 없는 사실을 더하거나 감정을 과장하지 마.
         - 사람을 특정할 수 있는 정보는 ○○ 로 가려: 실명, 학번·사번, 전화번호, 메일, 특정 수업·팀·부서 이름, 날짜와 장소가 합쳐져 한 사람을 가리키는 표현.
+        - 회사·학교·기관·가게 이름도 ○○ 로 가려. 여기서는 소속 대신 처지로만 이야기해 (소속 이름이 다른 사람에게 박탈감이 되지 않게).
         - 특정인을 비난·저격하는 문장은 그 사람이 드러나지 않게 가리기만 하고, 판단은 하지 마.
         - 1200자를 넘지 마.
         출력은 아래 JSON 하나만. 코드블록이나 다른 텍스트 없이.

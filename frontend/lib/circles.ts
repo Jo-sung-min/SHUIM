@@ -3,19 +3,21 @@ import { requireCommunityConsent } from "./consent";
 import type { ShoutCat } from "./community";
 
 /**
- * 커뮤니티 소로우 클라이언트. 대나무숲처럼 소속별 공간에 익명 사연을 보내고, 소로우지기가 정리해 '#번호'로 올린다.
+ * 커뮤니티 소로우 클라이언트. 회사원·자영업·취준생·쉬는 중처럼 처지별로 모인 곳에 익명 사연을 보내고,
+ * 소로우지기가 정리해 '#번호'로 올린다. 회사·학교 같은 소속 이름은 쓰지 않는다 (누군가에게는 박탈감이 되어서).
  * 게시된 사연의 읽기·힘내요·댓글은 외침과 같은 /api/community 를 쓴다 (Post.communityId 가 있는 글).
  */
 
-export type CircleKind = "school" | "company" | "region" | "interest";
+export type CircleKind = "work" | "study" | "rest" | "care";
 export type JoinMode = "open" | "approve" | "invite" | "domain";
 export type Visibility = "public" | "members";
 
+/** 처지 묶음 (서버 CircleLogic.KINDS 와 같은 순서) */
 export const CIRCLE_KINDS: { id: CircleKind; label: string; hint: string }[] = [
-  { id: "school", label: "학교", hint: "학교 메일로 인증한 사람만 멤버가 돼요" },
-  { id: "company", label: "회사", hint: "회사 메일로 인증한 사람만 멤버가 돼요" },
-  { id: "region", label: "지역", hint: "동네·도시 이야기" },
-  { id: "interest", label: "관심사", hint: "같은 고민을 가진 사람들" },
+  { id: "work", label: "일하는 중", hint: "회사원, 자영업, 프리랜서, 현장·교대, 공무원" },
+  { id: "study", label: "준비하는 중", hint: "대학생, 수험생, 취준생" },
+  { id: "rest", label: "쉬는 중", hint: "일을 쉬거나 멈춘 사람들" },
+  { id: "care", label: "돌보는 중", hint: "육아, 가족 돌봄" },
 ];
 export const kindLabel = (k: string) => CIRCLE_KINDS.find((x) => x.id === k)?.label ?? "소로우";
 export const JOIN_MODE_LABEL: Record<JoinMode, string> = {
@@ -39,9 +41,7 @@ export interface Circle {
   memberCount: number;
   listenerCount: number;
   postCount: number;
-  /** 둘러보기에 나오는지 (멤버 10명 이상, 학교·회사는 인증까지) */
-  listed: boolean;
-  /** 예시 데이터로 넣은 소로우 (메일 인증과 관계없이 둘러보기에 나오고 "샘플" 표시) */
+  /** 예시 데이터로 넣은 소로우 ("샘플" 표시) */
   sample?: boolean;
   createdAt: number;
   /** 이번 주 가장 따뜻한 소로우 순위 */
@@ -170,5 +170,5 @@ export const SUBMISSION_STATUS: Record<SubmissionStatus, string> = {
   rejected: "반려",
 };
 
-/** 사연 표시 이름: "고려대 소로우 #128" */
+/** 사연 표시 이름: "회사원 소로우 #128" */
 export const circleTag = (p: { circle?: string; postNo?: number }) => `${p.circle ?? "소로우"}${p.postNo ? ` #${p.postNo}` : ""}`;

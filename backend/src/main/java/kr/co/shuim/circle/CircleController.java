@@ -43,7 +43,7 @@ public class CircleController {
         return circles.mine(auth.requireUser(req, res));
     }
 
-    /** POST /api/circles { name, slug, kind, intro, joinMode, visibility, domain } — 소로우 열기 (가입한 계정만) */
+    /** POST /api/circles { name, slug, kind, intro, joinMode, visibility } — 처지 소로우 열기 (관리자만) */
     @PostMapping("/api/circles")
     public Map<String, Object> create(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);

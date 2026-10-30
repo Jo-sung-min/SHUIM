@@ -12,22 +12,22 @@ import java.util.regex.Pattern;
 public final class CircleLogic {
     private CircleLogic() {}
 
-    public static final List<String> KINDS = List.of("school", "company", "region", "interest");
+    /**
+     * 처지 묶음: 회사·학교 같은 소속 대신 비슷한 처지끼리 모인다 (회사원·자영업은 work, 대학생·취준생은 study, 쉬는 중은 rest, 육아·돌봄은 care).
+     * 소속을 드러내면 누군가에게는 박탈감이 되어서, 소속 이름이 붙은 소로우는 만들지 않는다
+     */
+    public static final List<String> KINDS = List.of("work", "study", "rest", "care");
     public static final List<String> JOIN_MODES = List.of("open", "approve", "invite", "domain");
     public static final List<String> VISIBILITIES = List.of("public", "members");
-    /** 둘러보기 목록에 나오려면 멤버가 이만큼 (그 전에는 링크로만) */
-    public static final int LISTED_MIN_MEMBERS = 10;
-    /** 한 사람이 열 수 있는 소로우 */
-    public static final int MAX_OWNED = 3;
+    /** 한 사람(관리자)이 열 수 있는 소로우 */
+    public static final int MAX_OWNED = 30;
     public static final String MASK = "○○";
 
     private static final Pattern SLUG = Pattern.compile("^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$");
     private static final Pattern DOMAIN = Pattern.compile("^(?=.{3,100}$)([a-z0-9-]+\\.)+[a-z]{2,}$");
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@([^\\s@]+\\.[^\\s@]+)$");
 
-    public static boolean isSchoolOrCompany(String kind) { return "school".equals(kind) || "company".equals(kind); }
-
-    /** 이름: 2~30자, 끝에 '소로우'가 없으면 붙인다 ("고려대" → "고려대 소로우") */
+    /** 이름: 2~30자, 끝에 '소로우'가 없으면 붙인다 ("쉬는 중" → "쉬는 중 소로우") */
     public static String normalizeName(String raw) {
         if (raw == null) return null;
         String n = raw.strip().replaceAll("\\s+", " ");

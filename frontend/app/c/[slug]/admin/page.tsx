@@ -238,7 +238,6 @@ function Members({ slug, owner, onCount }: { slug: string; owner: boolean; onCou
 
 function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) => void }) {
   const owner = c.me.role === "owner";
-  const org = c.kind === "school" || c.kind === "company";
   const [notice, setNotice] = useState(c.notice);
   const [intro, setIntro] = useState(c.intro);
   const [busy, setBusy] = useState(false);
@@ -276,29 +275,22 @@ function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) 
               <button type="button" role="radio" aria-checked={c.visibility === "members"} className={styles.opt} disabled={busy} onClick={() => save({ visibility: "members" })}>멤버에게만</button>
             </div>
           </div>
-          {!org && (
-            <div className={styles.field}>
-              <span>가입 방식</span>
-              <div className={styles.seg} role="radiogroup" aria-label="가입 방식">
-                {(["open", "approve", "invite"] as const).map((m) => (
-                  <button key={m} type="button" role="radio" aria-checked={c.joinMode === m} className={styles.opt} disabled={busy} onClick={() => save({ joinMode: m })}>
-                    {m === "open" ? "누구나" : m === "approve" ? "승인 후" : "초대 코드"}
-                  </button>
-                ))}
-              </div>
+          <div className={styles.field}>
+            <span>가입 방식</span>
+            <div className={styles.seg} role="radiogroup" aria-label="가입 방식">
+              {(["open", "approve", "invite"] as const).map((m) => (
+                <button key={m} type="button" role="radio" aria-checked={c.joinMode === m} className={styles.opt} disabled={busy} onClick={() => save({ joinMode: m })}>
+                  {m === "open" ? "누구나" : m === "approve" ? "승인 후" : "초대 코드"}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
           {c.joinMode === "invite" && c.inviteCode && (
             <div className={styles.field}>
               <span>초대 코드</span>
               <div className={styles.devCode}><b>{c.inviteCode}</b></div>
               <button className="btn ghost sm" disabled={busy} onClick={() => save({ regenerateInvite: true }, "새 초대 코드를 만들었어요")}>새 코드 만들기</button>
             </div>
-          )}
-          {org && (
-            <p className={styles.sub} style={{ margin: 0 }}>
-              @{c.domain} 메일로 인증한 사람만 멤버가 돼요.{c.verified ? " 인증 소로우예요." : " 나도 이 메일로 인증하면 ‘인증 소로우’ 표시가 붙고, 멤버 10명이 넘으면 둘러보기에 나와요."}
-            </p>
           )}
         </>
       )}
