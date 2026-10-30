@@ -65,9 +65,28 @@ function HomeHeader() {
   const hidden = useHideOnScroll();
   return <header className={styles.homeHeader} data-hidden={hidden || undefined}>
     <span aria-hidden="true" />
-    <h1 aria-label="소로우">SOROW</h1>
+    <h1 aria-label="소로우"><span aria-hidden="true">S<LogoFace mood="smile" />R<LogoFace mood="tear" />W</span></h1>
     <Link href="/write" className={`icon-btn ${styles.homeWrite}`} aria-label="새 외침 쓰기" title="새 외침 쓰기"><IconSquarePlus /></Link>
   </header>;
+}
+
+/** 로고의 O 두 개: 앞은 웃는 얼굴, 뒤는 눈물 한 방울 (웃다가도 울고, 울다가도 웃는 곳). 점 눈 + 입, 눈물만 파랑 */
+function LogoFace({ mood }: { mood: "smile" | "tear" }) {
+  return (
+    <svg className={styles.logoO} viewBox="0 0 36 36" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="18" r="14.5" strokeWidth="5" />
+      <circle cx="13" cy="15" r="2" fill="currentColor" stroke="none" />
+      <circle cx="23" cy="15" r="2" fill="currentColor" stroke="none" />
+      {mood === "smile" ? (
+        <path d="M13 20.5q5 5 10 0" strokeWidth="2.8" />
+      ) : (
+        <>
+          <path d="M14.5 24.5q3.5-2.5 7 0" strokeWidth="2.8" />
+          <path className={styles.logoTear} d="M13 18.3c-1.1 1.7-1.4 2.8-.4 3.5 1 .7 2.1-.2 1.8-1.4-.2-.7-.7-1.4-1.4-2.1Z" stroke="none" />
+        </>
+      )}
+    </svg>
+  );
 }
 
 /** 나를 위한 시간 한 칸. 기본 4칸은 AI 상태에서, 추가한 칸은 lib/care 의 오늘 기록에서 done 을 정한다 (안 했으면 빨간 점) */
