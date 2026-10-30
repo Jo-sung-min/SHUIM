@@ -47,7 +47,7 @@ export default function RankingPage() {
         <div style={{ height: 12 }} />
         <Hero
           label={batch ? `${weekLabel(batch.week)} · ${batch.finalized ? "확정" : `잠정 · ${fmtRelative(batch.computedAt)} 집계`}` : "집계 전"}
-          title={batch?.rows.length ? `1위 ${batch.rows[0].nick}, 힘내요 ${batch.rows[0].cheers}` : "아직 불행 털어내기 글이 없어요"}
+          title={batch?.rows.length ? `1위 ${batch.rows[0].nick}, 힘내요 ${batch.rows[0].cheers}` : "아직 불행광장 글이 없어요"}
           stats={batch ? [`순위 ${batch.rows.length}명`, `모금 ${fmtWon(batch.fund.total)}`, myRow ? `나 ${myRow.rank}위` : "나 순위 밖"] : []}
         />
         <div style={{ marginTop: 12 }}>
@@ -62,7 +62,7 @@ export default function RankingPage() {
         )}
         {!batch || batch.rows.length === 0 ? (
           <Empty icon={<IconTrophy />} title={view === "past" ? "확정된 지난 주 집계가 없어요" : "이번 주엔 아직 순위가 없어요"} action={<Link href="/shout" className="btn ghost">외침 보러 가기</Link>}>
-            외침의 불행 털어내기에 글을 쓰면 여기 올라와요.
+            외침의 불행광장에 글을 쓰면 여기 올라와요.
           </Empty>
         ) : (
           <div className="stack" style={{ marginTop: 12 }}>

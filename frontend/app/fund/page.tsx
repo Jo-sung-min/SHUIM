@@ -59,7 +59,7 @@ export default function FundPage() {
 
         <div className="section-title"><span>이번 주 분배 예상</span><Link href="/ranking" className="link">랭킹 보기</Link></div>
         {top10.length === 0 ? (
-          <Empty icon={<IconCoin />} title="아직 분배 대상이 없어요">불행 털어내기에 글이 올라오면 순위가 생겨요.</Empty>
+          <Empty icon={<IconCoin />} title="아직 분배 대상이 없어요">불행광장에 글이 올라오면 순위가 생겨요.</Empty>
         ) : (
           <section className="card" style={{ padding: "6px 16px" }}>
             {top10.map((r) => (

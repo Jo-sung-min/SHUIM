@@ -9,8 +9,6 @@ import {
   REPORT_THRESHOLD,
   SHOUT_CATEGORIES,
   ShoutCat,
-  Target,
-  api,
   commentsOf,
   fetchCommunity,
   isBlocked,
@@ -22,36 +20,35 @@ import {
 } from "@/lib/community";
 import HelpBanner from "@/components/HelpBanner";
 import { Empty, SkeletonList, fmtRelative } from "@/components/ui";
-import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import ShoutTabs from "@/components/ShoutTabs";
-import { CheerButton, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
-import { IconBubble, IconChevronR, IconClose, IconMore, IconPlus, IconSearch, IconShield, IconSort } from "@/components/Icons";
+import { LoadError } from "@/components/CommunityUI";
+import { IconBubble, IconClose, IconImage, IconPlus, IconSearch, IconShield } from "@/components/Icons";
 import styles from "./shout.module.css";
 import { splitShout } from "./split";
-import TitleChip from "@/components/TitleChip";
 import { circleTag } from "@/lib/circles";
 import { route } from "@/lib/routes";
 
 type Filter = ShoutCat | "all";
-type Sort = "new" | "top";
-type Badge = "hot" | "new" | null;
+/** 전체글 / 개념글 (힘내요·댓글을 많이 받은 글) */
+type Board = "all" | "best";
 
 const DAY = 86_400_000;
-/** 전체 화면에서 카테고리 구역마다 보여 줄 글 수 */
-const SECTION_SIZE = 3;
-/** 힘내요 + 댓글(×2) 점수. 목록의 "힘내요순" 정렬과 HOT 표시에 쓴다 */
+/** 힘내요 + 댓글(×2) 점수가 이만큼이면 개념글 (샘플 글 기준 위쪽 열에 하나쯤) */
+const BEST_SCORE = 10;
 const score = (s: CommunityStore, p: Post) => p.cheers.length + commentsOf(s, p.id).length * 2;
 
+/**
+ * 광장: 게시판처럼 빽빽한 글 목록. 위에서 광장(불행광장·불안광장…)을 고르고, 전체글/개념글을 나눠 본다.
+ * 한 줄은 [말머리] 제목 [댓글 수] N, 아래 회색 줄에 닉네임 | 시간 | 힘내요. 힘내요·신고는 글 화면에서
+ */
 export default function ShoutPage() {
   const router = useRouter();
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [sort, setSort] = useState<Sort>("new");
+  const [board, setBoard] = useState<Board>("all");
   const [query, setQuery] = useState("");
-  const [reporting, setReporting] = useState<Target | null>(null);
-  const [menu, setMenu] = useState<Target | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -73,29 +70,16 @@ export default function ShoutPage() {
   }, [load]);
 
   const q = query.trim().toLowerCase();
-  const posts = useMemo(() => {
+  /** 지금 광장의 글 (검색 반영). 개념글 탭은 그중 점수가 넘는 글만, 둘 다 최신순 */
+  const inGallery = useMemo(() => {
     if (!s) return [];
-    // 검색: 글 내용·닉네임·카테고리 이름에 검색어가 들어간 글
+    // 검색: 글 내용·닉네임·광장 이름에 검색어가 들어간 글
     const matches = (p: Post) =>
       !q || p.text.toLowerCase().includes(q) || (p.communityId ? circleTag(p) : userById(s, p.authorId).nick).toLowerCase().includes(q) || shoutCatById(p.cat).label.toLowerCase().includes(q);
-    const list = s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter) && matches(p));
-    return sort === "top"
-      ? list.sort((a, b) => score(s, b) - score(s, a) || b.createdAt - a.createdAt)
-      : list.sort((a, b) => b.createdAt - a.createdAt);
-  }, [s, filter, sort, q]);
-  /** HOT: 최근 7일 글 중 점수 6 이상인 상위 3개. NEW: 하루 안에 올라온 글 */
-  const hot = useMemo(() => {
-    if (!s) return new Set<string>();
-    const since = Date.now() - 7 * DAY;
-    return new Set(
-      s.posts
-        .filter((p) => isVisible(s, p) && p.createdAt >= since && score(s, p) >= 6)
-        .sort((a, b) => score(s, b) - score(s, a))
-        .slice(0, 3)
-        .map((p) => p.id)
-    );
-  }, [s]);
-  const badgeOf = (p: Post): Badge => (hot.has(p.id) ? "hot" : Date.now() - p.createdAt < DAY ? "new" : null);
+    return s.posts.filter((p) => isVisible(s, p) && (filter === "all" || p.cat === filter) && matches(p)).sort((a, b) => b.createdAt - a.createdAt);
+  }, [s, filter, q]);
+  const best = useMemo(() => (s ? inGallery.filter((p) => score(s, p) >= BEST_SCORE) : []), [s, inGallery]);
+  const posts = board === "best" ? best : inGallery;
   useScrollMemory(s !== null);
 
   if (loadError) {
@@ -120,28 +104,15 @@ export default function ShoutPage() {
   const blocked = isBlocked(s.me);
   const flaggedCount = listFlagged(s).length;
   const write = () => router.push(`/write?cat=${filter === "all" ? "misfortune" : filter}`);
-  /** 구역의 "더보기": 그 카테고리 목록으로 바꾸고 맨 위로 */
-  const openCategory = (id: ShoutCat) => {
-    setFilter(id);
-    window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
+  const gallery = filter === "all" ? null : shoutCatById(filter);
   const renderRow = (p: Post) => (
     <li key={p.id} className={styles.row}>
       {isFlagged(p) && !revealed.has(p.id) ? (
-        <button className="flagged-box" onClick={() => setRevealed((r) => new Set(r).add(p.id))}>
-          <b>신고가 누적되어 검토 중인 글이에요</b>
-          위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 들어왔어요. 눌러서 볼 수 있어요.
+        <button className={styles.flagged} onClick={() => setRevealed((r) => new Set(r).add(p.id))}>
+          신고 {REPORT_THRESHOLD}번 이상 들어와 검토 중인 글이에요. 눌러서 볼 수 있어요.
         </button>
       ) : (
-        <PostRow
-          s={s}
-          post={p}
-          badge={badgeOf(p)}
-          commentCount={commentsOf(s, p.id).length}
-          onCheer={() => run(setS, () => api.toggleCheer({ kind: "post", id: p.id }))}
-          onOpen={() => router.push(route(`/shout/${p.id}`))}
-          onMenu={() => setMenu({ kind: "post", id: p.id })}
-        />
+        <PostRow s={s} post={p} showHead={filter === "all"} commentCount={commentsOf(s, p.id).length} />
       )}
     </li>
   );
@@ -164,56 +135,50 @@ export default function ShoutPage() {
 
         {blocked && <div className="notice warn">이 계정은 신고 누적으로 차단되어 글과 댓글을 쓸 수 없어요. 읽는 건 가능해요.</div>}
 
-        {/* 카테고리 + 정렬 (블라인드의 채널·정렬 줄) */}
+        {/* 광장 고르기: 게시판 목록처럼 글자 칩 한 줄 */}
         <div className={styles.filterBar}>
-          <div className={styles.cats} role="radiogroup" aria-label="카테고리">
+          <div className={styles.cats} role="radiogroup" aria-label="광장">
             <button type="button" role="radio" aria-checked={filter === "all"} className={styles.cat} onClick={() => setFilter("all")}>전체</button>
             {SHOUT_CATEGORIES.map((c) => (
               <button key={c.id} type="button" role="radio" aria-checked={filter === c.id} className={styles.cat} onClick={() => setFilter(c.id)}>
-                <ShoutCatIcon id={c.id} />
                 {c.label}
               </button>
             ))}
           </div>
-          <button type="button" className={styles.sort} onClick={() => setSort((v) => (v === "new" ? "top" : "new"))} aria-label={`정렬 바꾸기, 지금 ${sort === "new" ? "최신순" : "힘내요순"}`}>
-            <IconSort />
-            {sort === "new" ? "최신순" : "힘내요순"}
-          </button>
         </div>
-        {filter !== "all" && <p className={styles.catDesc}>{shoutCatById(filter).desc}</p>}
 
-        {q && <p className={styles.resultCount} role="status">‘{query.trim()}’ 검색 결과 {posts.length}개</p>}
-        <div className={styles.band} aria-hidden="true" />
+        {/* 광장 머리: 이름 · 설명 · 글 수 */}
+        <div className={styles.galHead}>
+          <div className={styles.galTitle}>
+            <h2>{gallery ? gallery.label : "전체 광장"}</h2>
+            <span>글 {inGallery.length}</span>
+          </div>
+          <p>{gallery ? gallery.desc : "모든 광장의 새 글을 한곳에서 봐요"}</p>
+        </div>
+
+        {/* 전체글 / 개념글 */}
+        <div className={styles.boardBar}>
+          <div className={styles.boardTabs} role="tablist" aria-label="글 모아 보기">
+            <button type="button" role="tab" aria-selected={board === "all"} onClick={() => setBoard("all")}>전체글</button>
+            <button type="button" role="tab" aria-selected={board === "best"} onClick={() => setBoard("best")}>개념글 <small>{best.length}</small></button>
+          </div>
+          {q && <span className={styles.resultCount} role="status">‘{query.trim()}’ {posts.length}개</span>}
+        </div>
 
         {posts.length === 0 ? (
           q ? (
             <Empty icon={<IconSearch />} title="검색 결과가 없어요" action={<button type="button" className="btn ghost" onClick={() => setQuery("")}>검색어 지우기</button>}>
-              다른 말로 찾아보거나 카테고리를 바꿔 보세요.
+              다른 말로 찾아보거나 광장을 바꿔 보세요.
+            </Empty>
+          ) : board === "best" ? (
+            <Empty icon={<IconBubble />} title="아직 개념글이 없어요">
+              힘내요와 위로 댓글을 많이 받은 글이 여기 모여요.
             </Empty>
           ) : (
-            <Empty icon={<IconBubble />} title="아직 외침이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={write}>첫 외침 남기기</button>}>
-              오른쪽 아래 + 를 눌러 첫 외침을 남겨 보세요.
+            <Empty icon={<IconBubble />} title="아직 글이 없어요" action={!blocked && <button type="button" className="btn ghost" onClick={write}>첫 글 남기기</button>}>
+              오른쪽 아래 + 를 눌러 첫 글을 남겨 보세요.
             </Empty>
           )
-        ) : filter === "all" && !q ? (
-          // 전체: 블라인드 홈처럼 카테고리별 구역. 구역마다 몇 개만 보여 주고 "더보기"로 그 카테고리 목록으로
-          SHOUT_CATEGORIES.map((c) => {
-            const list = posts.filter((p) => p.cat === c.id);
-            if (list.length === 0) return null;
-            return (
-              <section key={c.id} className={styles.section} aria-labelledby={`sec-${c.id}`}>
-                <div className={styles.sectionHead}>
-                  <h2 id={`sec-${c.id}`}><ShoutCatIcon id={c.id} />{c.label}</h2>
-                  <span>{list.length}개</span>
-                </div>
-                <ul className={styles.rows}>{list.slice(0, SECTION_SIZE).map(renderRow)}</ul>
-                <button type="button" className={styles.moreBtn} onClick={() => openCategory(c.id)}>
-                  {c.label} 더보기<IconChevronR aria-hidden="true" />
-                </button>
-                <div className={styles.band} aria-hidden="true" />
-              </section>
-            );
-          })
         ) : (
           <ul className={styles.rows}>{posts.map(renderRow)}</ul>
         )}
@@ -222,22 +187,10 @@ export default function ShoutPage() {
       </div>
 
       {!blocked && (
-        <button className="fab" aria-label="외치기" onClick={write}>
+        <button className="fab" aria-label={`${gallery ? gallery.label : "광장"}에 글쓰기`} onClick={write}>
           <IconPlus />
         </button>
       )}
-
-      <TargetMenuSheet s={s} target={menu} onClose={() => setMenu(null)} onChange={setS} onReport={(t) => setReporting(t)} />
-      <ReportSheet
-        key={reporting ? `report-${reporting.kind}-${reporting.id}` : "report-closed"}
-        open={Boolean(reporting)}
-        onClose={() => setReporting(null)}
-        onSubmit={async (reason) => {
-          const t = reporting;
-          setReporting(null);
-          if (t) await run(setS, () => api.report(t, reason));
-        }}
-      />
     </>
   );
 }
@@ -255,7 +208,7 @@ function SearchBar({ value, onChange }: { value: string; onChange: (v: string) =
         }}
       >
         <IconSearch aria-hidden="true" />
-        <input type="search" enterKeyHint="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder="관심 있는 외침을 검색해 보세요" aria-label="외침 검색" maxLength={50} />
+        <input type="search" enterKeyHint="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder="광장 글을 검색해 보세요" aria-label="광장 글 검색" maxLength={50} />
         {value && (
           <button type="button" className={styles.clear} aria-label="검색어 지우기" onClick={() => onChange("")}>
             <IconClose />
@@ -266,48 +219,29 @@ function SearchBar({ value, onChange }: { value: string; onChange: (v: string) =
   );
 }
 
-/** 블라인드 목록 한 줄: 배지 · 제목(첫 문장) · 미리보기 · 카테고리와 닉네임 · 힘내요/댓글/시간 */
-function PostRow({ s, post, badge, commentCount, onCheer, onOpen, onMenu }: { s: CommunityStore; post: Post; badge: Badge; commentCount: number; onCheer: () => void; onOpen: () => void; onMenu: () => void }) {
+/** 게시판 한 줄: [말머리] 제목(첫 문장) 사진표시 [댓글 수] N, 아래 닉네임 | 시간 | 힘내요 */
+function PostRow({ s, post, showHead, commentCount }: { s: CommunityStore; post: Post; showHead: boolean; commentCount: number }) {
   const c = shoutCatById(post.cat);
-  const author = userById(s, post.authorId);
   const mine = post.authorId === s.me.id;
-  const images = post.images ?? [];
-  const { title, rest } = splitShout(post.text);
+  const hasImages = (post.images ?? []).length > 0;
+  const fresh = Date.now() - post.createdAt < DAY;
+  const { title } = splitShout(post.text);
+  // 소로우 사연: 보낸 사람 대신 소로우 이름과 #번호
+  const who = post.communityId ? `${circleTag(post)}${mine ? " · 내 사연" : ""}` : mine ? "나" : userById(s, post.authorId).nick;
   return (
-    <article className={styles.item}>
-      <Link href={route(`/shout/${post.id}`)} className={styles.itemLink}>
-        <div className={styles.itemText}>
-          {badge && <span className={styles.badge} data-kind={badge}>{badge === "hot" ? "HOT" : "NEW"}</span>}
-          <h3 className={styles.title}>{title}</h3>
-          {rest && <p className={styles.preview}>{rest}</p>}
-          <p className={styles.byline}>
-            <span className={styles.chan}><ShoutCatIcon id={c.id} />{c.label}</span>
-            <span aria-hidden="true">·</span>
-            {post.communityId ? (
-              // 소로우 사연: 보낸 사람 대신 소로우 이름과 #번호
-              <span className={styles.circleTag}>{circleTag(post)}{mine && " · 내 사연"}</span>
-            ) : (
-              <>
-                <span>{mine ? "나" : author.nick}</span>
-                <TitleChip title={author.title} small />
-              </>
-            )}
-          </p>
-        </div>
-        {images.length > 0 && (
-          <span className={styles.thumb}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- 사용자 사진(S3/CDN) */}
-            <img src={images[0]} alt={`사진 ${images.length}장`} loading="lazy" decoding="async" />
-            {images.length > 1 && <span className={styles.thumbsMore}>+{images.length - 1}</span>}
-          </span>
-        )}
-      </Link>
-      <div className={`post-foot ${styles.foot}`}>
-        <CheerButton small count={post.cheers.length} on={post.cheers.includes(s.me.id)} onClick={onCheer} />
-        <LineAction icon={<IconBubble style={{ width: 18, height: 18 }} />} label={commentCount} onClick={onOpen} ariaLabel={`위로 댓글 ${commentCount}개`} />
-        <span className={styles.time}>{fmtRelative(post.createdAt)}</span>
-        <button type="button" className={`icon-btn ${styles.more}`} aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 16, height: 16 }} /></button>
-      </div>
-    </article>
+    <Link href={route(`/shout/${post.id}`)} className={styles.bItem}>
+      <h3 className={styles.bTitle}>
+        {showHead && <span className={styles.head}>[{c.head}]</span>}
+        {title}
+        {hasImages && <IconImage className={styles.imgMark} aria-label="사진 있음" />}
+        {commentCount > 0 && <span className={styles.reply} aria-label={`댓글 ${commentCount}개`}>[{commentCount}]</span>}
+        {fresh && <span className={styles.fresh} aria-label="새 글">N</span>}
+      </h3>
+      <p className={styles.bMeta}>
+        <span className={post.communityId ? styles.circleTag : undefined}>{who}</span>
+        <span>{fmtRelative(post.createdAt)}</span>
+        <span>힘내요 {post.cheers.length}</span>
+      </p>
+    </Link>
   );
 }

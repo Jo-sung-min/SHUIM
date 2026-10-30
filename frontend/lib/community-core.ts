@@ -10,21 +10,24 @@ export type ShoutCat = "misfortune" | "anxiety" | "money" | "work" | "relation" 
 
 export interface ShoutCategory {
   id: ShoutCat;
+  /** 광장 이름 (게시판 이름처럼 "○○광장") */
   label: string;
+  /** 전체 목록에서 제목 앞에 붙는 짧은 말머리 */
+  head: string;
   emoji: string;
   desc: string;
   placeholder: string;
 }
 
 export const SHOUT_CATEGORIES: ShoutCategory[] = [
-  { id: "misfortune", label: "불행 털어내기", emoji: "🌧️", desc: "오늘 내 불행을 글로 털어내면, 사람들이 위로를 남겨요", placeholder: "오늘 무슨 일이 있었나요. 그냥 털어놔도 돼요." },
-  { id: "anxiety", label: "불안 내려놓기", emoji: "🫧", desc: "막연한 불안을 적어두면 조금 작아져요", placeholder: "지금 무엇이 불안한가요." },
-  { id: "money", label: "돈 걱정", emoji: "💸", desc: "주식, 전세, 지출… 숫자 때문에 흔들린 마음", placeholder: "돈 때문에 흔들린 이야기." },
-  { id: "work", label: "일·커리어", emoji: "💼", desc: "회사, 이직, 사이드 프로젝트", placeholder: "일 이야기, 편하게." },
-  { id: "relation", label: "관계", emoji: "🤝", desc: "연인, 가족, 친구와의 일", placeholder: "누구와 어떤 일이 있었나요." },
-  { id: "body", label: "몸·잠", emoji: "🌙", desc: "잠, 떨림, 식사, 몸의 신호", placeholder: "몸이 보내는 신호를 적어요." },
-  { id: "small-win", label: "작은 승리", emoji: "🌱", desc: "오늘 해낸 아주 작은 것. 서로 힘내요를 보내요", placeholder: "오늘 해낸 작은 것 하나." },
-  { id: "free", label: "자유", emoji: "💬", desc: "무엇이든", placeholder: "아무 말이나 외쳐도 돼요." },
+  { id: "misfortune", label: "불행광장", head: "불행", emoji: "🌧️", desc: "오늘 내 불행을 글로 털어내면, 사람들이 위로를 남겨요", placeholder: "오늘 무슨 일이 있었나요. 그냥 털어놔도 돼요." },
+  { id: "anxiety", label: "불안광장", head: "불안", emoji: "🫧", desc: "막연한 불안을 적어두면 조금 작아져요", placeholder: "지금 무엇이 불안한가요." },
+  { id: "money", label: "돈걱정광장", head: "돈걱정", emoji: "💸", desc: "주식, 전세, 지출… 숫자 때문에 흔들린 마음", placeholder: "돈 때문에 흔들린 이야기." },
+  { id: "work", label: "직장광장", head: "직장", emoji: "💼", desc: "회사, 이직, 사이드 프로젝트", placeholder: "일 이야기, 편하게." },
+  { id: "relation", label: "관계광장", head: "관계", emoji: "🤝", desc: "연인, 가족, 친구와의 일", placeholder: "누구와 어떤 일이 있었나요." },
+  { id: "body", label: "건강광장", head: "건강", emoji: "🌙", desc: "잠, 떨림, 식사, 몸의 신호", placeholder: "몸이 보내는 신호를 적어요." },
+  { id: "small-win", label: "작은승리광장", head: "작은승리", emoji: "🌱", desc: "오늘 해낸 아주 작은 것. 서로 힘내요를 보내요", placeholder: "오늘 해낸 작은 것 하나." },
+  { id: "free", label: "자유광장", head: "자유", emoji: "💬", desc: "무엇이든", placeholder: "아무 말이나 외쳐도 돼요." },
 ];
 export const SHOUT_CAT_IDS = SHOUT_CATEGORIES.map((c) => c.id);
 export const shoutCatById = (id: ShoutCat) => SHOUT_CATEGORIES.find((c) => c.id === id) ?? SHOUT_CATEGORIES[SHOUT_CATEGORIES.length - 1];

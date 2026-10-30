@@ -1,10 +1,12 @@
 /*
-  외침 목록 · 외침 글 화면. 블라인드 모바일처럼 카드 대신 화면 끝까지 닿는 평평한 줄과 얇은 구분선,
-  굵은 제목 + 회색 미리보기 + 회색 숫자 줄, 구역 사이는 회색 띠로 나눈다.
+  광장 목록 · 외침 글 화면.
+  광장 목록은 게시판처럼 빽빽하게: 광장 머리(이름·설명·글 수), 전체글/개념글, 한 줄짜리 글 목록
+  ([말머리] 제목 [댓글 수] N, 아래 회색 닉네임 | 시간 | 힘내요). 사진·미리보기·버튼 없이 글자만.
+  글 화면과 소로우 사연 목록(CirclePosts)은 화면 끝까지 닿는 평평한 줄 + 굵은 제목 + 회색 미리보기.
 */
 
 /* .screen 의 좌우 여백(--gutter)을 넘어 화면 끝까지 닿게 하는 공통 규칙 */
-.band, .rows, .filterBar, .moreBtn { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
+.band, .rows, .filterBar, .galHead, .boardBar { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); }
 
 /* ---------- 탭 바로 아래 검색창 ---------- */
 .searchBar { display: flex; align-items: center; margin: -4px 0 12px; }
@@ -25,7 +27,7 @@
 .searchBox input::-webkit-search-cancel-button { display: none; }
 .clear { flex: none; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text-2); }
 .clear svg { width: 14px; height: 14px; }
-.resultCount { margin: 2px 0 10px; color: var(--text-2); font-size: 13px; }
+.resultCount { margin-left: auto; color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- 목록 ---------- */
 .list { padding-bottom: calc(var(--tabbar-space) + 96px); }
@@ -57,23 +59,47 @@
 .sort svg { width: 16px; height: 16px; color: var(--text-2); }
 .sort:active { color: var(--text-2); }
 
-.catDesc { margin: 2px 0 8px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
-
-/* ---------- 전체 화면: 카테고리별 구역 ---------- */
-.section { padding-top: 6px; }
-.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; }
-.sectionHead h2 { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
-.sectionHead h2 svg { width: 18px; height: 18px; }
-.sectionHead span { color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
-.section .rows > .row:first-child > * { border-top: 1px solid var(--border); }
-.moreBtn {
-  display: flex; align-items: center; justify-content: center; gap: 2px;
-  width: calc(100% + 2 * var(--gutter)); min-height: 52px; margin-top: 4px;
-  border: 0; border-top: 1px solid var(--border); background: none;
-  color: var(--text-2); font-size: 14px; font-weight: 650;
+/* ---------- 광장 머리: 고른 광장 이름 · 설명 · 글 수 ---------- */
+.galHead {
+  margin-top: 8px; padding: 14px var(--gutter) 12px;
+  border-top: 2px solid var(--accent); border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
 }
-.moreBtn svg { width: 16px; height: 16px; }
-.moreBtn:active { background: var(--surface-2); color: var(--text); }
+.galTitle { display: flex; align-items: baseline; gap: 8px; }
+.galTitle h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
+.galTitle span { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.galHead p { margin: 4px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+
+/* 전체글 | 개념글 */
+.boardBar { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 var(--gutter); border-bottom: 1px solid var(--border); }
+.boardTabs { display: flex; align-items: center; }
+.boardTabs button {
+  display: inline-flex; align-items: center; gap: 3px; min-height: 42px; padding: 0 10px; border: 0; background: none;
+  color: var(--text-3); font-size: 14px; font-weight: 600;
+}
+.boardTabs button:first-child { padding-left: 0; }
+.boardTabs button + button::before { content: ""; width: 1px; height: 11px; margin-right: 10px; background: var(--border-strong); }
+.boardTabs button[aria-selected="true"] { color: var(--accent); font-weight: 800; }
+.boardTabs small { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---------- 게시판 한 줄 ---------- */
+.bItem { display: block; padding: 11px 0 10px; color: inherit; -webkit-tap-highlight-color: transparent; }
+.bTitle {
+  margin: 0; font-size: 15px; font-weight: 500; line-height: 1.45; letter-spacing: -0.02em; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all;
+}
+.bItem:visited .bTitle { color: var(--text-2); }
+.head { margin-right: 4px; color: var(--text-2); font-weight: 600; }
+.imgMark { width: 15px; height: 15px; margin-left: 4px; vertical-align: -2px; color: var(--text-3); }
+.reply { margin-left: 4px; color: var(--accent); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fresh {
+  display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 4px; vertical-align: 1px;
+  border-radius: 3px; background: #ff6a3d; color: #fff; font-size: 9px; font-weight: 900; line-height: 1;
+}
+.bMeta { display: flex; align-items: center; flex-wrap: wrap; margin: 4px 0 0; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.bMeta > span + span::before { content: ""; display: inline-block; width: 1px; height: 9px; margin: 0 7px; vertical-align: 0; background: var(--border-strong); }
+.bMeta .circleTag { color: var(--text-2); }
+.flagged { display: block; width: 100%; padding: 13px 0; border: 0; background: none; text-align: left; color: var(--text-3); font-size: 14px; }
 
 /* 구역 사이 회색 띠 */
 .band { height: 8px; background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -89,13 +115,6 @@
 .itemLink:active .title { color: var(--text-2); }
 .itemText { flex: 1; min-width: 0; }
 
-.badge {
-  display: inline-flex; align-items: center; height: 20px; margin-bottom: 8px; padding: 0 6px;
-  border-radius: 2px; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; line-height: 1;
-}
-.badge[data-kind="hot"] { background: #e5484d; color: #fff; }
-.badge[data-kind="new"] { background: var(--text); color: var(--bg); }
-
 .title {
   margin: 0; font-size: 17px; font-weight: 750; line-height: 1.45; letter-spacing: -0.02em; color: var(--text);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;
@@ -107,10 +126,6 @@
 .byline { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 10px 0 0; font-size: 13px; color: var(--text-2); }
 .chan { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); font-weight: 600; }
 .chan svg { width: 14px; height: 14px; }
-
-.thumb { position: relative; flex: none; width: 80px; height: 80px; margin-top: 2px; border-radius: 6px; overflow: hidden; background: var(--surface-2); }
-.thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.thumbsMore { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* 숫자 줄: 힘내요 · 댓글 · (오른쪽) 시간 · 더보기 */
 .foot { gap: 12px; margin-top: 4px; }
@@ -193,7 +208,7 @@
 
 /* 누름 반응: 줄 전체가 살짝 회색으로, 칩은 살짝 작아진다 */
 .row { transition: background-color var(--dur-fast) var(--ease); }
-.row:has(.itemLink:active) { background: var(--surface-2); }
-.cat, .sort, .moreBtn { transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), scale var(--dur-fast) var(--ease); }
+.row:has(.itemLink:active), .row:has(.bItem:active) { background: var(--surface-2); }
+.cat, .sort, .boardTabs button { transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), scale var(--dur-fast) var(--ease); }
 .cat:active { scale: 0.95; }
 @media (prefers-reduced-motion: reduce) { .cat:active { scale: 1; } }
