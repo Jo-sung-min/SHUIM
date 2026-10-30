@@ -12,8 +12,8 @@ import styles from "../circle.module.css";
 import { route } from "@/lib/routes";
 
 /**
- * 처지 소로우 열기 (관리자만). 회사·학교 같은 소속 이름이 아니라 "회사원", "쉬는 중"처럼 큰 처지로 연다.
- * 일반 계정은 둘러보기에서 고르기만 하고, 필요한 처지는 운영진에게 알린다
+ * 소로우 열기 (관리자만). 회사·학교 같은 소속 이름이 아니라 "미식", "자취", "싱글"처럼 즐기는 일·살아가는 일로 연다.
+ * 일반 계정은 둘러보기에서 고르기만 하고, 필요한 소로우는 운영진에게 알린다
  */
 export default function NewCirclePage() {
   const router = useRouter();
@@ -53,15 +53,15 @@ export default function NewCirclePage() {
       <div className={`screen ${styles.plain}`}>
         {admin === false ? (
           <div className={styles.locked}>
-            <b>소로우는 처지별로 운영진이 열어요</b>
-            회사·학교 이름 대신 회사원, 자영업, 취준생, 쉬는 중처럼 큰 처지로 모여요. 내 처지에 맞는 소로우가 없으면 알려 주세요.
-            <Link href="/c" className="btn" style={{ marginTop: 8 }}>처지별 소로우 보기</Link>
+            <b>소로우는 운영진이 열어요</b>
+            회사·학교 이름 대신 미식, 자취, 싱글, 자영업처럼 즐기는 일·살아가는 일로 모여요. 나에게 맞는 소로우가 없으면 알려 주세요.
+            <Link href="/c" className="btn" style={{ marginTop: 8 }}>소로우 둘러보기</Link>
           </div>
         ) : (
           <form className={styles.form} onSubmit={submit}>
             <div className={styles.field}>
-              <span>처지 묶음</span>
-              <div className={styles.seg} role="radiogroup" aria-label="처지 묶음">
+              <span>묶음</span>
+              <div className={styles.seg} role="radiogroup" aria-label="소로우 묶음">
                 {CIRCLE_KINDS.map((k) => (
                   <button key={k.id} type="button" role="radio" aria-checked={kind === k.id} className={styles.opt} onClick={() => setKind(k.id)}>
                     {k.label}
@@ -106,7 +106,7 @@ export default function NewCirclePage() {
                   모두에게<small>다른 소로우 사람도 읽고 위로할 수 있어요</small>
                 </button>
                 <button type="button" role="radio" aria-checked={visibility === "members"} className={styles.opt} onClick={() => setVisibility("members")}>
-                  멤버에게만<small>같은 처지끼리만 나눌 이야기</small>
+                  멤버에게만<small>멤버끼리만 나눌 이야기</small>
                 </button>
               </div>
             </div>

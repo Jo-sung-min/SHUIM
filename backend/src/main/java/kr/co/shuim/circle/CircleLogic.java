@@ -13,10 +13,12 @@ public final class CircleLogic {
     private CircleLogic() {}
 
     /**
-     * 처지 묶음: 회사·학교 같은 소속 대신 비슷한 처지끼리 모인다 (회사원·자영업은 work, 대학생·취준생은 study, 쉬는 중은 rest, 육아·돌봄은 care).
+     * 소로우 묶음: 회사·학교 같은 소속이나 직함보다 즐기는 일·살아가는 일·사람의 근본 고민으로 모인다.
+     * enjoy(미식·여행·운동…), live(자취·출퇴근·반려생활…), love(싱글·모솔·이별·이혼·돌싱·외로움),
+     * work(회사원·자영업…), study(대학생·취준생…), rest(쉬는 중), care(육아·돌봄).
      * 소속을 드러내면 누군가에게는 박탈감이 되어서, 소속 이름이 붙은 소로우는 만들지 않는다
      */
-    public static final List<String> KINDS = List.of("work", "study", "rest", "care");
+    public static final List<String> KINDS = List.of("enjoy", "live", "love", "work", "study", "rest", "care");
     public static final List<String> JOIN_MODES = List.of("open", "approve", "invite", "domain");
     public static final List<String> VISIBILITIES = List.of("public", "members");
     /** 한 사람(관리자)이 열 수 있는 소로우 */

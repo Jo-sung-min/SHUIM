@@ -10,7 +10,7 @@ import { IconClose, IconLeaf, IconSearch } from "@/components/Icons";
 import shout from "../shout/shout.module.css";
 import styles from "./circle.module.css";
 
-/** 소로우 둘러보기: 처지 묶음(일하는 중·준비하는 중·쉬는 중·돌보는 중)·이름으로 찾기, 이번 주 가장 따뜻한 소로우 */
+/** 소로우 둘러보기: 묶음(즐기는 중·살아가는 중·사랑·혼자·일하는 중…)·이름으로 찾기, 이번 주 가장 따뜻한 소로우 */
 export default function CircleBrowsePage() {
   const [kind, setKind] = useState<CircleKind | "">("");
   const [query, setQuery] = useState("");
@@ -42,12 +42,12 @@ export default function CircleBrowsePage() {
         <div className={shout.searchBar}>
           <form role="search" className={shout.searchBox} onSubmit={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur(); }}>
             <IconSearch aria-hidden="true" />
-            <input type="search" enterKeyHint="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="회사원, 자영업, 쉬는 중처럼 처지로 찾아보세요" aria-label="소로우 검색" maxLength={30} />
+            <input type="search" enterKeyHint="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="미식, 자취, 싱글처럼 찾아보세요" aria-label="소로우 검색" maxLength={30} />
             {query && <button type="button" className={shout.clear} aria-label="검색어 지우기" onClick={() => setQuery("")}><IconClose /></button>}
           </form>
         </div>
 
-        <div className={styles.kinds} role="radiogroup" aria-label="처지 묶음">
+        <div className={styles.kinds} role="radiogroup" aria-label="소로우 묶음">
           <button type="button" role="radio" aria-checked={kind === ""} className={styles.kind} onClick={() => setKind("")}>전체</button>
           {CIRCLE_KINDS.map((k) => (
             <button key={k.id} type="button" role="radio" aria-checked={kind === k.id} className={styles.kind} onClick={() => setKind(k.id)}>{k.label}</button>
@@ -63,7 +63,7 @@ export default function CircleBrowsePage() {
           </>
         )}
 
-        <div className={styles.head}><h2>{query ? `‘${query.trim()}’ 소로우` : kind ? CIRCLE_KINDS.find((k) => k.id === kind)?.label : "처지별 소로우"}</h2></div>
+        <div className={styles.head}><h2>{query ? `‘${query.trim()}’ 소로우` : kind ? CIRCLE_KINDS.find((k) => k.id === kind)?.label : "모든 소로우"}</h2></div>
         {kind && <p className={styles.sub}>{CIRCLE_KINDS.find((k) => k.id === kind)?.hint}</p>}
         {loadError ? (
           <LoadError message={loadError} onRetry={() => setReload((n) => n + 1)} />
@@ -71,7 +71,7 @@ export default function CircleBrowsePage() {
           <div role="status" aria-label="소로우를 불러오고 있어요"><SkeletonList count={4} lines={1} /></div>
         ) : list.length === 0 ? (
           <Empty icon={<IconLeaf />} title={query ? "찾는 소로우가 없어요" : "아직 둘러볼 소로우가 없어요"}>
-            회사·학교 이름 대신 처지로 모여요. 회사원, 자영업, 취준생, 쉬는 중처럼 찾아보세요.
+            회사·학교 이름 대신 즐기는 일, 살아가는 일로 모여요. 미식, 자취, 싱글, 자영업처럼 찾아보세요.
           </Empty>
         ) : (
           <ul className={styles.circles}>{list.map((c) => <li key={c.id}><CircleRow c={c} /></li>)}</ul>

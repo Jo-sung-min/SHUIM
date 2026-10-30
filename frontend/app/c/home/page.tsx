@@ -15,7 +15,7 @@ import styles from "../circle.module.css";
 import { route } from "@/lib/routes";
 
 /**
- * 내 소로우: 내가 속한 처지 소로우와 리스닝 중인 소로우의 사연을 한 줄로.
+ * 내 소로우: 내가 속한 소로우와 리스닝 중인 소로우의 사연을 한 줄로.
  * 아직 들어간 곳이 없으면 둘러보기·이번 주 따뜻한 소로우로 안내한다.
  */
 export default function CircleHomePage() {
@@ -85,11 +85,11 @@ export default function CircleHomePage() {
         {chips.length === 0 ? (
           <>
             <p className={styles.sub}>
-              회사원, 자영업, 취준생, 쉬는 중… 비슷한 처지의 사람들끼리 힘든 점을 털어놓는 곳이에요. 회사나 학교 이름은 묻지 않아요.
+              미식, 자취, 싱글, 자영업… 즐기는 일, 살아가는 일, 마음 깊은 고민으로 모여 힘든 점을 털어놓는 곳이에요. 회사나 학교 이름은 묻지 않아요.
               사연을 보내면 소로우지기가 이름을 가리고 다듬어 ‘#번호’로 올려 줘요. 누가 보냈는지는 아무도 몰라요.
             </p>
             <div className={styles.actions}>
-              <Link href="/c" className="btn"><IconSearch />내 처지 소로우 찾기</Link>
+              <Link href="/c" className="btn"><IconSearch />내 소로우 찾기</Link>
             </div>
           </>
         ) : posts.length === 0 ? (

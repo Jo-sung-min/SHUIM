@@ -1,6 +1,6 @@
 /*
-  커뮤니티 소로우 (처지별: 회사원·자영업·취준생·쉬는 중…). 외침 목록과 같은 평평한 줄·회색 띠를 쓰고,
-  소로우 머리(이름·처지 묶음·멤버 수)와 사연 보내기·소로우지기 화면만 따로 둔다.
+  커뮤니티 소로우 (미식·자취·싱글·자영업… 즐기는 일·살아가는 일로 모인 곳). 외침 목록과 같은 평평한 줄·회색 띠를 쓰고,
+  소로우 머리(이름·묶음·멤버 수)와 사연 보내기·소로우지기 화면만 따로 둔다.
 */
 
 .band { height: 8px; margin: var(--sp-2) calc(-1 * var(--gutter)); background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }

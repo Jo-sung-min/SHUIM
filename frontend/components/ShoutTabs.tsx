@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { IS_AIT } from "@/lib/ait";
 import { appPath } from "@/lib/routes";
 
-/** 소로우 = 내 처지(회사원·자영업·쉬는 중…)끼리 모인 곳, 광장 = 누구나 바로 외치는 곳 */
+/** 소로우 = 미식·자취·싱글처럼 즐기는 일·살아가는 일로 모인 곳, 광장 = 누구나 바로 외치는 곳 */
 const TABS = [
   { href: "/c/home", label: "소로우", match: (p: string) => p === "/c" || p.startsWith("/c/") },
   { href: "/shout", label: "광장", match: (p: string) => p === "/shout" },
