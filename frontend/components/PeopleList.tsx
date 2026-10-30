@@ -51,7 +51,7 @@ export default function PeopleList({ kind }: { kind: Kind }) {
     try {
       await api.toggleFollow(u.id);
       setUsers((cur) => cur?.map((x) => (x.id === u.id ? { ...x, viewerListens: !x.viewerListens } : x)) ?? cur);
-      toastSuccess(u.viewerListens ? "리스닝을 그만했어요" : `이제 ${u.nick}님의 이야기를 들어요`);
+      toastSuccess(u.viewerListens ? "리스닝을 취소했어요" : `이제 ${u.nick}님의 이야기를 들어요`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
     } finally {
@@ -91,7 +91,7 @@ export default function PeopleList({ kind }: { kind: Kind }) {
                 </Link>
                 {u.id !== meId && (
                   <button type="button" className={`btn sm ${u.viewerListens ? "ghost" : ""}`} disabled={busy === u.id} aria-pressed={u.viewerListens} onClick={() => toggle(u)}>
-                    {busy === u.id ? "…" : u.viewerListens ? "리스닝 중" : u.listensToViewer ? "나도 리스닝" : "리스닝"}
+                    {busy === u.id ? "…" : u.viewerListens ? "리스닝 취소" : u.listensToViewer ? "나도 리스닝" : "리스닝"}
                   </button>
                 )}
               </div>

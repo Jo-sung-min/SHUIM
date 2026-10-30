@@ -61,7 +61,7 @@ export default function PublicProfilePage() {
       const was = p.isFollowing;
       await api.toggleFollow(p.id);
       await load();
-      toastSuccess(was ? "리스닝을 그만했어요" : `이제 ${p.nick}님의 이야기를 들어요`);
+      toastSuccess(was ? "리스닝을 취소했어요" : `이제 ${p.nick}님의 이야기를 들어요`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : "잠시 후 다시 시도해요");
     } finally {
@@ -84,7 +84,7 @@ export default function PublicProfilePage() {
           ) : (
             <>
               <button type="button" className={`btn sm ${p.isFollowing ? "ghost" : ""}`} onClick={follow} disabled={following} aria-busy={following} aria-pressed={p.isFollowing}>
-                {following ? "변경 중…" : p.isFollowing ? "리스닝 중" : p.followsMe ? "나도 리스닝" : "리스닝"}
+                {following ? "변경 중…" : p.isFollowing ? "리스닝 취소" : p.followsMe ? "나도 리스닝" : "리스닝"}
               </button>
               <button type="button" className="btn ghost sm" onClick={() => setDm(true)} disabled={p.blocked}>
                 <IconMessage style={{ width: 16, height: 16 }} /> 메시지

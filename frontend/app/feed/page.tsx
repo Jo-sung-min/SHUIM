@@ -378,7 +378,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
         </button>
         {!mine && (
           <button type="button" className={`pillbtn follow ${following ? "on" : ""}`} onClick={handleFollow} aria-pressed={following} aria-busy={followingBusy} disabled={followingBusy}>
-            {followingBusy ? "변경 중…" : following ? "리스닝 중" : "리스닝"}
+            {followingBusy ? "변경 중…" : following ? "리스닝 취소" : "리스닝"}
           </button>
         )}
       </div>
@@ -433,7 +433,7 @@ function CreatorProfile({ s, userId, onFollow, onBio }: { s: CommunityStore; use
         </div>
         {!mine && (
           <button type="button" className={`pillbtn follow ${s.following.includes(userId) ? "on" : ""}`} onClick={handleFollow} aria-pressed={s.following.includes(userId)} aria-busy={followingBusy} disabled={followingBusy}>
-            {followingBusy ? "변경 중…" : s.following.includes(userId) ? "리스닝 중" : "리스닝"}
+            {followingBusy ? "변경 중…" : s.following.includes(userId) ? "리스닝 취소" : "리스닝"}
           </button>
         )}
       </div>

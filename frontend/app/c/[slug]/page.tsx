@@ -116,8 +116,8 @@ export default function CirclePage() {
             )}
             {!member && (
               <button className={`btn ${c.me.listening ? "ghost" : "soft"}`} disabled={busy} aria-pressed={c.me.listening}
-                onClick={() => act(() => toggleCircleFollow(c.slug), c.me.listening ? "리스닝을 그만했어요" : "이제 이 소로우의 사연이 내 소로우에 보여요")}>
-                {c.me.listening ? "리스닝 중" : "리스닝"}
+                onClick={() => act(() => toggleCircleFollow(c.slug), c.me.listening ? "리스닝을 취소했어요" : "이제 이 소로우의 사연이 내 소로우에 보여요")}>
+                {c.me.listening ? "리스닝 취소" : "리스닝"}
               </button>
             )}
             {c.me.keeper && (
@@ -152,7 +152,7 @@ export default function CirclePage() {
           {member && !c.me.primary && (
             <button className="btn ghost" disabled={busy} onClick={() => { setMore(false); act(() => setPrimaryCircle(c.slug), "대표 소로우로 정했어요"); }}>대표 소로우로 정하기</button>
           )}
-          {member && <button className={`btn ghost`} disabled={busy} onClick={() => { setMore(false); act(() => toggleCircleFollow(c.slug)); }}>{c.me.listening ? "리스닝 그만하기" : "리스닝하기"}</button>}
+          {member && <button className={`btn ghost`} disabled={busy} onClick={() => { setMore(false); act(() => toggleCircleFollow(c.slug), c.me.listening ? "리스닝을 취소했어요" : "이제 이 소로우의 사연이 내 소로우에 보여요"); }}>{c.me.listening ? "리스닝 취소" : "리스닝하기"}</button>}
           {c.me.role !== "owner" && <button className="btn ghost danger" onClick={() => { setMore(false); setLeaving(true); }}>{waiting ? "가입 신청 취소" : "소로우 나가기"}</button>}
           <button className="btn ghost" onClick={() => setMore(false)}>닫기</button>
         </div>
