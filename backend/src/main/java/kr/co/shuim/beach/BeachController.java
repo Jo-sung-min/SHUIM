@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 소로우 바닷가(1인칭 메타버스) 의 "누가 있나" API. 전부 메모리({@link BeachRoom})에서 돌고,
- * DB 는 입장·인원 조회 시 세션과 소로우 멤버 여부를 확인한다. 그 뒤로는 enter 가 준 ticket 이 자격증명이다.
+ * 소로우 바닷가의 방문과 공유 모닥불 API. 방문은 메모리, 모닥불과 구매 효과는 DB에 저장한다.
+ * 위치 폴링은 방문 티켓을 쓰고, 장작을 넣을 때는 로그인과 현재 멤버 자격도 확인한다.
  */
 @RestController
 public class BeachController {
@@ -43,6 +43,7 @@ public class BeachController {
     public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care) {}
     public record TicketBody(String ticket) {}
     public record EnterBody(String communityId) {}
+    public record WoodBody(String ticket, String requestId) {}
 
     private CircleService.Circle requireMember(String communityId, DbUser me) {
         if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
@@ -73,6 +74,9 @@ public class BeachController {
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", BeachRoom.MIN_Z, "maxZ", BeachRoom.MAX_Z));
         out.put("count", beach.count(circle.id()));
+        BeachFireService.FireView fire = beach.fire(circle.id());
+        out.put("fire", fire);
+        out.put("serverTime", fire.serverTime());
         return out;
     }
 
@@ -80,7 +84,7 @@ public class BeachController {
      * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind } }
      *   → { players: [{ pid, id, nick, skin, x, z, yaw, moving }], events: [{ kind, fromPid, fromId, fromNick, toPid, toId, toNick, at }],
      *       count, received: { comfort, hug }, care?: "sent" | "cooldown" | "gone" }
-     * DB 도 세션도 보지 않는다. 티켓을 모르거나 만료됐으면 410 (다시 enter 하면 된다).
+     * 방문 티켓으로 위치를 갱신하고 영속 모닥불 상태를 함께 내려준다. 만료 티켓은 410.
      */
     @PostMapping("/api/beach/tick")
     public BeachRoom.TickResult tick(@RequestBody(required = false) TickBody body) {
@@ -109,5 +113,21 @@ public class BeachController {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 바닷가를 이용해 주세요."));
         CircleService.Circle circle = requireMember(communityId, me);
         return Map.of("communityId", circle.id(), "count", beach.count(circle.id()), "capacity", BeachRoom.CAPACITY);
+    }
+
+    @GetMapping("/api/beach/fire")
+    public BeachFireService.FireView fire(@RequestParam(required = false) String communityId, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 모닥불을 이용해 주세요."));
+        CircleService.Circle circle = requireMember(communityId, me);
+        return beach.fire(circle.id());
+    }
+
+    @PostMapping("/api/beach/fire/wood")
+    public BeachFireService.FireView wood(@RequestBody(required = false) WoodBody body, HttpServletRequest req, HttpServletResponse res) {
+        DbUser me = auth.requireUser(req, res);
+        if (body == null) throw ApiException.badRequest("장작 요청을 다시 시도해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        return beach.addWood(body.ticket(), me.id(), body.requestId());
     }
 }

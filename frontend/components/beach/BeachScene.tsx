@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { BeachEngine, webglSupported, type JoystickState, type RestState } from "@/lib/beach/engine";
-import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
+import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, type FireState, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
 import { IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconUsers } from "@/components/Icons";
 import { route } from "@/lib/routes";
+import CampfireControls from "./CampfireControls";
 import styles from "./beach.module.css";
 
 const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요" };
@@ -33,6 +34,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const blockedRef = useRef(false);
   const tickRunnerRef = useRef<() => Promise<void>>(async () => {});
   const selectedRef = useRef<RemotePlayer | null>(null);
+  const fireTimeRef = useRef(0);
+  const checkoutRef = useRef(false);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -47,10 +50,30 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [hint, setHint] = useState(false);
   const [timeLabel, setTimeLabel] = useState("");
   const [lost, setLost] = useState(false);
+  const [fire, setFire] = useState<FireState | null>(null);
+  const [nearFire, setNearFire] = useState(false);
   const [coolUntil, setCoolUntil] = useState(0);
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
+
+  const applyFire = useCallback((next: FireState) => {
+    if (!aliveRef.current || !next || next.serverTime < fireTimeRef.current) return;
+    fireTimeRef.current = next.serverTime;
+    setFire(next);
+    engineRef.current?.setFireState(next);
+  }, []);
+
+  const onShopOpen = useCallback((open: boolean) => {
+    engineRef.current?.setInputPaused(open);
+  }, []);
+
+  const onCheckout = useCallback((active: boolean) => {
+    checkoutRef.current = active;
+    const engine = engineRef.current;
+    if (active) engine?.stop();
+    else if (!document.hidden && !blockedRef.current) engine?.start();
+  }, []);
 
   const handleEvent = useCallback((ev: CareEvent) => {
     const engine = engineRef.current;
@@ -95,7 +118,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setCount(entered.count);
     setCapacity(entered.capacity);
     setCommunity(entered.community);
-  }, [communityId]);
+    applyFire(entered.fire);
+  }, [communityId, applyFire]);
 
   const runTick = useCallback(async () => {
     const engine = engineRef.current;
@@ -132,6 +156,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       engine.setPlayers(res.players);
       setCount(res.count);
       setReceived(res.received);
+      applyFire(res.fire);
       for (const ev of res.events) handleEvent(ev);
       if (care) {
         if (res.care === "sent") toastSuccess(`${care.nick}님에게 ${CARE_LABEL[care.kind]}`);
@@ -159,7 +184,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       inFlightRef.current = false;
       scheduleTick();
     }
-  }, [handleEvent, reenter, scheduleTick, stopWithError]);
+  }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire]);
   tickRunnerRef.current = runTick;
 
   useEffect(() => {
@@ -167,6 +192,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     if (!canvas) return;
     aliveRef.current = true;
     blockedRef.current = false;
+    fireTimeRef.current = 0;
+    checkoutRef.current = false;
     if (!communityId) {
       setPhase("error");
       setError("내 소로우에서 함께 쉴 바닷가를 골라 주세요.");
@@ -197,9 +224,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
             onSelect: (p) => setSelected(p),
             onJoystick: (s) => setJoy(s),
             onRestChange: (state) => setRest(state),
+            onFireRangeChange: (near) => setNearFire(near),
           },
         });
         engineRef.current = engine;
+        applyFire(entered.fire);
         if (process.env.NODE_ENV !== "production") (window as unknown as { __beach?: BeachEngine }).__beach = engine; // 개발 콘솔에서 들여다보기
         setTimeLabel(hourLabel(engine.daylightNow.hour));
         await engine.whenReady();
@@ -222,7 +251,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         eng.stop();
         window.clearTimeout(timerRef.current);
       } else {
-        eng.start();
+        if (!checkoutRef.current) eng.start();
         scheduleTick(0);
       }
     };
@@ -248,7 +277,14 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       engineRef.current?.dispose();
       engineRef.current = null;
     };
-  }, [communityId, scheduleTick, stopWithError]);
+  }, [communityId, scheduleTick, stopWithError, applyFire]);
+
+  const onAddWood = useCallback(async (requestId: string) => {
+    await runTick();
+    const ticket = ticketRef.current;
+    if (!ticket || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+    return addFirewood(ticket, requestId);
+  }, [runTick]);
 
   const sendCare = (kind: CareKind) => {
     const target = selectedRef.current;
@@ -281,7 +317,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       {community && phase === "ready" && <div className={styles.place}>
         <span><IconLock />우리만의 프라이빗 해변</span>
         <h1>{community.name} 바닷가</h1>
-        <p>큰 절벽 아래, 모닥불과 바다를 향한 오두막.</p>
+        <p>웅장한 절벽 아래, 바다를 향한 프라이빗 라운지.</p>
       </div>}
 
       {joy && (
@@ -292,6 +328,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
 
       <div className={styles.bottomHud}>
       {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
+      {phase === "ready" && fire && meRef.current && <CampfireControls
+        communityId={communityId} communityName={community?.name ?? "우리 소로우"}
+        userId={meRef.current.id} fire={fire} near={nearFire} disconnected={lost}
+        onAddWood={onAddWood} onFireChange={applyFire} onOpenChange={onShopOpen} onCheckoutChange={onCheckout}
+      />}
       {hint && !lost && !selected && !gotAny && !rest && phase === "ready" && (
         <p className={styles.hint} role="status">
           <span className={styles.touchHint}>왼쪽을 끌어 걷고, 오른쪽을 끌어 둘러봐요.</span><span className={styles.keyboardHint}>WASD·방향키로 걷고, 화면을 끌어 둘러봐요.</span><br />오두막에 앉아 쉬거나 사람을 눌러 위로를 건네요.

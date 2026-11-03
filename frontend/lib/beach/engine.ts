@@ -14,7 +14,7 @@ import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
 import { resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
-import type { CareKind, RemotePlayer } from "./net";
+import type { CareKind, FireState, RemotePlayer } from "./net";
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
@@ -27,6 +27,7 @@ export interface EngineHandlers {
   /** 터치 조이스틱을 그리기 위한 상태 (손을 떼면 null) */
   onJoystick: (state: JoystickState | null) => void;
   onRestChange?: (state: RestState | null) => void;
+  onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
   onQuality?: (level: "high" | "low") => void;
 }
@@ -204,6 +205,9 @@ export class BeachEngine {
   private propTex!: THREE.Texture;
   private tinted: THREE.Material[] = [];
   private fire: CoastalFire | null = null;
+  private fireState = { logs: 3, color: "amber" };
+  private nearFire = false;
+  private inputPaused = false;
   private obstacles: { x: number; z: number; r: number }[] = [];
   private shadowGeo = new THREE.PlaneGeometry(0.9, 0.45);
   private shadowMat!: THREE.MeshBasicMaterial;
@@ -381,7 +385,24 @@ export class BeachEngine {
 
   private buildProps() {
     this.fire = new CoastalFire(this.scene, FIRE.x, FIRE.z);
+    this.fire.setState(this.fireState.logs, this.fireState.color);
     this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.35 });
+  }
+
+  setFireState(state: FireState) {
+    if (!state || !Number.isFinite(state.logs)) return;
+    this.fireState = { logs: Math.max(0, Math.min(12, state.logs)), color: state.color };
+    this.fire?.setState(this.fireState.logs, this.fireState.color);
+    this.cove.setFireState(this.fireState.logs, this.fireState.color);
+  }
+
+  setInputPaused(paused: boolean) {
+    this.inputPaused = paused;
+    this.keys.clear();
+    this.look.active = false;
+    this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+    this.self.moving = false;
+    this.handlers.onJoystick(null);
   }
 
   /* ---------------- 시간대 ---------------- */
@@ -442,7 +463,7 @@ export class BeachEngine {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    if (this.disposed) return;
+    if (this.disposed || this.inputPaused) return;
     this.canvas.setPointerCapture?.(e.pointerId);
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
@@ -456,7 +477,7 @@ export class BeachEngine {
   };
 
   private onPointerMove = (e: PointerEvent) => {
-    if (this.disposed) return;
+    if (this.disposed || this.inputPaused) return;
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
     if (this.joy.active && e.pointerId === this.joy.id) {
@@ -498,6 +519,7 @@ export class BeachEngine {
   };
 
   private onKey = (e: KeyboardEvent) => {
+    if (this.inputPaused) return;
     const target = e.target as HTMLElement | null;
     if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -828,6 +850,8 @@ export class BeachEngine {
     this.camera.rotation.set(this.self.pitch, this.self.yaw, 0);
     this.sky.position.copy(this.camera.position);
     this.updateRestState();
+    const near = Math.hypot(this.self.x - FIRE.x, this.self.z - FIRE.z) <= 4.6;
+    if (near !== this.nearFire) { this.nearFire = near; this.handlers.onFireRangeChange?.(near); }
   }
 
   private collide(x: number, z: number): [number, number] {

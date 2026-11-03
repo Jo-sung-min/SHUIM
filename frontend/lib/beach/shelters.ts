@@ -24,9 +24,9 @@ export interface ShelterCollider { minX: number; maxX: number; minZ: number; max
 
 /** The whole sea-facing side (-Z) is an entrance; the rear faces the cliff. */
 export const SHELTERS: readonly Shelter[] = [
-  { id: "pine", name: "솔바람 오두막", x: -8, z: 15.6, width: 6.2, depth: 4.6, floorY: 0.16 },
-  { id: "wave", name: "파도소리 오두막", x: 0, z: 17.1, width: 6.2, depth: 4.6, floorY: 0.16 },
-  { id: "sunset", name: "노을 오두막", x: 8, z: 15.6, width: 6.2, depth: 4.6, floorY: 0.16 },
+  { id: "pine", name: "솔바람 오두막", x: -13, z: 23, width: 8.2, depth: 5.6, floorY: 0.18 },
+  { id: "wave", name: "파도소리 오두막", x: 0, z: 25, width: 8.2, depth: 5.6, floorY: 0.18 },
+  { id: "sunset", name: "노을 오두막", x: 13, z: 23, width: 8.2, depth: 5.6, floorY: 0.18 },
 ];
 
 export const SHELTER_SEATS: readonly ShelterSeat[] = SHELTERS.flatMap((shelter) =>
@@ -54,7 +54,13 @@ export const SHELTER_COLLIDERS: readonly ShelterCollider[] = SHELTERS.flatMap((s
       minZ: z - halfDepth - 0.03,
       maxZ: z - halfDepth + 0.27,
     })),
-    { minX: x - 2.7, maxX: x + 2.7, minZ: z + 0.55, maxZ: z + 1.85 },
+    { minX: x - 2.95, maxX: x + 2.95, minZ: z + 0.55, maxZ: z + 2.08 },
+    ...[-1, 1].map((side) => ({
+      minX: x + side * 3.22 - 0.43,
+      maxX: x + side * 3.22 + 0.43,
+      minZ: z - 1.08,
+      maxZ: z + 0.02,
+    })),
   ];
 });
 
@@ -132,43 +138,54 @@ export function buildShelters(scene: THREE.Scene): void {
     const right = x + width / 2 - 0.1;
     const front = z - depth / 2 + 0.1;
     const back = z + depth / 2 - 0.1;
-    const timber = [0xb58a5c, 0xc49a6a, 0xb98e60, 0xc09a70];
-    const cedar = [0x79503a, 0x84593e, 0x8f6345, 0x80563f];
-    const accent = [0x81928b, 0x789697, 0xbb8c70][shelterIndex];
+    const timber = [0xebd6b3, 0xf3dfc0, 0xe8d0ad, 0xf1dcbc];
+    const cedar = [0xb79b76, 0xbfa37e, 0xc5ab86, 0xbda17a];
+    const accent = [0xa3b3a6, 0x9eafb2, 0xc6ae92][shelterIndex];
+    const brass = 0xc4a46c;
 
     // A shallow, walkable deck and broad first step make the threshold inviting.
-    const plankCount = 23;
+    const plankCount = 31;
     const plankWidth = width / plankCount;
     for (let i = 0; i < plankCount; i++) {
       add(floor, x - width / 2 + plankWidth * (i + 0.5), floorY - 0.06, z, plankWidth - 0.008, 0.12, depth, timber[i % timber.length]);
     }
-    add(frame, x, 0.075, front - 0.1, width, 0.14, 0.16, 0x806044);
-    add(floor, x, 0.035, front - 0.3, width - 0.38, 0.07, 0.42, 0xb78e62);
+    add(frame, x, 0.09, front - 0.1, width, 0.17, 0.18, 0x9f7950);
+    add(floor, x, 0.045, front - 0.36, width - 0.38, 0.09, 0.54, 0xd1b18b);
+    add(metal, x, floorY - 0.02, front - 0.17, width - 0.12, 0.025, 0.025, brass);
 
     // Three timber walls provide privacy. No railing or central post crosses the opening.
-    for (let row = 0; row < 16; row++) {
+    for (let row = 0; row < 18; row++) {
       const y = floorY + 0.1 + row * 0.18;
       add(walls, x, y, back, width - 0.16, 0.178, 0.2, timber[(row + shelterIndex) % timber.length]);
       add(walls, left, y, z, 0.2, 0.178, depth, timber[(row + 1) % timber.length]);
       add(walls, right, y, z, 0.2, 0.178, depth, timber[(row + 2) % timber.length]);
     }
     for (const columnX of [left, right]) {
-      for (const columnZ of [front, back]) add(frame, columnX, 1.71, columnZ, 0.3, 3.1, 0.3, 0x79583e);
-      add(frame, columnX, 1.71, z + 0.15, 0.19, 3.1, 0.25, 0x8a6547);
-      add(frame, columnX, 3.13, z, 0.24, 0.24, depth + 0.38, 0x715039);
+      for (const columnZ of [front, back]) {
+        add(frame, columnX, 1.85, columnZ, 0.32, 3.34, 0.32, 0xa78258);
+        add(metal, columnX, floorY + 0.1, columnZ, 0.34, 0.2, 0.34, brass);
+      }
+      add(frame, columnX, 1.85, z + 0.15, 0.19, 3.34, 0.25, 0xb08a61);
+      add(frame, columnX, 3.46, z, 0.27, 0.26, depth + 0.65, 0x98734f);
     }
-    add(frame, x, 3.13, front, width, 0.24, 0.24, 0x79583e);
-    add(frame, x, 3.13, back, width, 0.24, 0.24, 0x79583e);
-    add(frame, x, 1.71, back - 0.08, 0.18, 3.1, 0.22, 0x906d4e);
+    add(frame, x, 3.46, front, width, 0.26, 0.26, 0xa78258);
+    add(frame, x, 3.46, back, width, 0.26, 0.26, 0xa78258);
+    add(frame, x, 1.85, back - 0.08, 0.18, 3.34, 0.22, 0xb28d62);
+    // Fine ceiling battens and a projecting pergola give the lounge a resort-scale canopy.
+    for (let slat = 0; slat < 27; slat++) {
+      const slatX = x - width / 2 + 0.27 + slat * (width - 0.54) / 26;
+      add(frame, slatX, 3.35, z, 0.105, 0.12, depth + 0.64, timber[slat % timber.length]);
+    }
+    add(metal, x, 3.31, back - 0.27, width - 0.56, 0.035, 0.025, brass);
 
     // A pitched cedar roof leaves a generous open gable and visible rafters at the front.
-    const roofRun = width / 2 + 0.36;
-    const ridgeY = 4.34;
-    const roofRise = 1.16;
+    const roofRun = width / 2 + 0.6;
+    const ridgeY = 4.46;
+    const roofRise = 0.86;
     const roofAngle = Math.atan2(roofRise, roofRun);
     const roofLength = Math.hypot(roofRun, roofRise);
-    const roofDepth = depth + 0.65;
-    const roofBoards = 16;
+    const roofDepth = depth + 1.0;
+    const roofBoards = 21;
     for (const side of [-1, 1]) {
       for (let board = 0; board < roofBoards; board++) {
         add(roof, x + side * roofRun / 2, ridgeY - roofRise / 2, z - roofDepth / 2 + (board + 0.5) * roofDepth / roofBoards,
@@ -181,71 +198,104 @@ export function buildShelters(scene: THREE.Scene): void {
     add(frame, x, ridgeY - 0.12, z, 0.23, 0.28, roofDepth + 0.12, 0x8c6443);
     add(roof, x, ridgeY + 0.07, z, 0.27, 0.12, roofDepth + 0.12, 0x78513a);
     // Fill the rear gable while the front remains entirely open above the header.
-    for (let row = 0; row < 7; row++) {
-      const y = 3.16 + row * 0.16;
+    for (let row = 0; row < 6; row++) {
+      const y = 3.47 + row * 0.16;
       const gableWidth = Math.min(width - 0.16, 2 * (ridgeY - y - 0.1) / Math.tan(roofAngle));
       add(walls, x, y, back, Math.max(0.12, gableWidth), 0.16, 0.2, timber[(row + 1) % timber.length]);
     }
 
     // A deep cushioned bench faces the sea. Its front edge is behind a roomy interior aisle.
-    add(frame, x, 0.48, z + 1.1, 5.4, 0.22, 1.12, 0x956e49);
+    add(frame, x, 0.48, z + 1.27, 5.9, 0.22, 1.44, 0xb69266);
     for (const legX of [-2.35, 0, 2.35]) {
       for (const legZ of [0.73, 1.5]) add(frame, x + legX, 0.3, z + legZ, 0.19, 0.28, 0.19, 0x79583e);
     }
-    add(frame, x, 1.04, z + 1.73, 5.4, 0.85, 0.17, 0x9f7953);
+    add(frame, x, 1.08, z + 1.97, 5.9, 0.94, 0.2, 0xb99569);
     for (const side of [-1, 1]) {
-      add(frame, x + side * 2.59, 0.84, z + 1.13, 0.2, 0.16, 1.15, 0xa68058);
-      add(frame, x + side * 2.59, 0.65, z + 0.7, 0.16, 0.4, 0.16, 0x956e49);
+      add(frame, x + side * 2.82, 0.84, z + 1.25, 0.2, 0.16, 1.45, 0xbc986d);
+      add(frame, x + side * 2.82, 0.65, z + 0.7, 0.16, 0.4, 0.16, 0xae885d);
+      add(fabric, x + side * 2.73, 0.95, z + 1.32, 0.25, 0.47, 1.24, 0xf2eee3);
     }
     [-1.65, 0, 1.65].forEach((offset, index) => {
-      add(fabric, x + offset, 0.7, z + 1.08, 1.58, 0.23, 1.03, index === 1 ? 0xe7d8bc : 0xd8c9ad);
-      add(fabric, x + offset, 1.08, z + 1.58, 1.52, 0.57, 0.2, index === 1 ? accent : 0xd3c4a8, 0, -0.12);
+      add(fabric, x + offset, 0.72, z + 1.24, 1.63, 0.28, 1.34, 0xfffcf3);
+      add(fabric, x + offset, 1.15, z + 1.78, 1.62, 0.77, 0.29, 0xf5f0e4, 0, -0.12);
+      add(fabric, x + offset, 0.97, z + 1.49, 1.35, 0.29, 0.2, index === 1 ? accent : 0xeee4d3, 0, -0.15);
     });
     // Small loose cushions and a folded throw give each shared shelter its own character.
-    add(fabric, x - 2.08, 0.99, z + 1.25, 0.56, 0.48, 0.22, accent, -0.2, -0.15);
-    add(fabric, x + 2.12, 0.98, z + 1.22, 0.53, 0.45, 0.24, 0xb98b64, 0.2, -0.16);
-    add(woven, x + 2.02, 0.831, z + 0.98, 0.78, 0.026, 0.84, accent);
-    add(woven, x + 2.02, 0.65, z + 0.56, 0.78, 0.37, 0.025, accent);
+    add(fabric, x - 2.17, 1.09, z + 1.4, 0.67, 0.58, 0.26, accent, -0.2, -0.15);
+    add(fabric, x + 2.17, 1.08, z + 1.38, 0.64, 0.55, 0.26, 0xd4bd9e, 0.2, -0.16);
+    add(woven, x + 2.05, 0.87, z + 0.98, 0.78, 0.025, 0.9, accent);
+    add(woven, x + 2.05, 0.67, z + 0.54, 0.78, 0.4, 0.025, accent);
+
+    // Rattan-sided occasional tables stay beside the aisle, leaving every seat a clear approach.
+    for (const side of [-1, 1]) {
+      const tableX = x + side * 3.22;
+      add(frame, tableX, 0.67, z - 0.53, 0.86, 0.095, 1.1, 0xc9ab7e);
+      for (const cornerX of [-0.34, 0.34]) {
+        for (const cornerZ of [-0.44, 0.44]) add(frame, tableX + cornerX, 0.42, z - 0.53 + cornerZ, 0.065, 0.44, 0.065, 0xb99b6d);
+      }
+      for (let rail = 0; rail < 7; rail++) {
+        const railZ = z - 0.98 + rail * 0.15;
+        for (const edge of [-1, 1]) add(frame, tableX + edge * 0.35, 0.43, railZ, 0.028, 0.4, 0.028, 0xc8aa7d);
+      }
+      for (const railY of [0.28, 0.36, 0.44, 0.52]) {
+        for (const edge of [-1, 1]) add(frame, tableX + edge * 0.36, railY, z - 0.53, 0.03, 0.026, 0.92, 0xc8aa7d);
+      }
+      // A brass tray and a folded linen towel make these read as serviced cabanas.
+      add(metal, tableX, 0.73, z - 0.64, 0.56, 0.025, 0.42, brass);
+      add(fabric, tableX, 0.765, z - 0.3, 0.54, 0.085, 0.24, 0xfffcf5);
+      add(glass, tableX, 0.82, z - 0.68, 0.1, 0.15, 0.1, 0xffe5ad);
+
+      // Tied linen curtains frame the view while the broad ocean side remains open.
+      const curtainX = x + side * (width / 2 - 0.56);
+      add(metal, curtainX, 3.32, front + 0.08, 0.68, 0.035, 0.035, brass);
+      for (let fold = 0; fold < 5; fold++) {
+        add(woven, curtainX + (fold - 2) * 0.105, 1.85, front + 0.09 + (fold % 2) * 0.035,
+          0.13, 2.78, 0.055, 0xfffcf3);
+      }
+      add(metal, curtainX, 1.48, front + 0.04, 0.53, 0.075, 0.07, brass);
+    }
 
     // Woven rugs are flush with the deck and leave the threshold clear.
-    add(woven, x, floorY + 0.012, z - 0.72, 4.55, 0.02, 1.85, 0xc1ac83);
-    for (const stripe of [-0.73, -0.62, 0.62, 0.73]) {
-      add(woven, x, floorY + 0.025, z - 0.72 + stripe, 4.36, 0.006, 0.045, accent);
+    add(woven, x, floorY + 0.012, z - 0.72, 5.5, 0.02, 2.25, 0xe7dfce);
+    for (const stripe of [-0.95, -0.88, 0.88, 0.95]) {
+      add(woven, x, floorY + 0.025, z - 0.72 + stripe, 5.3, 0.006, 0.025, accent);
     }
     for (const side of [-1, 1]) {
-      for (let fringe = 0; fringe < 19; fringe++) {
-        add(woven, x - 2.13 + fringe * 0.237, floorY + 0.014, z - 0.72 + side * 0.99, 0.035, 0.02, 0.16, 0xd1bf99);
+      for (let fringe = 0; fringe < 23; fringe++) {
+        add(woven, x - 2.64 + fringe * 0.24, floorY + 0.014, z - 0.72 + side * 1.18, 0.025, 0.02, 0.14, 0xf0e7d4);
       }
     }
 
     // Lanterns hang at the edges of the opening, above eye level and out of the walking path.
     for (const side of [-1, 1]) {
-      const lanternX = x + side * 2.64;
+      const lanternX = x + side * 3.05;
       const lanternZ = front + 0.28;
-      add(metal, lanternX, 2.9, lanternZ, 0.035, 0.4, 0.035, 0x4c493b);
-      add(metal, lanternX, 2.65, lanternZ, 0.31, 0.08, 0.31, 0x665744);
-      add(metal, lanternX, 2.27, lanternZ, 0.3, 0.08, 0.3, 0x665744);
-      add(glass, lanternX, 2.46, lanternZ, 0.2, 0.3, 0.2, 0xffce83);
+      add(metal, lanternX, 3.13, lanternZ, 0.025, 0.43, 0.025, brass);
+      add(metal, lanternX, 2.88, lanternZ, 0.35, 0.045, 0.35, brass);
+      add(metal, lanternX, 2.39, lanternZ, 0.35, 0.045, 0.35, brass);
+      add(glass, lanternX, 2.64, lanternZ, 0.25, 0.43, 0.25, 0xffe5ad);
       for (const cornerX of [-0.11, 0.11]) {
-        for (const cornerZ of [-0.11, 0.11]) add(metal, lanternX + cornerX, 2.46, lanternZ + cornerZ, 0.025, 0.3, 0.025, 0x4c493b);
+        for (const cornerZ of [-0.11, 0.11]) add(metal, lanternX + cornerX, 2.64, lanternZ + cornerZ, 0.017, 0.49, 0.017, brass);
       }
     }
-    const warmLight = new THREE.PointLight(0xffc78a, 3.4, 6, 1.6);
+    const warmLight = new THREE.PointLight(0xffdfb6, 9, 11, 2);
     warmLight.name = `shelter-light-${shelter.id}`;
-    warmLight.position.set(x, 2.5, z - 0.3);
+    warmLight.position.set(x, 2.7, z - 0.3);
     scene.add(warmLight);
   });
 
   const box = new THREE.BoxGeometry(1, 1, 1);
   const timberBox = new RoundedBoxGeometry(1, 1, 1, 1, 0.012);
   const cushionBox = new RoundedBoxGeometry(1, 1, 1, 3, 0.15);
-  const woodMaterial = new THREE.MeshStandardMaterial({
+  const woodMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     map: shelterTexture("wood", true),
     normalMap: shelterTexture("wood-normal"),
     roughnessMap: shelterTexture("wood-roughness"),
-    normalScale: new THREE.Vector2(0.55, 0.55),
-    roughness: 0.95,
+    normalScale: new THREE.Vector2(0.3, 0.3),
+    roughness: 0.76,
+    clearcoat: 0.18,
+    clearcoatRoughness: 0.5,
     metalness: 0,
   });
   const fabricMaterial = new THREE.MeshStandardMaterial({

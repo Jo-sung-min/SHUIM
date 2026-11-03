@@ -2,8 +2,15 @@ import * as THREE from "three";
 import type { Daylight } from "./daylight";
 import { buildShelters } from "./shelters";
 
-export const CAMPFIRE = { x: 0, z: 9 };
+export const CAMPFIRE = { x: 0, z: 12 };
 type Obstacle = { x: number; z: number; r: number };
+const FIRE_COLORS: Record<string, number> = {
+  amber: 0xffad64,
+  rose: 0xff84b3,
+  aurora: 0x75efce,
+  ocean: 0x7ec9ff,
+  violet: 0xc08eff,
+};
 
 function surfaceTexture(name: string, color = false) {
   // Geometry-only checks run without a DOM; textures are loaded by the live client.
@@ -71,22 +78,26 @@ function rockMaterial() {
 export class Cove {
   private ambient = new THREE.HemisphereLight(0xf2f5f6, 0x9a8d77, 2);
   private sun = new THREE.DirectionalLight(0xfff1de, 2.2);
-  private firelight = new THREE.PointLight(0xffa34d, 18, 13, 1.4);
+  private firelight = new THREE.PointLight(FIRE_COLORS.amber, 8, 14, 1.4);
   private bulbs = new THREE.MeshBasicMaterial({ color: 0xffd798 });
   private night = 0;
+  private fireStrength = 1;
+  private fireTargetStrength = 1;
+  private fireTargetColor = new THREE.Color(FIRE_COLORS.amber);
+  private lastUpdateTime: number | null = null;
 
   constructor(scene: THREE.Scene, obstacles: Obstacle[]) {
-    this.sun.position.set(-12, 24, -18);
+    this.sun.position.set(-32, 70, -48);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
-    this.sun.shadow.camera.left = this.sun.shadow.camera.bottom = -31;
-    this.sun.shadow.camera.right = this.sun.shadow.camera.top = 31;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.camera.left = this.sun.shadow.camera.bottom = -48;
+    this.sun.shadow.camera.right = this.sun.shadow.camera.top = 48;
     this.sun.shadow.camera.near = 0.5;
-    this.sun.shadow.camera.far = 110;
+    this.sun.shadow.camera.far = 220;
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.035;
     this.sun.shadow.radius = 2;
-    this.sun.target.position.set(0, 0, 8);
+    this.sun.target.position.set(0, 0, 15);
     this.firelight.position.set(CAMPFIRE.x, 1.1, CAMPFIRE.z);
     scene.add(this.ambient, this.sun, this.sun.target, this.firelight);
     buildShelters(scene);
@@ -108,8 +119,8 @@ export class Cove {
 
     // Small boulders mark the boundary without making the central gathering area crowded.
     const boulders: [number, number, number][] = [
-      [-13, 0.3, 1.4], [-12.3, 2.1, 0.8], [12.7, 0.5, 1.5], [12, 2.5, 0.8],
-      [-13.6, 8, 0.9], [13.7, 11, 1], [-12.7, 19.5, 0.7], [12.7, 19.6, 0.8],
+      [-20.4, 1, 1.7], [-19.5, 3.2, 0.8], [20.5, 0.5, 1.9], [19.7, 3, 0.9],
+      [-21, 11, 1.2], [21, 14, 1.3], [-20.8, 28.8, 0.9], [20.8, 29, 1],
     ];
     const boulderGeometry = new THREE.SphereGeometry(1, 20, 14);
     const boulderPositions = boulderGeometry.getAttribute("position");
@@ -148,14 +159,14 @@ export class Cove {
     scene.add(stones);
 
     // Low seats flank the fire, leaving the arrival path and view of the sea open.
-    for (const [x, z, angle] of [[-3.5, 9, 0], [3.5, 9, 0], [-2.8, 12.3, -0.7], [2.8, 12.3, 0.7]]) {
+    for (const [x, z, angle] of [[-4.4, CAMPFIRE.z, 0], [4.4, CAMPFIRE.z, 0], [-3.4, CAMPFIRE.z + 4.2, -0.7], [3.4, CAMPFIRE.z + 4.2, 0.7]]) {
       const seat = new THREE.Group();
-      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 2.5, 24, 4), [wood, woodEnd, woodEnd]);
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 3.2, 24, 4), [wood, woodEnd, woodEnd]);
       log.rotation.x = Math.PI / 2;
       log.position.y = 0.48;
       log.castShadow = log.receiveShadow = true;
       seat.add(log);
-      for (const offset of [-0.8, 0.8]) {
+      for (const offset of [-1.1, 1.1]) {
         const foot = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.3, 0.3), wood);
         foot.position.set(0, 0.16, offset);
         foot.castShadow = foot.receiveShadow = true;
@@ -164,11 +175,14 @@ export class Cove {
       seat.position.set(x, 0, z);
       seat.rotation.y = angle;
       scene.add(seat);
-      for (const offset of [-0.9, 0, 0.9]) obstacles.push({ x: x + Math.sin(angle) * offset, z: z + Math.cos(angle) * offset, r: 0.29 });
+      for (const offset of [-1.3, -0.45, 0.45, 1.3]) obstacles.push({ x: x + Math.sin(angle) * offset, z: z + Math.cos(angle) * offset, r: 0.31 });
     }
 
     // Repeated lights share draws so the scene stays light when the beach is full.
-    const lanterns: [number, number][] = [[-4.2, 7.6], [4.2, 7.6], [-4.3, 13.6], [4.3, 13.6], [-10.8, 12.4], [10.8, 12.4]];
+    const lanterns: [number, number][] = [
+      [-5.3, 10.3], [5.3, 10.3], [-5.1, 17], [5.1, 17],
+      [-20, 13], [20, 13], [-20, 23], [20, 23], [-20, 29.5], [20, 29.5],
+    ];
     const bases = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.2, 0.12, 16), dark, lanterns.length);
     const glasses = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.11, 0.13, 0.26, 16), this.bulbs, lanterns.length);
     const caps = new THREE.InstancedMesh(new THREE.ConeGeometry(0.2, 0.16, 16), dark, lanterns.length);
@@ -181,24 +195,24 @@ export class Cove {
     scene.add(bases, glasses, caps);
 
     const wire = new THREE.LineBasicMaterial({ color: 0x4b4638 });
-    const festoonBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.065, 10, 8), this.bulbs, 38);
+    const festoonBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 10, 8), this.bulbs, 50);
     let bulbIndex = 0;
-    for (const z of [4.8, 12.3]) {
-      const halfSpan = z > 10 ? 12.2 : 9;
+    for (const z of [7.5, 17.8]) {
+      const halfSpan = z > 10 ? 20 : 14.8;
       for (const x of [-halfSpan, halfSpan]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.1, 3.8, 12), wood);
-        post.position.set(x, 1.9, z);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 5.2, 12), wood);
+        post.position.set(x, 2.6, z);
         post.castShadow = post.receiveShadow = true;
         scene.add(post);
         obstacles.push({ x, z, r: 0.12 });
       }
       const points: THREE.Vector3[] = [];
-      for (let i = 0; i <= 40; i++) {
-        const t = i / 40;
-        points.push(new THREE.Vector3(-halfSpan + t * halfSpan * 2, 3.72 - Math.sin(t * Math.PI) * 0.85, z));
+      for (let i = 0; i <= 52; i++) {
+        const t = i / 52;
+        points.push(new THREE.Vector3(-halfSpan + t * halfSpan * 2, 5.12 - Math.sin(t * Math.PI) * 1.05, z));
       }
       scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), wire));
-      for (let i = 1; i < 20; i++) {
+      for (let i = 1; i <= 25; i++) {
         const point = points[i * 2];
         festoonBulbs.setMatrixAt(bulbIndex++, lightPlacement.makeTranslation(point.x, point.y - 0.08, point.z));
       }
@@ -218,7 +232,7 @@ export class Cove {
     for (let i = 0; i < 360; i++) {
       const side = i % 2 ? -1 : 1;
       const clump = Math.floor(i / 5);
-      transform.position.set(side * (13.25 + Math.sin(clump * 7.3) * 0.35) + Math.sin(i * 2.3) * 0.13, 0.015, 2 + (clump / 72) * 18 + Math.cos(i) * 0.12);
+      transform.position.set(side * (21.2 + Math.sin(clump * 7.3) * 0.4) + Math.sin(i * 2.3) * 0.13, 0.015, 2 + (clump / 72) * 28 + Math.cos(i) * 0.12);
       transform.scale.set(0.8 + Math.sin(i) * 0.2, 0.55 + (Math.sin(i * 2.7) + 1) * 0.45, 1);
       transform.rotation.set(side * 0.07, i * 2.4, Math.sin(i) * 0.17);
       transform.updateMatrix();
@@ -233,29 +247,29 @@ export class Cove {
 
   private cliffGeometry() {
     const path = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-21, 9, -13), new THREE.Vector3(-23, 15, -1),
-      new THREE.Vector3(-23, 21, 13), new THREE.Vector3(-21, 18, 25),
-      new THREE.Vector3(-10, 14, 31), new THREE.Vector3(0, 16, 32),
-      new THREE.Vector3(11, 15, 31), new THREE.Vector3(21, 20, 25),
-      new THREE.Vector3(23, 22, 13), new THREE.Vector3(23, 16, 0),
-      new THREE.Vector3(21, 10, -13),
+      new THREE.Vector3(-31, 30, -16), new THREE.Vector3(-32, 36, -1),
+      new THREE.Vector3(-32, 44, 19), new THREE.Vector3(-29, 40, 35),
+      new THREE.Vector3(-15, 36, 43), new THREE.Vector3(0, 39, 44),
+      new THREE.Vector3(15, 40, 43), new THREE.Vector3(29, 44, 35),
+      new THREE.Vector3(32, 42, 19), new THREE.Vector3(32, 35, -1),
+      new THREE.Vector3(31, 30, -16),
     ], false, "catmullrom", 0.35);
-    const along = 220, around = 80;
+    const along = 240, around = 96;
     const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
     for (let i = 0; i <= along; i++) {
       const t = i / along, center = path.getPoint(t), tangent = path.getTangent(t);
       const cross = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-      const width = 5.7 + Math.sin(t * 27.2) * 0.5 + Math.sin(t * 71) * 0.25;
-      const ridge = center.y + Math.sin(t * 49) * 0.7 + Math.sin(t * 117) * 0.45
-        + Math.sin(t * 247) * 0.2;
+      const width = 6.5 + Math.sin(t * 27.2) * 0.5 + Math.sin(t * 71) * 0.25;
+      const ridge = center.y + Math.sin(t * 49) * 1.4 + Math.sin(t * 117) * 0.6
+        + Math.sin(t * 247) * 0.3;
       for (let j = 0; j <= around; j++) {
         const angle = j / around * Math.PI * 2;
         const sine = Math.sin(angle), cosine = Math.cos(angle);
         // A squarer cross-section gives the ridge steep faces and broad rock ledges.
-        const level = (Math.sign(sine) * Math.pow(Math.abs(sine), 0.72) + 1) / 2;
+        const level = (sine + 1) / 2;
         const worldHeight = level * ridge;
-        const strata = Math.tanh(Math.sin(worldHeight * 2.1 + Math.sin(t * 31) * 0.22) * 5) * 0.44
-          + Math.sin(worldHeight * 4.8 + t * 11) * 0.12;
+        const strata = Math.tanh(Math.sin(worldHeight * 1.35 + Math.sin(t * 31) * 0.22) * 5) * 0.55
+          + Math.sin(worldHeight * 3.2 + t * 11) * 0.13;
         const cracks = Math.pow(Math.abs(Math.sin(t * 107 + level * 0.8)), 18) * 0.7;
         const erosion = Math.sin(t * 149 + level * 11) * Math.sin(worldHeight * 2.9 + t * 41) * 0.24;
         const offset = Math.sign(cosine) * Math.pow(Math.abs(cosine), 0.42) * (width + strata + erosion - cracks);
@@ -296,10 +310,24 @@ export class Cove {
     this.ambient.color.setRGB(...d.cloud);
     this.sun.intensity = 0.3 + Math.max(0, d.sun[1]) * 2.3;
     this.sun.color.setRGB(...d.sunColor);
-    this.sun.position.set(d.sun[0] * 30, Math.max(6, d.sun[1] * 30), d.sun[2] * 30);
+    this.sun.position.set(d.sun[0] * 80, Math.max(18, d.sun[1] * 80), d.sun[2] * 80);
+  }
+
+  /** Shared fire choices ease into the lighting instead of flashing on every room update. */
+  setFireState(logCount: number, color: string) {
+    const logs = Number.isFinite(logCount) ? THREE.MathUtils.clamp(logCount, 0, 12) : 3;
+    this.fireTargetStrength = Math.sqrt(logs / 3);
+    this.fireTargetColor.setHex(FIRE_COLORS[color] ?? FIRE_COLORS.amber);
   }
 
   update(time: number) {
-    this.firelight.intensity = (8 + this.night * 10) * (1 + Math.sin(time * 7.3) * 0.08);
+    const dt = this.lastUpdateTime === null ? 1 / 60 : THREE.MathUtils.clamp(time - this.lastUpdateTime, 0, 0.1);
+    this.lastUpdateTime = time;
+    const blend = 1 - Math.exp(-dt * 4);
+    this.fireStrength += (this.fireTargetStrength - this.fireStrength) * blend;
+    if (this.fireTargetStrength === 0 && this.fireStrength < 0.005) this.fireStrength = 0;
+    this.firelight.color.lerp(this.fireTargetColor, blend);
+    this.firelight.distance = 10 + this.fireStrength * 4;
+    this.firelight.intensity = this.fireStrength * (8 + this.night * 10) * (1 + Math.sin(time * 7.3) * 0.08);
   }
 }

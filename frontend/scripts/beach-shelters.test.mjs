@@ -77,13 +77,29 @@ test("players can enter every shelter through its open front and walk back out",
     for (const seat of SHELTER_SEATS.filter((candidate) => candidate.shelterId === shelter.id)) {
       const front = shelter.z - shelter.depth / 2;
       const { engine } = createWalker(seat.x, front - 0.7);
-      walk(engine, 10, Math.PI);
+      const approachFrames = Math.ceil((seat.z - 1.05 - (front - 0.7)) / 0.256);
+      walk(engine, approachFrames, Math.PI);
       assert.ok(engine.self.z > front + 1.5, `${seat.id} has a usable entrance`);
       assert.ok(engine.nearbySeat(), `${seat.id} can be reached from its entrance`);
       assert.ok(Math.abs(engine.self.x - seat.x) < 1e-8);
-      walk(engine, 12, 0);
+      walk(engine, approachFrames + 2, 0);
       assert.ok(engine.self.z < front - 0.7, `${seat.id} has a usable exit`);
     }
+  }
+});
+
+test("resort side tables are solid while the main aisle stays clear across the cabana", () => {
+  for (const shelter of SHELTERS) {
+    for (const side of [-1, 1]) {
+      const tableX = shelter.x + side * 3.22;
+      const { engine } = createWalker(tableX, shelter.z - 1.8);
+      walk(engine, 6, Math.PI);
+      assert.ok(engine.self.z <= shelter.z - 1.429, "the low table blocks walking through its front");
+    }
+    const { engine } = createWalker(shelter.x - 2.5, shelter.z - 1.8);
+    walk(engine, 19, -Math.PI / 2);
+    assert.ok(engine.self.x > shelter.x + 2.3, "guests can cross the full lounge approach in front of the tables");
+    assert.ok(Math.abs(engine.self.z - (shelter.z - 1.8)) < 1e-8);
   }
 });
 

@@ -25,7 +25,7 @@ import java.util.function.LongSupplier;
  */
 public class BeachRoom {
     /** 세계 경계 (m). 물가는 z = 0, 바다는 z 가 음수 쪽. 들어오는 위치는 전부 이 안으로 자른다 */
-    public static final double MIN_X = -14, MAX_X = 14, MIN_Z = -1, MAX_Z = 20;
+    public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -1, MAX_Z = 31;
     /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
     public static final int CAPACITY = 100;
     /** 이만큼 tick 이 없으면 나간 것 */
@@ -62,7 +62,15 @@ public class BeachRoom {
     public record Received(int comfort, int hug) {}
 
     /** tick 응답. care 는 위로를 보내지 않았으면 null ("sent" | "cooldown" | "gone") */
-    public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care) {}
+    public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                             BeachFireService.FireView fire, long serverTime) {
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care) {
+            this(players, events, count, received, care, null, 0);
+        }
+        public TickResult withFire(BeachFireService.FireView value) {
+            return new TickResult(players, events, count, received, care, value, value.serverTime());
+        }
+    }
 
     /**
      * 바닷가에 있는 한 사람. ticket 은 비밀(본인만), pid 는 다른 사람에게 보여 주는 공개 id.
@@ -152,7 +160,7 @@ public class BeachRoom {
 
     /* ---------- 들어오기 · 나가기 ---------- */
 
-    /** 물가에서 들어와 모닥불(0, 9)과 뒤편 절벽을 바라보며 시작 */
+    /** 물가에서 들어와 모닥불(0, 12)과 뒤편 절벽을 바라보며 시작 */
     public synchronized Presence enter(String userId, String nick, Set<String> excluded) {
         long now = clock.getAsLong();
         // 입장 확인과 추가를 같은 잠금 안에서 처리해 동시 입장에도 100명을 넘지 않는다.
@@ -161,7 +169,7 @@ public class BeachRoom {
         ThreadLocalRandom r = ThreadLocalRandom.current();
         double x = r.nextDouble(-1.5, 1.5), z = r.nextDouble(2.8, 4);
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick, skinOf(userId), 0,
-            excluded == null ? Set.of() : Set.copyOf(excluded), x, z, Math.atan2(x, z - 9), now);
+            excluded == null ? Set.of() : Set.copyOf(excluded), x, z, Math.atan2(x, z - BeachFireService.FIRE_Z), now);
         byTicket.put(p.ticket, p);
         return p;
     }
@@ -206,11 +214,16 @@ public class BeachRoom {
         // 위로는 inbox 를 비우기 전에 보내서, 보낸 사람도 같은 응답에서 자기 효과를 본다
         String care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now);
 
+        // Other ticks update Presence concurrently. Sort immutable coordinates so comparisons stay consistent.
+        double originX = me.x, originZ = me.z;
         List<PlayerView> players = byTicket.values().stream()
             .filter(p -> p != me && live(p, now) && me.sees(p) && p.sees(me))
-            .sorted(Comparator.comparingDouble(p -> dist2(me, p)))
-            .limit(MAX_PLAYERS)
             .map(PlayerView::of)
+            .sorted(Comparator.comparingDouble(p -> {
+                double dx = p.x() - originX, dz = p.z() - originZ;
+                return dx * dx + dz * dz;
+            }))
+            .limit(MAX_PLAYERS)
             .toList();
         List<CareEvent> events = new ArrayList<>();
         for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);

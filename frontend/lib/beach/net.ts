@@ -16,6 +16,21 @@ export interface EnterResponse {
   spawn: { x: number; z: number; yaw: number };
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   count: number;
+  fire: FireState;
+}
+
+export type FireColor = "amber" | "rose" | "aurora" | "ocean" | "violet";
+export type PopColor = Exclude<FireColor, "amber">;
+export interface FireState {
+  logs: number;
+  maxLogs: number;
+  intensity: number;
+  color: FireColor;
+  colorExpiresAt?: number | null;
+  serverTime: number;
+  nextLogBurnAt?: number | null;
+  queueEndsAt?: number | null;
+  queuedPops: number;
 }
 
 export interface RemotePlayer {
@@ -57,6 +72,7 @@ export interface TickResponse {
   count: number;
   received: { comfort: number; hug: number };
   care?: "sent" | "cooldown" | "gone";
+  fire: FireState;
 }
 
 export interface BeachCount {
@@ -105,6 +121,7 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
 
 export const enterBeach = (communityId: string) => post<EnterResponse>("/api/beach/enter", { communityId });
 export const tickBeach = (body: TickRequest) => post<TickResponse>("/api/beach/tick", body);
+export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId });
 
 /** 나가기. 화면을 닫는 중에도 끝까지 가도록 keepalive. 실패해도 10초 뒤 서버가 알아서 치운다 */
 export function leaveBeach(ticket: string): void {

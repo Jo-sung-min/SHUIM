@@ -21,7 +21,7 @@ class BeachControllerTest {
     private final AuthService auth = mock(AuthService.class);
     private final BlockService blocks = mock(BlockService.class);
     private final CircleService circles = mock(CircleService.class);
-    private final BeachService beach = new BeachService();
+    private final BeachService beach = new BeachService(new BeachFireService(new TestFireRepository()));
     private final BeachController controller = new BeachController(auth, blocks, beach, circles);
     private final MockHttpServletRequest request = new MockHttpServletRequest();
     private final MockHttpServletResponse response = new MockHttpServletResponse();
@@ -51,7 +51,7 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count"), out.keySet());
+        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime"), out.keySet());
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
         assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
@@ -63,7 +63,7 @@ class BeachControllerTest {
         @SuppressWarnings("unchecked") Map<String, Object> spawn = (Map<String, Object>) out.get("spawn");
         assertEquals(Set.of("x", "z", "yaw"), spawn.keySet());
         assertTrue((double) spawn.get("z") >= 2.8 && (double) spawn.get("z") <= 4);
-        assertEquals(Map.of("minX", -14.0, "maxX", 14.0, "minZ", -1.0, "maxZ", 20.0), out.get("bounds"));
+        assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -1.0, "maxZ", 31.0), out.get("bounds"));
         assertEquals(1, out.get("count"));
         assertEquals(Map.of("communityId", "circle-a", "count", 1, "capacity", 100), controller.count("circle-a", request));
         BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
@@ -141,5 +141,24 @@ class BeachControllerTest {
         assertEquals(410, assertThrows(ApiException.class, () -> controller.tick(null)).status());
         assertEquals(Map.of("ok", true), controller.leave(new BeachController.TicketBody("nope")));
         assertEquals(Map.of("ok", true), controller.leave(null));
+    }
+
+    @Test
+    void fireAndWoodRecheckActiveMembershipAndBlockedStatus() {
+        activeMember("circle-a");
+        var out = enter("circle-a");
+        String ticket = (String) out.get("ticket");
+        var enterFire = (BeachFireService.FireView) out.get("fire");
+        assertEquals(3, enterFire.logs());
+        assertEquals(enterFire.serverTime(), out.get("serverTime"));
+        beach.tick(ticket, 0, 12, 0, false, null, null);
+        assertEquals(4, controller.wood(new BeachController.WoodBody(ticket, java.util.UUID.randomUUID().toString()), request, response).logs());
+        assertEquals(4, controller.fire("circle-a", request).logs());
+        when(circles.member("circle-a", "u-1")).thenReturn(Optional.empty());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.wood(new BeachController.WoodBody(ticket, java.util.UUID.randomUUID().toString()), request, response)).status());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.fire("circle-a", request)).status());
+        activeMember("circle-a");
+        when(auth.requireUser(any(), any())).thenReturn(user("u-1", 1L));
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.wood(new BeachController.WoodBody(ticket, java.util.UUID.randomUUID().toString()), request, response)).status());
     }
 }

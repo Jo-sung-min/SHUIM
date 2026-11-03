@@ -41,7 +41,7 @@ class BeachRoomTest {
         assertEquals(32, a.ticket().length());
         assertNotEquals(a.pid(), a.ticket());
         assertTrue(a.x() >= -1.5 && a.x() <= 1.5 && a.z() >= 2.8 && a.z() <= 4);
-        assertEquals(Math.atan2(a.x(), a.z() - 9), a.yaw());
+        assertEquals(Math.atan2(a.x(), a.z() - 12), a.yaw());
         assertEquals(BeachRoom.skinOf("u-a"), a.skin());
         assertTrue(a.skin() >= 0 && a.skin() < 8);
 
