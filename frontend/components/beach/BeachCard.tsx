@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import { type Daylight, currentHour, daylightAt } from "@/lib/beach/daylight";
+import { CHAR_VIEW } from "@/lib/beach/atlas";
 import { fetchBeachCount, type BeachCount } from "@/lib/beach/net";
 import type { Circle } from "@/lib/circles";
 import { IconChevronR, IconLock, IconUsers } from "@/components/Icons";
@@ -61,7 +62,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
           <span className={styles.timeTint} style={{ backgroundColor: rgb(day.skyTop), opacity: 0.06 + day.stars * 0.48 }} />
           <span className={styles.people}>
             {[0, 2].map((skin, i) => (
-              <span key={skin} className={styles.person} style={{ backgroundPosition: `${-(i === 1 ? 6 : 0) * 36}px ${-skin * 48}px` }} />
+              <span key={skin} className={styles.person} style={{ backgroundPosition: `${-(i === 1 ? CHAR_VIEW.left : CHAR_VIEW.front) * 36}px ${-skin * 52}px` }} />
             ))}
           </span>
         </div>

@@ -2,24 +2,32 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { BeachEngine, webglSupported, type JoystickState, type RestState } from "@/lib/beach/engine";
+import { BeachEngine, webglSupported, type RestState, type ViewMode } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, type FireState, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
 import { IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconUsers } from "@/components/Icons";
 import { route } from "@/lib/routes";
-import CampfireControls from "./CampfireControls";
+import CampfireControls, { type WoodPhase } from "./CampfireControls";
+import Joystick from "./Joystick";
 import styles from "./beach.module.css";
 
 const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요" };
 const TICK_MOVING = 500;
 const TICK_IDLE = 1500;
+const VIEW_KEY = "beach-view";
+
+/** 마지막에 고른 시점 (기기별로 기억) */
+function savedView(): ViewMode {
+  try { return localStorage.getItem(VIEW_KEY) === "third" ? "third" : "first"; } catch { return "first"; }
+}
 
 /**
  * 소로우 바닷가 화면. 엔진(lib/beach/engine)이 그리고, 여기서는 서버와 주고받기(enter → tick … → leave)와 HUD 를 맡는다.
  *  - 움직일 땐 0.5초, 서 있으면 1.5초마다 tick. 탭을 숨기면 멈추고, 돌아오면 이어간다 (티켓이 만료됐으면 다시 들어간다)
  *  - 사람을 탭하면 아래에 닉네임과 "위로해주기 · 안아주기". 보낸 건 다음 tick 에 실려 간다
  *  - 받으면 화면 가장자리 빛 + 눈앞 이펙트 + 토스트 + 햅틱
+ *  - 터치 기기에선 왼쪽 아래 조이스틱으로 걷고 화면을 끌어 둘러본다. "장작 넣기"는 어디서 눌러도 불 앞까지 알아서 걸어가 넣는다
  */
 export default function BeachScene({ communityId }: { communityId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,6 +43,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const tickRunnerRef = useRef<() => Promise<void>>(async () => {});
   const selectedRef = useRef<RemotePlayer | null>(null);
   const fireTimeRef = useRef(0);
+  const fireLogsRef = useRef<number | null>(null);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -44,7 +53,6 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [selected, setSelected] = useState<RemotePlayer | null>(null);
   const [rest, setRest] = useState<RestState | null>(null);
   const [received, setReceived] = useState({ comfort: 0, hug: 0 });
-  const [joy, setJoy] = useState<JoystickState | null>(null);
   const [flash, setFlash] = useState<{ kind: CareKind; id: number } | null>(null);
   const [hint, setHint] = useState(false);
   const [timeLabel, setTimeLabel] = useState("");
@@ -52,6 +60,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [fire, setFire] = useState<FireState | null>(null);
   const [nearFire, setNearFire] = useState(false);
   const [coolUntil, setCoolUntil] = useState(0);
+  const [view, setView] = useState<ViewMode>("first");
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
@@ -59,6 +68,9 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const applyFire = useCallback((next: FireState) => {
     if (!aliveRef.current || !next || next.serverTime < fireTimeRef.current) return;
     fireTimeRef.current = next.serverTime;
+    // 장작이 늘었으면(내가 넣었든 누가 넣었든) 불이 확 타올랐다가 잦아든다
+    if (fireLogsRef.current !== null && next.logs > fireLogsRef.current) engineRef.current?.flareFire();
+    fireLogsRef.current = next.logs;
     setFire(next);
     engineRef.current?.setFireState(next);
   }, []);
@@ -181,6 +193,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     aliveRef.current = true;
     blockedRef.current = false;
     fireTimeRef.current = 0;
+    fireLogsRef.current = null;
     if (!communityId) {
       setPhase("error");
       setError("내 소로우에서 함께 쉴 바닷가를 골라 주세요.");
@@ -203,14 +216,21 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         setCount(entered.count);
         setCapacity(entered.capacity);
         setCommunity(entered.community);
+        const initialView = savedView();
+        setView(initialView);
         engine = new BeachEngine(canvas, {
           bounds: entered.bounds,
           spawn: entered.spawn,
+          skin: entered.me.skin,
+          view: initialView,
           hourOverride: hourOverride(window.location.search),
           handlers: {
             onSelect: (p) => setSelected(p),
-            onJoystick: (s) => setJoy(s),
             onRestChange: (state) => setRest(state),
+            onViewChange: (next) => {
+              setView(next);
+              try { localStorage.setItem(VIEW_KEY, next); } catch { /* 저장 못 해도 이번 방문엔 적용된다 */ }
+            },
             onFireRangeChange: (near) => setNearFire(near),
           },
         });
@@ -266,7 +286,16 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     };
   }, [communityId, scheduleTick, stopWithError, applyFire]);
 
-  const onAddWood = useCallback(async (requestId: string) => {
+  /** 모닥불 앞까지 걸어간 뒤, 새 위치를 서버에 올리고(서버가 거리를 확인한다) 장작을 넣는다 */
+  const onAddWood = useCallback(async (requestId: string, phase: (p: WoodPhase) => void) => {
+    const engine = engineRef.current;
+    if (!engine || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+    phase("walking");
+    const walk = await engine.walkToFire();
+    if (walk === "cancelled") throw new Error("걸음을 멈춰서 장작을 넣지 못했어요. 다시 눌러 주세요.");
+    if (walk === "blocked") throw new Error("모닥불까지 가는 길이 막혔어요. 조금 더 가까이 가서 눌러 주세요.");
+    phase("adding");
+    while (inFlightRef.current && aliveRef.current) await new Promise((r) => window.setTimeout(r, 40)); // 진행 중인 tick 이 있으면 끝나길 기다린다
     await runTick();
     const ticket = ticketRef.current;
     if (!ticket || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
@@ -307,21 +336,18 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         <p>웅장한 절벽 아래, 바다를 향한 프라이빗 라운지.</p>
       </div>}
 
-      {joy && (
-        <div className={styles.joyRing} style={{ left: joy.originX, top: joy.originY }} aria-hidden="true">
-          <div className={styles.joyKnob} style={{ transform: `translate(${joy.dx}px, ${joy.dy}px)` }} />
-        </div>
-      )}
+      {phase === "ready" && !selected && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud}>
       {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
       {phase === "ready" && fire && meRef.current && <CampfireControls
         fire={fire} near={nearFire} disconnected={lost}
         onAddWood={onAddWood} onFireChange={applyFire}
+        view={view} onToggleView={() => engineRef.current?.toggleView()}
       />}
       {hint && !lost && !selected && !gotAny && !rest && phase === "ready" && (
         <p className={styles.hint} role="status">
-          <span className={styles.touchHint}>왼쪽을 끌어 걷고, 오른쪽을 끌어 둘러봐요.</span><span className={styles.keyboardHint}>WASD·방향키로 걷고, 화면을 끌어 둘러봐요.</span><br />오두막에 앉아 쉬거나 사람을 눌러 위로를 건네요.
+          <span className={styles.touchHint}>왼쪽 조이스틱으로 걷고, 화면을 끌어 둘러봐요.</span><span className={styles.keyboardHint}>WASD·방향키로 걷고, 화면을 끌어 둘러봐요.</span><br />오두막에 앉아 쉬거나 사람을 눌러 위로를 건네요.
         </p>
       )}
 

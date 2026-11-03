@@ -35,9 +35,11 @@ export interface Daylight {
   specular: number;
   /** 모닥불이 켜진 정도 0~1 */
   fire: number;
+  /** 밤하늘 풍등이 떠 있는 정도 0~1 (저녁에 하나둘 올라 밤에 가득, 아침·낮엔 0) */
+  lanterns: number;
 }
 
-type Key = Omit<Daylight, "hour" | "label" | "sun" | "moon" | "fogNear" | "fogFar" | "fire">;
+type Key = Omit<Daylight, "hour" | "label" | "sun" | "moon" | "fogNear" | "fogFar" | "fire" | "lanterns">;
 
 const c = (h: string): RGB => {
   const n = parseInt(h.slice(1), 16);
@@ -47,7 +49,8 @@ const c = (h: string): RGB => {
 const NIGHT: Key = {
   skyTop: c("#070c22"), skyHorizon: c("#182548"), sunColor: c("#ffffff"), cloud: c("#222a44"), cloudAmount: 0.35,
   seaDeep: c("#07152d"), seaShallow: c("#123050"), foam: c("#8ea2c0"),
-  sandTint: [0.4, 0.45, 0.62], tint: [0.48, 0.53, 0.74], fog: c("#141f3d"), stars: 1, sunGlow: 0, specular: 0.6,
+  // 풍등 불빛을 받아 밤에도 캐릭터가 따뜻하게 보이도록 푸른 기를 줄였다
+  sandTint: [0.4, 0.45, 0.62], tint: [0.76, 0.68, 0.7], fog: c("#141f3d"), stars: 1, sunGlow: 0, specular: 0.6,
 };
 const DAWN: Key = {
   skyTop: c("#2b3a6a"), skyHorizon: c("#e2906f"), sunColor: c("#ffd0a0"), cloud: c("#6a5a7a"), cloudAmount: 0.4,
@@ -130,6 +133,8 @@ export function daylightAt(hourIn: number): Daylight {
   const kc = (key: keyof Key) => mixRgb(a[key] as RGB, b[key] as RGB, t);
   const theta = ((hour - 6) / 12) * Math.PI;
   const fire = hour >= 17.3 ? smooth((hour - 17.3) / 1) : hour <= 7 ? 1 - smooth((hour - 6) / 1) : 0;
+  const stars = k("stars");
+  const lanterns = Math.max(0, Math.min(1, (stars - 0.25) / 0.6));
   return {
     hour,
     label: labelOf(hour),
@@ -138,7 +143,7 @@ export function daylightAt(hourIn: number): Daylight {
     skyTop: kc("skyTop"), skyHorizon: kc("skyHorizon"), sunColor: kc("sunColor"), cloud: kc("cloud"), cloudAmount: k("cloudAmount"),
     seaDeep: kc("seaDeep"), seaShallow: kc("seaShallow"), foam: kc("foam"),
     sandTint: kc("sandTint"), tint: kc("tint"), fog: kc("fog"), fogNear: 28, fogFar: 150,
-    stars: k("stars"), sunGlow: k("sunGlow"), specular: k("specular"), fire,
+    stars, sunGlow: k("sunGlow"), specular: k("specular"), fire, lanterns,
   };
 }
 

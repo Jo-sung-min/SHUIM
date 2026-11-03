@@ -8,25 +8,28 @@
  * 이 파일은 /beach 를 열 때만 동적으로 내려받는다 (three 가 첫 번들에 섞이지 않게).
  */
 import * as THREE from "three";
-import { CHAR_ATLAS, CHAR_FRAME, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
+import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
 import { type Daylight, daylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
 import { resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
+import { SkyLanterns } from "./lanterns";
 import type { CareKind, FireState, RemotePlayer } from "./net";
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
-export interface JoystickState { originX: number; originY: number; dx: number; dy: number }
 export interface RestState { shelterName: string; seated: boolean }
+/** 자동으로 걸어간 결과: 도착 · 사용자가 직접 움직여 멈춤 · 길이 막힘 */
+export type AutoWalkResult = "arrived" | "cancelled" | "blocked";
+/** 1인칭(내 눈) · 3인칭(내 캐릭터 뒤 위에서 따라가는 카메라) */
+export type ViewMode = "first" | "third";
 
 export interface EngineHandlers {
   /** 사람을 탭해 골랐거나(플레이어) 빈 곳을 탭해 풀었을 때(null) */
   onSelect: (player: RemotePlayer | null) => void;
-  /** 터치 조이스틱을 그리기 위한 상태 (손을 떼면 null) */
-  onJoystick: (state: JoystickState | null) => void;
   onRestChange?: (state: RestState | null) => void;
+  onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
   onQuality?: (level: "high" | "low") => void;
@@ -35,15 +38,43 @@ export interface EngineHandlers {
 export interface EngineOptions {
   bounds: Bounds;
   spawn: { x: number; z: number; yaw: number };
+  /** 내 캐릭터 색 (3인칭일 때 내 도트 캐릭터로 보인다) */
+  skin: number;
+  /** 처음 시점 (기본 1인칭) */
+  view?: ViewMode;
   /** 시각을 고정해 보기 (개발용). null 이면 기기 시계 */
   hourOverride: number | null;
   handlers: EngineHandlers;
 }
 
+const FOLLOW_DISTANCE = 5.4;
+const FOLLOW_DISTANCE_SEATED = 3.6;
+
 const WALK_SPEED = 3.2;
 const EYE = 1.55;
 const AVATAR_HEIGHT = 1.8; // World size stays fixed when the artwork gains pixels.
-const CYCLE = [CHAR_FRAME.walk1, CHAR_FRAME.idle, CHAR_FRAME.walk2, CHAR_FRAME.idle];
+/** 서 있을 때: 숨쉬기 0→1→2→1→0, 가끔 깜빡임(마지막 프레임). 6fps 로 2초에 한 바퀴 */
+const IDLE_SEQUENCE = [0, 0, 1, 1, 2, 2, 1, 1, 0, 0, 0, CHAR_ANIM.idle.length - 1];
+const IDLE_FPS = 6;
+const WALK_FPS = 9;
+
+/** 캐릭터가 바라보는 방향(yaw)과 카메라 위치로 앞·뒤·왼·오른쪽 그림을 고른다. 스프라이트 자체는 늘 카메라를 본다 (원통형 빌보드) */
+function viewFor(yaw: number, x: number, z: number, cam: THREE.Vector3) {
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  let dx = cam.x - x, dz = cam.z - z;
+  const dl = Math.hypot(dx, dz) || 1;
+  dx /= dl; dz /= dl;
+  const dot = fx * dx + fz * dz;
+  if (dot > 0.5) return CHAR_VIEW.front; // 카메라를 마주 본다
+  if (dot < -0.5) return CHAR_VIEW.back;
+  return fx * dz - fz * dx > 0 ? CHAR_VIEW.right : CHAR_VIEW.left; // 화면에서 오른쪽을 보고 있으면 right 그림
+}
+
+/** 시트 안의 프레임 번호: 걷는 중이면 걷기 사이클, 아니면 숨쉬기·깜빡임. t 는 그 애니메이션의 누적 시간(초) */
+function charFrame(walking: boolean, t: number) {
+  if (walking) return CHAR_ANIM.walk.from + (Math.floor(t * WALK_FPS) % CHAR_ANIM.walk.length);
+  return CHAR_ANIM.idle.from + IDLE_SEQUENCE[Math.floor(t * IDLE_FPS) % IDLE_SEQUENCE.length];
+}
 
 /* ---------------- 셰이더 ---------------- */
 const NOISE_GLSL = `
@@ -58,7 +89,7 @@ varying vec3 vDir;
 void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
 const SKY_FRAG = `
-uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uStars; uniform float uTime;
+uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uStars; uniform float uTime; uniform float uLantern;
 varying vec3 vDir;
 ${NOISE_GLSL}
 void main() {
@@ -79,6 +110,12 @@ void main() {
     float tw = 0.65 + 0.35 * sin(uTime * (1.5 + s * 3.0) + s * 60.0);
     col += star * dot_ * tw * uStars * smoothstep(0.0, 0.25, d.y) * (0.6 + 0.4 * hash(cell + 1.7));
   }
+  if (uLantern > 0.0) {
+    // 수백 개 풍등이 올린 따뜻한 빛무리가 밤하늘을 은은하게 물들인다
+    float low = 1.0 - smoothstep(-0.05, 0.5, d.y);
+    float haze = noise(vec2(atan(d.x, -d.z) * 2.5, d.y * 4.0 + uTime * 0.015));
+    col += vec3(1.0, 0.52, 0.18) * uLantern * (0.035 + 0.1 * low) * (0.7 + 0.6 * haze);
+  }
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -89,7 +126,7 @@ void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Pos
 const SEA_FRAG = `
 uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uFoam; uniform vec3 uSkyRef;
 uniform vec3 uLightDir; uniform vec3 uLightColor; uniform float uSpec; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uCamPos;
-uniform sampler2D uPhoto; uniform vec3 uPhotoTint;
+uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uLantern;
 varying vec3 vWorld;
 ${NOISE_GLSL}
 float waves(vec2 p, float t) {
@@ -119,6 +156,8 @@ void main() {
   float nh = max(dot(n, H), 0.0);
   float up = smoothstep(0.0, 0.15, uLightDir.y);
   col += uLightColor * (pow(nh, 90.0) * 0.27 + pow(nh, 24.0) * 0.035) * uSpec * up;
+  // 밤이면 풍등 불빛이 물결에 주황빛으로 어린다
+  col += vec3(0.95, 0.5, 0.2) * uLantern * (0.035 + fres * 0.18) * (0.6 + 0.6 * noise(p * 1.7 + vec2(t * 0.25, -t * 0.4)));
   float edge = vWorld.z + 0.7 + sin(t * 0.8 + p.x * 0.18) * 0.7 + noise(vec2(p.x * 0.5, t * 0.3)) * 0.6;
   float foamLine = 1.0 - smoothstep(0.04, 0.48, abs(edge));
   float foamNoise = noise(p * 7.5 + vec2(t * 0.2, 0.0)) * noise(p * 18.0 - t * 0.3);
@@ -205,9 +244,16 @@ export class BeachEngine {
   private propTex!: THREE.Texture;
   private tinted: THREE.Material[] = [];
   private fire: CoastalFire | null = null;
+  private lanterns: SkyLanterns | null = null;
   private fireState = { logs: 3, color: "amber" };
   private nearFire = false;
   private inputPaused = false;
+  /** 화면 조이스틱·외부 입력이 넣는 걷기 벡터 (x: 오른쪽, y: 앞). 키보드와 합쳐진다 */
+  private move = { x: 0, y: 0 };
+  /** "장작 넣기" 처럼 목적지까지 알아서 걸어가는 중 */
+  private auto: { path: { x: number; z: number }[]; stop: number; face: { x: number; z: number } | null; resolve: (r: AutoWalkResult) => void; stallT: number; detours: number } | null = null;
+  /** 도착한 뒤 부드럽게 돌아볼 방향 */
+  private faceGoal: { yaw: number; pitch: number } | null = null;
   private obstacles: { x: number; z: number; r: number }[] = [];
   private shadowGeo = new THREE.PlaneGeometry(0.9, 0.45);
   private shadowMat!: THREE.MeshBasicMaterial;
@@ -217,11 +263,16 @@ export class BeachEngine {
   private players = new Map<string, PlayerNode>();
   private fx: FxNode[] = [];
   private fxTex!: Record<FxNode["kind"], THREE.Texture>;
+  /** 3인칭일 때 보이는 내 캐릭터 */
+  private selfNode: { sprite: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>; mat: THREE.MeshBasicMaterial; tex: THREE.Texture; shadow: THREE.Mesh; animT: number } | null = null;
+  private view: ViewMode;
+  private skin: number;
+  private followCam = new THREE.Vector3();
+  private followSnap = true;
 
   private self: SelfState & { pitch: number; bobT: number };
   private bounds: Bounds;
   private keys = new Set<string>();
-  private joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   private look = { active: false, id: -1, lx: 0, ly: 0, sx: 0, sy: 0, t: 0, moved: false };
   private selected: string | null = null;
   private restSeat: (typeof SHELTER_SEATS)[number] | null = null;
@@ -249,6 +300,8 @@ export class BeachEngine {
     this.handlers = opts.handlers;
     this.bounds = opts.bounds;
     this.hourOverride = opts.hourOverride;
+    this.skin = opts.skin;
+    this.view = opts.view ?? "first";
     this.self = { x: opts.spawn.x, z: opts.spawn.z, yaw: opts.spawn.yaw, moving: false, pitch: 0.07, bobT: 0 };
     this.mobile = typeof navigator !== "undefined" && (navigator.maxTouchPoints > 0 || /Android|iPhone|iPad/i.test(navigator.userAgent));
     this.scale = this.mobile ? 0.85 : 1;
@@ -298,7 +351,7 @@ export class BeachEngine {
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
         uPhoto: { value: this.photo }, uPhotoTint: { value: new THREE.Vector3(1, 1, 1) },
-        uStars: { value: 0 }, uTime: { value: 0 },
+        uStars: { value: 0 }, uTime: { value: 0 }, uLantern: { value: 0 },
       },
       vertexShader: SKY_VERT,
       fragmentShader: SKY_FRAG,
@@ -351,7 +404,7 @@ export class BeachEngine {
         uTime: { value: 0 }, uDeep: { value: new THREE.Vector3() }, uShallow: { value: new THREE.Vector3() }, uFoam: { value: new THREE.Vector3(1, 1, 1) },
         uSkyRef: { value: new THREE.Vector3() }, uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightColor: { value: new THREE.Vector3(1, 1, 1) }, uSpec: { value: 1 },
         uFog: { value: new THREE.Vector3() }, uFogNear: { value: 28 }, uFogFar: { value: 150 }, uCamPos: { value: new THREE.Vector3() },
-        uPhoto: { value: this.photo }, uPhotoTint: this.skyMat.uniforms.uPhotoTint,
+        uPhoto: { value: this.photo }, uPhotoTint: this.skyMat.uniforms.uPhotoTint, uLantern: this.skyMat.uniforms.uLantern,
       },
       vertexShader: WORLD_VERT,
       fragmentShader: SEA_FRAG,
@@ -381,12 +434,53 @@ export class BeachEngine {
     this.ring.visible = false;
     this.ring.renderOrder = 2;
     this.scene.add(this.ring);
+    this.selfNode = this.createSelfAvatar();
+  }
+
+  /** 내 캐릭터: 다른 사람과 같은 도트 시트, 이름표는 없다. 1인칭에선 숨긴다 */
+  private createSelfAvatar() {
+    const tex = this.charTex.clone();
+    tex.repeat.set(1 / CHAR_ATLAS.cols, 1 / CHAR_ATLAS.rows);
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.1, depthWrite: true, toneMapped: false });
+    mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
+    const geometry = new THREE.PlaneGeometry(AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH, AVATAR_HEIGHT);
+    geometry.translate(0, AVATAR_HEIGHT / 2, 0);
+    const sprite = new THREE.Mesh(geometry, mat);
+    sprite.renderOrder = 3;
+    sprite.visible = false;
+    this.scene.add(sprite);
+    const shadow = new THREE.Mesh(this.shadowGeo, this.shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.renderOrder = 2;
+    shadow.visible = false;
+    this.scene.add(shadow);
+    this.setFrameOn(tex, CHAR_VIEW.back, CHAR_ANIM.idle.from, this.skin);
+    return { sprite, mat, tex, shadow, animT: 0 };
+  }
+
+  /* ---------------- 시점 ---------------- */
+  get viewMode() {
+    return this.view;
+  }
+
+  setView(view: ViewMode) {
+    if (this.disposed || view === this.view) return;
+    this.view = view;
+    this.followSnap = true;
+    this.handlers.onViewChange?.(view);
+  }
+
+  toggleView() {
+    this.setView(this.view === "first" ? "third" : "first");
   }
 
   private buildProps() {
     this.fire = new CoastalFire(this.scene, FIRE.x, FIRE.z);
     this.fire.setState(this.fireState.logs, this.fireState.color);
     this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.35 });
+    this.lanterns = new SkyLanterns(this.scene, this.mobile ? 90 : 130);
+    this.lanterns.setAmount(this.daylight.lanterns);
   }
 
   setFireState(state: FireState) {
@@ -396,13 +490,100 @@ export class BeachEngine {
     this.cove.setFireState(this.fireState.logs, this.fireState.color);
   }
 
+  /** 장작이 들어갔을 때: 불이 확 타올랐다가 잦아든다 (내가 넣었든 다른 사람이 넣었든) */
+  flareFire() {
+    this.fire?.flare();
+  }
+
+  /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
+  setMove(x: number, y: number) {
+    if (this.inputPaused) return;
+    this.move.x = Math.max(-1, Math.min(1, x || 0));
+    this.move.y = Math.max(-1, Math.min(1, y || 0));
+  }
+
+  /** 모닥불 앞(돌 둘레 바깥, 장작을 넣을 수 있는 거리 안)까지 알아서 걸어가 불을 바라본다 */
+  walkToFire(): Promise<AutoWalkResult> {
+    if (this.disposed) return Promise.resolve("cancelled");
+    if (this.restSeat) this.standUp();
+    const dx = this.self.x - FIRE.x, dz = this.self.z - FIRE.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const stand = 2.3;
+    return this.walkTo({ x: FIRE.x + (dx / d) * stand, z: FIRE.z + (dz / d) * stand }, { x: FIRE.x, z: FIRE.z });
+  }
+
+  private walkTo(target: { x: number; z: number }, face: { x: number; z: number } | null): Promise<AutoWalkResult> {
+    this.cancelAuto("cancelled");
+    this.faceGoal = null;
+    return new Promise((resolve) => {
+      this.auto = { path: [target], stop: 0.3, face, resolve, stallT: 0, detours: 0 };
+    });
+  }
+
+  private cancelAuto(result: AutoWalkResult) {
+    const a = this.auto;
+    if (!a) return;
+    this.auto = null;
+    a.resolve(result);
+  }
+
+  private finishAuto() {
+    const a = this.auto;
+    if (!a) return;
+    this.auto = null;
+    if (a.face) {
+      const dx = a.face.x - this.self.x, dz = a.face.z - this.self.z;
+      const dist = Math.hypot(dx, dz) || 1;
+      this.faceGoal = { yaw: Math.atan2(-dx, -dz), pitch: -Math.atan2(this.eyeHeight - 0.6, dist) * 0.8 };
+    }
+    a.resolve("arrived");
+  }
+
+  /** 자동 걷기 한 프레임: 목적지로 곧장, 막히면 옆으로 비켜 가는 경유지를 끼운다 */
+  private stepAuto(dt: number) {
+    const a = this.auto;
+    if (!a) return;
+    const goal = a.path[0];
+    const dx = goal.x - this.self.x, dz = goal.z - this.self.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist <= (a.path.length > 1 ? 0.6 : a.stop)) {
+      a.path.shift();
+      if (!a.path.length) { this.self.moving = false; this.finishAuto(); }
+      return;
+    }
+    const step = Math.min(dist, WALK_SPEED * dt);
+    const [cx, cz] = this.collide(this.self.x + (dx / dist) * step, this.self.z + (dz / dist) * step);
+    const nx = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
+    const nz = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
+    const progressed = Math.hypot(nx - this.self.x, nz - this.self.z);
+    this.self.x = nx;
+    this.self.z = nz;
+    this.self.moving = true;
+    this.self.bobT += dt * WALK_SPEED * 2.6;
+    if (!(this.look.active && this.look.moved)) {
+      // 걷는 방향을 바라본다 (둘러보는 중엔 손에 맡긴다)
+      const turn = Math.atan2(-dx, -dz) - this.self.yaw;
+      this.self.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * Math.min(1, dt * 5);
+    }
+    if (progressed < step * 0.35) {
+      a.stallT += dt;
+      if (a.stallT > 0.5) {
+        a.stallT = 0;
+        if (++a.detours > 4) { this.self.moving = false; this.cancelAuto("blocked"); return; }
+        const side = a.detours % 2 ? 1 : -1;
+        const px = (-dz / dist) * side, pz = (dx / dist) * side;
+        a.path.unshift({ x: this.self.x + px * 2.6 + (dx / dist) * 0.8, z: this.self.z + pz * 2.6 + (dz / dist) * 0.8 });
+      }
+    } else a.stallT = 0;
+  }
+
   setInputPaused(paused: boolean) {
     this.inputPaused = paused;
     this.keys.clear();
     this.look.active = false;
-    this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+    this.move = { x: 0, y: 0 };
+    this.cancelAuto("cancelled");
     this.self.moving = false;
-    this.handlers.onJoystick(null);
   }
 
   /* ---------------- 시간대 ---------------- */
@@ -420,8 +601,11 @@ export class BeachEngine {
     this.cove?.applyDaylight(d);
     const u = this.skyMat.uniforms;
     const night = d.stars;
-    (u.uPhotoTint.value as THREE.Vector3).set(1 - night * 0.85, 1 - night * 0.79, 1 - night * 0.64);
+    // 풍등이 뜨는 밤엔 하늘 사진을 덜 어둡게, 조금 따뜻하게 남긴다
+    (u.uPhotoTint.value as THREE.Vector3).set(1 - night * (0.85 - d.lanterns * 0.04), 1 - night * (0.79 - d.lanterns * 0.02), 1 - night * 0.64);
     u.uStars.value = d.stars;
+    u.uLantern.value = d.lanterns;
+    this.lanterns?.setAmount(d.lanterns);
 
     const s = this.seaMat.uniforms;
     (s.uDeep.value as THREE.Vector3).set(...d.seaDeep);
@@ -439,12 +623,14 @@ export class BeachEngine {
 
     const fog = this.scene.fog as THREE.Fog;
     fog.color.setRGB(0.64 * (1 - night * 0.85), 0.68 * (1 - night * 0.79), 0.72 * (1 - night * 0.64), THREE.SRGBColorSpace);
+    fog.color.lerp(new THREE.Color().setRGB(0.42, 0.26, 0.16, THREE.SRGBColorSpace), d.lanterns * 0.4);
     fog.near = 45;
     fog.far = 230;
     this.renderer.setClearColor(fog.color, 1);
 
     for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
     for (const p of this.players.values()) p.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
+    this.selfNode?.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
     if (this.shadowMat) this.shadowMat.opacity = 0.35 + 0.45 * Math.max(0, d.sun[1]);
   }
 
@@ -462,55 +648,35 @@ export class BeachEngine {
     window.addEventListener("blur", this.onBlur);
   }
 
+  /** 캔버스 위에서 끌면(마우스든 손가락이든) 둘러보고, 짧게 누르면 그 자리의 사람을 고른다. 걷기는 키보드와 화면 조이스틱(setMove) */
   private onPointerDown = (e: PointerEvent) => {
-    if (this.disposed || this.inputPaused) return;
-    this.canvas.setPointerCapture?.(e.pointerId);
+    if (this.disposed || this.inputPaused || this.look.active) return;
+    try { this.canvas.setPointerCapture?.(e.pointerId); } catch { /* 합성 이벤트 등 */ }
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const touch = e.pointerType !== "mouse";
-    if (touch && !this.joy.active && x < rect.width * 0.46 && y > rect.height * 0.28) {
-      this.joy = { active: true, id: e.pointerId, ox: x, oy: y, x: 0, y: 0 };
-      this.handlers.onJoystick({ originX: x, originY: y, dx: 0, dy: 0 });
-      return;
-    }
-    if (!this.look.active) this.look = { active: true, id: e.pointerId, lx: x, ly: y, sx: x, sy: y, t: performance.now(), moved: false };
+    this.look = { active: true, id: e.pointerId, lx: x, ly: y, sx: x, sy: y, t: performance.now(), moved: false };
   };
 
   private onPointerMove = (e: PointerEvent) => {
     if (this.disposed || this.inputPaused) return;
+    if (!this.look.active || e.pointerId !== this.look.id) return;
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    if (this.joy.active && e.pointerId === this.joy.id) {
-      const R = 46;
-      let dx = x - this.joy.ox, dy = y - this.joy.oy;
-      const len = Math.hypot(dx, dy);
-      if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R; }
-      this.joy.x = dx / R;
-      this.joy.y = dy / R;
-      this.handlers.onJoystick({ originX: this.joy.ox, originY: this.joy.oy, dx, dy });
-      return;
-    }
-    if (this.look.active && e.pointerId === this.look.id) {
-      const dx = x - this.look.lx, dy = y - this.look.ly;
-      this.look.lx = x;
-      this.look.ly = y;
-      if (Math.hypot(x - this.look.sx, y - this.look.sy) > 8) this.look.moved = true;
-      if (this.look.moved) {
-        const k = e.pointerType === "mouse" ? 0.0042 : 0.0062;
-        this.self.yaw -= dx * k;
-        this.self.pitch = Math.max(-0.55, Math.min(0.5, this.self.pitch - dy * k * 0.75));
-      }
+    const dx = x - this.look.lx, dy = y - this.look.ly;
+    this.look.lx = x;
+    this.look.ly = y;
+    if (Math.hypot(x - this.look.sx, y - this.look.sy) > 8) this.look.moved = true;
+    if (this.look.moved) {
+      const k = e.pointerType === "mouse" ? 0.0042 : 0.0072;
+      this.self.yaw -= dx * k;
+      this.self.pitch = Math.max(-0.55, Math.min(0.5, this.self.pitch - dy * k * 0.75));
+      this.faceGoal = null;
     }
   };
 
   private onPointerUp = (e: PointerEvent) => {
     if (this.disposed) return;
-    this.canvas.releasePointerCapture?.(e.pointerId);
-    if (this.joy.active && e.pointerId === this.joy.id) {
-      this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
-      this.handlers.onJoystick(null);
-      return;
-    }
+    try { this.canvas.releasePointerCapture?.(e.pointerId); } catch { /* 잡지 않은 포인터 */ }
     if (this.look.active && e.pointerId === this.look.id) {
       const tap = !this.look.moved && performance.now() - this.look.t < 350 && e.type !== "pointercancel";
       this.look.active = false;
@@ -533,6 +699,10 @@ export class BeachEngine {
       e.preventDefault();
       return;
     }
+    if (k === "v") {
+      if (e.type === "keydown" && !e.repeat) this.toggleView();
+      return;
+    }
     if (!["w", "a", "s", "d", "q", "e", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift"].includes(k)) return;
     if (e.type === "keydown") this.keys.add(k);
     else this.keys.delete(k);
@@ -541,6 +711,7 @@ export class BeachEngine {
 
   private onBlur = () => {
     this.keys.clear();
+    this.move = { x: 0, y: 0 };
   };
 
   /** 화면 좌표를 탭했을 때 그 자리의 사람을 고른다 */
@@ -609,12 +780,11 @@ export class BeachEngine {
     tex.needsUpdate = true;
     const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.1, depthWrite: true, toneMapped: false });
     mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
-    // A real upright sheet follows world yaw. It is naturally edge-on from the side;
-    // only name tags and care effects continue to face the camera.
+    // 세로축만 돌아 늘 카메라를 보는 종이 인형. 어느 쪽에서 보느냐에 따라 앞·뒤·옆 그림을 바꿔 끼운다 (viewFor)
     const geometry = new THREE.PlaneGeometry(AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH, AVATAR_HEIGHT);
     geometry.translate(0, AVATAR_HEIGHT / 2, 0);
     const sprite = new THREE.Mesh(geometry, mat);
-    sprite.rotation.y = p.yaw + Math.PI;
+    sprite.rotation.y = Math.atan2(this.camera.position.x - p.x, this.camera.position.z - p.z);
     sprite.position.set(p.x, 0, p.z);
     sprite.renderOrder = 3;
     this.scene.add(sprite);
@@ -628,7 +798,7 @@ export class BeachEngine {
       cur: { x: p.x, z: p.z, yaw: p.yaw }, target: { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving }, animT: Math.random() * 10, bounce: 0, seen: performance.now(),
     };
     this.setLabel(node, p.nick);
-    this.setFrame(node, CHAR_VIEW.front, CHAR_FRAME.idle, p.skin);
+    this.setFrame(node, CHAR_VIEW.front, CHAR_ANIM.idle.from, p.skin);
     return node;
   }
 
@@ -681,9 +851,13 @@ export class BeachEngine {
   }
 
   private setFrame(node: PlayerNode, view: number, frame: number, skin: number) {
+    this.setFrameOn(node.tex, view, frame, skin);
+  }
+
+  private setFrameOn(tex: THREE.Texture, view: number, frame: number, skin: number) {
     const col = view + frame;
     const row = ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
-    node.tex.offset.set(col / CHAR_ATLAS.cols, 1 - (row + 1) / CHAR_ATLAS.rows);
+    tex.offset.set(col / CHAR_ATLAS.cols, 1 - (row + 1) / CHAR_ATLAS.rows);
   }
 
   /* ---------------- 위로 · 안아주기 이펙트 ---------------- */
@@ -697,6 +871,8 @@ export class BeachEngine {
       if (!node) return;
       at = new THREE.Vector3(node.cur.x, 0.9, node.cur.z);
       node.bounce = kind === "hug" ? 1 : 0.5;
+    } else if (this.view === "third") {
+      at = new THREE.Vector3(this.self.x, 1.1, this.self.z); // 3인칭: 내 캐릭터 위에
     } else {
       const f = this.facing();
       at = new THREE.Vector3(this.self.x + f.x * 1.6, EYE - 0.35, this.self.z + f.z * 1.6);
@@ -774,7 +950,8 @@ export class BeachEngine {
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.keys.clear();
-    if (this.joy.active) { this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 }; this.handlers.onJoystick(null); }
+    this.move = { x: 0, y: 0 };
+    this.cancelAuto("cancelled");
     this.look.active = false;
   }
 
@@ -825,37 +1002,100 @@ export class BeachEngine {
 
   private updateSelf(dt: number) {
     const k = this.keys;
-    let mx = this.joy.x, my = -this.joy.y; // 조이스틱: 위로 밀면 앞으로
+    let mx = this.move.x, my = this.move.y; // 조이스틱: 위로 밀면 앞으로
     if (k.has("w") || k.has("ArrowUp")) my += 1;
     if (k.has("s") || k.has("ArrowDown")) my -= 1;
     if (k.has("a")) mx -= 1;
     if (k.has("d")) mx += 1;
     const turn = (k.has("ArrowLeft") || k.has("q") ? 1 : 0) - (k.has("ArrowRight") || k.has("e") ? 1 : 0);
-    if (turn) this.self.yaw += turn * 1.9 * dt;
+    if (turn) { this.self.yaw += turn * 1.9 * dt; this.faceGoal = null; }
     const len = Math.hypot(mx, my);
-    if (this.restSeat && len > 0.08) this.standUp();
-    if (len > 1) { mx /= len; my /= len; }
-    const speed = WALK_SPEED * (k.has("Shift") ? 1.6 : 1) * Math.min(1, len);
-    this.self.moving = len > 0.08;
-    if (this.self.moving) {
-      const f = this.facing();
-      const r = { x: Math.cos(this.self.yaw), z: -Math.sin(this.self.yaw) };
-      const nx = this.self.x + (f.x * my + r.x * mx) * speed * dt;
-      const nz = this.self.z + (f.z * my + r.z * mx) * speed * dt;
-      const [cx, cz] = this.collide(nx, nz);
-      this.self.x = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
-      this.self.z = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
-      this.self.bobT += dt * speed * 2.6;
+    const manual = len > 0.08 || turn !== 0;
+    if (manual) { this.cancelAuto("cancelled"); this.faceGoal = null; }
+    if (this.auto) {
+      this.stepAuto(dt);
+    } else {
+      if (this.restSeat && len > 0.08) this.standUp();
+      if (len > 1) { mx /= len; my /= len; }
+      const speed = WALK_SPEED * (k.has("Shift") ? 1.6 : 1) * Math.min(1, len);
+      this.self.moving = len > 0.08;
+      if (this.self.moving) {
+        const f = this.facing();
+        const r = { x: Math.cos(this.self.yaw), z: -Math.sin(this.self.yaw) };
+        const nx = this.self.x + (f.x * my + r.x * mx) * speed * dt;
+        const nz = this.self.z + (f.z * my + r.z * mx) * speed * dt;
+        const [cx, cz] = this.collide(nx, nz);
+        this.self.x = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
+        this.self.z = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
+        this.self.bobT += dt * speed * 2.6;
+      }
+    }
+    if (this.faceGoal) {
+      const g = this.faceGoal;
+      const ease = Math.min(1, dt * 5);
+      const dYaw = Math.atan2(Math.sin(g.yaw - this.self.yaw), Math.cos(g.yaw - this.self.yaw));
+      this.self.yaw += dYaw * ease;
+      this.self.pitch += (g.pitch - this.self.pitch) * ease;
+      if (Math.abs(dYaw) < 0.01 && Math.abs(g.pitch - this.self.pitch) < 0.01) this.faceGoal = null;
     }
     const bob = this.self.moving ? Math.sin(this.self.bobT) * 0.035 : 0;
     const targetEye = this.deckHeight(this.self.x, this.self.z) + (this.restSeat ? 1.30 : EYE);
     this.eyeHeight += (targetEye - this.eyeHeight) * Math.min(1, dt * 9);
-    this.camera.position.set(this.self.x, this.eyeHeight + bob, this.self.z);
-    this.camera.rotation.set(this.self.pitch, this.self.yaw, 0);
+    if (this.view === "third") {
+      this.placeFollowCamera(dt);
+    } else {
+      this.camera.position.set(this.self.x, this.eyeHeight + bob, this.self.z);
+      this.camera.rotation.set(this.self.pitch, this.self.yaw, 0);
+    }
     this.sky.position.copy(this.camera.position);
+    this.updateSelfAvatar(dt);
     this.updateRestState();
     const near = Math.hypot(this.self.x - FIRE.x, this.self.z - FIRE.z) <= 4.6;
     if (near !== this.nearFire) { this.nearFire = near; this.handlers.onFireRangeChange?.(near); }
+  }
+
+  /** 3인칭 카메라: 내 캐릭터 뒤 위에서 따라간다. 둘러보기(yaw·pitch)가 그대로 궤도를 돌린다. 벽·경계에 닿으면 가까이 붙는다 */
+  private placeFollowCamera(dt: number) {
+    const x = this.self.x, z = this.self.z;
+    const focusY = this.deckHeight(x, z) + (this.restSeat ? 1.0 : 1.25);
+    const elev = Math.max(0.08, Math.min(1.0, 0.4 - this.self.pitch * 0.8));
+    const f = this.facing();
+    const reach = this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
+    const cosE = Math.cos(elev), sinE = Math.sin(elev);
+    const wanted = new THREE.Vector3();
+    for (let k = 1; k >= 0.3; k -= 0.1) {
+      wanted.set(x - f.x * reach * k * cosE, focusY + reach * k * sinE, z - f.z * reach * k * cosE);
+      if (this.cameraFree(wanted)) break;
+    }
+    if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
+    else this.followCam.lerp(wanted, Math.min(1, dt * 10));
+    this.camera.position.copy(this.followCam);
+    // 캐릭터 머리 조금 위를 바라봐서 캐릭터는 화면 아래쪽, 앞 풍경은 위쪽에 넉넉히 들어온다
+    this.camera.lookAt(x, focusY + (this.mobile ? 1.1 : 0.7), z);
+  }
+
+  private cameraFree(p: THREE.Vector3) {
+    const b = this.bounds;
+    if (p.x < b.minX + 0.3 || p.x > b.maxX - 0.3 || p.z < b.minZ + 0.3 || p.z > b.maxZ - 0.3) return false;
+    for (const w of SHELTER_COLLIDERS) if (p.x > w.minX - 0.25 && p.x < w.maxX + 0.25 && p.z > w.minZ - 0.25 && p.z < w.maxZ + 0.25) return false;
+    return true;
+  }
+
+  /** 3인칭일 때만 보이는 내 도트 캐릭터. 다른 사람과 같은 규칙으로 걷기 프레임과 앞·뒤 그림을 고른다 */
+  private updateSelfAvatar(dt: number) {
+    const n = this.selfNode;
+    if (!n) return;
+    const shown = this.view === "third";
+    n.sprite.visible = shown;
+    n.shadow.visible = shown;
+    if (!shown) return;
+    const deck = this.deckHeight(this.self.x, this.self.z);
+    const cam = this.camera.position;
+    n.sprite.position.set(this.self.x, deck, this.self.z);
+    n.sprite.rotation.y = Math.atan2(cam.x - this.self.x, cam.z - this.self.z);
+    n.shadow.position.set(this.self.x, deck + 0.015, this.self.z);
+    n.animT += dt;
+    this.setFrameOn(n.tex, viewFor(this.self.yaw, this.self.x, this.self.z, cam), charFrame(this.self.moving, n.animT), this.skin);
   }
 
   private collide(x: number, z: number): [number, number] {
@@ -900,8 +1140,9 @@ export class BeachEngine {
     this.self.pitch = 0.015;
     this.self.moving = false;
     this.keys.clear();
-    this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
-    this.handlers.onJoystick(null);
+    this.move = { x: 0, y: 0 };
+    this.cancelAuto("cancelled");
+    this.faceGoal = null;
     this.updateRestState();
   }
 
@@ -933,19 +1174,13 @@ export class BeachEngine {
       if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
       else { p.cur.x += (p.target.x - p.cur.x) * smooth; p.cur.z += (p.target.z - p.cur.z) * smooth; }
       const walking = p.target.moving || far > 0.12;
-      if (walking) p.animT += dt * 7;
-      const frame = walking ? CYCLE[Math.floor(p.animT) % CYCLE.length] : CHAR_FRAME.idle;
+      p.animT += dt;
+      const frame = charFrame(walking, p.animT);
       const turn = p.target.yaw - p.cur.yaw;
       p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
-      p.sprite.rotation.y = p.cur.yaw + Math.PI;
-      // Pick artwork for the viewed face, without rotating the sheet toward us.
-      const fx = -Math.sin(p.cur.yaw), fz = -Math.cos(p.cur.yaw);
-      let dx = p.cur.x - cam.x, dz = p.cur.z - cam.z;
-      const dl = Math.hypot(dx, dz) || 1;
-      dx /= dl; dz /= dl;
-      const dot = fx * dx + fz * dz;
-      const view = dot > 0 ? CHAR_VIEW.back : CHAR_VIEW.front;
-      this.setFrame(p, view, frame, p.data.skin);
+      p.sprite.rotation.y = Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z); // 늘 카메라를 본다
+      this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
+      const dl = Math.hypot(p.cur.x - cam.x, p.cur.z - cam.z);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
@@ -969,14 +1204,17 @@ export class BeachEngine {
     void dt;
     this.skyMat.uniforms.uTime.value = this.time;
     this.seaMat.uniforms.uTime.value = this.time;
+    this.cove.setFireFlare(this.fire?.flareAmount ?? 0);
     this.cove.update(this.time);
     (this.seaMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
     this.fire?.update(this.time, this.camera);
+    this.lanterns?.update(this.time);
   }
 
   /* ---------------- 정리 ---------------- */
   dispose() {
     this.disposed = true;
+    this.cancelAuto("cancelled");
     this.stop();
     this.clock.dispose();
     const c = this.canvas;
@@ -989,6 +1227,13 @@ export class BeachEngine {
     window.removeEventListener("blur", this.onBlur);
     for (const p of this.players.values()) this.removePlayer(p);
     this.players.clear();
+    if (this.selfNode) {
+      this.scene.remove(this.selfNode.sprite, this.selfNode.shadow);
+      this.selfNode.sprite.geometry.dispose();
+      this.selfNode.mat.dispose();
+      this.selfNode.tex.dispose();
+      this.selfNode = null;
+    }
     for (const f of this.fx) { this.scene.remove(f.sprite); f.mat.dispose(); }
     this.fx = [];
     const textures = new Set<THREE.Texture>();

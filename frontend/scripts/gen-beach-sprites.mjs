@@ -3,12 +3,12 @@
  * 소로우 바닷가 도트 그림 만들기:  node scripts/gen-beach-sprites.mjs
  *
  * 외부 저작물 없이 이 파일 안의 픽셀 템플릿과 간단한 그리기 함수로 PNG 를 만든다 (PNG 인코더도 여기 있음, 의존성 없음).
- *   public/beach/chars.png   캐릭터 아틀라스: 48×64 칸, 가로 12칸(앞·뒤·왼·오른 × 서있기·걷기1·걷기2) × 세로 8줄(색 변형)
  *   public/beach/props.png   소품·이펙트 아틀라스 (야자수·파라솔·바위·모닥불·하트·반짝임·잎·빛·그림자·조개 …)
  *   public/beach/sand.png    이어 붙일 수 있는 모래 질감 (128×128)
- *   lib/beach/atlas.ts       위 아틀라스의 좌표 상수 (생성 파일 — 손으로 고치지 말 것)
+ *   lib/beach/atlas.ts       위 아틀라스와 캐릭터 시트의 좌표 상수 (생성 파일 — 손으로 고치지 말 것)
+ * 캐릭터 시트(public/beach/chars.png)는 Aseprite 로 그린다: node scripts/gen-beach-character.mjs (배치는 beach-character.config.mjs 에서 같이 읽는다)
  */
-import { AVATAR_CELL, AVATAR_VARIANTS, drawAvatar } from "./beach-avatar-art.mjs";
+import { CHARACTER, CHAR_COLUMNS, CHAR_VIEW_OFFSETS, SHEET } from "./beach-character.config.mjs";
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -140,32 +140,6 @@ function r(spec, width = 16) {
   return row;
 }
 const rows = (specs, width = 16) => specs.map((s) => r(s, width));
-
-/* ---------------- 캐릭터 ---------------- */
-const CELL_W = AVATAR_CELL.width;
-const CELL_H = AVATAR_CELL.height;
-const VARIANTS = AVATAR_VARIANTS;
-const CHAR_COLS = Array.from({ length: 12 }, (_, col) => ({ view: Math.floor(col / 3), frame: col % 3 }));
-const chars = new Raster(CELL_W * CHAR_COLS.length, CELL_H * VARIANTS.length);
-VARIANTS.forEach((variant, row) => {
-  CHAR_COLS.forEach(({ view, frame }, col) => chars.copy(drawAvatar(Raster, variant, view, frame), 0, 0, CELL_W, CELL_H, col * CELL_W, row * CELL_H));
-});
-writeFileSync(path.join(outDir, "chars.png"), chars.png());
-
-// Optional original-resolution artwork contact sheet, enlarged with nearest pixels.
-const previewIndex = process.argv.indexOf("--preview");
-if (previewIndex >= 0 && process.argv[previewIndex + 1]) {
-  const factor = 3, tileW = CELL_W + 8, tileH = CELL_H + 8;
-  const sheet = new Raster(tileW * 8 * factor, tileH * 3 * factor);
-  sheet.rect(0, 0, sheet.w, sheet.h, hex("#f2ede5"));
-  [0, 3, 1].forEach((col, row) => VARIANTS.forEach((_, skin) => {
-    for (let y = 0; y < CELL_H; y++) for (let x = 0; x < CELL_W; x++) {
-      const color = chars.get(col * CELL_W + x, skin * CELL_H + y);
-      if (color[3]) sheet.rect((skin * tileW + x + 4) * factor, (row * tileH + y + 4) * factor, factor, factor, color);
-    }
-  }));
-  writeFileSync(process.argv[previewIndex + 1], sheet.png());
-}
 
 /* ---------------- 소품 · 이펙트 ---------------- */
 const props = new Raster(256, 128);
@@ -377,11 +351,11 @@ writeFileSync(path.join(outDir, "props.png"), props.png());
 /* ---------------- 좌표 상수 ---------------- */
 const ts = `/* 생성 파일 — scripts/gen-beach-sprites.mjs 가 만든다. 손으로 고치지 말 것 */
 
-/** 캐릭터 아틀라스(chars.png): 한 칸 ${CELL_W}×${CELL_H}, 가로 ${CHAR_COLS.length}칸 × 세로 ${VARIANTS.length}줄(색 변형) */
-export const CHAR_ATLAS = { cellW: ${CELL_W}, cellH: ${CELL_H}, cols: ${CHAR_COLS.length}, rows: ${VARIANTS.length}, width: ${chars.w}, height: ${chars.h} } as const;
-/** 칸 순서: 보는 방향(앞·뒤·왼·오른) × 프레임(서있기·걷기1·걷기2) */
-export const CHAR_VIEW = { front: 0, back: 3, left: 6, right: 9 } as const;
-export const CHAR_FRAME = { idle: 0, walk1: 1, walk2: 2 } as const;
+/** 캐릭터 시트(chars.png, Aseprite 로 생성): 한 칸 ${CHARACTER.cell.width}×${CHARACTER.cell.height}, 가로 ${CHARACTER.views.length * CHAR_COLUMNS}칸(보는 방향 ${CHARACTER.views.length} × 프레임 ${CHAR_COLUMNS}) × 세로 ${CHARACTER.variants.length}줄(색 변형) */
+export const CHAR_ATLAS = { cellW: ${CHARACTER.cell.width}, cellH: ${CHARACTER.cell.height}, cols: ${CHARACTER.views.length * CHAR_COLUMNS}, rows: ${CHARACTER.variants.length}, width: ${SHEET.width}, height: ${SHEET.height} } as const;
+/** 보는 방향별 첫 칸 (앞·뒤·왼·오른). 각 방향 안에서 서있기 ${CHARACTER.anims.idle}프레임, 걷기 ${CHARACTER.anims.walk}프레임 순서 */
+export const CHAR_VIEW = { ${CHARACTER.views.map((view) => `${view}: ${CHAR_VIEW_OFFSETS[view]}`).join(", ")} } as const;
+export const CHAR_ANIM = { idle: { from: 0, length: ${CHARACTER.anims.idle} }, walk: { from: ${CHARACTER.anims.idle}, length: ${CHARACTER.anims.walk} } } as const;
 
 /** 소품·이펙트 아틀라스(props.png)의 영역 (픽셀) */
 export const PROPS_ATLAS = { width: ${props.w}, height: ${props.h} } as const;
@@ -391,4 +365,4 @@ export const PROP: Record<PropName, { x: number; y: number; w: number; h: number
 mkdirSync(path.join(root, "lib", "beach"), { recursive: true });
 writeFileSync(path.join(root, "lib", "beach", "atlas.ts"), ts);
 
-console.log(`chars.png ${chars.w}×${chars.h}, props.png ${props.w}×${props.h}, sand.png 128×128, lib/beach/atlas.ts (${Object.keys(REGIONS).length} regions)`);
+console.log(`props.png ${props.w}×${props.h}, sand.png 128×128, lib/beach/atlas.ts (${Object.keys(REGIONS).length} regions, chars.png ${SHEET.width}×${SHEET.height})`);

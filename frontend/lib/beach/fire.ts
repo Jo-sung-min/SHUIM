@@ -19,15 +19,23 @@ const NOISE = `
   }
 `;
 
+/** 장작이 다 타도 꺼지지 않는 불씨의 세기 (0~1 스케일). 작은 불꽃과 잔불이 자작자작 남는다 */
+const EMBER_POWER = 0.07;
+/** 장작을 넣었을 때 확 타오르는 정도와, 다시 잦아드는 데 걸리는 시간(초) */
+const FLARE_STRENGTH = 0.9;
+const FLARE_DECAY_SECONDS = 4.5;
+
 /** Layered translucent tongues, glowing charcoal, smoke and sparks in six draw calls. */
 export class CoastalFire {
   private flames: THREE.InstancedMesh;
   private logs: THREE.InstancedMesh;
   private coalMaterial: THREE.MeshStandardMaterial;
   private material: THREE.ShaderMaterial;
-  private targetPower = 3 / 12;
+  private targetPower = EMBER_POWER + (1 - EMBER_POWER) * (3 / 12);
   private targetColors = FIRE_PALETTES.amber.map((color) => new THREE.Color(color));
   private lastUpdateTime: number | null = null;
+  /** 방금 넣은 장작이 타오르는 여분의 세기. 시간이 지나면 0 으로 잦아든다 */
+  private flareLevel = 0;
 
   constructor(scene: THREE.Scene, x: number, z: number) {
     const wood = typeof document === "undefined"
@@ -249,23 +257,39 @@ export class CoastalFire {
   setState(logs: number, color: string) {
     const count = Number.isFinite(logs) ? Math.round(THREE.MathUtils.clamp(logs, 0, 12)) : 3;
     this.logs.count = count;
-    this.targetPower = count / 12;
+    // 장작이 0 이어도 불씨는 남는다 (불멍 상태). 장작 수에 따라 그 위로 커진다
+    this.targetPower = EMBER_POWER + (1 - EMBER_POWER) * (count / 12);
     const palette = FIRE_PALETTES[color] ?? FIRE_PALETTES.amber;
     for (let i = 0; i < 3; i++) this.targetColors[i].setHex(palette[i]);
+  }
+
+  /** 장작을 넣은 직후: 불이 확 타올랐다가 몇 초에 걸쳐 원래 세기로 잦아든다 */
+  flare(strength = FLARE_STRENGTH) {
+    this.flareLevel = Math.min(1.2, this.flareLevel + strength);
+  }
+
+  /** 지금 타오르는 여분의 세기 0~1.4 (조명도 같이 밝아지도록 바깥에 알려 준다) */
+  get flareAmount() {
+    return this.flareLevel;
   }
 
   update(time: number, camera: THREE.Camera) {
     const dt = this.lastUpdateTime === null ? 1 / 60 : THREE.MathUtils.clamp(time - this.lastUpdateTime, 0, 0.1);
     this.lastUpdateTime = time;
-    const blend = 1 - Math.exp(-dt * 4);
+    this.flareLevel *= Math.exp(-dt / FLARE_DECAY_SECONDS);
+    if (this.flareLevel < 0.01) this.flareLevel = 0;
     const uniforms = this.material.uniforms;
     uniforms.uTime.value = time;
-    uniforms.uPower.value += (this.targetPower - uniforms.uPower.value) * blend;
-    if (this.targetPower === 0 && uniforms.uPower.value < 0.0005) uniforms.uPower.value = 0;
+    // 타오를 땐 빨리(0.25초), 잦아들 땐 천천히 따라간다
+    const goal = Math.min(1.4, this.targetPower + this.flareLevel * 0.8);
+    const blend = 1 - Math.exp(-dt * (goal > uniforms.uPower.value ? 4 : 2.2));
+    uniforms.uPower.value += (goal - uniforms.uPower.value) * blend;
     for (const [i, name] of ["uOuter", "uMid", "uCore"].entries()) uniforms[name].value.lerp(this.targetColors[i], blend);
-    this.flames.visible = uniforms.uPower.value > 0;
+    this.flames.visible = true;
     this.flames.rotation.y = Math.atan2(camera.position.x - this.flames.position.x, camera.position.z - this.flames.position.z);
     this.coalMaterial.emissive.copy(uniforms.uOuter.value);
-    this.coalMaterial.emissiveIntensity = 0.12 + Math.sqrt(uniforms.uPower.value) * 0.55;
+    // 불씨 상태에선 잔불이 느리게 일렁인다
+    const glowPulse = 1 + (Math.sin(time * 2.1) * 0.5 + Math.sin(time * 3.7) * 0.3) * 0.18 * (1 - Math.min(1, uniforms.uPower.value));
+    this.coalMaterial.emissiveIntensity = (0.12 + Math.sqrt(uniforms.uPower.value) * 0.55) * glowPulse;
   }
 }

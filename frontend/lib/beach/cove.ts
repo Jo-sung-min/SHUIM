@@ -83,7 +83,9 @@ export class Cove {
   private night = 0;
   private fireStrength = 1;
   private fireTargetStrength = 1;
+  private fireFlare = 0;
   private fireTargetColor = new THREE.Color(FIRE_COLORS.amber);
+  private lanternGlow = new THREE.Color(0xffb27a);
   private lastUpdateTime: number | null = null;
 
   constructor(scene: THREE.Scene, obstacles: Obstacle[]) {
@@ -306,18 +308,25 @@ export class Cove {
 
   applyDaylight(d: Daylight) {
     this.night = d.fire;
-    this.ambient.intensity = 0.35 + (1 - d.stars) * 0.7 + Math.max(0, d.sun[1]) * 1.5;
-    this.ambient.color.setRGB(...d.cloud);
-    this.sun.intensity = 0.3 + Math.max(0, d.sun[1]) * 2.3;
-    this.sun.color.setRGB(...d.sunColor);
+    // 밤에는 하늘 가득한 풍등이 모래와 절벽에 따뜻한 빛을 얹는다 (너무 어둡고 무섭지 않게)
+    this.ambient.intensity = 0.35 + (1 - d.stars) * 0.7 + Math.max(0, d.sun[1]) * 1.5 + d.lanterns * 0.9;
+    this.ambient.color.setRGB(...d.cloud).lerp(this.lanternGlow, d.lanterns * 0.75);
+    this.sun.intensity = 0.3 + Math.max(0, d.sun[1]) * 2.3 + d.lanterns * 0.25;
+    this.sun.color.setRGB(...d.sunColor).lerp(this.lanternGlow, d.lanterns * 0.5);
     this.sun.position.set(d.sun[0] * 80, Math.max(18, d.sun[1] * 80), d.sun[2] * 80);
   }
 
   /** Shared fire choices ease into the lighting instead of flashing on every room update. */
   setFireState(logCount: number, color: string) {
     const logs = Number.isFinite(logCount) ? THREE.MathUtils.clamp(logCount, 0, 12) : 3;
-    this.fireTargetStrength = Math.sqrt(logs / 3);
+    // 장작이 0 이어도 불씨가 모래를 은은히 비춘다
+    this.fireTargetStrength = Math.sqrt((logs + 0.6) / 3.6);
     this.fireTargetColor.setHex(FIRE_COLORS[color] ?? FIRE_COLORS.amber);
+  }
+
+  /** 방금 넣은 장작이 타오르는 정도 (CoastalFire.flareAmount). 조명도 같이 밝아진다 */
+  setFireFlare(amount: number) {
+    this.fireFlare = Math.max(0, amount);
   }
 
   update(time: number) {
@@ -325,9 +334,12 @@ export class Cove {
     this.lastUpdateTime = time;
     const blend = 1 - Math.exp(-dt * 4);
     this.fireStrength += (this.fireTargetStrength - this.fireStrength) * blend;
-    if (this.fireTargetStrength === 0 && this.fireStrength < 0.005) this.fireStrength = 0;
     this.firelight.color.lerp(this.fireTargetColor, blend);
-    this.firelight.distance = 10 + this.fireStrength * 4;
-    this.firelight.intensity = this.fireStrength * (8 + this.night * 10) * (1 + Math.sin(time * 7.3) * 0.08);
+    const strength = this.fireStrength * (1 + this.fireFlare * 0.9);
+    this.firelight.distance = 10 + strength * 4;
+    // 불씨만 남았을 땐 더 크게, 천천히 일렁인다
+    const calm = 1.6 - Math.min(1, this.fireStrength);
+    const flicker = 1 + Math.sin(time * 7.3) * 0.08 + (Math.sin(time * 2.3) * 0.06 + Math.sin(time * 11.7) * 0.03) * calm;
+    this.firelight.intensity = strength * (8 + this.night * 10) * flicker;
   }
 }

@@ -1,0 +1,46 @@
+/* 바닷가 걷기 조이스틱. 손가락 기기에서만 보이고, 하단 바 위 왼쪽 엄지 자리에 둔다 */
+.base {
+  position: absolute;
+  left: max(18px, env(safe-area-inset-left));
+  bottom: calc(200px + env(safe-area-inset-bottom));
+  width: 118px;
+  height: 118px;
+  display: none;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(16, 14, 28, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  touch-action: none;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.base.active { background: rgba(16, 14, 28, 0.46); border-color: rgba(255, 255, 255, 0.5); }
+.arrow {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-left: 2px solid rgba(255, 255, 255, 0.5);
+  border-top: 2px solid rgba(255, 255, 255, 0.5);
+}
+.arrow[data-dir="up"] { top: 10px; left: 50%; transform: translateX(-50%) rotate(45deg); }
+.arrow[data-dir="down"] { bottom: 10px; left: 50%; transform: translateX(-50%) rotate(225deg); }
+.arrow[data-dir="left"] { left: 10px; top: 50%; transform: translateY(-50%) rotate(-45deg); }
+.arrow[data-dir="right"] { right: 10px; top: 50%; transform: translateY(-50%) rotate(135deg); }
+.knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.98), rgba(236, 232, 245, 0.86));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  transition: transform 0.1s ease-out;
+}
+.base.active .knob { transition: none; }
+@media (pointer: coarse) { .base { display: block; } }

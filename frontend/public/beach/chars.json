@@ -1,0 +1,1 @@
+{"anims": {"idle": {"from": 0, "length": 4}, "walk": {"from": 4, "length": 6}}, "cell": {"height": 104, "width": 72}, "columns": 10, "generator": "scripts/aseprite/beach-character.lua", "height": 832, "rows": 8, "views": {"back": 10, "front": 0, "left": 20, "right": 30}, "width": 2880}

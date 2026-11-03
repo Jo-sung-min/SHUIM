@@ -1,11 +1,54 @@
+/* 하단 컨트롤 바: 바닷가 HUD 의 어두운 글래스(반투명 블러 + 얇은 흰 테두리 + 둥근 모서리)와 같은 결 */
+.bar {
+  display:flex; align-items:center; gap:10px; width:100%; max-width:100%; padding:8px 8px 8px 14px;
+  border-radius:22px; border:1px solid rgba(255,255,255,.22); background:rgba(16,14,28,.46); color:#fff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.26), 0 14px 34px -14px rgba(0,0,0,.65);
+  -webkit-backdrop-filter:blur(18px) saturate(160%); backdrop-filter:blur(18px) saturate(160%);
+  pointer-events:auto; animation:campfireUp .25s ease-out;
+}
+.fireStatus { display:flex; align-items:center; gap:10px; flex:1; min-width:0; text-align:left; }
+.fireIcon { display:grid; place-items:center; flex:none; width:38px; height:38px; border-radius:50%; color:#ffb66c; background:rgba(255,173,100,.16); box-shadow:inset 0 0 0 1px rgba(255,200,140,.28); }
+.fireIcon svg { width:22px; height:24px; }
+.fireCopy { display:grid; gap:3px; min-width:0; }
+.fireCopy strong { font-size:13px; font-weight:800; letter-spacing:-.01em; line-height:1.3; }
+.fireCopy small { font-size:11px; color:rgba(255,242,220,.78); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+.meter { display:flex; gap:2px; height:4px; width:100%; max-width:132px; margin-top:1px; }
+.meter i { flex:1; border-radius:2px; background:rgba(255,255,255,.14); }
+.meter i[data-lit="true"] { background:linear-gradient(90deg,#f0a048,#ffd08a); box-shadow:0 0 6px rgba(255,180,100,.5); }
+.woodButton {
+  display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; flex:none; min-height:50px; padding:6px 15px;
+  border:1px solid rgba(255,214,160,.5); border-radius:16px;
+  background:linear-gradient(180deg,rgba(255,196,130,.36),rgba(255,160,90,.22));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.32), 0 6px 16px -10px rgba(255,170,90,.6);
+  color:#fff6e8; font:inherit; font-size:13px; font-weight:800; letter-spacing:-.01em; white-space:nowrap; cursor:pointer;
+  transition:transform .12s ease, opacity .2s ease, background .2s ease;
+}
+.woodLabel { display:inline-flex; align-items:center; gap:5px; }
+.woodLabel>span { font-size:17px; line-height:1; }
+.woodButton small { font-size:10px; font-weight:600; color:rgba(255,240,215,.78); }
+.woodButton:hover { background:linear-gradient(180deg,rgba(255,200,140,.46),rgba(255,165,95,.3)); }
+.woodButton:active { transform:scale(.96); }
+.woodButton:focus-visible { outline:3px solid rgba(255,214,160,.7); outline-offset:3px; }
+.woodButton:disabled { opacity:.55; cursor:default; transform:none; }
+.woodButton[data-busy="true"] { opacity:.85; }
+.viewButton {
+  display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; flex:none; width:50px; min-height:50px; padding:4px 0;
+  border:1px solid rgba(255,255,255,.22); border-radius:16px; background:rgba(255,255,255,.1); color:#fff; font:inherit; cursor:pointer;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22); transition:transform .12s ease, background .2s ease;
+}
+.viewButton svg { width:20px; height:20px; }
+.viewButton small { font-size:10px; font-weight:700; color:rgba(255,255,255,.82); line-height:1; }
+.viewButton:hover { background:rgba(255,255,255,.18); }
+.viewButton:active { transform:scale(.95); }
+.viewButton:focus-visible { outline:3px solid rgba(255,255,255,.6); outline-offset:3px; }
+.viewButton[aria-pressed="true"] { background:rgba(169,156,242,.32); border-color:rgba(200,190,255,.55); }
+.woodNotice { margin:0; padding:8px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(16,14,28,.5); color:#fff2dc; font-size:12.5px; font-weight:600; text-align:center; pointer-events:none; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); animation:campfireUp .25s ease-out; }
+@keyframes campfireUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@media(prefers-reduced-motion:reduce) { .bar, .woodNotice { animation:none; } }
+/* 예전 불씨팝 결제 화면(ArchivedFirePopControls)이 아직 쓰는 이름 */
 .controls { display:flex; justify-content:center; gap:8px; max-width:100%; pointer-events:auto; }
-.fireStatus { display:flex; align-items:center; gap:9px; border:1px solid #f8ddae66; border-radius:17px; min-height:58px; background:#29261fdb; color:#fff2dc; padding:10px 14px; backdrop-filter:blur(18px); box-shadow:inset 0 1px 0 #ffffff15, 0 6px 24px #0002; text-align:left; }
-.fireStatus strong { display:block; font-size:13px; }.fireStatus small { display:block; margin-top:3px; font-size:10px; color:#e1d0b3; white-space:nowrap; }
-.fireButton, .woodButton { display:flex; align-items:center; gap:9px; border:1px solid #f8ddae66; border-radius:17px; min-height:58px; background:#29261fdb; color:#fff2dc; padding:10px 14px; cursor:pointer; font:inherit; backdrop-filter:blur(18px); box-shadow:inset 0 1px 0 #ffffff15, 0 6px 24px #0002; text-align:left; }
+.fireButton { display:flex; align-items:center; gap:9px; border:1px solid rgba(255,255,255,.22); border-radius:17px; min-height:58px; background:rgba(16,14,28,.46); color:#fff2dc; padding:10px 14px; cursor:pointer; font:inherit; -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); box-shadow:inset 0 1px 0 rgba(255,255,255,.26), 0 6px 24px #0002; text-align:left; }
 .fireButton strong { display:block; font-size:13px; }.fireButton small { display:block; margin-top:3px; font-size:10px; color:#e1d0b3; white-space:nowrap; }
-.fireIcon { display:grid; place-items:center; width:26px; height:31px; color:#ffb66c; }.fireIcon svg { width:25px; height:29px; }
-.woodButton { background:#ecdbc0ed; color:#3e3022; font-size:12px; font-weight:750; gap:5px; white-space:nowrap; }.woodButton>span { font-size:19px; }.woodButton small { color:#806f59; font-size:10px; margin-left:3px; }
-.woodButton:disabled { opacity:.6; cursor:default; }.woodNotice { margin:0; padding:8px 13px; border-radius:12px; background:#28241fe8; color:#fff2dc; font-size:12px; pointer-events:auto; text-align:center; }
 .shop { color:#39382f; padding-bottom:8px; touch-action:pan-y; }.shop h4 { margin:6px 0; font-size:18px; line-height:1.45; letter-spacing:-.04em; }.shop p { font-size:12px; line-height:1.7; margin:6px 0; }.eyebrow { font-size:10px; font-weight:750; color:#8b7453; letter-spacing:.04em; }
 .fuel { padding:17px; background:#f5eee3; border:1px solid #e5d8c7; border-radius:18px; }.fuel h4 { font-size:16px; }.fuel p { color:#807461; }
 .fuelMeter { display:flex; gap:4px; height:7px; margin:17px 0 11px; }.fuelMeter span { flex:1; border-radius:3px; background:#e4dacb; }.fuelMeter span[data-lit="true"] { background:linear-gradient(90deg,#aa6a36,#d89e56); }
@@ -19,5 +62,5 @@
 .status, .error, .success { padding:10px 12px; border-radius:11px; background:#f1eee7; color:#817765; }.shop .error { background:#f8eae4; color:#9e4c38; }.shop .success { background:#e8f0e9; color:#3f6850; }
 .links { display:flex; justify-content:space-between; gap:10px; margin:13px 2px 3px; }.links button, .links a { border:0; padding:5px 0; background:none; color:#887e6f; text-decoration:underline; font:inherit; font-size:11px; cursor:pointer; }.links button:disabled { opacity:.5; cursor:default; }
 .purchases { border-top:1px solid #e8dfd2; padding-top:14px; margin-top:19px; }.purchases h4 { font-size:14px; margin-bottom:12px; }.purchases>div { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:11px 0; }.purchases strong { font-size:12px; }.purchases small { display:block; font-size:10px; color:#948776; margin-top:4px; }.purchases b { font-size:10px; color:#617b6d; padding:4px 7px; background:#e9efe9; border-radius:6px; white-space:nowrap; }
-@media(max-width:380px) { .controls { gap:6px; }.fireButton,.woodButton { padding:9px 10px; }.woodButton small { display:none; }.fireButton small { font-size:9px; }.product { padding:10px; }.fuel { padding:14px; }.fuelBottom button { font-size:10px; } }
+@media(max-width:380px) { .controls { gap:6px; }.bar { gap:7px; padding:7px 7px 7px 11px; }.fireButton { padding:9px 10px; }.woodButton { padding:6px 10px; font-size:12.5px; }.viewButton { width:44px; }.fireIcon { width:34px; height:34px; }.fireButton small { font-size:9px; }.product { padding:10px; }.fuel { padding:14px; }.fuelBottom button { font-size:10px; } }
 @media(prefers-reduced-motion:reduce) { .product { transition:none; } }
