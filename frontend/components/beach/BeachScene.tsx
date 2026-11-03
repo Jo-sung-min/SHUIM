@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { BeachEngine, webglSupported, type RestState, type StargazingState, type ViewMode } from "@/lib/beach/engine";
-import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, setBeachRest, type FireState, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
+import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
@@ -57,6 +57,9 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const skyBusyRef = useRef<SkyPhase | null>(null);
   const skyOperationRef = useRef(0);
   const woodBusyRef = useRef(false);
+  const powderBusyRef = useRef(false);
+  const controlsPausedRef = useRef(false);
+  const visitGenerationRef = useRef(0);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -81,6 +84,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [stargazing, setStargazing] = useState<StargazingState>({ near: false, lying: false, occupied: 0, capacity: 8 });
   const [skyPhase, setSkyPhase] = useState<SkyPhase | null>(null);
   const [woodBusy, setWoodBusy] = useState(false);
+  const [powderPhase, setPowderPhase] = useState<WoodPhase | null>(null);
+  const [powderOpen, setPowderOpen] = useState(false);
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
@@ -115,10 +120,13 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     return next;
   }, []);
 
-  const controlsPaused = characterPickerOpen || selected !== null || skyPhase === "joining" || skyPhase === "standing";
+  const controlsPaused = characterPickerOpen || selected !== null || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
+    controlsPausedRef.current = controlsPaused;
   }, [controlsPaused, phase]);
+
+  useEffect(() => { if (stargazing.lying) setPowderOpen(false); }, [stargazing.lying]);
 
   useEffect(() => {
     if (!selected || characterPickerOpen) return;
@@ -192,6 +200,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setSelected(null);
     setRest(null);
     setCharacterPickerOpen(false);
+    setPowderOpen(false);
     skyOperationRef.current++;
     skyBusyRef.current = null;
     restMutationRef.current = false;
@@ -200,10 +209,12 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setPhase("error");
   }, []);
 
-  const reenter = useCallback(async () => {
+  const reenter = useCallback(async (engine: BeachEngine, visit: number): Promise<boolean> => {
+    const belongsToVisit = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit;
+    if (!belongsToVisit() || blockedRef.current) return false;
     // Confirm the session identity before sending any account's saved choice.
     const entered = await enterBeach(communityId);
-    if (!aliveRef.current) { leaveBeach(entered.ticket); return; }
+    if (!belongsToVisit() || blockedRef.current) { leaveBeach(entered.ticket); return false; }
     ticketRef.current = entered.ticket;
     adoptCharacter(entered.me);
     meRef.current = entered.me;
@@ -213,21 +224,28 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     restEnabledRef.current = entered.restEnabled === true;
     setRestEnabled(restEnabledRef.current);
     // A new ticket owns no slot from the previous visit.
-    engineRef.current?.applyRest({ pose: "standing", spotId: null, slot: null, ...entered.spawn });
+    engine.applyRest({ pose: "standing", spotId: null, slot: null, ...entered.spawn });
     applyFire(entered.fire);
+    return true;
   }, [communityId, applyFire, adoptCharacter]);
 
   const runTick = useCallback(async (allowRestSync = false): Promise<boolean> => {
     const engine = engineRef.current;
     const ticket = ticketRef.current;
     if (!aliveRef.current || blockedRef.current || !engine || inFlightRef.current || document.hidden || (restMutationRef.current && !allowRestSync)) return false;
+    const visit = visitGenerationRef.current;
+    const belongsToVisit = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit;
     inFlightRef.current = true;
     if (!ticket) {
       try {
-        await reenter();
+        if (!(await reenter(engine, visit))) {
+          if (belongsToVisit()) inFlightRef.current = false;
+          return false;
+        }
       } catch (e) {
+        if (!belongsToVisit()) return false;
         inFlightRef.current = false;
-        if (!aliveRef.current) return false;
+        if (blockedRef.current) return false;
         if (e instanceof BeachUnavailable) { stopWithError(e); return false; }
         failRef.current++;
         setLost(failRef.current >= 2);
@@ -235,7 +253,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         return false;
       }
     }
-    if (!aliveRef.current || !ticketRef.current) { inFlightRef.current = false; return false; }
+    if (!belongsToVisit()) return false;
+    if (blockedRef.current || !ticketRef.current) { inFlightRef.current = false; return false; }
     const self = engine.getSelf();
     const care = pendingCareRef.current;
     pendingCareRef.current = null;
@@ -249,7 +268,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         character: characterRef.current ?? undefined,
         care: care ? { to: care.to, kind: care.kind } : undefined,
       });
-      if (!aliveRef.current) return false;
+      if (!belongsToVisit() || blockedRef.current) return false;
       engine.setPlayers(res.players);
       if (res.selfRest) engine.applyRest(res.selfRest);
       setCount(res.count);
@@ -268,7 +287,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       setLost(false);
       return true;
     } catch (e) {
-      if (!aliveRef.current) return false;
+      if (!belongsToVisit() || blockedRef.current) return false;
       if (e instanceof BeachUnavailable) {
         stopWithError(e);
       } else if (e instanceof BeachGone) {
@@ -281,8 +300,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       }
       return false;
     } finally {
-      inFlightRef.current = false;
-      scheduleTick();
+      if (belongsToVisit()) {
+        inFlightRef.current = false;
+        scheduleTick();
+      }
     }
   }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire]);
   tickRunnerRef.current = runTick;
@@ -290,8 +311,19 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    visitGenerationRef.current++;
     aliveRef.current = true;
     blockedRef.current = false;
+    inFlightRef.current = false;
+    failRef.current = 0;
+    pendingCareRef.current = null;
+    setLost(false);
+    woodBusyRef.current = false;
+    powderBusyRef.current = false;
+    restMutationRef.current = false;
+    setWoodBusy(false);
+    setPowderPhase(null);
+    setPowderOpen(false);
     fireTimeRef.current = 0;
     fireLogsRef.current = null;
     if (!communityId) {
@@ -373,6 +405,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     window.addEventListener("pagehide", onPageHide);
     return () => {
       cancelled = true;
+      visitGenerationRef.current++;
       aliveRef.current = false;
       window.clearTimeout(timerRef.current);
       window.clearInterval(clockTimer);
@@ -409,7 +442,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
 
   const toggleStargazing = async () => {
     const engine = engineRef.current;
-    if (!engine || !restEnabledRef.current || skyBusyRef.current || woodBusyRef.current || blockedRef.current) return;
+    if (!engine || !restEnabledRef.current || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
     if (!engine.isLying && stargazing.occupied >= stargazing.capacity) return;
     const operation = ++skyOperationRef.current;
     const current = () => aliveRef.current && !blockedRef.current && skyOperationRef.current === operation && engineRef.current === engine;
@@ -473,25 +506,97 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     const engine = engineRef.current;
     if (!engine || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
     if (engine.isLying) throw new Error("먼저 일어난 뒤 장작을 넣을 수 있어요.");
-    if (skyBusyRef.current || woodBusyRef.current) throw new Error("이동을 마친 뒤 다시 눌러 주세요.");
+    if (skyBusyRef.current || woodBusyRef.current || powderBusyRef.current) throw new Error("이동을 마친 뒤 다시 눌러 주세요.");
+    const actorId = meRef.current?.id;
+    const visit = visitGenerationRef.current;
+    const belongsToVisit = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit;
     woodBusyRef.current = true;
     setWoodBusy(true);
     try {
       phase("walking");
       const walk = await engine.walkToFire();
+      if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
       if (walk === "cancelled") throw new Error("걸음을 멈춰서 장작을 넣지 못했어요. 다시 눌러 주세요.");
       if (walk === "blocked") throw new Error("모닥불까지 가는 길이 막혔어요. 조금 더 가까이 가서 눌러 주세요.");
       phase("adding");
-      while (inFlightRef.current && aliveRef.current) await new Promise((r) => window.setTimeout(r, 40));
-      if (!(await runTick())) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      restMutationRef.current = true;
+      const waitUntil = performance.now() + 8500;
+      while (inFlightRef.current && belongsToVisit() && !blockedRef.current) {
+        if (performance.now() >= waitUntil) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
+        await new Promise((r) => window.setTimeout(r, 40));
+      }
+      if (!belongsToVisit() || blockedRef.current || !ticketRef.current || !(await runTick(true))) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
       const ticket = ticketRef.current;
-      if (!ticket || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
-      return await addFirewood(ticket, requestId);
+      if (!ticket || !belongsToVisit() || blockedRef.current || meRef.current?.id !== actorId) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      const confirmed = await addFirewood(ticket, requestId);
+      if (!belongsToVisit() || blockedRef.current || meRef.current?.id !== actorId) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
+      return confirmed;
+    } catch (cause) {
+      if (belongsToVisit()) {
+        if (cause instanceof BeachGone) ticketRef.current = null;
+        if (cause instanceof BeachUnavailable && (cause.status === 401 || cause.status === 403)) stopWithError(cause);
+      }
+      throw cause;
     } finally {
-      woodBusyRef.current = false;
-      if (aliveRef.current) setWoodBusy(false);
+      if (belongsToVisit()) {
+        restMutationRef.current = false;
+        woodBusyRef.current = false;
+        setWoodBusy(false); scheduleTick(0);
+      }
     }
-  }, [runTick]);
+  }, [runTick, scheduleTick, stopWithError]);
+
+  const onAddPowder = useCallback(async (requestId: string, color: PowderColor, phase: (p: WoodPhase) => void) => {
+    const engine = engineRef.current;
+    if (!engine || blockedRef.current || engine.isLying) throw new Error("먼저 일어난 뒤 가루를 넣을 수 있어요.");
+    if (skyBusyRef.current || woodBusyRef.current || powderBusyRef.current) throw new Error("이동을 마친 뒤 다시 눌러 주세요.");
+    const actorId = meRef.current?.id;
+    const visit = visitGenerationRef.current;
+    const belongsToVisit = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit;
+    powderBusyRef.current = true;
+    setPowderPhase("walking");
+    setPowderOpen(false);
+    try {
+      // Sheet cleanup and the single input-pause effect must finish before auto-walk.
+      const resumeUntil = performance.now() + 1000;
+      while (controlsPausedRef.current && belongsToVisit() && !blockedRef.current) {
+        if (performance.now() >= resumeUntil) throw new Error("열린 화면을 닫은 뒤 다시 눌러 주세요.");
+        await new Promise((resolve) => window.setTimeout(resolve, 16));
+      }
+      if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      phase("walking");
+      const walk = await engine.walkToFire();
+      if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
+      if (walk === "cancelled") throw new Error("걸음을 멈췄어요. 준비되면 다시 넣어 주세요.");
+      if (walk === "blocked") throw new Error("불 곁으로 가는 길이 막혔어요. 조금 가까이에서 다시 눌러 주세요.");
+      restMutationRef.current = true;
+      const waitUntil = performance.now() + 8500;
+      while (inFlightRef.current && belongsToVisit() && !blockedRef.current) {
+        if (performance.now() >= waitUntil) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+      }
+      if (!belongsToVisit() || blockedRef.current || !ticketRef.current || !(await runTick(true))) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      const ticket = ticketRef.current;
+      if (!ticket || !belongsToVisit() || blockedRef.current || engine.isLying || meRef.current?.id !== actorId) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      setPowderPhase("adding");
+      phase("adding");
+      const confirmed = await addFirePowder(ticket, requestId, color);
+      if (!belongsToVisit() || blockedRef.current || meRef.current?.id !== actorId) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
+      return confirmed;
+    } catch (cause) {
+      if (belongsToVisit()) {
+        if (cause instanceof BeachGone) ticketRef.current = null;
+        if (cause instanceof BeachUnavailable && (cause.status === 401 || cause.status === 403)) stopWithError(cause);
+      }
+      throw cause;
+    } finally {
+      if (belongsToVisit()) {
+        restMutationRef.current = false;
+        powderBusyRef.current = false;
+        setPowderPhase(null); scheduleTick(0);
+      }
+    }
+  }, [runTick, scheduleTick, stopWithError]);
 
   const sendCare = (kind: CareKind) => {
     const target = selectedRef.current;
@@ -550,16 +655,17 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         <p>웅장한 절벽 아래, 바다를 향한 프라이빗 라운지.</p>
       </div>}
 
-      {phase === "ready" && !selected && !characterPickerOpen && !stargazing.lying && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !selected && !characterPickerOpen && !powderOpen && powderPhase !== "adding" && !stargazing.lying && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud}>
       {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
-      {phase === "ready" && !stargazing.lying && fire && meRef.current && <CampfireControls
-        fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || controlsPaused}
-        onAddWood={onAddWood} onFireChange={applyFire}
+      {phase === "ready" && fire && meRef.current && <div className={styles.fireControls} hidden={stargazing.lying}><CampfireControls key={`${communityId}:${meRef.current.id}`}
+        fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || characterPickerOpen || selected !== null || stargazing.lying}
+        onAddWood={onAddWood} onAddPowder={onAddPowder} onFireChange={applyFire}
+        powderOpen={powderOpen} onPowderOpenChange={setPowderOpen}
         view={view} onToggleView={() => engineRef.current?.toggleView()}
-      />}
-      {phase === "ready" && !selected && !characterPickerOpen && <div className={styles.skyControl} aria-label="별빛 자리" aria-busy={Boolean(skyPhase)}>
+      /></div>}
+      {phase === "ready" && !selected && !characterPickerOpen && !powderOpen && <div className={styles.skyControl} aria-label="별빛 자리" aria-busy={Boolean(skyPhase)}>
         {stargazing.lying ? <>
           <p className={styles.skyTogether}><IconMoon />함께 하늘을 보는 중<span>{stargazing.occupied} / {stargazing.capacity}</span></p>
           <div className={styles.skyActions}>
@@ -571,7 +677,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
             </button>
           </div>
         </> : <div className={styles.skyEntry}>
-          <button type="button" className={styles.skyGo} disabled={!restEnabled || Boolean(skyPhase) || woodBusy || lost || skyFull} onClick={() => void toggleStargazing()}>
+          <button type="button" className={styles.skyGo} disabled={!restEnabled || Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || skyFull} onClick={() => void toggleStargazing()}>
             <span className={styles.skyIcon} aria-hidden="true"><IconMoon /></span>
             <span className={styles.skyCopy}><strong>{skyActionLabel}</strong><small>{!restEnabled ? "잠시 후 함께 쉬어가요" : skyPhase ? "조금만 기다려 주세요" : skyFull ? "자리가 나면 함께 누울 수 있어요" : stargazing.near ? "머리를 맞대고 잠깐 쉬어가요" : "별빛 자리로 걸어가요"}</small></span>
             {restEnabled && <span className={styles.skyCount} aria-label={`${stargazing.capacity}자리 중 ${stargazing.occupied}명`}>{stargazing.occupied}<small>/ {stargazing.capacity}</small></span>}

@@ -35,7 +35,8 @@ public class BeachService {
             long now = clock.getAsLong();
             if (cachedFire != null && now >= fireReadAt && now - fireReadAt < TICK_FIRE_CACHE_MS
                 && (cachedFire.nextLogBurnAt() == null || now < cachedFire.nextLogBurnAt())
-                && (cachedFire.colorExpiresAt() == null || now < cachedFire.colorExpiresAt())) return cachedFire;
+                && (cachedFire.colorExpiresAt() == null || now < cachedFire.colorExpiresAt())
+                && (cachedFire.powder() == null || now < cachedFire.powder().expiresAt())) return cachedFire;
             // Set the cache only after a successful read. Its age starts before I/O, not after it.
             BeachFireService.FireView fresh = fire.snapshot(communityId);
             cachedFire = fresh;
@@ -120,6 +121,19 @@ public class BeachService {
             throw ApiException.badRequest("모닥불 가까이에서 장작을 넣어 주세요.");
         }
         BeachFireService.FireView updated = fire.addWood(visit.communityId(), userId, requestId);
+        RoomBinding binding = rooms.get(visit.communityId());
+        if (binding != null) binding.invalidateFire();
+        return updated;
+    }
+
+    public BeachFireService.FireView addPowder(String ticket, String userId, String requestId, String color) {
+        Visit visit = requireVisit(ticket, userId);
+        double dx = visit.presence().x() - BeachFireService.FIRE_X;
+        double dz = visit.presence().z() - BeachFireService.FIRE_Z;
+        if (dx * dx + dz * dz > BeachFireService.WOOD_RADIUS * BeachFireService.WOOD_RADIUS) {
+            throw ApiException.badRequest("모닥불 가까이에서 색가루를 넣어 주세요.");
+        }
+        BeachFireService.FireView updated = fire.addPowder(visit.communityId(), userId, requestId, color);
         RoomBinding binding = rooms.get(visit.communityId());
         if (binding != null) binding.invalidateFire();
         return updated;

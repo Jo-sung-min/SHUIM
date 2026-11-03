@@ -329,6 +329,11 @@ export class Cove {
     this.fireFlare = Math.max(0, amount);
   }
 
+  /** Use the fire shader's already blended color so powder and rainbow also light the sand. */
+  setFireTint(color: THREE.Color) {
+    this.fireTargetColor.copy(color);
+  }
+
   update(time: number) {
     const dt = this.lastUpdateTime === null ? 1 / 60 : THREE.MathUtils.clamp(time - this.lastUpdateTime, 0, 0.1);
     this.lastUpdateTime = time;

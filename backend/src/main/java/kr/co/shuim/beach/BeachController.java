@@ -50,6 +50,7 @@ public class BeachController {
         public EnterBody(String communityId) { this(communityId, null); }
     }
     public record WoodBody(String ticket, String requestId) {}
+    public record PowderBody(String ticket, String requestId, String color) {}
     public record RestBody(String ticket, String action, String spotId) {}
 
     private CircleService.Circle requireMember(String communityId, DbUser me) {
@@ -144,5 +145,14 @@ public class BeachController {
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireMember(visit.communityId(), me);
         return beach.addWood(body.ticket(), me.id(), body.requestId());
+    }
+
+    @PostMapping("/api/beach/fire/powder")
+    public BeachFireService.FireView powder(@RequestBody(required = false) PowderBody body, HttpServletRequest req, HttpServletResponse res) {
+        DbUser me = auth.requireUser(req, res);
+        if (body == null) throw ApiException.badRequest("색가루 요청을 다시 시도해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        return beach.addPowder(body.ticket(), me.id(), body.requestId(), body.color());
     }
 }

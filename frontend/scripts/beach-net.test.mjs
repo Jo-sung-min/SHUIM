@@ -9,7 +9,7 @@ const source = stripTypeScriptTypes(typed).replace(/\bexport\s+(?=(?:async\s+)?f
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 function setup(fetch) {
   const context = { fetch, Error, AbortSignal };
-  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, setBeachRest, BeachGone, BeachUnavailable };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, setBeachRest, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
   return context.api;
 }
 
@@ -107,5 +107,46 @@ test("timed-out rest requests give retryable guidance and ticks also carry a tim
   await assert.rejects(setup(async () => { throw timeout; }).setBeachRest("ticket", "lie"), /잠시 후 다시 눌러/);
   let signal;
   await setup(async (_url, options) => { signal = options.signal; return response({}); }).tickBeach({ ticket: "ticket", x: 0, z: 0, yaw: 0, moving: false });
+  assert.ok(signal instanceof AbortSignal);
+});
+
+const powderFire = (color = "rainbow") => ({ logs: 2, maxLogs: 12, intensity: .3, color: "amber", queuedPops: 0, serverTime: 1_800_000_000_000, powderEnabled: true, powder: { id: "public-event", color, startedAt: 1_800_000_000_000, expiresAt: 1_800_000_090_000 } });
+
+test("powder sends only the free action fields and preserves UUID/color when retrying with a refreshed ticket", async () => {
+  const calls = [];
+  const api = setup(async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body), signal: options.signal });
+    if (calls.length === 1) throw new TypeError("response lost after sending");
+    return response(powderFire());
+  });
+  const id = "f0d6bec3-0218-43c4-925d-974a2ddc82ae";
+  await assert.rejects(api.addFirePowder("old-ticket", id, "rainbow"));
+  const confirmed = await api.addFirePowder("new-ticket", id, "rainbow");
+  assert.deepEqual(calls.map((call) => call.body), [{ ticket: "old-ticket", requestId: id, color: "rainbow" }, { ticket: "new-ticket", requestId: id, color: "rainbow" }]);
+  assert.ok(calls.every((call) => call.url === "/api/beach/fire/powder" && call.signal instanceof AbortSignal));
+  assert.equal(confirmed.powder.id, "public-event");
+  assert.equal(confirmed.color, "amber", "powder does not replace the base/paid fire color");
+});
+
+test("powder cooldown and definite rejection do not fabricate a color effect or close the room", async () => {
+  const cooling = setup(async () => response({ error: "색가루는 10초에 한 번씩 넣을 수 있어요." }, 429));
+  await assert.rejects(cooling.addFirePowder("ticket", "uuid", "rose"), (error) => error instanceof cooling.BeachCooldown && !(error instanceof cooling.BeachUnavailable));
+  const noWood = setup(async () => response({ error: "장작을 먼저 넣어 주세요." }, 409));
+  await assert.rejects(noWood.addFirePowder("ticket", "uuid", "rose"), (error) => error instanceof noWood.BeachUnavailable && error.status === 409);
+  const expired = setup(async () => response({}, 410));
+  await assert.rejects(expired.addFirePowder("ticket", "uuid", "rose"), (error) => error instanceof expired.BeachGone);
+});
+
+test("powder requires a confirmed event snapshot while idempotent retries may return a newer or expired overlay", async () => {
+  for (const invalid of [null, {}, { ...powderFire(), powderEnabled: false }, { ...powderFire(), powder: { ...powderFire().powder, color: "invalid" } }, { ...powderFire(), powder: { ...powderFire().powder, expiresAt: 0 } }]) {
+    await assert.rejects(setup(async () => response(invalid)).addFirePowder("ticket", "uuid", "rainbow"), /모닥불의 색을 확인하지 못했어요/);
+  }
+  assert.equal((await setup(async () => response(powderFire("ocean"))).addFirePowder("ticket", "uuid", "rose")).powder.color, "ocean", "a retry reflects current authoritative room state");
+  assert.equal((await setup(async () => response({ ...powderFire(), powder: null })).addFirePowder("ticket", "uuid", "rose")).powder, null);
+});
+
+test("wood requests also have a bounded wait so they cannot permanently lock other fire actions", async () => {
+  let signal;
+  await setup(async (_url, options) => { signal = options.signal; return response(powderFire()); }).addFirewood("ticket", "uuid");
   assert.ok(signal instanceof AbortSignal);
 });

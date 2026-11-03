@@ -43,6 +43,36 @@
 .viewButton:focus-visible { outline:3px solid rgba(255,255,255,.6); outline-offset:3px; }
 .viewButton[aria-pressed="true"] { background:rgba(169,156,242,.32); border-color:rgba(200,190,255,.55); }
 .woodNotice { margin:0; padding:8px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(16,14,28,.5); color:#fff2dc; font-size:12.5px; font-weight:600; text-align:center; pointer-events:none; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); animation:campfireUp .25s ease-out; }
+.withPowder { gap:6px; padding:8px; }
+.withPowder .woodButton { max-width:96px; min-width:78px; padding:6px 9px; font-size:12px; white-space:normal; text-align:center; }
+.withPowder .woodLabel { line-height:1.35; }
+.withPowder .viewButton { width:44px; }
+.powderButton { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; flex:none; gap:3px; min-width:78px; max-width:96px; min-height:50px; padding:6px 9px; border:1px solid #d2c3f17a; border-radius:16px; background:linear-gradient(160deg,#bcb0e838,#858bc624); color:#f8f2ff; font:inherit; font-size:12px; font-weight:700; line-height:1.35; text-align:center; cursor:pointer; transition:transform .12s,background .15s,opacity .15s; }
+.powderButton > span { display:inline-flex; align-items:center; justify-content:center; gap:4px; }
+.powderButton svg { width:16px; height:16px; flex:none; }
+.powderButton small { font-size:10px; font-weight:500; color:#e3dcefbd; }
+.powderButton:hover { background:#b5a6e34d; }
+.powderButton:active, .powderChoice:active, .powderConfirm:active { transform:scale(.96); }
+.powderButton:disabled, .powderConfirm:disabled { opacity:.5; cursor:default; transform:none; }
+.powderButton[data-busy="true"] { opacity:.85; }
+.powderButton:focus-visible, .powderChoice:focus-visible, .powderConfirm:focus-visible { outline:3px solid #dfc6ff; outline-offset:3px; }
+.woodButton[data-busy="true"] .woodLabel > span, .powderButton[data-busy="true"] svg { display:none; }
+.powderSheet { padding:2px 0 8px; color:var(--text); touch-action:pan-y; }
+.powderIntro { margin:2px 0 18px; font-size:14px; line-height:1.7; color:var(--text-2); }
+.powderIntro > span { font-size:12px; color:var(--text-3); }
+.powderChoices { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; }
+.powderChoice { display:flex; flex-direction:column; align-items:center; gap:10px; min-width:0; min-height:92px; padding:12px 3px 10px; border:1.5px solid var(--border); border-radius:15px; background:var(--surface); color:var(--text-2); font:inherit; font-size:11px; font-weight:650; cursor:pointer; transition:transform .12s,background .15s,border-color .15s; }
+.powderChoice[aria-pressed="true"] { border-color:#8d9f8e; background:var(--surface-2); color:var(--text); box-shadow:inset 0 0 0 1px #8d9f8e40; }
+.powderChoice:disabled { cursor:default; }
+.powderSwatch { position:relative; display:grid; place-items:center; width:35px; height:35px; border-radius:50%; background:var(--powder-fill); box-shadow:inset 0 1px 3px #fff9,0 4px 8px #28213417; color:#fffaf3; }
+.powderSwatch > svg { width:18px; height:18px; filter:drop-shadow(0 1px 1px #61505d4d); }
+.powderSwatch i { position:absolute; right:-6px; bottom:-3px; display:grid; place-items:center; width:17px; height:17px; border-radius:50%; background:#5d7865; border:2px solid var(--surface); color:#fff; }
+.powderSwatch i svg { width:10px; height:10px; }
+.powderHint { margin:16px 0; font-size:12px; line-height:1.7; color:var(--text-3); }
+.powderConfirm { width:100%; min-height:49px; padding:13px 16px; border:0; border-radius:15px; background:#526d60; color:#fffdf8; font:inherit; font-size:14px; font-weight:700; cursor:pointer; transition:transform .12s,opacity .15s; }
+@media(max-width:440px) { .withPowder .fireIcon { display:none; }.withPowder .fireCopy small { font-size:10px; } }
+@media(max-width:380px) { .withPowder .woodButton, .withPowder .powderButton { min-width:64px; max-width:83px; padding:6px 7px; font-size:11.5px; }.withPowder .woodLabel > span, .withPowder .powderButton svg { display:none; }.withPowder .viewButton { width:42px; } }
+@media(prefers-reduced-motion:reduce) { .powderButton, .powderChoice, .powderConfirm { transition:none; } }
 @keyframes campfireUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 @media(prefers-reduced-motion:reduce) { .bar, .woodNotice { animation:none; } }
 /* 예전 불씨팝 결제 화면(ArchivedFirePopControls)이 아직 쓰는 이름 */

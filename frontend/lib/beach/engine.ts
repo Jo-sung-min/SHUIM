@@ -14,6 +14,7 @@ import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
 import { resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
+import { FirePowderPlayback } from "./fire-powder";
 import { SkyLanterns } from "./lanterns";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
 import type { CareKind, FireState, RemotePlayer, RestPresence } from "./net";
@@ -248,7 +249,8 @@ export class BeachEngine {
   private tinted: THREE.Material[] = [];
   private fire: CoastalFire | null = null;
   private lanterns: SkyLanterns | null = null;
-  private fireState = { logs: 3, color: "amber" };
+  private fireState: FireState = { logs: 3, maxLogs: 12, intensity: 0.25, color: "amber", serverTime: 0, queuedPops: 0, powder: null };
+  private firePowder = new FirePowderPlayback();
   private nearFire = false;
   private inputPaused = false;
   /** 화면 조이스틱·외부 입력이 넣는 걷기 벡터 (x: 오른쪽, y: 앞). 키보드와 합쳐진다 */
@@ -499,9 +501,12 @@ export class BeachEngine {
 
   setFireState(state: FireState) {
     if (!state || !Number.isFinite(state.logs)) return;
-    this.fireState = { logs: Math.max(0, Math.min(12, state.logs)), color: state.color };
+    const playback = this.firePowder.sync(state, performance.now());
+    if (!playback.accepted) return;
+    this.fireState = { ...state, logs: Math.max(0, Math.min(12, state.logs)) };
     this.fire?.setState(this.fireState.logs, this.fireState.color);
     this.cove.setFireState(this.fireState.logs, this.fireState.color);
+    if (playback.burst) this.fire?.tossPowder(playback.burst, this.camera.position, this.firePowder.sample(performance.now()).hue);
   }
 
   /** 장작이 들어갔을 때: 불이 확 타올랐다가 잦아든다 (내가 넣었든 다른 사람이 넣었든) */
@@ -522,7 +527,7 @@ export class BeachEngine {
     if (this.restSeat) this.standUp();
     const dx = this.self.x - FIRE.x, dz = this.self.z - FIRE.z;
     const d = Math.hypot(dx, dz) || 1;
-    const stand = 2.3;
+    const stand = this.camera.aspect < 0.75 ? 4.2 : 3.2;
     return this.walkTo({ x: FIRE.x + (dx / d) * stand, z: FIRE.z + (dz / d) * stand }, { x: FIRE.x, z: FIRE.z });
   }
 
@@ -1345,10 +1350,12 @@ export class BeachEngine {
     void dt;
     this.skyMat.uniforms.uTime.value = this.time;
     this.seaMat.uniforms.uTime.value = this.time;
+    this.fire?.setPowder(this.firePowder.sample(performance.now()));
+    this.fire?.update(this.time, this.camera);
     this.cove.setFireFlare(this.fire?.flareAmount ?? 0);
+    if (this.fire) this.cove.setFireTint(this.fire.lightColor);
     this.cove.update(this.time);
     (this.seaMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
-    this.fire?.update(this.time, this.camera);
     this.lanterns?.update(this.time);
   }
 

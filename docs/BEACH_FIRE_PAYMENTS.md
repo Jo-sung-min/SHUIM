@@ -2,7 +2,17 @@
 
 ## 현재 상태: 판매 중지
 
-바닷가에는 모닥불 상태와 무료 장작 넣기만 표시합니다. 상점·가격·구매 버튼을 연결하지 않으며 결제 SDK를 호출하지 않습니다. 기존 상점은 `frontend/components/beach/ArchivedFirePopControls.tsx`, 기존 콜백은 `frontend/app/beach/payment/ArchivedPaymentCallback.tsx`에 보존했습니다. 두 컴포넌트 모두 현재 화면에서 가져오거나 렌더링하지 않습니다. 공개 `/beach/payment` 경로는 안내와 돌아가기 링크만 표시하며 자동 결제 확인을 실행하지 않습니다.
+바닷가에는 모닥불 상태, 무료 장작 넣기와 무료 색 가루 상호작용을 표시합니다. 상점·가격·구매 버튼을 연결하지 않으며 결제 SDK를 호출하지 않습니다. 기존 상점은 `frontend/components/beach/ArchivedFirePopControls.tsx`, 기존 콜백은 `frontend/app/beach/payment/ArchivedPaymentCallback.tsx`에 보존했습니다. 두 컴포넌트 모두 현재 화면에서 가져오거나 렌더링하지 않습니다. 공개 `/beach/payment` 경로는 안내와 돌아가기 링크만 표시하며 자동 결제 확인을 실행하지 않습니다.
+
+## 무료 색 가루
+
+`가루 넣기`에서 로즈·민트·블루·라벤더·무지개를 고른다. 모닥불 가까이 이동한 뒤 가루를 넣으면 같은 소로우의 방문자에게 색 변화가 공유된다. 효과는 90초이며, 무지개는 여러 색을 천천히 이어 보여 준다. 같은 모닥불에는 10초에 한 번 넣을 수 있고, 불씨만 남아 있으면 장작을 먼저 넣어야 한다.
+
+`POST /api/beach/fire/powder`는 로그인 계정의 방문 티켓·멤버 자격·거리를 확인한다. 요청에는 `ticket`, UUID `requestId`, `color`가 필요하다. 응답이 유실되면 같은 요청 번호와 색으로 재시도한다. 효과는 모닥불 응답의 `powder`로 전달되며 기존 결제 색·예약·지급 기록을 바꾸지 않는다. 효과 종료 후 원래 모닥불 색으로 돌아간다. 짧은 무료 효과는 메모리에 두므로 서버 재시작 시 초기화된다.
+
+새 기능을 활성화하려면 `backend/build/libs/sorow-server-2026-11-04-fire-powder.jar`를 AWS `sorow-api-prod`의 **업로드 및 배포**에 올린다. 기존 환경 변수는 유지하며, 이 변경에 새 DB 테이블이나 결제 설정은 필요하지 않다. 이전 서버는 가루 기능을 제공하지 않고, 서버 업데이트 후 바닷가에 다시 들어오면 사용할 수 있다.
+
+## 보존한 유료 불씨팝
 
 서버 설정 `app.payments.sales-enabled`의 기본값과 예시 환경 변수 `PAYMENT_SALES_ENABLED`는 `false`입니다. 결제 키가 설정되어 있어도 카탈로그는 `available:false`, 빈 상품 목록을 반환하고 새 주문은 503으로 차단합니다. 판매 중지 상태의 웹 확인 API는 승인 POST를 실행하지 않고 제공자의 조회 GET만 사용하므로 새 결제를 승인하지 않습니다. 기존에 완료한 결제의 권리, 영수증 확인·복원, 환불 재조회와 예약 효과 동기화는 유지합니다.
 

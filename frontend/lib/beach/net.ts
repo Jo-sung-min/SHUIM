@@ -34,6 +34,13 @@ export interface RestPresence {
 
 export type FireColor = "amber" | "rose" | "aurora" | "ocean" | "violet";
 export type PopColor = Exclude<FireColor, "amber">;
+export type PowderColor = PopColor | "rainbow";
+export interface FirePowder {
+  id: string;
+  color: PowderColor;
+  startedAt: number;
+  expiresAt: number;
+}
 export interface FireState {
   logs: number;
   maxLogs: number;
@@ -44,6 +51,8 @@ export interface FireState {
   nextLogBurnAt?: number | null;
   queueEndsAt?: number | null;
   queuedPops: number;
+  powderEnabled?: boolean;
+  powder?: FirePowder | null;
 }
 
 export interface RemotePlayer {
@@ -118,6 +127,14 @@ export class BeachGone extends Error {
   }
 }
 
+/** A temporary shared action cooldown does not make the room unavailable. */
+export class BeachCooldown extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BeachCooldown";
+  }
+}
+
 async function post<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
@@ -131,6 +148,7 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
     const message = json.error ?? `요청 실패 (${res.status})`;
+    if (res.status === 429) throw new BeachCooldown(message);
     if ([400, 401, 403, 404, 409].includes(res.status)) throw new BeachUnavailable(message, res.status);
     throw new Error(message);
   }
@@ -139,7 +157,14 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
 
 export const enterBeach = (communityId: string, character?: BeachCharacter) => post<EnterResponse>("/api/beach/enter", { communityId, character }, { signal: AbortSignal.timeout(8000) });
 export const tickBeach = (body: TickRequest) => post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
-export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId });
+export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId }, { signal: AbortSignal.timeout(8000) });
+export async function addFirePowder(ticket: string, requestId: string, color: PowderColor): Promise<FireState> {
+  const state = await post<FireState>("/api/beach/fire/powder", { ticket, requestId, color }, { signal: AbortSignal.timeout(8000) });
+  const powder = state?.powder;
+  const validPowder = powder === null || Boolean(powder && typeof powder.id === "string" && powder.id && ["rose", "aurora", "ocean", "violet", "rainbow"].includes(powder.color) && Number.isFinite(powder.startedAt) && Number.isFinite(powder.expiresAt) && powder.expiresAt > powder.startedAt);
+  if (!state || state.powderEnabled !== true || !validPowder || !Number.isInteger(state.logs) || state.logs < 0 || !Number.isInteger(state.maxLogs) || state.maxLogs <= 0 || !Number.isFinite(state.serverTime)) throw new Error("모닥불의 색을 확인하지 못했어요. 같은 가루로 다시 확인해 주세요.");
+  return state;
+}
 
 export async function setBeachRest(ticket: string, action: "lie" | "stand"): Promise<RestPresence> {
   let state: RestPresence;

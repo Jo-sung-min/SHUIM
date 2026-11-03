@@ -1,5 +1,6 @@
 package kr.co.shuim.beach;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import kr.co.shuim.config.ApiException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,33 +18,54 @@ public class BeachFireService {
     public static final double FIRE_X = 0, FIRE_Z = 12, WOOD_RADIUS = 5;
     public static final Set<String> PAID_COLORS = Set.of("rose", "aurora", "ocean", "violet");
 
+    public record PowderView(String id, String color, long startedAt, long expiresAt) {}
     public record FireView(int logs, int maxLogs, double intensity, String color, Long colorExpiresAt,
-                           long serverTime, Long nextLogBurnAt, Long queueEndsAt, int queuedPops) {}
+                           long serverTime, Long nextLogBurnAt, Long queueEndsAt, int queuedPops,
+                           boolean powderEnabled, @JsonInclude(JsonInclude.Include.ALWAYS) PowderView powder) {
+        public FireView(int logs, int maxLogs, double intensity, String color, Long colorExpiresAt,
+                        long serverTime, Long nextLogBurnAt, Long queueEndsAt, int queuedPops) {
+            this(logs, maxLogs, intensity, color, colorExpiresAt, serverTime, nextLogBurnAt, queueEndsAt, queuedPops, true, null);
+        }
+        FireView withPowder(PowderView value, long now) {
+            return new FireView(logs, maxLogs, intensity, color, colorExpiresAt, now, nextLogBurnAt, queueEndsAt, queuedPops, true, value);
+        }
+    }
     public record Activation(String color, long startsAt, long expiresAt, FireView fire) {}
 
     private final BeachFireRepository repository;
     private final LongSupplier clock;
+    private final BeachFirePowder powders;
 
     @Autowired
     public BeachFireService(BeachFireRepository repository) { this(repository, System::currentTimeMillis); }
-    BeachFireService(BeachFireRepository repository, LongSupplier clock) { this.repository = repository; this.clock = clock; }
+    BeachFireService(BeachFireRepository repository, LongSupplier clock) {
+        this.repository = repository;
+        this.clock = clock;
+        this.powders = new BeachFirePowder(clock);
+    }
 
     public FireView snapshot(String communityId) {
         long now = clock.getAsLong();
-        return view(repository.read(communityId, initialFuel(now)), repository.grants(communityId), now);
+        return powders.snapshot(communityId, view(repository.read(communityId, initialFuel(now)), repository.grants(communityId), now));
+    }
+
+    /** Free 90-second overlay; paid color entitlements and queue timing stay untouched. */
+    public FireView addPowder(String communityId, String userId, String requestId, String color) {
+        UUID key = BeachFirePowder.requestKey(requestId, color);
+        return powders.add(communityId, userId, key, color, snapshot(communityId));
     }
 
     public FireView addWood(String communityId, String userId, String requestId) {
         UUID key = requestKey(requestId);
         return repository.locked(communityId, initialFuel(clock.getAsLong()), locked -> {
             long now = clock.getAsLong();
-            if (locked.hasWoodRequest(userId, key)) return view(locked.row(), locked.grants(), now);
+            if (locked.hasWoodRequest(userId, key)) return powders.snapshot(communityId, view(locked.row(), locked.grants(), now));
             Long last = locked.lastWoodAt(userId);
             if (last != null && now - last < WOOD_COOLDOWN_MS) throw new ApiException(429, "장작은 3초에 한 번씩 넣을 수 있어요.");
             if (logCount(locked.row().fuelUntil(), now) >= MAX_LOGS) throw new ApiException(409, "장작이 충분해요. 조금 타고 나면 더 넣어 주세요.");
             locked.fuelUntil(Math.max(now, locked.row().fuelUntil()) + LOG_BURN_MS);
             locked.recordWood(userId, key, now);
-            return view(locked.row(), locked.grants(), now);
+            return powders.snapshot(communityId, view(locked.row(), locked.grants(), now));
         });
     }
 
@@ -60,14 +82,14 @@ public class BeachFireService {
                     throw new ApiException(409, "이미 다른 불씨팝에 사용한 결제예요.");
                 }
                 // Refunded orders must never be reactivated by a delayed webhook.
-                return new Activation(grant.color(), grant.startsAt(), grant.expiresAt(), view(locked.row(), locked.grants(), now));
+                return new Activation(grant.color(), grant.startsAt(), grant.expiresAt(), powders.snapshot(communityId, view(locked.row(), locked.grants(), now)));
             }
             long startsAt = locked.grants().stream().mapToLong(BeachFireRepository.Grant::expiresAt).max().orElse(now);
             startsAt = Math.max(now, startsAt);
             var grant = new BeachFireRepository.Grant(providerOrderId, communityId, userId, color, startsAt,
                 Math.addExact(startsAt, COLOR_DURATION_MS), null);
             locked.insertGrant(grant);
-            return new Activation(color, grant.startsAt(), grant.expiresAt(), view(locked.row(), locked.grants(), now));
+            return new Activation(color, grant.startsAt(), grant.expiresAt(), powders.snapshot(communityId, view(locked.row(), locked.grants(), now)));
         });
     }
 

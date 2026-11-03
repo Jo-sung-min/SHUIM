@@ -109,6 +109,8 @@ button.glass:active { transform: scale(0.96); }
   gap: 10px;
   pointer-events: none;
 }
+.fireControls { display: flex; flex-direction: column; align-items: center; width: 100%; gap: 10px; pointer-events: none; }
+.fireControls[hidden] { display: none; }
 .hint {
   max-width: 100%;
   margin: 0;

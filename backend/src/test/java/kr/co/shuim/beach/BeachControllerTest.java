@@ -43,7 +43,7 @@ class BeachControllerTest {
     }
 
     private void activeMember(String communityId) {
-        when(auth.requireUser(any(), any())).thenReturn(user("u-1", null));
+        doReturn(user("u-1", null)).when(auth).requireUser(any(), any());
         when(auth.currentUser(any())).thenReturn(Optional.of(user("u-1", null)));
         when(circles.byId(communityId)).thenReturn(circle(communityId));
         when(circles.member(communityId, "u-1")).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
@@ -250,5 +250,44 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(auth.requireUser(any(), any())).thenReturn(user("u-1", 1L));
         assertEquals(403, assertThrows(ApiException.class, () -> controller.wood(new BeachController.WoodBody(ticket, java.util.UUID.randomUUID().toString()), request, response)).status());
+    }
+
+    @Test
+    void freePowderRechecksSessionMembershipOwnershipAndCannotAlterPaidColor() throws Exception {
+        activeMember("circle-a");
+        String ticket = (String) enter("circle-a").get("ticket");
+        beach.tick(ticket, 0, 12, 0, false, null, null);
+        String requestId = java.util.UUID.randomUUID().toString();
+        var body = new BeachController.PowderBody(ticket, requestId, "rainbow");
+        var added = controller.powder(body, request, response);
+        assertEquals("amber", added.color());
+        assertTrue(added.powderEnabled());
+        assertEquals("rainbow", added.powder().color());
+        assertEquals(added.powder(), ((BeachFireService.FireView) enter("circle-a").get("fire")).powder());
+        assertEquals(added.powder(), controller.fire("circle-a", request).powder());
+
+        when(circles.member("circle-a", "u-1")).thenReturn(Optional.empty());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.powder(body, request, response)).status());
+        activeMember("circle-a");
+        when(auth.requireUser(any(), any())).thenReturn(user("u-1", 1L));
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.powder(body, request, response)).status());
+        when(auth.requireUser(any(), any())).thenReturn(user("different", null));
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.powder(body, request, response)).status());
+        when(auth.requireUser(any(), any())).thenThrow(ApiException.unauthorized("로그인해 주세요."));
+        assertEquals(401, assertThrows(ApiException.class, () -> controller.powder(body, request, response)).status());
+
+        activeMember("circle-a");
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        mvc.perform(post("/api/beach/fire/powder").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"requestId\":\"" + requestId + "\",\"color\":\"rainbow\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.powder.color").value("rainbow"))
+            .andExpect(jsonPath("$.powderEnabled").value(true)).andExpect(jsonPath("$.color").value("amber"));
+        mvc.perform(post("/api/beach/fire/powder").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"requestId\":7,\"color\":\"rainbow\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/beach/fire/powder").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"requestId\":\"" + requestId + "\",\"color\":[]}"))
+            .andExpect(status().isBadRequest());
+        assertEquals(added.powder(), controller.fire("circle-a", request).powder());
     }
 }
