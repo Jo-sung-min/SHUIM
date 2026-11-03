@@ -1,0 +1,993 @@
+"use client";
+
+/**
+ * 소로우 바닷가 엔진 (three.js 코어만). 하늘·바다·모래는 셰이더로, 캐릭터·소품은 도트 스프라이트 빌보드로 그린다.
+ * 실시간 조명은 없다: 시간대(lib/beach/daylight)의 색을 셰이더 uniform 과 스프라이트 색조에 넣어 전부 물들인다.
+ *
+ * 성능: 안티앨리어싱 없음, DPR 상한, 보일 때만 그리기, 프레임이 떨어지면 해상도를 낮추고 30fps 로 제한. 그림자·포스트프로세싱 없음.
+ * 이 파일은 /beach 를 열 때만 동적으로 내려받는다 (three 가 첫 번들에 섞이지 않게).
+ */
+import * as THREE from "three";
+import { CHAR_ATLAS, CHAR_FRAME, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
+import { type Daylight, daylightAt } from "./daylight";
+import type { CareKind, RemotePlayer } from "./net";
+
+export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
+export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
+export interface JoystickState { originX: number; originY: number; dx: number; dy: number }
+
+export interface EngineHandlers {
+  /** 사람을 탭해 골랐거나(플레이어) 빈 곳을 탭해 풀었을 때(null) */
+  onSelect: (player: RemotePlayer | null) => void;
+  /** 터치 조이스틱을 그리기 위한 상태 (손을 떼면 null) */
+  onJoystick: (state: JoystickState | null) => void;
+  /** 화질을 낮췄을 때 (프레임이 떨어져서) */
+  onQuality?: (level: "high" | "low") => void;
+}
+
+export interface EngineOptions {
+  bounds: Bounds;
+  spawn: { x: number; z: number; yaw: number };
+  /** 시각을 고정해 보기 (개발용). null 이면 기기 시계 */
+  hourOverride: number | null;
+  handlers: EngineHandlers;
+}
+
+const WALK_SPEED = 3.2;
+const EYE = 1.55;
+const PX = 1 / 16; // 캐릭터 16px = 1m
+const CYCLE = [CHAR_FRAME.walk1, CHAR_FRAME.idle, CHAR_FRAME.walk2, CHAR_FRAME.idle];
+
+/* ---------------- 셰이더 ---------------- */
+const NOISE_GLSL = `
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}`;
+
+const SKY_VERT = `
+varying vec3 vDir;
+void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+
+const SKY_FRAG = `
+uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uSunGlow;
+uniform vec3 uMoonDir; uniform float uStars; uniform vec3 uCloud; uniform float uCloudAmount; uniform float uTime;
+varying vec3 vDir;
+${NOISE_GLSL}
+void main() {
+  vec3 d = normalize(vDir);
+  float h = max(d.y, 0.0);
+  vec3 col = mix(uHorizon, uTop, pow(h, 0.5));
+  float sd = max(dot(d, uSunDir), 0.0);
+  float sunUp = smoothstep(-0.08, 0.05, uSunDir.y);
+  col += uSunColor * sunUp * (smoothstep(0.9987, 0.9993, sd) + pow(sd, 64.0) * 0.6 * uSunGlow + pow(sd, 5.0) * 0.18 * uSunGlow);
+  float md = max(dot(d, uMoonDir), 0.0);
+  float moonUp = smoothstep(-0.05, 0.08, uMoonDir.y) * uStars;
+  col += vec3(0.95, 0.96, 1.0) * moonUp * (smoothstep(0.9992, 0.9996, md) * 0.9 + pow(md, 200.0) * 0.5);
+  if (uStars > 0.0 && d.y > 0.0) {
+    vec2 sp = d.xz / (d.y + 0.25) * 90.0;
+    vec2 cell = floor(sp);
+    float s = hash(cell);
+    float star = step(0.992, s);
+    vec2 off = fract(sp) - 0.5 - (vec2(hash(cell + 7.3), hash(cell + 3.1)) - 0.5) * 0.6;
+    float dot_ = 1.0 - smoothstep(0.0, 0.18, length(off));
+    float tw = 0.65 + 0.35 * sin(uTime * (1.5 + s * 3.0) + s * 60.0);
+    col += star * dot_ * tw * uStars * smoothstep(0.0, 0.25, d.y) * (0.6 + 0.4 * hash(cell + 1.7));
+  }
+  if (d.y > 0.02) {
+    vec2 cp = d.xz / (d.y + 0.18) * 2.2 + vec2(uTime * 0.012, uTime * 0.004);
+    float n = noise(cp) * 0.55 + noise(cp * 2.3 + 11.0) * 0.3 + noise(cp * 5.1 + 23.0) * 0.15;
+    float cl = smoothstep(0.62 - uCloudAmount * 0.2, 0.86, n) * smoothstep(0.02, 0.22, d.y);
+    col = mix(col, uCloud, cl * 0.9);
+  }
+  if (d.y < 0.0) col = uHorizon;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const WORLD_VERT = `
+varying vec3 vWorld;
+void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+
+const SEA_FRAG = `
+uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uFoam; uniform vec3 uSkyRef;
+uniform vec3 uLightDir; uniform vec3 uLightColor; uniform float uSpec; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uCamPos;
+varying vec3 vWorld;
+${NOISE_GLSL}
+float waves(vec2 p, float t) {
+  return sin(p.x * 0.32 + t * 1.1) * 0.5 + sin(p.y * 0.5 - t * 1.7 + p.x * 0.1) * 0.6 + noise(p * 0.22 + vec2(t * 0.12, -t * 0.28)) * 1.4;
+}
+void main() {
+  vec2 p = vWorld.xz; float t = uTime;
+  float w = waves(p, t);
+  float e = 0.35;
+  float wx = waves(p + vec2(e, 0.0), t) - w;
+  float wz = waves(p + vec2(0.0, e), t) - w;
+  vec3 n = normalize(vec3(-wx * 1.6, 1.0, -wz * 1.6));
+  float shore = clamp(-vWorld.z / 14.0, 0.0, 1.0);
+  vec3 col = mix(uShallow, uDeep, shore);
+  vec3 V = normalize(uCamPos - vWorld);
+  float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
+  col = mix(col, uSkyRef, fres * 0.55);
+  vec3 H = normalize(uLightDir + V);
+  float nh = max(dot(n, H), 0.0);
+  float up = smoothstep(0.0, 0.15, uLightDir.y);
+  col += uLightColor * (pow(nh, 160.0) * uSpec + pow(nh, 24.0) * 0.25 * uSpec) * up;
+  col = mix(col, uFoam, smoothstep(1.7, 2.4, w) * 0.35);
+  float edge = vWorld.z + 0.7 + sin(t * 0.8 + p.x * 0.18) * 0.7 + noise(vec2(p.x * 0.5, t * 0.3)) * 0.6;
+  float foamLine = 1.0 - smoothstep(0.0, 1.4, abs(edge));
+  float foamNoise = noise(p * 1.8 + vec2(t * 0.5, 0.0));
+  col = mix(col, uFoam, foamLine * (0.45 + 0.55 * foamNoise));
+  float alpha = 1.0 - smoothstep(-0.2, 1.6, edge);
+  float dist = distance(uCamPos, vWorld);
+  col = mix(col, uFog, smoothstep(uFogNear, uFogFar, dist));
+  gl_FragColor = vec4(col, alpha);
+}`;
+
+const SAND_FRAG = `
+uniform sampler2D uMap; uniform vec3 uTint; uniform vec3 uFog; uniform vec3 uCamPos; uniform float uFogNear; uniform float uFogFar; uniform float uTime;
+varying vec3 vWorld;
+void main() {
+  vec3 near_ = texture2D(uMap, vWorld.xz * 0.28).rgb;
+  vec3 far_ = texture2D(uMap, vWorld.xz * 0.05).rgb;
+  float dist = distance(uCamPos, vWorld);
+  vec3 col = mix(near_, far_, smoothstep(10.0, 40.0, dist)) * uTint;
+  float edge = vWorld.z + 0.7 + sin(uTime * 0.8 + vWorld.x * 0.18) * 0.7;
+  float wet = 1.0 - smoothstep(0.0, 3.0, edge);
+  col *= 1.0 - wet * 0.26;
+  col = mix(col, uFog, smoothstep(uFogNear, uFogFar, dist));
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+/* ---------------- 도우미 ---------------- */
+type Region = { x: number; y: number; w: number; h: number };
+
+function regionTexture(base: THREE.Texture, r: Region, atlasW: number, atlasH: number): THREE.Texture {
+  const t = base.clone();
+  t.repeat.set(r.w / atlasW, r.h / atlasH);
+  t.offset.set(r.x / atlasW, 1 - (r.y + r.h) / atlasH);
+  t.needsUpdate = true;
+  return t;
+}
+
+function pixelTexture(t: THREE.Texture, srgb: boolean) {
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.ClampToEdgeWrapping;
+  t.needsUpdate = true;
+  return t;
+}
+
+const v3 = (c: readonly number[]) => new THREE.Vector3(c[0], c[1], c[2]);
+
+/** 바닷가의 소품 배치. 야자수는 뒤쪽 모래 언덕, 바위는 양 끝 물가, 모닥불은 가운데 */
+const PLACEMENT: { prop: PropName; x: number; z: number; scale: number; decal?: boolean; r?: number }[] = [
+  { prop: "palm", x: -22, z: 24, scale: 1.7, r: 0.6 },
+  { prop: "palm2", x: -14, z: 27.5, scale: 1.5, r: 0.6 },
+  { prop: "palm", x: 16, z: 26.5, scale: 1.6, r: 0.6 },
+  { prop: "palm2", x: 24, z: 22, scale: 1.8, r: 0.6 },
+  { prop: "palm", x: -27, z: 15, scale: 1.4, r: 0.6 },
+  { prop: "palm2", x: 27.5, z: 11, scale: 1.5, r: 0.6 },
+  { prop: "umbrella", x: -9, z: 15.5, scale: 1.3, r: 0.35 },
+  { prop: "umbrella", x: 11.5, z: 13.5, scale: 1.3, r: 0.35 },
+  { prop: "rock", x: -26, z: 0.8, scale: 1.4, r: 1.0 },
+  { prop: "rock2", x: -23.5, z: 2.4, scale: 1.3, r: 0.7 },
+  { prop: "rock", x: 25, z: 1.2, scale: 1.5, r: 1.0 },
+  { prop: "rock2", x: 22.5, z: 0.3, scale: 1.2, r: 0.7 },
+  { prop: "rock2", x: 27.5, z: 4, scale: 1.1, r: 0.7 },
+  { prop: "sign", x: -3.2, z: 14.2, scale: 1.1, r: 0.35 },
+  { prop: "mat", x: -8.6, z: 17.4, scale: 1.3, decal: true },
+  { prop: "mat", x: 12.2, z: 15.6, scale: 1.3, decal: true },
+];
+const SHELLS: [PropName, number, number][] = [
+  ["shell", -6, 2.1], ["star", 3.5, 1.4], ["shell2", 9, 3.2], ["shell", -14, 4.6], ["star", 18, 2.8], ["shell2", -19, 6.1],
+  ["shell", 14.5, 7.4], ["shell2", -2.5, 5.8], ["star", -10.5, 8.9], ["shell", 6.5, 9.6], ["shell2", 21, 6.6], ["shell", -24, 9.1],
+];
+const FIRE = { x: 0, z: 18.5 };
+
+interface PlayerNode {
+  data: RemotePlayer;
+  sprite: THREE.Sprite;
+  mat: THREE.SpriteMaterial;
+  tex: THREE.Texture;
+  shadow: THREE.Mesh;
+  label: THREE.Sprite | null;
+  labelNick: string;
+  cur: { x: number; z: number };
+  target: { x: number; z: number; yaw: number; moving: boolean };
+  animT: number;
+  bounce: number;
+  seen: number;
+}
+
+interface FxNode {
+  sprite: THREE.Sprite;
+  mat: THREE.SpriteMaterial;
+  vel: THREE.Vector3;
+  life: number;
+  ttl: number;
+  swirl: number;
+  base: THREE.Vector3;
+  kind: "heart" | "sparkle" | "leaf" | "glow" | "petal";
+}
+
+export class BeachEngine {
+  private renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera: THREE.PerspectiveCamera;
+  private clock = new THREE.Clock();
+  private raf = 0;
+  private running = false;
+  private disposed = false;
+  private time = 0;
+
+  private sky!: THREE.Mesh;
+  private skyMat!: THREE.ShaderMaterial;
+  private seaMat!: THREE.ShaderMaterial;
+  private sandMat!: THREE.ShaderMaterial;
+  private charTex!: THREE.Texture;
+  private propTex!: THREE.Texture;
+  private tinted: THREE.Material[] = [];
+  private fire: { sprite: THREE.Sprite; frames: THREE.Texture[]; logs: THREE.Texture; glow: THREE.Sprite; glowMat: THREE.SpriteMaterial } | null = null;
+  private obstacles: { x: number; z: number; r: number }[] = [];
+  private shadowGeo = new THREE.PlaneGeometry(0.9, 0.45);
+  private shadowMat!: THREE.MeshBasicMaterial;
+  private ring!: THREE.Mesh;
+  private ringMat!: THREE.MeshBasicMaterial;
+
+  private players = new Map<string, PlayerNode>();
+  private fx: FxNode[] = [];
+  private fxTex!: Record<FxNode["kind"], THREE.Texture>;
+
+  private self: SelfState & { pitch: number; bobT: number };
+  private bounds: Bounds;
+  private keys = new Set<string>();
+  private joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+  private look = { active: false, id: -1, lx: 0, ly: 0, sx: 0, sy: 0, t: 0, moved: false };
+  private selected: string | null = null;
+
+  private daylight: Daylight;
+  private hourOverride: number | null;
+  private lastDaylightAt = 0;
+
+  quality: "high" | "low" = "high";
+  private frameAvg = 16;
+  private slowSince = 0;
+  private lastRender = 0;
+  private scale: number;
+  private mobile: boolean;
+
+  private handlers: EngineHandlers;
+  private canvas: HTMLCanvasElement;
+  private ready: Promise<void>;
+
+  constructor(canvas: HTMLCanvasElement, opts: EngineOptions) {
+    this.canvas = canvas;
+    this.handlers = opts.handlers;
+    this.bounds = opts.bounds;
+    this.hourOverride = opts.hourOverride;
+    this.self = { x: opts.spawn.x, z: opts.spawn.z, yaw: opts.spawn.yaw, moving: false, pitch: -0.02, bobT: 0 };
+    this.mobile = typeof navigator !== "undefined" && (navigator.maxTouchPoints > 0 || /Android|iPhone|iPad/i.test(navigator.userAgent));
+    this.scale = this.mobile ? 0.85 : 1;
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1.3 : 1.5));
+    this.renderer.setClearColor(0x000000, 1);
+    this.renderer.sortObjects = true;
+
+    this.camera = new THREE.PerspectiveCamera(this.mobile ? 72 : 66, 1, 0.1, 520);
+    this.camera.rotation.order = "YXZ";
+    this.daylight = daylightAt(this.hour());
+    this.scene.fog = new THREE.Fog(0xffffff, this.daylight.fogNear, this.daylight.fogFar);
+
+    this.buildSky();
+    this.buildGround();
+    this.ready = this.loadAtlases().then(() => {
+      this.buildProps();
+      this.applyDaylight(this.daylight);
+    });
+    this.applyDaylight(this.daylight);
+    this.bindInput();
+    this.resize();
+  }
+
+  /** 아틀라스까지 다 읽었을 때 */
+  whenReady() {
+    return this.ready;
+  }
+
+  /* ---------------- 만들기 ---------------- */
+  private hour() {
+    if (this.hourOverride !== null) return this.hourOverride;
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  }
+
+  private buildSky() {
+    this.skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTop: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uSunColor: { value: new THREE.Vector3(1, 1, 1) }, uSunGlow: { value: 0 }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
+        uStars: { value: 0 }, uCloud: { value: new THREE.Vector3(1, 1, 1) }, uCloudAmount: { value: 0.4 }, uTime: { value: 0 },
+      },
+      vertexShader: SKY_VERT,
+      fragmentShader: SKY_FRAG,
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+    });
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(400, 28, 14), this.skyMat);
+    this.sky.renderOrder = -10;
+    this.sky.frustumCulled = false;
+    this.scene.add(this.sky);
+  }
+
+  private buildGround() {
+    const sandTex = new THREE.TextureLoader().load("/beach/sand.png", (t) => {
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = THREE.RepeatWrapping;
+      t.magFilter = THREE.LinearFilter;
+      t.minFilter = THREE.LinearMipmapLinearFilter;
+      t.colorSpace = THREE.NoColorSpace;
+      t.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+      t.needsUpdate = true;
+    });
+    this.sandMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: sandTex }, uTint: { value: new THREE.Vector3(1, 1, 1) }, uFog: { value: new THREE.Vector3() }, uCamPos: { value: new THREE.Vector3() },
+        uFogNear: { value: 28 }, uFogFar: { value: 150 }, uTime: { value: 0 },
+      },
+      vertexShader: WORLD_VERT,
+      fragmentShader: SAND_FRAG,
+    });
+    const sand = new THREE.Mesh(new THREE.PlaneGeometry(900, 160), this.sandMat);
+    sand.rotation.x = -Math.PI / 2;
+    sand.position.set(0, 0, 77); // z: -3 ~ 157
+    sand.renderOrder = 0;
+    this.scene.add(sand);
+
+    this.seaMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 }, uDeep: { value: new THREE.Vector3() }, uShallow: { value: new THREE.Vector3() }, uFoam: { value: new THREE.Vector3(1, 1, 1) },
+        uSkyRef: { value: new THREE.Vector3() }, uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightColor: { value: new THREE.Vector3(1, 1, 1) }, uSpec: { value: 1 },
+        uFog: { value: new THREE.Vector3() }, uFogNear: { value: 28 }, uFogFar: { value: 150 }, uCamPos: { value: new THREE.Vector3() },
+      },
+      vertexShader: WORLD_VERT,
+      fragmentShader: SEA_FRAG,
+      transparent: true,
+      depthWrite: false,
+    });
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 420), this.seaMat);
+    sea.rotation.x = -Math.PI / 2;
+    sea.position.set(0, 0.012, -208); // z: -418 ~ 2
+    sea.renderOrder = 1;
+    this.scene.add(sea);
+  }
+
+  private async loadAtlases() {
+    const loader = new THREE.TextureLoader();
+    const [chars, props] = await Promise.all([loader.loadAsync("/beach/chars.png"), loader.loadAsync("/beach/props.png")]);
+    this.charTex = pixelTexture(chars, true);
+    this.propTex = pixelTexture(props, true);
+    const fxOf = (name: PropName) => regionTexture(this.propTex, PROP[name], PROPS_ATLAS.width, PROPS_ATLAS.height);
+    this.fxTex = { heart: fxOf("heart"), sparkle: fxOf("sparkle"), leaf: fxOf("leaf"), glow: fxOf("glow"), petal: fxOf("petal") };
+    this.shadowMat = new THREE.MeshBasicMaterial({ map: fxOf("shadow"), transparent: true, depthWrite: false, opacity: 0.8 });
+    this.ringMat = new THREE.MeshBasicMaterial({ map: fxOf("ring"), transparent: true, depthWrite: false, color: 0xa99cf2 });
+    this.ring = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), this.ringMat);
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.position.y = 0.03;
+    this.ring.visible = false;
+    this.ring.renderOrder = 2;
+    this.scene.add(this.ring);
+  }
+
+  private propSprite(name: PropName, x: number, z: number, scale: number) {
+    const r = PROP[name];
+    const mat = new THREE.SpriteMaterial({ map: regionTexture(this.propTex, r, PROPS_ATLAS.width, PROPS_ATLAS.height), transparent: true, alphaTest: 0.1, depthWrite: true });
+    const s = new THREE.Sprite(mat);
+    s.center.set(0.5, 0);
+    s.scale.set(r.w * PX * scale, r.h * PX * scale, 1);
+    s.position.set(x, 0, z);
+    s.renderOrder = 3;
+    this.tinted.push(mat);
+    this.scene.add(s);
+    return s;
+  }
+
+  private decal(name: PropName, x: number, z: number, scale: number, rot = 0) {
+    const r = PROP[name];
+    const mat = new THREE.MeshBasicMaterial({ map: regionTexture(this.propTex, r, PROPS_ATLAS.width, PROPS_ATLAS.height), transparent: true, alphaTest: 0.1, depthWrite: false });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(r.w * PX * scale, r.h * PX * scale), mat);
+    m.rotation.x = -Math.PI / 2;
+    m.rotation.z = rot;
+    m.position.set(x, 0.02, z);
+    m.renderOrder = 2;
+    this.tinted.push(mat);
+    this.scene.add(m);
+    return m;
+  }
+
+  private buildProps() {
+    for (const p of PLACEMENT) {
+      if (p.decal) this.decal(p.prop, p.x, p.z, p.scale, ((p.x * 7) % 10) / 10 - 0.5);
+      else this.propSprite(p.prop, p.x, p.z, p.scale);
+      if (p.r) this.obstacles.push({ x: p.x, z: p.z, r: p.r });
+    }
+    SHELLS.forEach(([name, x, z], i) => this.decal(name, x, z, 0.9, (i * 1.7) % 3.1));
+
+    // 모닥불: 불꽃 3프레임 + 밤에만 켜지는 빛
+    const frames = (["fire0", "fire1", "fire2"] as PropName[]).map((n) => regionTexture(this.propTex, PROP[n], PROPS_ATLAS.width, PROPS_ATLAS.height));
+    const logs = regionTexture(this.propTex, PROP.logs, PROPS_ATLAS.width, PROPS_ATLAS.height);
+    const fireMat = new THREE.SpriteMaterial({ map: logs, transparent: true, alphaTest: 0.1, depthWrite: true });
+    const fire = new THREE.Sprite(fireMat);
+    fire.center.set(0.5, 0);
+    fire.scale.set(PROP.fire0.w * PX * 1.3, PROP.fire0.h * PX * 1.3, 1);
+    fire.position.set(FIRE.x, 0, FIRE.z);
+    fire.renderOrder = 3;
+    this.scene.add(fire);
+    this.tinted.push(fireMat);
+    const glowMat = new THREE.SpriteMaterial({ map: this.fxTex.glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xff8a3a, opacity: 0 });
+    const glow = new THREE.Sprite(glowMat);
+    glow.scale.set(9, 9, 1);
+    glow.position.set(FIRE.x, 0.9, FIRE.z);
+    glow.renderOrder = 4;
+    this.scene.add(glow);
+    this.fire = { sprite: fire, frames, logs, glow, glowMat };
+    this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.0 });
+  }
+
+  /* ---------------- 시간대 ---------------- */
+  setHourOverride(h: number | null) {
+    this.hourOverride = h;
+    this.applyDaylight(daylightAt(this.hour()));
+  }
+
+  get daylightNow() {
+    return this.daylight;
+  }
+
+  private applyDaylight(d: Daylight) {
+    this.daylight = d;
+    const u = this.skyMat.uniforms;
+    (u.uTop.value as THREE.Vector3).set(...d.skyTop);
+    (u.uHorizon.value as THREE.Vector3).set(...d.skyHorizon);
+    (u.uSunDir.value as THREE.Vector3).set(...d.sun);
+    (u.uSunColor.value as THREE.Vector3).set(...d.sunColor);
+    u.uSunGlow.value = d.sunGlow;
+    (u.uMoonDir.value as THREE.Vector3).set(...d.moon);
+    u.uStars.value = d.stars;
+    (u.uCloud.value as THREE.Vector3).set(...d.cloud);
+    u.uCloudAmount.value = d.cloudAmount;
+
+    const s = this.seaMat.uniforms;
+    (s.uDeep.value as THREE.Vector3).set(...d.seaDeep);
+    (s.uShallow.value as THREE.Vector3).set(...d.seaShallow);
+    (s.uFoam.value as THREE.Vector3).set(...d.foam);
+    (s.uSkyRef.value as THREE.Vector3).set(...d.skyHorizon);
+    const sunUp = d.sun[1] > -0.02;
+    (s.uLightDir.value as THREE.Vector3).set(...(sunUp ? d.sun : d.moon));
+    const moonLight: [number, number, number] = [0.8, 0.85, 1.0];
+    (s.uLightColor.value as THREE.Vector3).set(...(sunUp ? d.sunColor : moonLight));
+    s.uSpec.value = d.specular;
+    (s.uFog.value as THREE.Vector3).set(...d.fog);
+    s.uFogNear.value = d.fogNear;
+    s.uFogFar.value = d.fogFar;
+
+    const g = this.sandMat.uniforms;
+    (g.uTint.value as THREE.Vector3).set(...d.sandTint);
+    (g.uFog.value as THREE.Vector3).set(...d.fog);
+    g.uFogNear.value = d.fogNear;
+    g.uFogFar.value = d.fogFar;
+
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.setRGB(d.fog[0], d.fog[1], d.fog[2], THREE.SRGBColorSpace);
+    fog.near = d.fogNear;
+    fog.far = d.fogFar;
+    this.renderer.setClearColor(fog.color, 1);
+
+    for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
+    for (const p of this.players.values()) p.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
+    if (this.shadowMat) this.shadowMat.opacity = 0.35 + 0.45 * Math.max(0, d.sun[1]);
+  }
+
+  /* ---------------- 입력 ---------------- */
+  private bindInput() {
+    const c = this.canvas;
+    c.style.touchAction = "none";
+    c.addEventListener("pointerdown", this.onPointerDown);
+    c.addEventListener("pointermove", this.onPointerMove);
+    c.addEventListener("pointerup", this.onPointerUp);
+    c.addEventListener("pointercancel", this.onPointerUp);
+    c.addEventListener("contextmenu", (e) => e.preventDefault());
+    window.addEventListener("keydown", this.onKey);
+    window.addEventListener("keyup", this.onKey);
+    window.addEventListener("blur", this.onBlur);
+  }
+
+  private onPointerDown = (e: PointerEvent) => {
+    if (this.disposed) return;
+    this.canvas.setPointerCapture?.(e.pointerId);
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const touch = e.pointerType !== "mouse";
+    if (touch && !this.joy.active && x < rect.width * 0.46 && y > rect.height * 0.28) {
+      this.joy = { active: true, id: e.pointerId, ox: x, oy: y, x: 0, y: 0 };
+      this.handlers.onJoystick({ originX: x, originY: y, dx: 0, dy: 0 });
+      return;
+    }
+    if (!this.look.active) this.look = { active: true, id: e.pointerId, lx: x, ly: y, sx: x, sy: y, t: performance.now(), moved: false };
+  };
+
+  private onPointerMove = (e: PointerEvent) => {
+    if (this.disposed) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (this.joy.active && e.pointerId === this.joy.id) {
+      const R = 46;
+      let dx = x - this.joy.ox, dy = y - this.joy.oy;
+      const len = Math.hypot(dx, dy);
+      if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R; }
+      this.joy.x = dx / R;
+      this.joy.y = dy / R;
+      this.handlers.onJoystick({ originX: this.joy.ox, originY: this.joy.oy, dx, dy });
+      return;
+    }
+    if (this.look.active && e.pointerId === this.look.id) {
+      const dx = x - this.look.lx, dy = y - this.look.ly;
+      this.look.lx = x;
+      this.look.ly = y;
+      if (Math.hypot(x - this.look.sx, y - this.look.sy) > 8) this.look.moved = true;
+      if (this.look.moved) {
+        const k = e.pointerType === "mouse" ? 0.0042 : 0.0062;
+        this.self.yaw -= dx * k;
+        this.self.pitch = Math.max(-0.55, Math.min(0.5, this.self.pitch - dy * k * 0.75));
+      }
+    }
+  };
+
+  private onPointerUp = (e: PointerEvent) => {
+    if (this.disposed) return;
+    this.canvas.releasePointerCapture?.(e.pointerId);
+    if (this.joy.active && e.pointerId === this.joy.id) {
+      this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+      this.handlers.onJoystick(null);
+      return;
+    }
+    if (this.look.active && e.pointerId === this.look.id) {
+      const tap = !this.look.moved && performance.now() - this.look.t < 350 && e.type !== "pointercancel";
+      this.look.active = false;
+      if (tap) this.tapAt(this.look.sx, this.look.sy);
+    }
+  };
+
+  private onKey = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (!["w", "a", "s", "d", "q", "e", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift"].includes(k)) return;
+    if (e.type === "keydown") this.keys.add(k);
+    else this.keys.delete(k);
+    if (k.startsWith("Arrow")) e.preventDefault();
+  };
+
+  private onBlur = () => {
+    this.keys.clear();
+  };
+
+  /** 화면 좌표를 탭했을 때 그 자리의 사람을 고른다 */
+  private tapAt(x: number, y: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const sprites = [...this.players.values()].map((p) => p.sprite);
+    const hits = ray.intersectObjects(sprites, false);
+    let pid: string | null = null;
+    if (hits.length) {
+      for (const [id, p] of this.players) if (p.sprite === hits[0].object) pid = id;
+    } else {
+      // 멀어서 작게 보이는 사람은 화면에서 가까운 쪽으로 너그럽게
+      let best = 28;
+      for (const [id, p] of this.players) {
+        const v = p.sprite.position.clone();
+        v.y = 0.8;
+        v.project(this.camera);
+        if (v.z > 1) continue;
+        const sx = ((v.x + 1) / 2) * rect.width, sy = ((1 - v.y) / 2) * rect.height;
+        const dpx = Math.hypot(sx - x, sy - y);
+        if (dpx < best) { best = dpx; pid = id; }
+      }
+    }
+    this.select(pid);
+  }
+
+  select(pid: string | null) {
+    this.selected = pid;
+    const node = pid ? this.players.get(pid) : null;
+    this.ring.visible = Boolean(node);
+    this.handlers.onSelect(node ? node.data : null);
+  }
+
+  /* ---------------- 다른 사람들 ---------------- */
+  setPlayers(list: RemotePlayer[]) {
+    if (!this.charTex) return;
+    const now = performance.now();
+    const seen = new Set<string>();
+    for (const p of list) {
+      seen.add(p.pid);
+      let node = this.players.get(p.pid);
+      if (!node) {
+        node = this.createPlayer(p);
+        this.players.set(p.pid, node);
+      }
+      node.data = p;
+      node.target = { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving };
+      node.seen = now;
+      if (node.labelNick !== p.nick) this.setLabel(node, p.nick);
+    }
+    for (const [pid, node] of this.players) {
+      if (!seen.has(pid)) {
+        this.removePlayer(node);
+        this.players.delete(pid);
+        if (this.selected === pid) this.select(null);
+      }
+    }
+  }
+
+  private createPlayer(p: RemotePlayer): PlayerNode {
+    const tex = this.charTex.clone();
+    tex.repeat.set(1 / CHAR_ATLAS.cols, 1 / CHAR_ATLAS.rows);
+    tex.needsUpdate = true;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1, depthWrite: true });
+    mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
+    const sprite = new THREE.Sprite(mat);
+    sprite.center.set(0.5, 0);
+    sprite.scale.set(CHAR_ATLAS.cellW * PX, CHAR_ATLAS.cellH * PX, 1);
+    sprite.position.set(p.x, 0, p.z);
+    sprite.renderOrder = 3;
+    this.scene.add(sprite);
+    const shadow = new THREE.Mesh(this.shadowGeo, this.shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(p.x, 0.015, p.z);
+    shadow.renderOrder = 2;
+    this.scene.add(shadow);
+    const node: PlayerNode = {
+      data: p, sprite, mat, tex, shadow, label: null, labelNick: "",
+      cur: { x: p.x, z: p.z }, target: { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving }, animT: Math.random() * 10, bounce: 0, seen: performance.now(),
+    };
+    this.setLabel(node, p.nick);
+    this.setFrame(node, CHAR_VIEW.front, CHAR_FRAME.idle, p.skin);
+    return node;
+  }
+
+  private setLabel(node: PlayerNode, nick: string) {
+    if (node.label) {
+      this.scene.remove(node.label);
+      (node.label.material as THREE.SpriteMaterial).map?.dispose();
+      node.label.material.dispose();
+    }
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      ctx.font = "700 30px 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const w = Math.min(248, ctx.measureText(nick).width + 28);
+      ctx.fillStyle = "rgba(20, 16, 30, 0.55)";
+      ctx.beginPath();
+      ctx.roundRect(128 - w / 2, 10, w, 44, 22);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.fillText(nick, 128, 33);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+    const label = new THREE.Sprite(mat);
+    label.scale.set(2.2, 0.55, 1);
+    label.center.set(0.5, 0);
+    label.renderOrder = 6;
+    this.scene.add(label);
+    node.label = label;
+    node.labelNick = nick;
+  }
+
+  private removePlayer(node: PlayerNode) {
+    this.scene.remove(node.sprite, node.shadow);
+    node.mat.dispose();
+    node.tex.dispose();
+    if (node.label) {
+      this.scene.remove(node.label);
+      (node.label.material as THREE.SpriteMaterial).map?.dispose();
+      node.label.material.dispose();
+    }
+  }
+
+  private setFrame(node: PlayerNode, view: number, frame: number, skin: number) {
+    const col = view + frame;
+    const row = ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
+    node.tex.offset.set(col / CHAR_ATLAS.cols, 1 - (row + 1) / CHAR_ATLAS.rows);
+  }
+
+  /* ---------------- 위로 · 안아주기 이펙트 ---------------- */
+  /** toPid 가 null 이면 내가 받은 것: 눈앞에 띄운다 */
+  playCare(kind: CareKind, toPid: string | null) {
+    if (!this.fxTex) return;
+    let at: THREE.Vector3;
+    let node: PlayerNode | null = null;
+    if (toPid) {
+      node = this.players.get(toPid) ?? null;
+      if (!node) return;
+      at = new THREE.Vector3(node.cur.x, 0.9, node.cur.z);
+      node.bounce = kind === "hug" ? 1 : 0.5;
+    } else {
+      const f = this.facing();
+      at = new THREE.Vector3(this.self.x + f.x * 1.6, EYE - 0.35, this.self.z + f.z * 1.6);
+    }
+    const k = toPid ? 1 : 0.7; // 눈앞(내가 받은 것)은 가까워서 조금 작게
+    if (kind === "hug") {
+      for (let i = 0; i < 7; i++) this.spawnFx("heart", at, new THREE.Vector3((Math.random() - 0.5) * 1.1, 0.8 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6), 1.3 + Math.random() * 0.5, (0.2 + Math.random() * 0.1) * k, i * 0.07);
+      this.spawnFx("glow", at.clone().setY(at.y - 0.1), new THREE.Vector3(0, 0.2, 0), 1.1, 2.4 * k, 0, 0xff8fb0);
+    } else {
+      for (let i = 0; i < 8; i++) this.spawnFx("sparkle", at, new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 0.8, (Math.random() - 0.5) * 1.2), 1.4 + Math.random() * 0.5, (0.18 + Math.random() * 0.08) * k, i * 0.06, undefined, true);
+      for (let i = 0; i < 4; i++) this.spawnFx("leaf", at, new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.35 + Math.random() * 0.4, (Math.random() - 0.5) * 0.8), 1.8 + Math.random() * 0.4, 0.22 * k, i * 0.1, undefined, true);
+      this.spawnFx("glow", at.clone().setY(at.y - 0.1), new THREE.Vector3(0, 0.15, 0), 1.3, 2.6 * k, 0, 0xffd27a);
+    }
+  }
+
+  private spawnFx(kind: FxNode["kind"], at: THREE.Vector3, vel: THREE.Vector3, ttl: number, size: number, delay: number, color?: number, swirl = false) {
+    const mat = new THREE.SpriteMaterial({ map: this.fxTex[kind], transparent: true, depthWrite: false, opacity: 0, blending: kind === "glow" ? THREE.AdditiveBlending : THREE.NormalBlending });
+    if (color !== undefined) mat.color.setHex(color);
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(size, size, 1);
+    sprite.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.5));
+    sprite.renderOrder = 5;
+    this.scene.add(sprite);
+    this.fx.push({ sprite, mat, vel, life: -delay, ttl, swirl: swirl ? Math.random() * Math.PI * 2 : -1, base: sprite.position.clone(), kind });
+  }
+
+  private updateFx(dt: number) {
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      const f = this.fx[i];
+      f.life += dt;
+      if (f.life < 0) continue;
+      const t = f.life / f.ttl;
+      if (t >= 1) {
+        this.scene.remove(f.sprite);
+        f.mat.dispose();
+        this.fx.splice(i, 1);
+        continue;
+      }
+      if (f.swirl >= 0) {
+        const a = f.swirl + f.life * 3.2;
+        f.base.y += f.vel.y * dt;
+        f.sprite.position.set(f.base.x + Math.cos(a) * 0.55, f.base.y, f.base.z + Math.sin(a) * 0.55);
+      } else {
+        f.sprite.position.addScaledVector(f.vel, dt);
+        f.vel.y *= 1 - dt * 0.4;
+      }
+      f.mat.opacity = f.kind === "glow" ? Math.sin(t * Math.PI) * 0.55 : t < 0.15 ? t / 0.15 : 1 - Math.max(0, (t - 0.6) / 0.4);
+      if (f.kind === "glow") { const s = 1.6 + t * 1.6; f.sprite.scale.set(s, s, 1); }
+    }
+  }
+
+  /* ---------------- 프레임 ---------------- */
+  getSelf(): SelfState {
+    return { x: this.self.x, z: this.self.z, yaw: this.self.yaw, moving: this.self.moving };
+  }
+
+  private facing() {
+    return { x: -Math.sin(this.self.yaw), z: -Math.cos(this.self.yaw) };
+  }
+
+  start() {
+    if (this.running || this.disposed) return;
+    this.running = true;
+    this.clock.start();
+    this.lastRender = performance.now();
+    const loop = () => {
+      if (!this.running) return;
+      this.raf = requestAnimationFrame(loop);
+      this.frame();
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  stop() {
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    this.keys.clear();
+    if (this.joy.active) { this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 }; this.handlers.onJoystick(null); }
+    this.look.active = false;
+  }
+
+  resize() {
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    this.renderer.setSize(Math.max(1, Math.round(w * this.scale)), Math.max(1, Math.round(h * this.scale)), false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  private setQuality(level: "high" | "low") {
+    if (this.quality === level) return;
+    this.quality = level;
+    this.scale = level === "low" ? (this.mobile ? 0.65 : 0.75) : this.mobile ? 0.85 : 1;
+    this.renderer.setPixelRatio(level === "low" ? 1 : Math.min(window.devicePixelRatio || 1, this.mobile ? 1.3 : 1.5));
+    this.resize();
+    this.handlers.onQuality?.(level);
+  }
+
+  private frame() {
+    const now = performance.now();
+    if (this.quality === "low" && now - this.lastRender < 31) return; // 30fps 제한
+    const dt = Math.min(0.05, this.clock.getDelta());
+    const elapsed = now - this.lastRender;
+    this.lastRender = now;
+    // 프레임 시간 평균이 3초 넘게 느리면 화질을 낮춘다 (한 번 낮추면 이 방문 동안 유지). 탭 전환 같은 긴 멈춤은 세지 않는다
+    if (elapsed < 120) this.frameAvg += (elapsed - this.frameAvg) * 0.06;
+    if (this.quality === "high") {
+      if (this.frameAvg > 34) { if (!this.slowSince) this.slowSince = now; else if (now - this.slowSince > 3000) this.setQuality("low"); }
+      else this.slowSince = 0;
+    }
+    this.time += dt;
+
+    if (now - this.lastDaylightAt > 20_000) {
+      this.lastDaylightAt = now;
+      this.applyDaylight(daylightAt(this.hour()));
+    }
+
+    this.updateSelf(dt);
+    this.updatePlayers(dt);
+    this.updateFx(dt);
+    this.updateWorld(dt);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private updateSelf(dt: number) {
+    const k = this.keys;
+    let mx = this.joy.x, my = -this.joy.y; // 조이스틱: 위로 밀면 앞으로
+    if (k.has("w") || k.has("ArrowUp")) my += 1;
+    if (k.has("s") || k.has("ArrowDown")) my -= 1;
+    if (k.has("a")) mx -= 1;
+    if (k.has("d")) mx += 1;
+    const turn = (k.has("ArrowLeft") || k.has("q") ? 1 : 0) - (k.has("ArrowRight") || k.has("e") ? 1 : 0);
+    if (turn) this.self.yaw += turn * 1.9 * dt;
+    const len = Math.hypot(mx, my);
+    if (len > 1) { mx /= len; my /= len; }
+    const speed = WALK_SPEED * (k.has("Shift") ? 1.6 : 1) * Math.min(1, len);
+    this.self.moving = len > 0.08;
+    if (this.self.moving) {
+      const f = this.facing();
+      const r = { x: Math.cos(this.self.yaw), z: -Math.sin(this.self.yaw) };
+      const nx = this.self.x + (f.x * my + r.x * mx) * speed * dt;
+      const nz = this.self.z + (f.z * my + r.z * mx) * speed * dt;
+      const [cx, cz] = this.collide(nx, nz);
+      this.self.x = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
+      this.self.z = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
+      this.self.bobT += dt * speed * 2.6;
+    }
+    const bob = this.self.moving ? Math.sin(this.self.bobT) * 0.035 : 0;
+    this.camera.position.set(this.self.x, EYE + bob, this.self.z);
+    this.camera.rotation.set(this.self.pitch, this.self.yaw, 0);
+    this.sky.position.copy(this.camera.position);
+  }
+
+  private collide(x: number, z: number): [number, number] {
+    for (const o of this.obstacles) {
+      const dx = x - o.x, dz = z - o.z;
+      const d = Math.hypot(dx, dz);
+      const min = o.r + 0.35;
+      if (d < min && d > 1e-4) { x = o.x + (dx / d) * min; z = o.z + (dz / d) * min; }
+    }
+    return [x, z];
+  }
+
+  private updatePlayers(dt: number) {
+    const cam = this.camera.position;
+    const smooth = Math.min(1, dt * 7);
+    let selectedNode: PlayerNode | null = null;
+    for (const [pid, p] of this.players) {
+      const far = Math.hypot(p.target.x - p.cur.x, p.target.z - p.cur.z);
+      if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
+      else { p.cur.x += (p.target.x - p.cur.x) * smooth; p.cur.z += (p.target.z - p.cur.z) * smooth; }
+      const walking = p.target.moving || far > 0.12;
+      if (walking) p.animT += dt * 7;
+      const frame = walking ? CYCLE[Math.floor(p.animT) % CYCLE.length] : CHAR_FRAME.idle;
+      // 보는 방향: 상대가 나를 등지면 뒷모습, 마주 보면 앞모습, 아니면 옆모습
+      const fx = -Math.sin(p.target.yaw), fz = -Math.cos(p.target.yaw);
+      let dx = p.cur.x - cam.x, dz = p.cur.z - cam.z;
+      const dl = Math.hypot(dx, dz) || 1;
+      dx /= dl; dz /= dl;
+      const dot = fx * dx + fz * dz;
+      const cross = fx * dz - fz * dx;
+      const view = dot > 0.45 ? CHAR_VIEW.back : dot < -0.45 ? CHAR_VIEW.front : cross > 0 ? CHAR_VIEW.left : CHAR_VIEW.right;
+      this.setFrame(p, view, frame, p.data.skin);
+      if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
+      const hop = p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
+      p.sprite.position.set(p.cur.x, hop, p.cur.z);
+      p.shadow.position.set(p.cur.x, 0.015, p.cur.z);
+      if (p.label) {
+        p.label.position.set(p.cur.x, 1.62 + hop, p.cur.z);
+        p.label.visible = dl < 24;
+      }
+      if (pid === this.selected) selectedNode = p;
+    }
+    if (selectedNode) {
+      this.ring.position.set(selectedNode.cur.x, 0.03, selectedNode.cur.z);
+      const s = 1 + Math.sin(this.time * 5) * 0.07;
+      this.ring.scale.set(s, s, 1);
+      this.ringMat.opacity = 0.75 + Math.sin(this.time * 5) * 0.2;
+    }
+  }
+
+  private updateWorld(dt: number) {
+    void dt;
+    this.skyMat.uniforms.uTime.value = this.time;
+    this.seaMat.uniforms.uTime.value = this.time;
+    this.sandMat.uniforms.uTime.value = this.time;
+    (this.seaMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
+    (this.sandMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
+    if (this.fire) {
+      const lit = this.daylight.fire;
+      const mat = this.fire.sprite.material as THREE.SpriteMaterial;
+      if (lit > 0.05) {
+        const frame = this.fire.frames[Math.floor(this.time * 9) % 3];
+        if (mat.map !== frame) { mat.map = frame; mat.needsUpdate = true; }
+        this.fire.glowMat.opacity = lit * (0.42 + Math.sin(this.time * 7.3) * 0.06 + Math.sin(this.time * 3.1) * 0.05);
+      } else {
+        if (mat.map !== this.fire.logs) { mat.map = this.fire.logs; mat.needsUpdate = true; }
+        this.fire.glowMat.opacity = 0;
+      }
+    }
+  }
+
+  /* ---------------- 정리 ---------------- */
+  dispose() {
+    this.disposed = true;
+    this.stop();
+    const c = this.canvas;
+    c.removeEventListener("pointerdown", this.onPointerDown);
+    c.removeEventListener("pointermove", this.onPointerMove);
+    c.removeEventListener("pointerup", this.onPointerUp);
+    c.removeEventListener("pointercancel", this.onPointerUp);
+    window.removeEventListener("keydown", this.onKey);
+    window.removeEventListener("keyup", this.onKey);
+    window.removeEventListener("blur", this.onBlur);
+    for (const p of this.players.values()) this.removePlayer(p);
+    this.players.clear();
+    for (const f of this.fx) { this.scene.remove(f.sprite); f.mat.dispose(); }
+    this.fx = [];
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+      const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+      for (const mat of mats) {
+        const map = (mat as THREE.SpriteMaterial).map;
+        if (map) map.dispose();
+        mat.dispose();
+      }
+    });
+    this.scene.clear();
+    this.charTex?.dispose();
+    this.propTex?.dispose();
+    this.renderer.dispose();
+  }
+}
+
+/** WebGL 을 쓸 수 있는지 (못 쓰면 안내만 보여 준다) */
+export function webglSupported(): boolean {
+  try {
+    const c = document.createElement("canvas");
+    return Boolean(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}

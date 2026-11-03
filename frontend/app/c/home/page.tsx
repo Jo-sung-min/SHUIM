@@ -7,6 +7,7 @@ import { Circle, MyCircle, fetchMyCircles, fetchWarmCircles } from "@/lib/circle
 import ShoutTabs from "@/components/ShoutTabs";
 import CirclePosts, { circlePostsOf } from "@/components/CirclePosts";
 import { CircleRow } from "@/components/CircleRow";
+import BeachCard from "@/components/beach/BeachCard";
 import { LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { Empty, SkeletonList } from "@/components/ui";
 import { IconChevronR, IconInbox, IconLeaf, IconPlus, IconSearch } from "@/components/Icons";
@@ -76,6 +77,8 @@ export default function CircleHomePage() {
           ))}
           <Link href="/c" className={`${styles.mineChip} ${styles.add}`}><IconPlus aria-hidden="true" />소로우 찾기</Link>
         </div>
+
+        <BeachCard />
 
         <div className={styles.head}>
           <h2>{chips.length ? "내 소로우 사연" : "커뮤니티 소로우"}</h2>
