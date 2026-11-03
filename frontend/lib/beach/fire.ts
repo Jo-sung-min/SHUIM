@@ -62,13 +62,22 @@ export class CoastalFire {
         .replace("#include <map_fragment>", `#include <map_fragment>
           float grain = turbulence(vLogPosition.xy * vec2(24.0, 7.0) + vLogPosition.z * 9.0);
           float charred = smoothstep(0.24, 0.8, grain + (1.0 - smoothstep(0.2, 0.72, abs(vLogPosition.y))) * 0.25);
-          diffuseColor.rgb *= mix(vec3(0.58, 0.49, 0.4), vec3(0.065, 0.059, 0.054), charred);
+          diffuseColor.rgb *= mix(vec3(0.72, 0.64, 0.55), vec3(0.18, 0.16, 0.14), charred);
           float endGrain = 0.13 + 0.09 * sin(length(vLogPosition.xz) * 190.0 + grain * 4.0);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.095, 0.071, 0.051) * (0.65 + endGrain), smoothstep(0.65, 0.9, abs(vLogNormal.y)));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.105, 0.076) * (0.65 + endGrain), smoothstep(0.65, 0.9, abs(vLogNormal.y)));
         `)
         .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= pow(max(0.0, 1.0 - abs(grain * 2.0 - 1.0)), 24.0) * 0.55;");
     };
-    this.logs = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.16, 1.5, 14, 3), logMaterial, 12);
+    const logGeometry = new THREE.CylinderGeometry(0.12, 0.16, 1.5, 14, 7);
+    const barkVertices = logGeometry.getAttribute("position");
+    for (let i = 0; i < barkVertices.count; i++) {
+      const x = barkVertices.getX(i), y = barkVertices.getY(i), z = barkVertices.getZ(i);
+      const angle = Math.atan2(x, z);
+      const bark = 0.94 + Math.sin(angle * 5 + y * 7) * 0.06 + Math.cos(angle * 3 - y * 12) * 0.035;
+      barkVertices.setXYZ(i, x * bark, y, z * bark);
+    }
+    logGeometry.computeVertexNormals();
+    this.logs = new THREE.InstancedMesh(logGeometry, logMaterial, 12);
     const transform = new THREE.Object3D();
     for (let i = 0; i < 12; i++) {
       const a = (i % 3) * Math.PI / 3 + Math.floor(i / 3) * 0.41;
@@ -133,8 +142,8 @@ export class CoastalFire {
           float top = 1.0 - smoothstep(0.66 + flow * 0.2, 0.86 + flow * 0.13, p.y);
           float fork = (1.0 - smoothstep(0.025, 0.115, abs(p.x + bend * 0.5))) * smoothstep(0.38, 0.72, p.y);
           float wisps = smoothstep(0.13, 0.49, flow + (1.0 - p.y) * 0.22);
-          float alpha = body * top * wisps * (1.0 - fork * 0.8) * smoothstep(0.0, 0.045, p.y);
-          alpha *= (0.48 + flow * 0.27) * smoothstep(0.0, 0.035, uPower);
+          float alpha = body * top * wisps * (1.0 - fork * 0.8) * smoothstep(0.0, 0.13, p.y);
+          alpha *= (0.48 + flow * 0.27) * 0.4 * smoothstep(0.0, 0.035, uPower);
           float core = pow(body, 4.0) * exp(-p.y * 5.0) * (0.7 + flow * 0.4);
           vec3 color = mix(uOuter, uMid, clamp(body * 0.78 + detail * 0.16 - p.y * 0.22, 0.0, 1.0));
           color = mix(color, uCore * 1.1, core);
@@ -145,10 +154,10 @@ export class CoastalFire {
         }
       `,
       transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
-      blending: THREE.NormalBlending,
+      blending: THREE.AdditiveBlending,
     });
     this.material.forceSinglePass = true;
-    const flameGeometry = new THREE.PlaneGeometry(1, 1, 3, 10);
+    const flameGeometry = new THREE.PlaneGeometry(1, 1, 8, 20);
     flameGeometry.translate(0, 0.5, 0);
     const seeds = new Float32Array(17);
     for (let i = 0; i < seeds.length; i++) seeds[i] = i / seeds.length;
