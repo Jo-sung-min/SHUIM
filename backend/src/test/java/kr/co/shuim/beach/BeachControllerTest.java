@@ -5,10 +5,14 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleService;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.config.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -16,6 +20,9 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BeachControllerTest {
     private final AuthService auth = mock(AuthService.class);
@@ -81,6 +88,50 @@ class BeachControllerTest {
         assertEquals(403, assertThrows(ApiException.class, () -> enter("circle-a")).status());
         assertEquals(403, assertThrows(ApiException.class, () -> controller.count("circle-a", request)).status());
         verifyNoInteractions(blocks, circles);
+    }
+
+    @Test
+    void requestedCharacterIsReturnedAndChangesAreVisibleToOtherVisitors() {
+        activeMember("circle-a");
+        var out = controller.enter(new BeachController.EnterBody("circle-a", "female"), request, response);
+        assertEquals(1, ((Map<?, ?>) out.get("me")).get("skin"));
+        String ticket = (String) out.get("ticket");
+        var observer = beach.enter("circle-a", "u-observer", "다른 사람", Set.of(), "female");
+        controller.tick(new BeachController.TickBody(ticket, null, null, null, false, null, "male"));
+        assertEquals(0, beach.tick(observer.ticket(), 0, 10, 0, false, null, null).players().get(0).skin());
+        controller.tick(new BeachController.TickBody(ticket, null, null, null, false, null));
+        assertEquals(0, beach.tick(observer.ticket(), 0, 10, 0, false, null, null).players().get(0).skin());
+    }
+
+    @Test
+    void jsonContractAcceptsLegacyBodiesAndRejectsInvalidCharacterValues() throws Exception {
+        activeMember("circle-a");
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"communityId\":\"circle-a\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.me.skin").value(BeachRoom.skinOf("u-1")));
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"communityId\":\"circle-a\",\"character\":\"male\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.me.skin").value(0));
+        var existing = beach.enter("circle-a", "u-existing", "기존", Set.of(), "female");
+        int before = beach.count("circle-a");
+        for (String invalid : List.of("\"other\"", "\"\"", "7", "true", "{}", "[]")) {
+            mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"communityId\":\"circle-a\",\"character\":" + invalid + "}"))
+                .andExpect(status().isBadRequest());
+            mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + existing.ticket() + "\",\"character\":" + invalid + "}"))
+                .andExpect(status().isBadRequest());
+        }
+        assertEquals(before, beach.count("circle-a"));
+        assertEquals(1, existing.skin());
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + existing.ticket() + "\",\"character\":\"male\"}"))
+            .andExpect(status().isOk());
+        assertEquals(0, existing.skin());
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"expired\",\"character\":\"female\"}"))
+            .andExpect(status().isGone());
     }
 
     @Test

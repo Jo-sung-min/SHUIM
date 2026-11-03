@@ -43,7 +43,7 @@ class BeachRoomTest {
         assertTrue(a.x() >= -1.5 && a.x() <= 1.5 && a.z() >= 2.8 && a.z() <= 4);
         assertEquals(Math.atan2(a.x(), a.z() - 12), a.yaw());
         assertEquals(BeachRoom.skinOf("u-a"), a.skin());
-        assertTrue(a.skin() >= 0 && a.skin() < 8);
+        assertTrue(a.skin() >= 0 && a.skin() < 2);
 
         TickResult ra = at(room, a, 1, 10);
         assertEquals(List.of(b.pid()), pids(ra));
@@ -70,6 +70,41 @@ class BeachRoomTest {
         assertEquals(Set.of(tab2.pid(), b.pid()), Set.copyOf(pids(r)));
         assertEquals(3, r.count());
         assertEquals(Set.of(tab1.pid(), tab2.pid()), Set.copyOf(pids(at(room, b, 0, 10))));
+    }
+
+    @Test
+    void characterSelectionIsSharedAndOmittedTicksPreserveIt() {
+        BeachRoom room = room();
+        Presence a = room.enter("u-a", "가", Set.of(), "male");
+        Presence b = room.enter("u-b", "나", Set.of(), "female");
+        assertEquals(0, a.skin());
+        assertEquals(1, b.skin());
+        assertEquals(1, at(room, a, 0, 10).players().get(0).skin());
+        assertEquals(0, at(room, b, 1, 10).players().get(0).skin());
+
+        room.tick(a.ticket(), 0, 10, 0, false, null, null, "female");
+        assertEquals(1, at(room, b, 1, 10).players().get(0).skin());
+        at(room, a, 0, 10); // Old clients may omit the new field.
+        assertEquals(1, a.skin());
+        room.tick(a.ticket(), 0, 10, 0, false, null, null, "male");
+        assertEquals(0, at(room, b, 1, 10).players().get(0).skin());
+        assertEquals(1, b.skin(), "changing one presence never changes another player");
+    }
+
+    @Test
+    void invalidCharacterCannotEnterOrChangeExistingPresence() {
+        BeachRoom room = room();
+        assertEquals(400, assertThrows(ApiException.class, () -> room.enter("u-a", "가", Set.of(), "other")).status());
+        assertEquals(0, room.count());
+        Presence a = room.enter("u-a", "가", Set.of(), "male");
+        double oldX = a.x();
+        assertEquals(400, assertThrows(ApiException.class,
+            () -> room.tick(a.ticket(), 18, 10, 0, false, null, null, "")).status());
+        assertEquals(0, a.skin());
+        assertEquals(oldX, a.x());
+        clock.addAndGet(BeachRoom.IDLE_MS + 1);
+        assertNull(room.tick(a.ticket(), 0, 10, 0, false, null, null, "female"));
+        assertEquals(0, room.count(), "a selection cannot revive an expired ticket");
     }
 
     @Test
@@ -273,7 +308,8 @@ class BeachRoomTest {
         assertEquals("bot-2", rb.events().get(0).toId());
         assertEquals("파도", rb.events().get(0).toNick());
         PlayerView bot2 = rb.players().stream().filter(p -> p.id().equals("bot-2")).findFirst().orElseThrow();
-        assertEquals(4, bot2.skin());
+        assertEquals(0, bot2.skin());
+        assertTrue(rb.players().stream().allMatch(p -> p.skin() == 0 || p.skin() == 1));
     }
 
     @Test

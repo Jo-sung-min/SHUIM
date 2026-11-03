@@ -1,5 +1,7 @@
 "use client";
 
+import type { BeachCharacter } from "./appearance";
+
 /**
  * 바닷가 서버와 주고받기. 각 소로우에 멤버 전용 방(/api/beach, BeachRoom)이 하나씩 있다.
  *  - enter: 세션으로 한 번 인증하고 티켓을 받는다 (여기서만 DB 를 쓴다)
@@ -63,6 +65,7 @@ export interface TickRequest {
   z: number;
   yaw: number;
   moving: boolean;
+  character?: BeachCharacter;
   care?: { to: string; kind: CareKind };
 }
 
@@ -119,7 +122,7 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   return json;
 }
 
-export const enterBeach = (communityId: string) => post<EnterResponse>("/api/beach/enter", { communityId });
+export const enterBeach = (communityId: string, character?: BeachCharacter) => post<EnterResponse>("/api/beach/enter", { communityId, character });
 export const tickBeach = (body: TickRequest) => post<TickResponse>("/api/beach/tick", body);
 export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId });
 

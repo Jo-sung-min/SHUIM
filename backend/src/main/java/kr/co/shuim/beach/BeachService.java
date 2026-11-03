@@ -55,17 +55,26 @@ public class BeachService {
     BeachService(LongSupplier clock, BeachFireService fire) { this.clock = clock; this.fire = fire; }
 
     public BeachRoom.Presence enter(String communityId, String userId, String nick, Set<String> excluded) {
+        return enter(communityId, userId, nick, excluded, null);
+    }
+
+    public BeachRoom.Presence enter(String communityId, String userId, String nick, Set<String> excluded, String character) {
+        BeachRoom.selectedSkin(character);
         sweepTickets();
         RoomBinding binding = rooms.computeIfAbsent(communityId, id -> new RoomBinding(id, new BeachRoom(clock, false)));
-        BeachRoom.Presence presence = binding.room().enter(userId, nick, excluded);
+        BeachRoom.Presence presence = binding.room().enter(userId, nick, excluded, character);
         tickets.put(presence.ticket(), binding);
         return presence;
     }
 
     public BeachRoom.TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, null);
+    }
+
+    public BeachRoom.TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character) {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
         if (binding == null) return null;
-        BeachRoom.TickResult result = binding.room().tick(ticket, x, z, yaw, moving, careTo, careKind);
+        BeachRoom.TickResult result = binding.room().tick(ticket, x, z, yaw, moving, careTo, careKind, character);
         if (result == null) { tickets.remove(ticket, binding); return null; }
         return result.withFire(binding.tickFire(fire, clock));
     }

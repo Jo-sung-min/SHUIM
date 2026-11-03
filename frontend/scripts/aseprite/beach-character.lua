@@ -1,224 +1,165 @@
---[[
-  소로우 바닷가 도트 캐릭터 시트 생성 (Aseprite 배치 모드 Lua).
-  실행: node scripts/gen-beach-character.mjs  →  aseprite -b --script-param config=… --script scripts/aseprite/beach-character.lua
-
-  칸 72×104 에 SD 캐릭터 하나: 손으로 정한 계단형 실루엣, 덩어리진 머릿결, 큰 눈과 작은 몸.
-  방향 4개(앞·뒤·왼·오른쪽은 왼쪽을 좌우 반전) × 프레임 10개(서있기 4: 숨쉬기·깜빡임, 걷기 6) × 색 변형 8줄.
-  모든 픽셀은 불투명 아니면 투명(안티앨리어싱 없음), 칸 가장자리 1px 는 비워 둔다 (아틀라스 번짐 방지).
-  결과: chars.png(시트) · chars.json(배치) · beach-character.aseprite(변형 0, 태그 붙은 편집용 원본)
-]]
-local params = app.params
-assert(params.config, "--script-param config=<json 경로> 가 필요해요")
-
-local function readFile(path)
-  local f = assert(io.open(path, "rb"), "설정 파일을 열 수 없어요: " .. path)
-  local s = f:read("a")
-  f:close()
-  return s
+-- Approved pixel artwork -> native direction sheets and restrained integer-pixel animation.
+-- Front idle 0 is copied exactly. Clothing authoring lives in base-characters/*/front.aseprite.
+local p=app.params
+local root=assert(p.root)
+local f=assert(io.open(assert(p.config),'rb'));local cfg=json.decode(f:read('a'));f:close()
+local pc=app.pixelColor
+local W,H=cfg.cell.width,cfg.cell.height
+local N=cfg.anims.idle+cfg.anims.walk
+local sourceRoot=root..'/scripts/aseprite/base-characters'
+local function blank(w,h) return Image(w or W,h or H,ColorMode.RGB) end
+local function opaque(c) return pc.rgba(pc.rgbaR(c),pc.rgbaG(c),pc.rgbaB(c),255) end
+local function fringe(c)
+ local r,g,b=pc.rgbaR(c),pc.rgbaG(c),pc.rgbaB(c)
+ return (r>175 and g<100 and b<100 and r>g*1.9) or (r>160 and g>150 and b<105 and math.min(r,g)>b*1.6)
 end
-local cfg = json.decode(readFile(params.config))
-local CW, CH = cfg.cell.width, cfg.cell.height
-local IDLE, WALK = cfg.anims.idle, cfg.anims.walk
-local COLS = IDLE + WALK
-
--- ---------------------------------------------------------------- 색
-local pc = app.pixelColor
-local floor, sqrt, abs, max, min = math.floor, math.sqrt, math.abs, math.max, math.min
-local function round(v) return floor(v + 0.5) end
-local function hex(h)
-  local n = tonumber(h:sub(2), 16)
-  return { r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255 }
+local function copy(img) local o=blank();o:drawImage(img,Point(0,0));return o end
+local function mirror(img)
+ local out=blank();for y=0,H-1 do for x=0,W-1 do out:drawPixel(W-1-x,y,img:getPixel(x,y)) end end;return out
 end
-local function mix(a, b, k)
-  return { r = round(a.r + (b.r - a.r) * k), g = round(a.g + (b.g - a.g) * k), b = round(a.b + (b.b - a.b) * k) }
+local function enlarged(src,n)
+ local out=blank(src.width*n,src.height*n)
+ for y=0,src.height-1 do for x=0,src.width-1 do local c=src:getPixel(x,y)
+  for yy=0,n-1 do for xx=0,n-1 do out:drawPixel(x*n+xx,y*n+yy,c) end end
+ end end;return out
 end
-local function px(c) return pc.rgba(c.r, c.g, c.b, 255) end
-local WHITE, INK, SHADOW_TINT = hex("#fff8f0"), hex("#2a1d2c"), hex("#6d4b6e")
---- 한 재질의 5단계 톤: 하이라이트·기본·그늘·어두움·윤곽선
-local function tones(h, shadeTint)
-  local base = hex(h)
-  return {
-    light = mix(base, WHITE, 0.34), base = base,
-    shade = mix(base, shadeTint or SHADOW_TINT, 0.3), dark = mix(base, INK, 0.5), ink = mix(base, INK, 0.74),
-  }
+local function normalize(sheet,half)
+ local lo,hi=math.floor(sheet.width*half/2),math.floor(sheet.width*(half+1)/2)-1
+ local x0,y0,x1,y1=hi,sheet.height,lo,0
+ for y=0,sheet.height-1 do for x=lo,hi do local c=sheet:getPixel(x,y)
+  if pc.rgbaA(c)>=128 and not fringe(c) then x0=math.min(x0,x);x1=math.max(x1,x);y0=math.min(y0,y);y1=math.max(y1,y) end
+ end end
+ assert(x1>x0 and y1>y0,'Missing turn artwork alpha')
+ local sw,sh=x1-x0+1,y1-y0+1;local nh=96;local nw=math.floor(sw*nh/sh+0.5)
+ assert(nw<W-4,'Turn artwork does not fit native cell')
+ local out=blank();local dx,dy=math.floor((W-nw)/2),102-nh
+ for y=0,nh-1 do for x=0,nw-1 do
+  local c=sheet:getPixel(x0+math.min(sw-1,math.floor((x+0.5)*sw/nw)),y0+math.min(sh-1,math.floor((y+0.5)*sh/nh)))
+  if pc.rgbaA(c)>=128 and not fringe(c) then out:drawPixel(dx+x,dy+y,opaque(c)) end
+ end end
+ -- Anchor shoes rather than the asymmetric profile's hair bounding box.
+ local footMin,footMax=W,0
+ for y=94,101 do for x=0,W-1 do if pc.rgbaA(out:getPixel(x,y))>0 then footMin=math.min(footMin,x);footMax=math.max(footMax,x) end end end
+ local offset=math.floor(35.5-(footMin+footMax)/2+0.5)
+ if offset~=0 then local shifted=blank();shifted:drawImage(out,Point(offset,0));out=shifted end
+ return out
 end
-
--- ---------------------------------------------------------------- 래스터
-local Raster = {}
-Raster.__index = Raster
-function Raster.new(w, h) return setmetatable({ w = w, h = h, img = Image(w, h, ColorMode.RGB) }, Raster) end
-function Raster:set(x, y, c)
-  if not c then return end
-  x, y = round(x), round(y)
-  if x < 0 or y < 0 or x >= self.w or y >= self.h then return end
-  self.img:drawPixel(x, y, px(c))
-end
-function Raster:rect(x, y, w, h, c)
-  for j = 0, h - 1 do for i = 0, w - 1 do self:set(x + i, y + j, c) end end
-end
---- 타원. shader(nx, ny, r) 가 색을 돌려준다 (nil 이면 비움). nx, ny 는 -1~1, r 은 중심에서 거리
-function Raster:ellipse(cx, cy, rx, ry, shader)
-  for y = floor(cy - ry) - 1, floor(cy + ry) + 1 do
-    for x = floor(cx - rx) - 1, floor(cx + rx) + 1 do
-      local nx, ny = (x + 0.5 - cx) / rx, (y + 0.5 - cy) / ry
-      local r = sqrt(nx * nx + ny * ny)
-      if r <= 1 then self:set(x, y, shader(nx, ny, r, x, y)) end
+local function split(source,view,v)
+ local parts={body=blank(),armA=blank(),armB=blank(),legA=blank(),legB=blank(),joints=blank()}
+ local side=view=='left'
+ for y=0,H-1 do for x=0,W-1 do
+  local c=source:getPixel(x,y)
+  if pc.rgbaA(c)>0 then
+   local id='body'
+   if y>=v.legStart then id=x<36 and 'legA' or 'legB'
+   elseif y>=v.armStart and y<v.legStart then
+    -- The side forearm overlaps the garment. Keep it with the torso until
+    -- a fully painted side clothing/body layer is available; do not tear its occlusion.
+    if not side then
+     if x<27 then id='armA' elseif x>44 then id='armB' end
     end
+   end
+   parts[id]:drawPixel(x,y,c)
+   if (id=='armA' or id=='armB') and y<v.armStart+3 then parts.joints:drawPixel(x,y,c) end
+   if id=='body' and y>=v.legStart-2 then parts.joints:drawPixel(x,y,c) end
   end
-end
-function Raster:line(x0, y0, x1, y1, c)
-  local n = max(abs(x1 - x0), abs(y1 - y0), 1)
-  for i = 0, n do self:set(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, c) end
-end
--- 손으로 배치한 픽셀 클러스터. 둥근 사각형을 겹치는 대신 외곽선과 면을 각각 설계한다.
-function Raster:poly(points, fill, outline, dx, dy)
-  dx, dy = dx or 0, dy or 0
-  local lo, hi = self.h, 0
-  for _, v in ipairs(points) do lo = min(lo, v[2]); hi = max(hi, v[2]) end
-  for y = lo, hi do
-    local cuts = {}
-    for i, a in ipairs(points) do
-      local b = points[i % #points + 1]
-      if (a[2] <= y and b[2] > y) or (b[2] <= y and a[2] > y) then
-        cuts[#cuts + 1] = a[1] + (y - a[2]) * (b[1] - a[1]) / (b[2] - a[2])
-      end
-    end
-    table.sort(cuts)
-    for i = 1, #cuts - 1, 2 do
-      for x = math.ceil(cuts[i]), floor(cuts[i + 1]) do self:set(x + dx, y + dy, fill) end
-    end
-  end
-  if outline then
-    for i, a in ipairs(points) do
-      local b = points[i % #points + 1]
-      self:line(a[1] + dx, a[2] + dy, b[1] + dx, b[2] + dy, outline)
-    end
-  end
-end
---- 다른 래스터를 찍는다 (mirror 면 좌우 반전)
-function Raster:blit(src, dx, dy, mirror)
-  for y = 0, src.h - 1 do for x = 0, src.w - 1 do
-    local p = src.img:getPixel(x, y)
-    if pc.rgbaA(p) > 0 then
-      local tx = mirror and (src.w - 1 - x) or x
-      local X, Y = dx + tx, dy + y
-      if X >= 0 and Y >= 0 and X < self.w and Y < self.h then self.img:drawPixel(X, Y, p) end
-    end
+ end end
+ if side then
+  -- The neutral profile occludes its far leg. Uncover a source-pixel duplicate during a step.
+  local leg=blank();leg:drawImage(parts.legA,Point(0,0));leg:drawImage(parts.legB,Point(0,0))
+  parts.legA=leg;parts.legB=copy(leg)
+  -- A small depth shade distinguishes the uncovered far leg during a step.
+  -- At rest the unmodified near leg covers it completely.
+  for y=0,H-1 do for x=0,W-1 do local c=parts.legB:getPixel(x,y)
+   if pc.rgbaA(c)>0 then parts.legB:drawPixel(x,y,pc.rgba(math.floor(pc.rgbaR(c)*0.94),math.floor(pc.rgbaG(c)*0.94),math.floor(pc.rgbaB(c)*0.94),255)) end
   end end
+ end
+ return parts
 end
-
--- ---------------------------------------------------------------- 캐릭터
---- 변형 하나의 톤 묶음
-local function palette(v)
-  local p = {
-    skin = tones(v.skin, hex("#b86b63")), hair = tones(v.hair), shirt = tones(v.shirt), pants = tones(v.pants),
-    accent = tones(v.accent), shoe = tones("#fbf6ee", hex("#9e8f95")), eye = tones(v.eyes), style = v.style % 3,
-  }
-  p.skin.ink = mix(hex(v.skin), INK, 0.6)
-  p.blush = mix(hex(v.skin), hex("#e8788f"), 0.5)
-  p.mouth = mix(hex(v.skin), hex("#8a3a4a"), 0.75)
-  p.eyeWhite = hex("#fdfbff")
-  return p
-end
-
-local artwork = dofile(assert(params.art, "--script-param art=<renderer.lua> is required"))
-local drawFront, drawSide = artwork.front, artwork.side
---- 걷기 6프레임: 디딤 → 들어 올림(가장 높이, 몸이 살짝 뜬다) → 내려놓음, 반대쪽 반복. 프레임마다 모두 다르게
-local WALK_FRONT = { -- legA/legB 는 들어 올린 픽셀(0 이하), armA/armB 는 팔 흔들림(세로), sway 는 머리 결
-  { legA = -1, legB = 0, bob = 0, armA = -1, armB = 1, sway = 0 },
-  { legA = -3, legB = 0, bob = -1, armA = -2, armB = 2, sway = 1 },
-  { legA = -2, legB = 0, bob = 0, armA = -1, armB = 1, sway = 1 },
-  { legA = 0, legB = -1, bob = 0, armA = 1, armB = -1, sway = 0 },
-  { legA = 0, legB = -3, bob = -1, armA = 2, armB = -2, sway = -1 },
-  { legA = 0, legB = -2, bob = 0, armA = 1, armB = -1, sway = -1 },
-}
-local WALK_SIDE = { -- legA/legB 는 앞뒤 보폭(픽셀), armA/armB 는 팔 앞뒤
-  { legA = 2, legB = -2, bob = 0, armA = -2, armB = 2, sway = 0 },
-  { legA = 4, legB = -4, bob = -1, armA = -3, armB = 3, sway = 1 },
-  { legA = 2, legB = -2, bob = 0, armA = -2, armB = 2, sway = 1 },
-  { legA = -2, legB = 2, bob = 0, armA = 2, armB = -2, sway = 0 },
-  { legA = -4, legB = 4, bob = -1, armA = 3, armB = -3, sway = -1 },
-  { legA = -2, legB = 2, bob = 0, armA = 2, armB = -2, sway = -1 },
-}
---- 프레임 포즈: 서있기(숨쉬기·깜빡임) 와 걷기
-local function poseFor(anim, f, side)
-  if anim == "idle" then
-    -- 숨쉬기: 머리가 내려앉고(1·2), 어깨가 한 박자 늦게 따라온다(2·3). 뒷모습·단발처럼 머리 결이 안 흔들리는 조합도 매 프레임 달라진다
-    local breathe = (f == 1 or f == 2) and 1 or 0
-    local shoulder = ({ 0, 0, 1, 1 })[f + 1] or 0
-    return { bob = breathe, legA = 0, legB = 0, armA = shoulder, armB = shoulder, sway = ({ 0, 1, 0, -1 })[f + 1] or 0, blink = (f == IDLE - 1) }
+local function blink(source,v)
+ local out=copy(source)
+ -- Close only the authored eye areas, preserving nearby hair, nose, cheeks and mouth.
+ for _,range in ipairs({v.eyeLeft,v.eyeRight}) do
+  for x=range[1],range[2] do
+   local skin=source:getPixel(x,v.eyeY+5)
+   if pc.rgbaA(skin)>0 then
+    for y=v.eyeY,v.eyeY+3 do out:drawPixel(x,y,skin) end
+    local eyelid=source:getPixel(x,v.eyeY)
+    if pc.rgbaR(eyelid)<170 then out:drawPixel(x,v.eyeY+1,eyelid) end
+   end
   end
-  local table_ = side and WALK_SIDE or WALK_FRONT
-  local pose = table_[(f % #table_) + 1]
-  return { bob = pose.bob, legA = pose.legA, legB = pose.legB, armA = pose.armA, armB = pose.armB, sway = pose.sway, blink = false }
+ end
+ return out
 end
-
---- 칸 하나를 그린다 (왼쪽 옆모습을 반전해 오른쪽을 만든다)
-local function drawCell(p, view, anim, f)
-  local r = Raster.new(CW, CH)
-  if view == "front" then drawFront(r, p, poseFor(anim, f, false), false)
-  elseif view == "back" then drawFront(r, p, poseFor(anim, f, false), true)
-  elseif view == "left" then drawSide(r, p, poseFor(anim, f, true))
-  else
-    local left = Raster.new(CW, CH)
-    drawSide(left, p, poseFor(anim, f, true))
-    r:blit(left, 0, 0, true)
+local function render(source,view,v,anim,index)
+ if anim=='idle' and (index==0 or index==3 and view~='front') then return copy(source) end
+ if anim=='idle' and index==3 then return blink(source,v) end
+ local parts=split(source,view,v);local out=blank()
+ local bodyY,armAX,armAY,armBX,armBY,legAX,legAY,legBX,legBY=0,0,0,0,0,0,0,0,0
+ if anim=='idle' then
+  bodyY=index==1 and -1 or 0
+  armAY=-1;armBY=-1
+ else
+  local n=index+1;local side=view=='left'
+  local stride={-1,0,1,1,0,-1};local liftA={0,-2,-1,0,0,0};local liftB={0,0,0,0,-2,-1}
+  bodyY=({0,-1,0,0,-1,0})[n]
+  legAX=stride[n]*(side and 2 or 1);legBX=-legAX;legAY=liftA[n];legBY=liftB[n]
+  armAX=side and -stride[n] or 0;armBX=side and stride[n] or 0
+  armAY=({1,0,-1,-1,0,1})[n]+bodyY;armBY=-(({1,0,-1,-1,0,1})[n])+bodyY
+ end
+ out:drawImage(parts.legB,Point(legBX,legBY));out:drawImage(parts.legA,Point(legAX,legAY))
+ out:drawImage(parts.joints,Point(0,0))
+ if view=='left' then
+  out:drawImage(parts.body,Point(0,bodyY));out:drawImage(parts.armB,Point(armBX,armBY));out:drawImage(parts.armA,Point(armAX,armAY))
+ else
+  out:drawImage(parts.armB,Point(armBX,armBY));out:drawImage(parts.armA,Point(armAX,armAY));out:drawImage(parts.body,Point(0,bodyY))
+ end
+ return out
+end
+local function validate(img)
+ for y=0,H-1 do for x=0,W-1 do
+  local a=pc.rgbaA(img:getPixel(x,y));assert(a==0 or a==255,'Non-binary alpha')
+  if x==0 or x==W-1 or y==0 or y==H-1 then assert(a==0,'Sprite touched atlas gutter') end
+ end end
+end
+local sheet=blank(W*N*#cfg.views,H*#cfg.variants)
+local directions=blank(W*4,H*#cfg.variants)
+local fronts=blank(W*2,H)
+local metadata={cell=cfg.cell,columns=N,rows=#cfg.variants,width=sheet.width,height=sheet.height,views={},anims={idle={from=0,length=4},walk={from=4,length=6}},characters={},generator='scripts/aseprite/beach-character.lua',asset='chars-v2.png'}
+for vi,view in ipairs(cfg.views) do metadata.views[view]=(vi-1)*N end
+for row,v in ipairs(cfg.variants) do
+ local dir=sourceRoot..'/'..v.id
+ local front=Image{fromFile=dir..'/front.png'};assert(front.width==W and front.height==H,'Unexpected approved front dimensions')
+ local turns=Image{fromFile=dir..'/turns-source.png'}
+ local sources={front=front,left=normalize(turns,0),back=normalize(turns,1)};sources.right=mirror(sources.left)
+ for _,view in ipairs({'left','back','right'}) do sources[view]:saveAs(dir..'/'..view..'.png') end
+ local sprite=Sprite(W,H,ColorMode.RGB);local layer=sprite.layers[1];layer.name='animated-source-pixels'
+ local cached={}
+ for vi,view in ipairs(cfg.views) do
+  directions:drawImage(sources[view],Point((vi-1)*W,(row-1)*H))
+  cached[view]={}
+  for col=0,N-1 do
+   local anim=col<cfg.anims.idle and 'idle' or 'walk';local i=col<cfg.anims.idle and col or col-cfg.anims.idle
+   local img=view=='right' and mirror(cached.left[col+1]) or render(sources[view],view,v,anim,i)
+   cached[view][col+1]=img;validate(img)
+   sheet:drawImage(img,Point(((vi-1)*N+col)*W,(row-1)*H))
+   local frameIndex=(vi-1)*N+col+1;if frameIndex>1 then sprite:newEmptyFrame() end
+   sprite.frames[frameIndex].duration=anim=='walk' and 0.12 or (col==3 and 0.1 or 0.3)
+   sprite:newCel(layer,frameIndex,img,Point(0,0))
   end
-  -- 가장자리 1px 는 비운다 (아틀라스 번짐 방지)
-  for x = 0, CW - 1 do r:set(x, 0, nil) end
-  local clear = pc.rgba(0, 0, 0, 0)
-  for x = 0, CW - 1 do r.img:drawPixel(x, 0, clear); r.img:drawPixel(x, CH - 1, clear) end
-  for y = 0, CH - 1 do r.img:drawPixel(0, y, clear); r.img:drawPixel(CW - 1, y, clear) end
-  return r
+ end
+ -- Add tags after every frame exists: Aseprite extends a trailing tag when frames are appended.
+ for vi,view in ipairs(cfg.views) do
+  local base=(vi-1)*N
+  sprite:newTag(base+1,base+cfg.anims.idle).name=view..'-idle'
+  sprite:newTag(base+cfg.anims.idle+1,base+N).name=view..'-walk'
+ end
+ sprite:saveAs(dir..'/animated.aseprite');sprite:close()
+ fronts:drawImage(front,Point((row-1)*W,0))
+ metadata.characters[#metadata.characters+1]={id=v.id,label=v.label,row=row-1,source='scripts/aseprite/base-characters/'..v.id..'/front.aseprite'}
 end
-
--- ---------------------------------------------------------------- 시트 조립
-local views = cfg.views
-local sheet = Image(CW * COLS * #views, CH * #cfg.variants, ColorMode.RGB)
-local cells = {} -- 변형 0 의 칸들 (편집용 .aseprite)
-for row, variant in ipairs(cfg.variants) do
-  local p = palette(variant)
-  for vi, view in ipairs(views) do
-    for col = 0, COLS - 1 do
-      local anim, f = "idle", col
-      if col >= IDLE then anim, f = "walk", col - IDLE end
-      local cell = drawCell(p, view, anim, f)
-      sheet:drawImage(cell.img, Point(((vi - 1) * COLS + col) * CW, (row - 1) * CH))
-      if row == 1 then cells[#cells + 1] = { img = cell.img, view = view, anim = anim } end
-    end
-  end
-end
-sheet:saveAs(params.out)
-
-if params.json then
-  local f = assert(io.open(params.json, "wb"))
-  local viewsOut = {}
-  for vi, view in ipairs(views) do viewsOut[view] = (vi - 1) * COLS end
-  f:write(json.encode({
-    cell = { width = CW, height = CH }, columns = COLS, rows = #cfg.variants, width = sheet.width, height = sheet.height,
-    views = viewsOut, anims = { idle = { from = 0, length = IDLE }, walk = { from = IDLE, length = WALK } },
-    generator = "scripts/aseprite/beach-character.lua",
-  }))
-  f:close()
-end
-
-if params.ase then
-  local sprite = Sprite(CW, CH, ColorMode.RGB)
-  sprite.filename = params.ase
-  local layer = sprite.layers[1]
-  layer.name = "character"
-  for i, cell in ipairs(cells) do
-    if i > 1 then sprite:newEmptyFrame() end
-    local frame = sprite.frames[i]
-    frame.duration = cell.anim == "idle" and 0.18 or 0.1
-    sprite:newCel(layer, frame, cell.img, Point(0, 0))
-  end
-  for vi, view in ipairs(views) do
-    local base = (vi - 1) * COLS
-    local idle = sprite:newTag(base + 1, base + IDLE); idle.name = view .. "-idle"
-    local walk = sprite:newTag(base + IDLE + 1, base + COLS); walk.name = view .. "-walk"
-  end
-  sprite:saveAs(params.ase)
-  sprite:close()
-end
-print(string.format("chars.png %dx%d (%d views x %d frames x %d variants)", sheet.width, sheet.height, #views, COLS, #cfg.variants))
+sheet:saveAs(root..'/public/beach/chars-v2.png')
+local file=assert(io.open(root..'/public/beach/chars.json','wb'));file:write(json.encode(metadata));file:close()
+enlarged(directions,3):saveAs(sourceRoot..'/directions-preview.png')
+enlarged(fronts,4):saveAs(root..'/scripts/aseprite/beach-character-preview.png')
+print(string.format('Approved character atlas: %dx%d; 2 characters, 4 directions, %d frames',sheet.width,sheet.height,N))

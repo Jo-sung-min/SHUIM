@@ -351,7 +351,7 @@ writeFileSync(path.join(outDir, "props.png"), props.png());
 /* ---------------- 좌표 상수 ---------------- */
 const ts = `/* 생성 파일 — scripts/gen-beach-sprites.mjs 가 만든다. 손으로 고치지 말 것 */
 
-/** 캐릭터 시트(chars.png, Aseprite 로 생성): 한 칸 ${CHARACTER.cell.width}×${CHARACTER.cell.height}, 가로 ${CHARACTER.views.length * CHAR_COLUMNS}칸(보는 방향 ${CHARACTER.views.length} × 프레임 ${CHAR_COLUMNS}) × 세로 ${CHARACTER.variants.length}줄(색 변형) */
+/** 캐릭터 시트(chars-v2.png, Aseprite): 한 칸 ${CHARACTER.cell.width}×${CHARACTER.cell.height}, 가로 ${CHARACTER.views.length * CHAR_COLUMNS}칸(방향 ${CHARACTER.views.length} × 프레임 ${CHAR_COLUMNS}) × 세로 ${CHARACTER.variants.length}줄(남성·여성) */
 export const CHAR_ATLAS = { cellW: ${CHARACTER.cell.width}, cellH: ${CHARACTER.cell.height}, cols: ${CHARACTER.views.length * CHAR_COLUMNS}, rows: ${CHARACTER.variants.length}, width: ${SHEET.width}, height: ${SHEET.height} } as const;
 /** 보는 방향별 첫 칸 (앞·뒤·왼·오른). 각 방향 안에서 서있기 ${CHARACTER.anims.idle}프레임, 걷기 ${CHARACTER.anims.walk}프레임 순서 */
 export const CHAR_VIEW = { ${CHARACTER.views.map((view) => `${view}: ${CHAR_VIEW_OFFSETS[view]}`).join(", ")} } as const;

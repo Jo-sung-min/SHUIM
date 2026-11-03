@@ -43,7 +43,7 @@ public class BeachRoom {
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
-    private static final int[] BOT_SKINS = {1, 4, 6};
+    private static final int[] BOT_SKINS = {1, 0, 0};
     private static final double[][] BOT_CENTERS = {{-5, 8}, {5, 11}, {0, 16}};
 
     private static final long NEVER = Long.MIN_VALUE / 4;
@@ -78,7 +78,7 @@ public class BeachRoom {
      */
     public static final class Presence {
         private final String pid, ticket, userId, nick;
-        private final int skin;
+        private volatile int skin;
         private final int botIndex; // 0 = 사람, 1..3 = 가짜 방문자
         private final Set<String> excluded;
         private volatile double x, z, yaw;
@@ -128,8 +128,17 @@ public class BeachRoom {
         boolean sees(Presence other) { return !excluded.contains(other.userId); }
     }
 
-    /** 유저 id → 0..7 의 안정적인 아바타 번호 (같은 유저는 늘 같은 모습) */
-    public static int skinOf(String userId) { return Math.floorMod(userId.hashCode(), 8); }
+    /** 선택이 없는 기존 방문도 남자 0 · 여자 1 중 같은 기본 모습으로 입장한다. */
+    public static int skinOf(String userId) { return Math.floorMod(userId.hashCode(), 2); }
+
+    static Integer selectedSkin(String character) {
+        if (character == null) return null;
+        return switch (character) {
+            case "male" -> 0;
+            case "female" -> 1;
+            default -> throw ApiException.badRequest("캐릭터를 다시 골라 주세요.");
+        };
+    }
 
     private final LongSupplier clock;
     private final ConcurrentHashMap<String, Presence> byTicket = new ConcurrentHashMap<>();
@@ -161,14 +170,20 @@ public class BeachRoom {
     /* ---------- 들어오기 · 나가기 ---------- */
 
     /** 물가에서 들어와 모닥불(0, 12)과 뒤편 절벽을 바라보며 시작 */
-    public synchronized Presence enter(String userId, String nick, Set<String> excluded) {
+    public Presence enter(String userId, String nick, Set<String> excluded) {
+        return enter(userId, nick, excluded, null);
+    }
+
+    public synchronized Presence enter(String userId, String nick, Set<String> excluded, String character) {
+        Integer selectedSkin = selectedSkin(character);
         long now = clock.getAsLong();
         // 입장 확인과 추가를 같은 잠금 안에서 처리해 동시 입장에도 100명을 넘지 않는다.
         sweep(now);
         if (byTicket.size() >= CAPACITY) throw new ApiException(409, "바닷가에 100명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
         ThreadLocalRandom r = ThreadLocalRandom.current();
         double x = r.nextDouble(-1.5, 1.5), z = r.nextDouble(2.8, 4);
-        Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick, skinOf(userId), 0,
+        Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick,
+            selectedSkin == null ? skinOf(userId) : selectedSkin, 0,
             excluded == null ? Set.of() : Set.copyOf(excluded), x, z, Math.atan2(x, z - BeachFireService.FIRE_Z), now);
         byTicket.put(p.ticket, p);
         return p;
@@ -196,6 +211,10 @@ public class BeachRoom {
      * x·z·yaw 가 NaN 이면 이전 값을 그대로 둔다.
      */
     public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, null);
+    }
+
+    public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character) {
         long now = clock.getAsLong();
         maybeSweep(now);
         Presence me = ticket == null ? null : byTicket.get(ticket);
@@ -204,6 +223,8 @@ public class BeachRoom {
             byTicket.remove(ticket, me);
             return null;
         }
+        Integer selectedSkin = selectedSkin(character);
+        if (selectedSkin != null) me.skin = selectedSkin;
         me.x = clamp(x, MIN_X, MAX_X, me.x);
         me.z = clamp(z, MIN_Z, MAX_Z, me.z);
         if (Double.isFinite(yaw)) me.yaw = yaw;

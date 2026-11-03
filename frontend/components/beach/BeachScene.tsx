@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { BeachEngine, webglSupported, type RestState, type ViewMode } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, type FireState, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
+import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconUsers } from "@/components/Icons";
+import { IconCheck, IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconUser, IconUsers } from "@/components/Icons";
 import { route } from "@/lib/routes";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
 import Joystick from "./Joystick";
@@ -44,6 +45,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const selectedRef = useRef<RemotePlayer | null>(null);
   const fireTimeRef = useRef(0);
   const fireLogsRef = useRef<number | null>(null);
+  const characterRef = useRef<BeachCharacter | null>(null);
+  const characterPickerRef = useRef<HTMLDivElement>(null);
+  const characterTriggerRef = useRef<HTMLButtonElement>(null);
+  const characterPickerId = useId();
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -61,9 +66,56 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [nearFire, setNearFire] = useState(false);
   const [coolUntil, setCoolUntil] = useState(0);
   const [view, setView] = useState<ViewMode>("first");
+  const [character, setCharacter] = useState<BeachCharacter>("male");
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
+
+  const adoptCharacter = useCallback((me: EnterResponse["me"]): BeachCharacter => {
+    // Retain an in-memory choice across ticket expiry even if local storage is blocked.
+    const previous = meRef.current && characterRef.current ? { id: meRef.current.id, character: characterRef.current } : null;
+    const next = characterAfterEntry(me, previous, savedCharacter(me.id));
+    characterRef.current = next;
+    setCharacter(next);
+    engineRef.current?.setSkin(characterSkin(next));
+    return next;
+  }, []);
+
+  const controlsPaused = characterPickerOpen || selected !== null;
+  useEffect(() => {
+    engineRef.current?.setInputPaused(controlsPaused);
+  }, [controlsPaused, phase]);
+
+  useEffect(() => {
+    if (!selected || characterPickerOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      engineRef.current?.select(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [selected, characterPickerOpen]);
+
+  useEffect(() => {
+    if (!characterPickerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !characterPickerRef.current?.contains(event.target)) setCharacterPickerOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setCharacterPickerOpen(false);
+      characterTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [characterPickerOpen]);
 
   const applyFire = useCallback((next: FireState) => {
     if (!aliveRef.current || !next || next.serverTime < fireTimeRef.current) return;
@@ -106,20 +158,23 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     ticketRef.current = null;
     setSelected(null);
     setRest(null);
+    setCharacterPickerOpen(false);
     setError(cause.message);
     setPhase("error");
   }, []);
 
   const reenter = useCallback(async () => {
+    // Confirm the session identity before sending any account's saved choice.
     const entered = await enterBeach(communityId);
     if (!aliveRef.current) { leaveBeach(entered.ticket); return; }
     ticketRef.current = entered.ticket;
+    adoptCharacter(entered.me);
     meRef.current = entered.me;
     setCount(entered.count);
     setCapacity(entered.capacity);
     setCommunity(entered.community);
     applyFire(entered.fire);
-  }, [communityId, applyFire]);
+  }, [communityId, applyFire, adoptCharacter]);
 
   const runTick = useCallback(async () => {
     const engine = engineRef.current;
@@ -150,6 +205,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         z: Math.round(self.z * 100) / 100,
         yaw: Math.round(self.yaw * 1000) / 1000,
         moving: self.moving,
+        character: characterRef.current ?? undefined,
         care: care ? { to: care.to, kind: care.kind } : undefined,
       });
       if (!aliveRef.current) return;
@@ -212,6 +268,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         const entered = await enterBeach(communityId);
         if (cancelled || !aliveRef.current) { leaveBeach(entered.ticket); return; }
         ticketRef.current = entered.ticket;
+        const initialCharacter = adoptCharacter(entered.me);
         meRef.current = entered.me;
         setCount(entered.count);
         setCapacity(entered.capacity);
@@ -221,7 +278,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         engine = new BeachEngine(canvas, {
           bounds: entered.bounds,
           spawn: entered.spawn,
-          skin: entered.me.skin,
+          skin: characterSkin(initialCharacter),
           view: initialView,
           hourOverride: hourOverride(window.location.search),
           handlers: {
@@ -281,10 +338,26 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       document.body.style.overflow = "";
       if (ticketRef.current) leaveBeach(ticketRef.current);
       ticketRef.current = null;
+      meRef.current = null;
+      characterRef.current = null;
       engineRef.current?.dispose();
       engineRef.current = null;
     };
-  }, [communityId, scheduleTick, stopWithError, applyFire]);
+  }, [communityId, scheduleTick, stopWithError, applyFire, adoptCharacter]);
+
+  const chooseCharacter = (next: BeachCharacter) => {
+    const me = meRef.current;
+    if (!me || !engineRef.current || blockedRef.current) return;
+    characterRef.current = next;
+    setCharacter(next);
+    saveCharacter(me.id, next);
+    engineRef.current.setSkin(characterSkin(next));
+    engineRef.current.setView("third");
+    setCharacterPickerOpen(false);
+    characterTriggerRef.current?.focus();
+    haptic();
+    scheduleTick(0);
+  };
 
   /** 모닥불 앞까지 걸어간 뒤, 새 위치를 서버에 올리고(서버가 거리를 확인한다) 장작을 넣는다 */
   const onAddWood = useCallback(async (requestId: string, phase: (p: WoodPhase) => void) => {
@@ -319,14 +392,35 @@ export default function BeachScene({ communityId }: { communityId: string }) {
 
   return (
     <div className={styles.root}>
-      <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 바닷가 (1인칭)`} />
+      <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 바닷가 (${view === "first" ? "1인칭" : "3인칭"})`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
       <div className={styles.top}>
         <Link href={returnHref} className={styles.glass} aria-label="바닷가 나가기"><IconChevronL />나가기</Link>
         <div className={styles.chips}>
-          {timeLabel && <span className={`${styles.glass} ${styles.chip}`}>{timeLabel}</span>}
+          {timeLabel && <span className={`${styles.glass} ${styles.chip} ${styles.timeChip}`}>{timeLabel}</span>}
           {count !== null && <span className={`${styles.glass} ${styles.chip}`} aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<span className={styles.capacity}>/ {capacity}</span></span>}
+          {phase === "ready" && <div ref={characterPickerRef} className={styles.characterPicker}>
+            <button ref={characterTriggerRef} type="button" className={`${styles.glass} ${styles.characterTrigger}`}
+              aria-expanded={characterPickerOpen} aria-controls={characterPickerId}
+              onClick={() => { haptic(); setCharacterPickerOpen((open) => !open); }}>
+              <IconUser />캐릭터
+            </button>
+            {characterPickerOpen && <div id={characterPickerId} className={styles.characterPanel}>
+              <div className={styles.characterPanelHead}>
+                <strong>내 캐릭터</strong>
+                <button type="button" aria-label="캐릭터 선택 닫기" onClick={() => { setCharacterPickerOpen(false); characterTriggerRef.current?.focus(); }}><IconClose /></button>
+              </div>
+              <div className={styles.characterChoices} role="group" aria-label="기본 캐릭터 선택">
+                {BEACH_CHARACTERS.map((option) => <button key={option.id} type="button" className={styles.characterChoice}
+                  aria-pressed={character === option.id} onClick={() => chooseCharacter(option.id)}>
+                  <span className={styles.characterSprite} style={{ backgroundPosition: `0 ${-option.skin * 104}px` }} aria-hidden="true" />
+                  <span>{option.label}{character === option.id && <IconCheck aria-hidden="true" />}</span>
+                </button>)}
+              </div>
+              <p>고르면 내 모습이 바로 보여요.</p>
+            </div>}
+          </div>}
         </div>
       </div>
 
@@ -336,7 +430,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         <p>웅장한 절벽 아래, 바다를 향한 프라이빗 라운지.</p>
       </div>}
 
-      {phase === "ready" && !selected && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !selected && !characterPickerOpen && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud}>
       {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}

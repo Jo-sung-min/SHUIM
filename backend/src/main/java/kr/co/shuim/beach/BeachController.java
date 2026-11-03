@@ -39,10 +39,16 @@ public class BeachController {
 
     /** { to: 유저 id, kind: "comfort" | "hug" } */
     public record Care(String to, String kind) {}
-    /** tick 요청. x·z·yaw·moving 을 빼면 이전 값 유지, care 는 위로를 보낼 때만 */
-    public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care) {}
+    /** character 는 남녀 기본 캐릭터를 바꿀 때 선택하며, 생략하면 현재 모습 유지 */
+    public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
+        public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care) {
+            this(ticket, x, z, yaw, moving, care, null);
+        }
+    }
     public record TicketBody(String ticket) {}
-    public record EnterBody(String communityId) {}
+    public record EnterBody(String communityId, String character) {
+        public EnterBody(String communityId) { this(communityId, null); }
+    }
     public record WoodBody(String ticket, String requestId) {}
 
     private CircleService.Circle requireMember(String communityId, DbUser me) {
@@ -56,7 +62,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/enter { communityId } → { ticket, communityId, community: { id, slug, name }, capacity, me, spawn, bounds, count }
+     * POST /api/beach/enter { communityId, character?: "male" | "female" } → { ticket, communityId, community: { id, slug, name }, capacity, me, spawn, bounds, count }
      * 이 소로우의 승인된 멤버만 들어갈 수 있다. 정원 초과는 409.
      */
     @PostMapping("/api/beach/enter")
@@ -64,7 +70,7 @@ public class BeachController {
         DbUser me = auth.requireUser(req, res);
         CircleService.Circle circle = requireMember(body == null ? null : body.communityId(), me);
         Set<String> excluded = blocks.excludedIds(me.id());
-        BeachRoom.Presence p = beach.enter(circle.id(), me.id(), me.nick(), excluded);
+        BeachRoom.Presence p = beach.enter(circle.id(), me.id(), me.nick(), excluded, body.character());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ticket", p.ticket());
         out.put("communityId", circle.id());
@@ -81,7 +87,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind } }
+     * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind }, character?: "male" | "female" }
      *   → { players: [{ pid, id, nick, skin, x, z, yaw, moving }], events: [{ kind, fromPid, fromId, fromNick, toPid, toId, toNick, at }],
      *       count, received: { comfort, hug }, care?: "sent" | "cooldown" | "gone" }
      * 방문 티켓으로 위치를 갱신하고 영속 모닥불 상태를 함께 내려준다. 만료 티켓은 410.
@@ -95,7 +101,7 @@ public class BeachController {
             body.x() == null ? Double.NaN : body.x(),
             body.z() == null ? Double.NaN : body.z(),
             body.yaw() == null ? Double.NaN : body.yaw(),
-            Boolean.TRUE.equals(body.moving()), careTo, careKind);
+            Boolean.TRUE.equals(body.moving()), careTo, careKind, body.character());
         if (r == null) throw ApiException.gone(GONE);
         return r;
     }

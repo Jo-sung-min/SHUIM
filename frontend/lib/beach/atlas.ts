@@ -1,7 +1,7 @@
 /* 생성 파일 — scripts/gen-beach-sprites.mjs 가 만든다. 손으로 고치지 말 것 */
 
-/** 캐릭터 시트(chars.png, Aseprite 로 생성): 한 칸 72×104, 가로 40칸(보는 방향 4 × 프레임 10) × 세로 8줄(색 변형) */
-export const CHAR_ATLAS = { cellW: 72, cellH: 104, cols: 40, rows: 8, width: 2880, height: 832 } as const;
+/** 캐릭터 시트(chars-v2.png, Aseprite): 한 칸 72×104, 가로 40칸(방향 4 × 프레임 10) × 세로 2줄(남성·여성) */
+export const CHAR_ATLAS = { cellW: 72, cellH: 104, cols: 40, rows: 2, width: 2880, height: 208 } as const;
 /** 보는 방향별 첫 칸 (앞·뒤·왼·오른). 각 방향 안에서 서있기 4프레임, 걷기 6프레임 순서 */
 export const CHAR_VIEW = { front: 0, back: 10, left: 20, right: 30 } as const;
 export const CHAR_ANIM = { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } } as const;

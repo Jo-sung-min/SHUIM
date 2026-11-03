@@ -18,8 +18,8 @@ async function load(file, dependencies, names) {
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
 const { CHAR_ATLAS, CHAR_VIEW, CHAR_ANIM } = atlas;
 const { cellW: CELL_W, cellH: CELL_H } = CHAR_ATLAS;
-/** 정면 기본 포즈의 턱 끝 — scripts/aseprite/beach-character-art.lua 의 얼굴 실루엣 좌표 */
-const CHIN = 56;
+/** 승인된 남녀 정면 원본의 턱 위치. 머리 높이는 전체 키의 약 1/3이다. */
+const CHINS = [40, 38];
 const frameColumn = (node) => Math.round(node.tex.offset.x * CHAR_ATLAS.cols);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...atlas, CAMPFIRE: { x: 0, z: 12 }, performance,
@@ -53,7 +53,7 @@ function decodePng(png) {
   }
   return { width, height, rgba: out };
 }
-const { width, height, rgba } = decodePng(await readFile(new URL("../public/beach/chars.png", import.meta.url)));
+const { width, height, rgba } = decodePng(await readFile(new URL("../public/beach/chars-v2.png", import.meta.url)));
 const pixel = (col, row, x, y) => {
   const index = ((row * CHAR_ATLAS.cellH + y) * width + col * CHAR_ATLAS.cellW + x) * 4;
   return [...rgba.subarray(index, index + 4)];
@@ -85,14 +85,14 @@ function fixture(yaw = 0) {
   return { engine, node, camera, scene, selected };
 }
 
-test("the Aseprite sheet has 320 native 72×104 frames, eight distinct characters and crisp transparent edges", () => {
-  assert.deepEqual([width, height, CELL_W, CELL_H, CHAR_ATLAS.cols, CHAR_ATLAS.rows], [2880, 832, 72, 104, 40, 8]);
+test("the Aseprite sheet has 80 native 72×104 frames, male/female bases and crisp transparent edges", () => {
+  assert.deepEqual([width, height, CELL_W, CELL_H, CHAR_ATLAS.cols, CHAR_ATLAS.rows], [2880, 208, 72, 104, 40, 2]);
   // 다른 vm 컨텍스트에서 온 객체라 프로토타입이 달라서, 값만 비교한다
   assert.deepEqual(JSON.parse(JSON.stringify(CHAR_VIEW)), { front: 0, back: 10, left: 20, right: 30 });
   assert.deepEqual(JSON.parse(JSON.stringify(CHAR_ANIM)), { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } });
   assert.equal(rgba.length, height * width * 4);
-  assert.equal(new Set(Array.from({ length: 8 }, (_, row) => digest(0, row))).size, 8);
-  for (let row = 0; row < 8; row++) for (let col = 0; col < CHAR_ATLAS.cols; col++) {
+  assert.equal(new Set(Array.from({ length: 2 }, (_, row) => digest(0, row))).size, 2);
+  for (let row = 0; row < CHAR_ATLAS.rows; row++) for (let col = 0; col < CHAR_ATLAS.cols; col++) {
     const colors = new Set();
     for (let y = 0; y < CELL_H; y++) for (let x = 0; x < CELL_W; x++) {
       const p = pixel(col, row, x, y);
@@ -104,19 +104,32 @@ test("the Aseprite sheet has 320 native 72×104 frames, eight distinct character
   }
 });
 
-test("head and body each occupy about half the character; idle and walk frames are all distinct per view", () => {
-  for (let row = 0; row < 8; row++) {
+test("front idle artwork is pixel-identical to the approved editable male/female sources", async () => {
+  for (const [row, name] of ["male", "female"].entries()) {
+    const approved = decodePng(await readFile(new URL(`./aseprite/base-characters/${name}/front.png`, import.meta.url)));
+    assert.deepEqual([approved.width, approved.height], [CELL_W, CELL_H]);
+    for (let y = 0; y < CELL_H; y++) for (let x = 0; x < CELL_W; x++) {
+      const at = (y * CELL_W + x) * 4;
+      assert.deepEqual(pixel(0, row, x, y), [...approved.rgba.subarray(at, at + 4)], `${name} approved pixel at ${x},${y}`);
+    }
+  }
+});
+
+test("approved three-head proportions remain intact and each direction has idle/walk motion", () => {
+  for (let row = 0; row < CHAR_ATLAS.rows; row++) {
+    const chin = CHINS[row];
     const occupied = Array.from({ length: CELL_H }, (_, y) => Array.from({ length: CELL_W }, (_, x) => pixel(0, row, x, y)[3]).filter(Boolean).length);
     const top = occupied.findIndex(Boolean), bottom = occupied.findLastIndex(Boolean);
-    const headShare = (CHIN - top) / (bottom - top + 1);
-    assert.ok(headShare >= 0.44 && headShare <= 0.56, `head share ${headShare}`);
-    assert.ok(Math.max(...occupied.slice(2, CHIN)) > Math.max(...occupied.slice(CHIN)), "round head is wider than small body");
-    assert.notDeepEqual(pixel(CHAR_VIEW.front, row, 28, 38), pixel(CHAR_VIEW.back, row, 28, 38), "back of head has no front eyes");
-    assert.deepEqual(pixel(CHAR_VIEW.left, row, 22, 38), pixel(CHAR_VIEW.right, row, CELL_W - 1 - 22, 38), "right view mirrors the left view");
+    const headShare = (chin - top) / (bottom - top + 1);
+    assert.ok(headShare >= 0.29 && headShare <= 0.38, `head share ${headShare}`);
+    assert.notEqual(digest(CHAR_VIEW.front, row), digest(CHAR_VIEW.back, row), "front and back have separately drawn views");
+    for (let y = 0; y < CELL_H; y++) for (let x = 0; x < CELL_W; x++) {
+      assert.deepEqual(pixel(CHAR_VIEW.left, row, x, y), pixel(CHAR_VIEW.right, row, CELL_W - 1 - x, y), "right idle view mirrors the unadorned left profile");
+    }
     for (const view of Object.values(CHAR_VIEW)) {
       for (const anim of Object.values(CHAR_ANIM)) {
         const frames = Array.from({ length: anim.length }, (_, i) => digest(view + anim.from + i, row));
-        assert.equal(new Set(frames).size, anim.length, `every ${anim.length}-frame cycle changes each frame`);
+        assert.ok(new Set(frames).size >= (anim === CHAR_ANIM.walk ? 4 : 2), "native source pixels animate without requiring an artificial change on every frame");
       }
     }
   }
@@ -171,6 +184,19 @@ test("the billboard keeps its full width from every side, so the side art is wha
   assert.ok(front > 0.3);
   assert.ok(Math.abs(side - front) < 1e-7);
   assert.ok(Math.abs(rear - front) < 1e-7);
+});
+
+test("a remote character selection changes the existing avatar row without replacing its node", () => {
+  const { engine, node } = fixture();
+  const next = { ...node.data, skin: 1 };
+  engine.setPlayers([next]);
+  engine.updatePlayers(0.1);
+  assert.equal(engine.players.get(next.pid), node);
+  assert.equal(node.data.skin, 1);
+  assert.equal(node.tex.offset.y, 0, "female uses the second of two atlas rows");
+  engine.setPlayers([{ ...next, skin: 0 }]);
+  engine.updatePlayers(0.1);
+  assert.equal(node.tex.offset.y, 0.5, "male returns to the first row");
 });
 
 test("yaw crosses ±PI by the short turn; care bounce and name tag remain above the taller character", () => {

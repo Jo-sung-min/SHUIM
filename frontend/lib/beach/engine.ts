@@ -38,7 +38,7 @@ export interface EngineHandlers {
 export interface EngineOptions {
   bounds: Bounds;
   spawn: { x: number; z: number; yaw: number };
-  /** 내 캐릭터 색 (3인칭일 때 내 도트 캐릭터로 보인다) */
+  /** 내 기본 캐릭터: 0 남자, 1 여자 (3인칭일 때 내 도트 캐릭터로 보인다) */
   skin: number;
   /** 처음 시점 (기본 1인칭) */
   view?: ViewMode;
@@ -421,7 +421,7 @@ export class BeachEngine {
 
   private async loadAtlases() {
     const loader = new THREE.TextureLoader();
-    const [chars, props] = await Promise.all([loader.loadAsync("/beach/chars.png"), loader.loadAsync("/beach/props.png")]);
+    const [chars, props] = await Promise.all([loader.loadAsync("/beach/chars-v2.png"), loader.loadAsync("/beach/props.png")]);
     this.charTex = pixelTexture(chars, true);
     this.propTex = pixelTexture(props, true);
     const fxOf = (name: PropName) => regionTexture(this.propTex, PROP[name], PROPS_ATLAS.width, PROPS_ATLAS.height);
@@ -473,6 +473,12 @@ export class BeachEngine {
 
   toggleView() {
     this.setView(this.view === "first" ? "third" : "first");
+  }
+
+  /** The next render uses the selected row without reloading the room or texture. */
+  setSkin(skin: number) {
+    if (this.disposed || !Number.isInteger(skin)) return;
+    this.skin = ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
   }
 
   private buildProps() {
