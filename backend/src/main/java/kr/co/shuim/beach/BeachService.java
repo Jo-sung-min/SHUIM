@@ -73,9 +73,13 @@ public class BeachService {
     }
 
     public BeachRoom.TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, character, false);
+    }
+
+    public BeachRoom.TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character, boolean hugAllowed) {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
         if (binding == null) return null;
-        BeachRoom.TickResult result = binding.room().tick(ticket, x, z, yaw, moving, careTo, careKind, character);
+        BeachRoom.TickResult result = binding.room().tick(ticket, x, z, yaw, moving, careTo, careKind, character, hugAllowed);
         if (result == null) { tickets.remove(ticket, binding); return null; }
         return result.withFire(binding.tickFire(fire, clock));
     }

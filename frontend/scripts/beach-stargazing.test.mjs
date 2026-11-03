@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { stripTypeScriptTypes } from "node:module";
+import { inflateSync } from "node:zlib";
 import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -16,13 +18,44 @@ async function load(file, dependencies, names) {
 const geometry = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "stargazingSlot", "claimedStargazingSlot", "stargazingBodyPoint", "applyLyingTransform", "stargazingApproach", "stargazingCameraDistance", "buildStargazingZone"]);
 const { STARGAZING, stargazingSlot, stargazingBodyPoint, applyLyingTransform, stargazingApproach, buildStargazingZone } = geometry;
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
+const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "BED_AVATAR_Y", "bedSlot", "claimedBedSlot", "buildShelters"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...geometry, ...atlas, CAMPFIRE: { x: 0, z: 12 }, SHELTERS: [], SHELTER_SEATS: [], SHELTER_COLLIDERS: [], performance,
+  THREE, ...geometry, ...atlas, ...bedding, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ width: 0, height: 0, getContext: () => null }) },
 }, ["BeachEngine"]);
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, message ?? `${actual} ≈ ${expected}`);
 const rest = (slot) => ({ pose: "lying", ...stargazingSlot(slot) });
 const standing = { pose: "standing", spotId: null, slot: null, x: 2, z: 4, yaw: 0.3 };
+
+// Read the approved sprite pixels: a geometric point high on the head only tests hair visibility.
+const spritePng = await readFile(new URL("../public/beach/chars-v2.png", import.meta.url));
+const spriteWidth = spritePng.readUInt32BE(16), spriteHeight = spritePng.readUInt32BE(20);
+const compressedPixels = [];
+for (let offset = 8; offset < spritePng.length;) {
+  const length = spritePng.readUInt32BE(offset);
+  if (spritePng.toString("ascii", offset + 4, offset + 8) === "IDAT") compressedPixels.push(spritePng.subarray(offset + 8, offset + 8 + length));
+  offset += length + 12;
+}
+const scanlines = inflateSync(Buffer.concat(compressedPixels)), stride = spriteWidth * 4;
+const spritePixels = Buffer.alloc(spriteHeight * stride);
+for (let y = 0; y < spriteHeight; y++) {
+  const filter = scanlines[y * (stride + 1)];
+  for (let x = 0; x < stride; x++) {
+    const at = y * stride + x, a = x >= 4 ? spritePixels[at - 4] : 0, b = y ? spritePixels[at - stride] : 0;
+    const c = x >= 4 && y ? spritePixels[at - stride - 4] : 0;
+    const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+    const prediction = filter === 1 ? a : filter === 2 ? b : filter === 3 ? Math.floor((a + b) / 2) : filter === 4 ? (pa <= pb && pa <= pc ? a : pb <= pc ? b : c) : 0;
+    spritePixels[at] = (scanlines[y * (stride + 1) + x + 1] + prediction) & 255;
+  }
+}
+const facePixels = [
+  { skin: 0, x: 29, y: 32 }, { skin: 0, x: 43, y: 32 }, { skin: 0, x: 35, y: 36 },
+  { skin: 1, x: 29, y: 30 }, { skin: 1, x: 43, y: 30 }, { skin: 1, x: 35, y: 34 },
+];
+for (const pixel of facePixels) {
+  const offset = ((pixel.skin * atlas.CHAR_ATLAS.cellH + pixel.y) * spriteWidth + pixel.x) * 4;
+  assert.equal(spritePixels[offset + 3], 255, "face samples must belong to opaque approved character artwork");
+}
 
 function fixture() {
   const states = [];
@@ -105,6 +138,8 @@ test("confirmed lying blocks movement, preserves dragged sky view across ticks, 
   close(engine.self.x, 0, "ordinary standing ticks must not snap a walking player");
   engine.applyRest(rest(0));
   assert.equal(engine.isLying, true);
+  assert.equal(engine.viewMode, "third", "lying begins with the character visible");
+  engine.setView("first");
   engine.self.pitch = 0.97; engine.self.yaw = 0.8;
   engine.applyRest(rest(0));
   close(engine.self.pitch, 0.97); close(engine.self.yaw, 0.8);
@@ -116,6 +151,7 @@ test("confirmed lying blocks movement, preserves dragged sky view across ticks, 
   const head = stargazingBodyPoint(rest(0), 1.42);
   close(camera.position.x, head.x); close(camera.position.z, head.z);
   assert.ok(camera.getWorldDirection(new THREE.Vector3()).y > 0.7);
+  assert.equal(camera.layers.mask, 2, "only the dedicated sky layer renders; cliffs and buildings are excluded");
   engine.applyRest(standing);
   assert.equal(engine.isLying, false);
   close(engine.self.x, 2); close(engine.self.pitch, 0.07);
@@ -153,4 +189,57 @@ test("remote lying poses stay fixed as the camera moves, occupancy deduplicates 
   close(node.sprite.rotation.x, 0);
   assert.equal(node.shadow.visible, true);
   assert.equal(node.label.visible, false, "a nearby name badge cannot fill the screen");
+});
+
+test("every hut bed keeps the face visible above the duvet and the camera below the real roof", () => {
+  for (const shelter of bedding.SHELTERS) for (let slot = 0; slot < 3; slot++) {
+    for (const aspect of [390 / 844, 1920 / 911]) {
+      const { engine, camera } = fixture();
+      camera.aspect = aspect; camera.updateProjectionMatrix();
+      bedding.buildShelters(engine.scene);
+      const bed = bedding.bedSlot(`hut-${shelter.id}`, slot);
+      engine.applyRest({ pose: "lying", ...bed });
+      assert.equal(engine.viewMode, "third");
+      assert.equal(engine.isBedLying, true);
+      engine.setView("first");
+      assert.equal(engine.viewMode, "third", "a covered hut never enters sky-only mode");
+      engine.updateSelf(0.016);
+      engine.scene.updateMatrixWorld(true); camera.updateMatrixWorld();
+      assert.equal(camera.layers.mask, 1);
+      assert.ok(camera.position.y < 3.1 && camera.position.z < shelter.z - 2, "camera stays inside the open front, below rafters");
+      const roomMeshes = engine.scene.children.filter((node) => node.name.startsWith("shelters-"));
+      for (const pixel of facePixels) {
+        const face = new THREE.Vector3((pixel.x + .5 - 36) * 1.8 / 104, (104 - pixel.y - .5) * 1.8 / 104, 0).applyMatrix4(engine.selfNode.sprite.matrixWorld);
+        const projected = face.clone().project(camera);
+        assert.ok(Math.abs(projected.x) < .9 && Math.abs(projected.y) < .9, "actual eyes and cheeks remain inside portrait and landscape framing");
+        const distance = camera.position.distanceTo(face);
+        const sightline = new THREE.Raycaster(camera.position, face.clone().sub(camera.position).normalize(), 0.05, distance - .005);
+        assert.equal(sightline.intersectObjects(roomMeshes, false).length, 0, `slot ${slot} in ${shelter.id}: actual face pixel ${pixel.skin}/${pixel.x}/${pixel.y} is visible above the duvet`);
+      }
+      const chest = new THREE.Vector3(0, .7, 0).applyMatrix4(engine.selfNode.sprite.matrixWorld);
+      const duvetRay = new THREE.Raycaster(chest.clone().add(new THREE.Vector3(0, .5, 0)), new THREE.Vector3(0, -1, 0), 0, .5);
+      assert.ok(duvetRay.intersectObject(engine.scene.getObjectByName("shelters-cushions"), false).length > 0, "the duvet covers the body above the avatar plane");
+    }
+  }
+});
+
+test("bed occupancy is per hut, excludes star mats, and local/remote occupants use the same raised pose", () => {
+  const { engine, states } = fixture();
+  const bed = bedding.bedSlot("hut-pine", 1);
+  const bedEvents = [];
+  engine.handlers.onBedChange = (state) => bedEvents.push(state);
+  engine.applyRest({ pose: "lying", ...bed });
+  const players = [bedding.bedSlot("hut-pine", 0), bedding.bedSlot("hut-wave", 1), stargazingSlot(0)]
+    .map((claim, i) => ({ pid: `bed-${i}`, id: `u${i}`, nick: "쉼", skin: 0, moving: false, pose: "lying", ...claim }));
+  engine.setPlayers(players); engine.updatePlayers(1); engine.updateSelf(0.016);
+  assert.equal(engine.getBedState().occupied, 2);
+  assert.equal(bedEvents.at(-1).spotId, "hut-pine");
+  assert.equal(states.at(-1).lying, false);
+  assert.equal(states.at(-1).occupied, 1, "beds never consume a circle mat");
+  close(engine.players.get("bed-0").sprite.position.y, bedding.BED_AVATAR_Y);
+  close(engine.selfNode.sprite.rotation.x, engine.players.get("bed-0").sprite.rotation.x);
+  engine.applyRest({ pose: "standing", spotId: null, slot: null, x: -13, z: 21.8, yaw: 0 });
+  assert.equal(engine.isLying, false);
+  assert.equal(engine.getBedState().occupied, 1);
+  assert.equal(engine.getBedState().lying, false);
 });

@@ -155,4 +155,86 @@ class BeachRestTest {
         service.leave(b.ticket());
         assertEquals(410, assertThrows(ApiException.class, () -> service.rest(b.ticket(), "lie", null)).status());
     }
+
+    @Test
+    void eachHutHasThreeIndependentBedsWithSharedPosesAndTheCircleIsUnchanged() {
+        String[] spots = {"hut-pine", "hut-wave", "hut-sunset"};
+        double[] xs = {-13, 0, 13}, zs = {23, 25, 23};
+        for (int h = 0; h < 3; h++) {
+            final String spot = spots[h];
+            for (int i = 0; i < 3; i++) {
+                var p = visitor(spot + i);
+                room.tick(p.ticket(), xs[h], zs[h] - 1.2, .4, false, null, null);
+                var rest = room.rest(p.ticket(), "lie", spot);
+                assertEquals(i, rest.slot());
+                assertEquals(spot, rest.spotId());
+                assertEquals(xs[h] + (i - 1) * 1.9, rest.x(), 1e-10);
+                assertEquals(zs[h] - .1, rest.z(), 1e-10);
+                assertEquals(Math.PI, rest.yaw(), 1e-10);
+                assertEquals(rest, room.rest(p.ticket(), "lie", spot));
+                assertEquals(rest, room.tick(p.ticket(), -20, 0, 0, true, null, null).selfRest());
+                assertEquals(409, assertThrows(ApiException.class, () -> room.rest(p.ticket(), "lie", "starlight")).status());
+            }
+            var extra = visitor(spot + "extra");
+            room.tick(extra.ticket(), xs[h], zs[h] - 1.2, 0, false, null, null);
+            assertEquals(409, assertThrows(ApiException.class, () -> room.rest(extra.ticket(), "lie", spot)).status());
+            var observed = room.tick(extra.ticket(), xs[h], zs[h] - 1.2, 0, false, null, null);
+            assertEquals(3, observed.players().stream().filter(p -> spot.equals(p.spotId()) && "lying".equals(p.pose())).count());
+        }
+        var circle = visitor("circle");
+        assertEquals(0, room.rest(circle.ticket(), "lie", null).slot());
+    }
+
+    @Test
+    void bedReleaseExpiryDistanceAndRoomIsolationPreserveOwnership() {
+        var p = visitor("one");
+        assertEquals(400, assertThrows(ApiException.class, () -> room.rest(p.ticket(), "lie", "hut-pine")).status());
+        room.tick(p.ticket(), -13, 21.8, .5, false, null, null);
+        room.rest(p.ticket(), "lie", "hut-pine");
+        var stood = room.rest(p.ticket(), "stand", null);
+        assertEquals(new BeachRoom.RestPresence("standing", null, null, -13, 21.8, .5), stood);
+        assertEquals(0, room.rest(p.ticket(), "lie", "hut-pine").slot());
+        clock.addAndGet(BeachRoom.IDLE_MS + 1);
+        var fresh = visitor("fresh");
+        room.tick(fresh.ticket(), -13, 21.8, 0, false, null, null);
+        assertEquals(0, room.rest(fresh.ticket(), "lie", "hut-pine").slot());
+        assertEquals(410, assertThrows(ApiException.class, () -> room.rest(p.ticket(), "stand", null)).status());
+        var separate = new BeachRoom(clock::get, false);
+        var other = separate.enter("other", "other", Set.of());
+        separate.tick(other.ticket(), -13, 21.8, 0, false, null, null);
+        assertEquals(0, separate.rest(other.ticket(), "lie", "hut-pine").slot());
+        assertEquals(410, assertThrows(ApiException.class, () -> room.rest(other.ticket(), "lie", "hut-pine")).status());
+        room.leave(fresh.ticket());
+        var last = visitor("last");
+        room.tick(last.ticket(), -13, 21.8, 0, false, null, null);
+        assertEquals(0, room.rest(last.ticket(), "lie", "hut-pine").slot());
+    }
+
+    @Test
+    void simultaneousBedClaimsNeverShareOneDuvet() throws Exception {
+        var guests = new ArrayList<BeachRoom.Presence>();
+        for (int i = 0; i < 12; i++) {
+            var p = visitor("bed-" + i);
+            room.tick(p.ticket(), 0, 23.8, 0, false, null, null);
+            guests.add(p);
+        }
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(12)) {
+            var claims = new ArrayList<java.util.concurrent.Future<Integer>>();
+            for (var p : guests) claims.add(executor.submit(() -> {
+                assertTrue(start.await(5, TimeUnit.SECONDS));
+                try { return room.rest(p.ticket(), "lie", "hut-wave").slot(); }
+                catch (ApiException e) { assertEquals(409, e.status()); return -1; }
+            }));
+            start.countDown();
+            var used = new HashSet<Integer>();
+            int full = 0;
+            for (var claim : claims) {
+                int slot = claim.get(5, TimeUnit.SECONDS);
+                if (slot < 0) full++; else assertTrue(used.add(slot));
+            }
+            assertEquals(Set.of(0, 1, 2), used);
+            assertEquals(9, full);
+        }
+    }
 }

@@ -2,18 +2,20 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { BeachEngine, webglSupported, type RestState, type StargazingState, type ViewMode } from "@/lib/beach/engine";
+import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type ViewMode } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
+import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconCheck, IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconMoon, IconUser, IconUsers } from "@/components/Icons";
+import { IconCheck, IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconMoon, IconUser, IconUsers, IconSparkle, IconSmile } from "@/components/Icons";
 import { route } from "@/lib/routes";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
 import Joystick from "./Joystick";
+import PhotoPreview, { CameraIcon } from "./PhotoPreview";
 import styles from "./beach.module.css";
 
-const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요" };
+const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요", wave: "인사를 건넸어요" };
 const TICK_MOVING = 500;
 const TICK_IDLE = 1500;
 const VIEW_KEY = "beach-view";
@@ -39,6 +41,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const ticketRef = useRef<string | null>(null);
   const meRef = useRef<{ pid: string; id: string; nick: string } | null>(null);
   const pendingCareRef = useRef<{ to: string; nick: string; kind: CareKind } | null>(null);
+  const careBusyRef = useRef(false);
+  const actionsTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreTriggerRef = useRef<HTMLButtonElement>(null);
+  const actionTrayId = useId();
   const timerRef = useRef<number>(0);
   const inFlightRef = useRef(false);
   const failRef = useRef(0);
@@ -53,6 +59,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const characterTriggerRef = useRef<HTMLButtonElement>(null);
   const characterPickerId = useId();
   const restEnabledRef = useRef(false);
+  const bedEnabledRef = useRef(false);
+  const captureBusyRef = useRef(false);
+  const cameraTriggerRef = useRef<HTMLButtonElement>(null);
+  const photoFocusFrameRef = useRef(0);
   const restMutationRef = useRef(false);
   const skyBusyRef = useRef<SkyPhase | null>(null);
   const skyOperationRef = useRef(0);
@@ -68,11 +78,18 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [community, setCommunity] = useState<EnterResponse["community"] | null>(null);
   const [selected, setSelected] = useState<RemotePlayer | null>(null);
   const [rest, setRest] = useState<RestState | null>(null);
-  const [received, setReceived] = useState({ comfort: 0, hug: 0 });
+  const [received, setReceived] = useState<{ comfort: number; hug: number; wave?: number }>({ comfort: 0, hug: 0, wave: 0 });
+  const [careCapabilities, setCareCapabilities] = useState({ wave: false, hug: false });
+  const [careBusy, setCareBusy] = useState(false);
+  const [people, setPeople] = useState<RemotePlayer[]>([]);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [hudHidden, setHudHidden] = useState(false);
+  const [carePrompt, setCarePrompt] = useState<CareKind | null>(null);
   const [flash, setFlash] = useState<{ kind: CareKind; id: number } | null>(null);
   const [hint, setHint] = useState(false);
   const [intro, setIntro] = useState<"visible" | "leaving" | "hidden">("hidden");
   const [timeLabel, setTimeLabel] = useState("");
+  const [nightControls, setNightControls] = useState(false);
   const [lost, setLost] = useState(false);
   const [fire, setFire] = useState<FireState | null>(null);
   const [nearFire, setNearFire] = useState(false);
@@ -81,6 +98,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [character, setCharacter] = useState<BeachCharacter>("male");
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [restEnabled, setRestEnabled] = useState(false);
+  const [bedEnabled, setBedEnabled] = useState(false);
+  const [bed, setBed] = useState<BedState | null>(null);
+  const [photo, setPhoto] = useState<BeachPhoto | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [stargazing, setStargazing] = useState<StargazingState>({ near: false, lying: false, occupied: 0, capacity: 8 });
   const [skyPhase, setSkyPhase] = useState<SkyPhase | null>(null);
   const [woodBusy, setWoodBusy] = useState(false);
@@ -89,6 +110,22 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
+  const lying = stargazing.lying || Boolean(bed?.lying);
+
+  useEffect(() => () => photo?.dispose(), [photo]);
+  useEffect(() => () => window.cancelAnimationFrame(photoFocusFrameRef.current), []);
+
+  const closePhoto = useCallback(() => {
+    const visit = visitGenerationRef.current;
+    setPhoto(null);
+    window.cancelAnimationFrame(photoFocusFrameRef.current);
+    // The preview makes the world inert; restore focus after that attribute is removed.
+    photoFocusFrameRef.current = window.requestAnimationFrame(() => {
+      if (aliveRef.current && !blockedRef.current && visitGenerationRef.current === visit && cameraTriggerRef.current?.isConnected) {
+        cameraTriggerRef.current.focus({ preventScroll: true });
+      }
+    });
+  }, []);
 
   // Start once the scene is ready; ticket refreshes do not replay the entry copy.
   useEffect(() => {
@@ -120,16 +157,30 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     return next;
   }, []);
 
-  const controlsPaused = characterPickerOpen || selected !== null || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
+  const controlsPaused = Boolean(photo) || characterPickerOpen || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
     controlsPausedRef.current = controlsPaused;
   }, [controlsPaused, phase]);
 
-  useEffect(() => { if (stargazing.lying) setPowderOpen(false); }, [stargazing.lying]);
+  useEffect(() => { if (lying || !nearFire) setPowderOpen(false); }, [lying, nearFire]);
 
   useEffect(() => {
-    if (!selected || characterPickerOpen) return;
+    if (!actionsOpen || photo || powderOpen || characterPickerOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setActionsOpen(false);
+      setCarePrompt(null);
+      engineRef.current?.select(null);
+      actionsTriggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [actionsOpen, photo, powderOpen, characterPickerOpen]);
+
+  useEffect(() => {
+    if (!selected || characterPickerOpen || photo || powderOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -137,12 +188,12 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selected, characterPickerOpen]);
+  }, [selected, characterPickerOpen, photo, powderOpen]);
 
   useEffect(() => {
     if (!characterPickerOpen) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !characterPickerRef.current?.contains(event.target)) setCharacterPickerOpen(false);
+      if (event.target instanceof Node && !characterPickerRef.current?.contains(event.target) && !characterTriggerRef.current?.contains(event.target)) setCharacterPickerOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -172,13 +223,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     const engine = engineRef.current;
     const me = meRef.current;
     if (!engine || !me) return;
+    engine.playCare(ev.kind, ev.toPid === me.pid ? null : ev.toPid, ev.fromPid === me.pid ? null : ev.fromPid);
     if (ev.toPid === me.pid) {
       setFlash({ kind: ev.kind, id: ev.at + Math.random() });
-      engine.playCare(ev.kind, null);
       haptic(ev.kind === "hug" ? 24 : 12);
       toastSuccess(`${ev.fromNick}님이 ${CARE_LABEL[ev.kind]}`);
-    } else if (ev.fromPid !== me.pid) {
-      engine.playCare(ev.kind, ev.toPid); // 내가 보낸 건 누를 때 이미 띄웠다
     }
   }, []);
 
@@ -201,6 +250,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setRest(null);
     setCharacterPickerOpen(false);
     setPowderOpen(false);
+    setPhoto(null);
+    pendingCareRef.current = null;
+    careBusyRef.current = false;
+    setCareBusy(false);
     skyOperationRef.current++;
     skyBusyRef.current = null;
     restMutationRef.current = false;
@@ -215,14 +268,23 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     // Confirm the session identity before sending any account's saved choice.
     const entered = await enterBeach(communityId);
     if (!belongsToVisit() || blockedRef.current) { leaveBeach(entered.ticket); return false; }
+    if (meRef.current?.id !== entered.me.id) {
+      pendingCareRef.current = null;
+      careBusyRef.current = false;
+      setCareBusy(false);
+      engine.select(null);
+    }
     ticketRef.current = entered.ticket;
     adoptCharacter(entered.me);
     meRef.current = entered.me;
+    setCareCapabilities({ wave: entered.careCapabilities?.wave === true, hug: entered.careCapabilities?.hug === true });
     setCount(entered.count);
     setCapacity(entered.capacity);
     setCommunity(entered.community);
     restEnabledRef.current = entered.restEnabled === true;
     setRestEnabled(restEnabledRef.current);
+    bedEnabledRef.current = entered.bedEnabled === true;
+    setBedEnabled(bedEnabledRef.current);
     // A new ticket owns no slot from the previous visit.
     engine.applyRest({ pose: "standing", spotId: null, slot: null, ...entered.spawn });
     applyFire(entered.fire);
@@ -270,17 +332,25 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       });
       if (!belongsToVisit() || blockedRef.current) return false;
       engine.setPlayers(res.players);
+      setPeople(res.players);
+      if (res.careCapabilities) setCareCapabilities({ wave: res.careCapabilities.wave === true, hug: res.careCapabilities.hug === true });
       if (res.selfRest) engine.applyRest(res.selfRest);
       setCount(res.count);
       setReceived(res.received);
       applyFire(res.fire);
       for (const ev of res.events) handleEvent(ev);
       if (care) {
+        careBusyRef.current = false;
+        setCareBusy(false);
         if (res.care === "sent") toastSuccess(`${care.nick}님에게 ${CARE_LABEL[care.kind]}`);
         else if (res.care === "cooldown") showToast("잠시 뒤에 다시 건넬 수 있어요", { kind: "info" });
         else if (res.care === "gone") {
           showToast(`${care.nick}님은 지금 바닷가에 없어요`, { kind: "info" });
           engine.select(null);
+        } else if (res.care === "forbidden") {
+          setCoolUntil(0);
+          if (care.kind === "hug") setCareCapabilities((caps) => ({ ...caps, hug: false }));
+          showToast(care.kind === "hug" ? "포옹은 관리자만 건넬 수 있어요. 인사나 위로를 건네 보세요." : "현재 입장 정보를 확인하지 못했어요. 바닷가에 다시 들어와 주세요.", { kind: "info" });
         }
       }
       failRef.current = 0;
@@ -296,7 +366,13 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       } else {
         failRef.current++;
         setLost(failRef.current >= 2);
-        if (care) pendingCareRef.current = care;
+        if (care) {
+          // A lost response may already have delivered this action. Never replay it automatically.
+          pendingCareRef.current = null;
+          careBusyRef.current = false;
+          setCareBusy(false);
+          showToast("전달 여부를 확인하지 못했어요. 잠시 후 다시 눌러 주세요.", { kind: "info" });
+        }
       }
       return false;
     } finally {
@@ -317,6 +393,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     inFlightRef.current = false;
     failRef.current = 0;
     pendingCareRef.current = null;
+    careBusyRef.current = false;
+    setCareBusy(false);
+    setPeople([]);
+    setCareCapabilities({ wave: false, hug: false });
     setLost(false);
     woodBusyRef.current = false;
     powderBusyRef.current = false;
@@ -324,6 +404,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setWoodBusy(false);
     setPowderPhase(null);
     setPowderOpen(false);
+    captureBusyRef.current = false;
+    setCapturing(false);
+    setPhoto(null);
+    setBed(null);
     fireTimeRef.current = 0;
     fireLogsRef.current = null;
     if (!communityId) {
@@ -346,11 +430,14 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         ticketRef.current = entered.ticket;
         const initialCharacter = adoptCharacter(entered.me);
         meRef.current = entered.me;
+        setCareCapabilities({ wave: entered.careCapabilities?.wave === true, hug: entered.careCapabilities?.hug === true });
         setCount(entered.count);
         setCapacity(entered.capacity);
         setCommunity(entered.community);
         restEnabledRef.current = entered.restEnabled === true;
         setRestEnabled(restEnabledRef.current);
+        bedEnabledRef.current = entered.bedEnabled === true;
+        setBedEnabled(bedEnabledRef.current);
         const initialView = savedView();
         setView(initialView);
         engine = new BeachEngine(canvas, {
@@ -360,7 +447,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
           view: initialView,
           hourOverride: hourOverride(window.location.search),
           handlers: {
-            onSelect: (p) => setSelected(p),
+            onSelect: (p) => { setSelected(p); if (p) { setActionsOpen(true); setCarePrompt(null); } },
             onRestChange: (state) => setRest(state),
             onViewChange: (next) => {
               setView(next);
@@ -368,12 +455,14 @@ export default function BeachScene({ communityId }: { communityId: string }) {
             },
             onFireRangeChange: (near) => setNearFire(near),
             onStargazingChange: (state) => setStargazing(state),
+            onBedChange: (state) => setBed(state),
           },
         });
         engineRef.current = engine;
         applyFire(entered.fire);
         if (process.env.NODE_ENV !== "production") (window as unknown as { __beach?: BeachEngine }).__beach = engine; // 개발 콘솔에서 들여다보기
         setTimeLabel(hourLabel(engine.daylightNow.hour));
+        setNightControls(engine.daylightNow.deepNight > 0.5);
         await engine.whenReady();
         if (cancelled || !aliveRef.current) { engine.dispose(); return; }
         engine.start();
@@ -398,7 +487,13 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     };
     const onResize = () => engineRef.current?.resize();
     const onPageHide = () => { if (ticketRef.current) leaveBeach(ticketRef.current); };
-    const clockTimer = window.setInterval(() => { if (engineRef.current) setTimeLabel(hourLabel(engineRef.current.daylightNow.hour)); bump((n) => n + 1); }, 15_000);
+    const clockTimer = window.setInterval(() => {
+      if (engineRef.current) {
+        setTimeLabel(hourLabel(engineRef.current.daylightNow.hour));
+        setNightControls(engineRef.current.daylightNow.deepNight > 0.5);
+      }
+      bump((n) => n + 1);
+    }, 15_000);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onResize);
@@ -440,13 +535,50 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     scheduleTick(0);
   };
 
-  const toggleStargazing = async () => {
+  const resumeForAction = async (engine: BeachEngine, current: () => boolean) => {
+    engine.select(null);
+    setCarePrompt(null);
+    const waitUntil = performance.now() + 1000;
+    while (controlsPausedRef.current && current()) {
+      if (performance.now() >= waitUntil) throw new Error("열린 화면을 닫은 뒤 다시 눌러 주세요.");
+      await new Promise((resolve) => window.setTimeout(resolve, 16));
+    }
+  };
+
+  const takePhoto = async () => {
     const engine = engineRef.current;
-    if (!engine || !restEnabledRef.current || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
-    if (!engine.isLying && stargazing.occupied >= stargazing.capacity) return;
+    if (!engine || phase !== "ready" || captureBusyRef.current || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
+    const visit = visitGenerationRef.current;
+    const current = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit && !blockedRef.current;
+    captureBusyRef.current = true;
+    setCapturing(true);
+    setCharacterPickerOpen(false);
+    try {
+      const blob = await engine.capturePhoto();
+      if (!current()) return;
+      setPhoto(createBeachPhoto(blob));
+      haptic();
+    } catch (cause) {
+      if (current()) showToast(cause instanceof Error ? cause.message : "사진을 담지 못했어요. 다시 찍어 주세요.", { kind: "info" });
+    } finally {
+      if (current()) { captureBusyRef.current = false; setCapturing(false); }
+    }
+  };
+
+  const toggleStargazing = async (spotId = "starlight") => {
+    const engine = engineRef.current;
+    const isBed = spotId !== "starlight";
+    const enabled = () => isBed ? bedEnabledRef.current : restEnabledRef.current;
+    if (!engine || !enabled() || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
+    const destination = isBed ? engine.getBedState() : stargazing;
+    if (!engine.isLying && (!destination || destination.occupied >= destination.capacity)) return;
     const operation = ++skyOperationRef.current;
-    const current = () => aliveRef.current && !blockedRef.current && skyOperationRef.current === operation && engineRef.current === engine;
+    const visit = visitGenerationRef.current;
+    const actor = meRef.current?.id;
+    const current = () => aliveRef.current && !blockedRef.current && skyOperationRef.current === operation && engineRef.current === engine && visitGenerationRef.current === visit;
     const action = engine.isLying ? "stand" : "lie";
+    engine.select(null);
+    setCarePrompt(null);
     const changePhase = (next: SkyPhase) => {
       skyBusyRef.current = next;
       setSkyPhase(next);
@@ -455,9 +587,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     try {
       if (action === "lie") {
         changePhase("walking");
-        const walk = await engine.walkToStargazing();
+        await resumeForAction(engine, current);
+        if (!current()) return;
+        const walk = await (isBed ? engine.walkToBed(spotId) : engine.walkToStargazing());
         if (!current() || walk === "cancelled") return;
-        if (walk === "blocked") throw new Error("별빛 자리로 가는 길이 막혔어요. 조금 가까이에서 다시 눌러 주세요.");
+        if (walk === "blocked") throw new Error("쉬어갈 자리로 가는 길이 막혔어요. 조금 가까이에서 다시 눌러 주세요.");
       }
       changePhase(action === "lie" ? "joining" : "standing");
       // Regular ticks continue during the walk. Reserve the network lane only now,
@@ -473,11 +607,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       if (!(await runTick(true))) throw new Error("연결을 확인하지 못했어요. 잠시 후 다시 눌러 주세요.");
       if (!current()) return;
       const ticket = ticketRef.current;
-      if (!ticket || !restEnabledRef.current) throw new Error("별빛 자리를 준비하고 있어요. 잠시 후 다시 와 주세요.");
-      const confirmed = await setBeachRest(ticket, action);
-      if (!current()) return;
+      if (!ticket || !enabled() || meRef.current?.id !== actor) throw new Error("쉬어갈 자리를 준비하고 있어요. 잠시 후 다시 눌러 주세요.");
+      const confirmed = await setBeachRest(ticket, action, spotId);
+      if (!current() || meRef.current?.id !== actor) return;
       engine.applyRest(confirmed);
-      if (confirmed.pose === "lying") engine.setView("first");
+      if (confirmed.pose === "lying") engine.setView("third");
     } catch (cause) {
       if (!current()) return;
       if (cause instanceof BeachGone) {
@@ -487,8 +621,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         stopWithError(cause);
       } else {
         if (cause instanceof BeachUnavailable && cause.status === 404) {
-          restEnabledRef.current = false;
-          setRestEnabled(false);
+          if (isBed) { bedEnabledRef.current = false; setBedEnabled(false); }
+          else { restEnabledRef.current = false; setRestEnabled(false); }
         }
         showToast(cause instanceof Error ? cause.message : "자리를 확인하지 못했어요. 다시 시도해 주세요.", { kind: "info" });
       }
@@ -513,6 +647,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     woodBusyRef.current = true;
     setWoodBusy(true);
     try {
+      await resumeForAction(engine, () => belongsToVisit() && !blockedRef.current);
+      if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
       phase("walking");
       const walk = await engine.walkToFire();
       if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
@@ -557,6 +693,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setPowderPhase("walking");
     setPowderOpen(false);
     try {
+      engine.select(null);
+      setCarePrompt(null);
       // Sheet cleanup and the single input-pause effect must finish before auto-walk.
       const resumeUntil = performance.now() + 1000;
       while (controlsPausedRef.current && belongsToVisit() && !blockedRef.current) {
@@ -599,131 +737,115 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   }, [runTick, scheduleTick, stopWithError]);
 
   const sendCare = (kind: CareKind) => {
+    if (careBusyRef.current || (kind === "hug" && !careCapabilities.hug) || (kind === "wave" && !careCapabilities.wave)) return;
     const target = selectedRef.current;
-    if (!target || Date.now() < coolUntil) return;
+    if (!target) { setCarePrompt(kind); setActionsOpen(true); haptic(); return; }
+    if (Date.now() < coolUntil) return;
+    careBusyRef.current = true;
+    setCareBusy(true);
     pendingCareRef.current = { to: target.id, nick: target.nick, kind };
     setCoolUntil(Date.now() + 3000);
     window.setTimeout(() => bump((n) => n + 1), 3050);
     haptic();
-    engineRef.current?.playCare(kind, target.pid); // 내 화면엔 바로, 다른 사람에겐 서버를 거쳐
     scheduleTick(0);
   };
 
-  const cooling = Date.now() < coolUntil;
-  const gotAny = received.comfort + received.hug > 0;
-  const skyFull = !stargazing.lying && stargazing.occupied >= stargazing.capacity;
-  const skyActionLabel = !restEnabled ? "별빛 자리 준비 중" : skyPhase === "walking" ? "별빛 자리로 가는 중…" : skyPhase === "joining" ? "자리 잡는 중…" : skyFull ? "모든 자리가 찼어요" : stargazing.occupied > 0 ? "같이 눕기" : "하늘 보기";
+  const cooling = Date.now() < coolUntil || careBusy;
+  const gotAny = received.comfort + received.hug + (received.wave ?? 0) > 0;
+  const activeBed = stargazing.lying ? null : bed;
+  const restArea = activeBed ?? stargazing;
+  const areaEnabled = activeBed ? bedEnabled : restEnabled;
+  const areaSpot = activeBed?.spotId ?? "starlight";
+  const skyFull = !lying && restArea.occupied >= restArea.capacity;
   const returnHref = community ? route(`/c/${community.slug}`) : "/c/home";
+  const hideHud = () => { setHudHidden(true); setCharacterPickerOpen(false); setPowderOpen(false); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); haptic(); window.requestAnimationFrame(() => restoreTriggerRef.current?.focus()); };
+  const restoreHud = () => { setHudHidden(false); haptic(); window.requestAnimationFrame(() => actionsTriggerRef.current?.focus()); };
+  const viewLabel = activeBed?.lying ? "함께 보기" : stargazing.lying ? view === "third" ? "하늘 보기" : "모여 보기" : view === "third" ? "내 눈으로" : "캐릭터 보기";
+  const restContextVisible = lying || Boolean(skyPhase) || Boolean(activeBed?.near) || stargazing.near;
+  const walking = skyPhase === "walking" || woodBusy || powderPhase === "walking";
+  const contextVisible = restContextVisible || Boolean(rest) || walking;
+  const fireContextVisible = nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-night={nightControls} inert={Boolean(photo)}>
       <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 바닷가 (${view === "first" ? "1인칭" : "3인칭"})`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
-      <div className={styles.top}>
-        <Link href={returnHref} className={styles.glass} aria-label="바닷가 나가기"><IconChevronL />나가기</Link>
-        <div className={styles.chips}>
-          {timeLabel && <span className={`${styles.glass} ${styles.chip} ${styles.timeChip}`}>{timeLabel}</span>}
-          {count !== null && <span className={`${styles.glass} ${styles.chip}`} aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<span className={styles.capacity}>/ {capacity}</span></span>}
-          {phase === "ready" && <div ref={characterPickerRef} className={styles.characterPicker}>
-            <button ref={characterTriggerRef} type="button" className={`${styles.glass} ${styles.characterTrigger}`}
-              aria-expanded={characterPickerOpen} aria-controls={characterPickerId}
-              onClick={() => { haptic(); setCharacterPickerOpen((open) => !open); }}>
-              <IconUser />캐릭터
-            </button>
-            {characterPickerOpen && <div id={characterPickerId} className={styles.characterPanel}>
-              <div className={styles.characterPanelHead}>
-                <strong>내 캐릭터</strong>
-                <button type="button" aria-label="캐릭터 선택 닫기" onClick={() => { setCharacterPickerOpen(false); characterTriggerRef.current?.focus(); }}><IconClose /></button>
-              </div>
-              <div className={styles.characterChoices} role="group" aria-label="기본 캐릭터 선택">
-                {BEACH_CHARACTERS.map((option) => <button key={option.id} type="button" className={styles.characterChoice}
-                  aria-pressed={character === option.id} onClick={() => chooseCharacter(option.id)}>
-                  <span className={styles.characterSprite} style={{ backgroundPosition: `0 ${-option.skin * 104}px` }} aria-hidden="true" />
-                  <span>{option.label}{character === option.id && <IconCheck aria-hidden="true" />}</span>
-                </button>)}
-              </div>
-              <p>고르면 내 모습이 바로 보여요.</p>
-            </div>}
-          </div>}
-        </div>
+      <div className={styles.top} hidden={hudHidden}>
+        <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label="바닷가 나가기"><IconChevronL />나가기</Link>
+      </div>
+      <div className={styles.statusBar} hidden={hudHidden}>
+        {timeLabel && <span className={styles.glass + " " + styles.chip}>{timeLabel}</span>}
+        {count !== null && <span className={styles.glass + " " + styles.chip} aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<span className={styles.capacity}>/ {capacity}</span></span>}
       </div>
 
-      {community && phase === "ready" && intro !== "hidden" && <div className={`${styles.place} ${intro === "leaving" ? styles.placeLeaving : ""}`} aria-hidden={intro === "leaving"}>
+      {community && !hudHidden && phase === "ready" && intro !== "hidden" && <div className={`${styles.place} ${intro === "leaving" ? styles.placeLeaving : ""}`} aria-hidden={intro === "leaving"}>
         <span><IconLock />우리만의 프라이빗 해변</span>
         <h1>{community.name} 바닷가</h1>
-        <p>웅장한 절벽 아래, 바다를 향한 프라이빗 라운지.</p>
+        <p>하얀 모래와 파도 곁에서 쉬어가요.</p>
       </div>}
 
-      {phase === "ready" && !selected && !characterPickerOpen && !powderOpen && powderPhase !== "adding" && !stargazing.lying && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !powderOpen && powderPhase !== "adding" && !lying && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick raised={(contextVisible || fireContextVisible) && !hudHidden} onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
-      <div className={styles.bottomHud}>
-      {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
-      {phase === "ready" && fire && meRef.current && <div className={styles.fireControls} hidden={stargazing.lying}><CampfireControls key={`${communityId}:${meRef.current.id}`}
-        fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || characterPickerOpen || selected !== null || stargazing.lying}
-        onAddWood={onAddWood} onAddPowder={onAddPowder} onFireChange={applyFire}
-        powderOpen={powderOpen} onPowderOpenChange={setPowderOpen}
-        view={view} onToggleView={() => engineRef.current?.toggleView()}
-      /></div>}
-      {phase === "ready" && !selected && !characterPickerOpen && !powderOpen && <div className={styles.skyControl} aria-label="별빛 자리" aria-busy={Boolean(skyPhase)}>
-        {stargazing.lying ? <>
-          <p className={styles.skyTogether}><IconMoon />함께 하늘을 보는 중<span>{stargazing.occupied} / {stargazing.capacity}</span></p>
-          <div className={styles.skyActions}>
-            <button type="button" className={styles.skyStand} disabled={Boolean(skyPhase) || lost} onClick={() => void toggleStargazing()}>
-              {skyPhase === "standing" ? "일어나는 중…" : "일어나기"}
-            </button>
-            <button type="button" className={styles.skyView} aria-pressed={view === "third"} disabled={Boolean(skyPhase)} onClick={() => engineRef.current?.toggleView()}>
-              {view === "third" ? <IconMoon /> : <IconUsers />}{view === "third" ? "하늘 보기" : "모여 보기"}
-            </button>
-          </div>
-        </> : <div className={styles.skyEntry}>
-          <button type="button" className={styles.skyGo} disabled={!restEnabled || Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || skyFull} onClick={() => void toggleStargazing()}>
-            <span className={styles.skyIcon} aria-hidden="true"><IconMoon /></span>
-            <span className={styles.skyCopy}><strong>{skyActionLabel}</strong><small>{!restEnabled ? "잠시 후 함께 쉬어가요" : skyPhase ? "조금만 기다려 주세요" : skyFull ? "자리가 나면 함께 누울 수 있어요" : stargazing.near ? "머리를 맞대고 잠깐 쉬어가요" : "별빛 자리로 걸어가요"}</small></span>
-            {restEnabled && <span className={styles.skyCount} aria-label={`${stargazing.capacity}자리 중 ${stargazing.occupied}명`}>{stargazing.occupied}<small>/ {stargazing.capacity}</small></span>}
-          </button>
-          {skyPhase === "walking" && <button type="button" className={styles.skyCancel} onClick={() => engineRef.current?.cancelAutoWalk()}>멈추기</button>}
-        </div>}
-      </div>}
-      {hint && !lost && !selected && !gotAny && !rest && !stargazing.lying && !skyPhase && phase === "ready" && (
-        <p className={styles.hint} role="status">
-          <span className={styles.touchHint}>왼쪽 조이스틱으로 걷고, 화면을 끌어 둘러봐요.</span><span className={styles.keyboardHint}>WASD·방향키로 걷고, 화면을 끌어 둘러봐요.</span><br />오두막에 앉아 쉬거나 사람을 눌러 위로를 건네요.
-        </p>
-      )}
-
-      {phase === "ready" && rest && !stargazing.lying && !skyPhase && (
-        <button type="button" className={styles.restButton} onClick={() => engineRef.current?.toggleRest()} aria-keyshortcuts="E">
-          <span className={styles.restCopy}>
-            <strong>{rest.seated ? "일어나기" : "앉아서 바다 보기"}</strong>
-            <small>{rest.seated ? "바다를 바라보며 쉬는 중" : rest.shelterName}</small>
-          </span>
-          <kbd className={styles.restKey} aria-hidden="true">E</kbd>
-        </button>
-      )}
-
-      {gotAny && <div className={`${styles.glass} ${styles.received}`} role="status">이번에 받은 위로 {received.comfort} · 포옹 {received.hug}</div>}
-
-      {selected && (
-        <div className={styles.panel} role="dialog" aria-label={`${selected.nick}님에게`}>
-          <div className={styles.panelHead}>
-            <div>
-              <strong>{selected.nick}</strong>
-              <small>말 대신 마음만 건네요</small>
+      <div className={styles.bottomHud} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
+        {lost && <p className={styles.dockNotice} role="status">연결을 다시 이어 보는 중…</p>}
+        {!actionsOpen && (skyPhase || woodBusy || powderPhase) && <p className={styles.dockNotice} role="status">잠깐만요, 행동을 마치고 있어요.</p>}
+        {hint && !actionsOpen && !selected && !lost && !lying && <p className={styles.dockHint}>걷고, 둘러보고, 행동을 골라 함께 쉬어요.</p>}
+        <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label="바닷가 행동">
+          <div className={styles.trayHeader}>
+            <div className={styles.trayHeading}>
+              <strong>{carePrompt ? "마음을 건넬 사람을 골라요" : selected ? selected.nick + "님에게" : "무엇을 해볼까요?"}</strong>
+              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : "옆으로 넘겨 더 골라요"}</small>
             </div>
-            <button type="button" onClick={() => engineRef.current?.select(null)} aria-label="닫기"><IconClose /></button>
+            {selected && !carePrompt && <button type="button" className={styles.traySmallButton} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }} aria-label="다른 사람 고르기"><IconUsers /></button>}
+            <button type="button" className={styles.traySmallButton} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
           </div>
-          <div className={styles.panelBtns}>
-            <button type="button" className={`${styles.careBtn} ${styles.comfort}`} disabled={cooling} onClick={() => sendCare("comfort")}><IconLeaf />위로해주기</button>
-            <button type="button" className={`${styles.careBtn} ${styles.hug}`} disabled={cooling} onClick={() => sendCare("hug")}><IconHeart />안아주기</button>
+          {carePrompt && <div className={styles.peopleRow} role="group" aria-label="마음을 건넬 사람">
+            {people.length ? people.map((person) => <button type="button" key={person.pid} className={styles.personChoice} onClick={() => engineRef.current?.select(person.pid)}><IconUser /><span>{person.nick}</span><small>선택하기</small></button>) : <p className={styles.emptyPeople}>아직 함께 쉬는 사람이 없어요.<br />누군가 오면 인사를 건네 보세요.</p>}
+          </div>}
+          <div className={styles.actionScroll} hidden={Boolean(carePrompt)} role="group" aria-label="할 수 있는 행동" tabIndex={0}>
+            <button type="button" className={styles.actionTile + " " + styles.waveTile} disabled={cooling || lost || !careCapabilities.wave} onClick={() => sendCare("wave")}><span className={styles.actionIcon} aria-hidden="true">👋</span><strong>인사하기</strong><small>{careCapabilities.wave ? "반가운 마음" : "준비 중"}</small></button>
+            <button type="button" className={styles.actionTile + " " + styles.comfortTile} disabled={cooling || lost} onClick={() => sendCare("comfort")}><span className={styles.actionIcon}><IconLeaf /></span><strong>위로 건네기</strong><small>따뜻한 마음</small></button>
+            {careCapabilities.hug && <button type="button" className={styles.actionTile + " " + styles.hugTile} disabled={cooling || lost} onClick={() => sendCare("hug")}><span className={styles.actionIcon}><IconHeart /></span><strong>안아주기</strong><small>관리자 포옹</small></button>}
           </div>
+          {gotAny && !carePrompt && <p className={styles.receivedMini}>받은 인사 {received.wave ?? 0} · 위로 {received.comfort} · 포옹 {received.hug}</p>}
+        </section>
+        {contextVisible && !characterPickerOpen && !powderOpen && <div className={styles.contextActions} aria-label="가까운 자리에서 쉬기">
+          {restContextVisible && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!lying && (!areaEnabled || skyFull))} onClick={() => void toggleStargazing(areaSpot)}>
+            <span className={styles.contextIcon}><IconMoon /></span>
+            <span className={styles.contextCopy}><strong>{skyPhase === "standing" ? "일어나는 중…" : lying ? "일어나기" : skyPhase === "walking" ? "자리로 가는 중…" : skyPhase === "joining" ? "자리 잡는 중…" : activeBed ? "이불 덮고 눕기" : skyFull ? "모든 자리가 찼어요" : "같이 눕기"}</strong><small>{lying ? activeBed ? "포근한 이불 속에서 쉬는 중" : "함께 하늘을 보는 중" : !areaEnabled ? "쉬어갈 자리를 준비하고 있어요" : activeBed ? activeBed.shelterName : "별빛 자리에서 쉬어가요"}</small></span>
+            <span className={styles.contextCount}>{restArea.occupied}/{restArea.capacity}</span>
+          </button>}
+          {rest && !lying && !skyPhase && <button type="button" className={styles.contextButton} disabled={woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{rest.seated ? "앉은 자리에서 일어나기" : "앉아서 쉬기"}</strong><small>{rest.shelterName} · 바다를 바라봐요</small></span></button>}
+          {walking && <button type="button" className={styles.contextButton + " " + styles.contextCancel} onClick={() => engineRef.current?.cancelAutoWalk()}><span className={styles.contextIcon}><IconClose /></span><span className={styles.contextCopy}><strong>걸음 멈추기</strong><small>천천히 가도 돼요</small></span></button>}
+        </div>}
+        {characterPickerOpen && <div ref={characterPickerRef} id={characterPickerId} className={styles.characterPanel + " " + styles.dockCharacterPanel}>
+          <div className={styles.characterPanelHead}><strong>내 캐릭터</strong><button type="button" aria-label="캐릭터 선택 닫기" onClick={() => { setCharacterPickerOpen(false); characterTriggerRef.current?.focus(); }}><IconClose /></button></div>
+          <div className={styles.characterChoices} role="group" aria-label="기본 캐릭터 선택">
+            {BEACH_CHARACTERS.map((option) => <button key={option.id} type="button" className={styles.characterChoice} aria-pressed={character === option.id} onClick={() => chooseCharacter(option.id)}><span className={styles.characterSprite} style={{ backgroundPosition: "0 " + (-option.skin * 104) + "px" }} aria-hidden="true" /><span>{option.label}{character === option.id && <IconCheck />}</span></button>)}
+          </div><p>고르면 내 모습이 바로 보여요.</p>
+        </div>}
+        <div className={styles.fireContext} role="group" aria-label="모닥불 돌보기" hidden={!fireContextVisible}>
+          {fire && meRef.current && <CampfireControls key={communityId + ":" + meRef.current.id}
+            fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || characterPickerOpen || lying || Boolean(photo)}
+            onAddWood={onAddWood} onAddPowder={onAddPowder} onFireChange={applyFire}
+            powderOpen={powderOpen} onPowderOpenChange={setPowderOpen}
+          />}
         </div>
-      )}
+        <nav className={styles.dock} aria-label="바닷가 조작">
+          <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSparkle /><span>행동</span></button>
+          <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
+          <button type="button" className={styles.dockButton} disabled={Boolean(activeBed?.lying) || Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={stargazing.lying ? view === "first" : view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}>{stargazing.lying && view === "third" ? <IconMoon /> : <IconUsers />}<span>{stargazing.lying ? view === "third" ? "하늘" : "모여 보기" : "시점"}</span></button>
+          <button ref={characterTriggerRef} type="button" className={styles.dockButton} aria-label="내 캐릭터 고르기" aria-expanded={characterPickerOpen} aria-controls={characterPickerId} onClick={() => { haptic(); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); setCharacterPickerOpen((open) => !open); }}><IconUser /><span>내 캐릭터</span></button>
+        </nav>
       </div>
+      {!hudHidden && phase === "ready" && <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg><span>숨김</span></button>}
+      {hudHidden && phase === "ready" && <button ref={restoreTriggerRef} type="button" className={styles.restoreHud} onClick={restoreHud} aria-label="화면 버튼 다시 보기"><IconSparkle /><span>버튼 보기</span></button>}
 
       {phase === "loading" && (
         <div className={styles.center} role="status" aria-live="polite">
           <p className={styles.loadingDots}>바닷가로 가는 중</p>
-          <small>절벽 아래 우리만의 모닥불 곁으로</small>
+          <small>하얀 모래와 파도 소리 곁으로</small>
         </div>
       )}
       {phase === "error" && (
@@ -732,6 +854,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
           <Link href={returnHref} className={styles.glass}><IconChevronL />소로우로 돌아가기</Link>
         </div>
       )}
+      {photo && <PhotoPreview key={photo.url} photo={photo} onClose={closePhoto} />}
     </div>
   );
 }

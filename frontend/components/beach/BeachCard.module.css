@@ -8,7 +8,7 @@
 }
 .scene { position: relative; min-height: 260px; isolation: isolate; overflow: hidden; background: #3c575a; }
 .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #17282799, #1728272b 54%, transparent 78%); z-index: -1; pointer-events: none; }
-.landscape { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: url("/beach/real/cove-panorama.png") center 60% / cover no-repeat; }
+.landscape { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: url("/beach/real/paradise-panorama-v1.webp") center 60% / cover no-repeat; }
 .timeTint { position: absolute; inset: 0; mix-blend-mode: multiply; transition: background-color 2s, opacity 2s; }
 .text { position: relative; padding: 22px 22px 0; color: #fffaf0; text-shadow: 0 1px 8px #15252570; }
 .eyebrow { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; letter-spacing: .03em; font-weight: 600; }

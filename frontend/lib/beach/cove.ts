@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Daylight } from "./daylight";
 import { buildShelters } from "./shelters";
+import { buildNightLights } from "./night-lights";
 
 export const CAMPFIRE = { x: 0, z: 12 };
 type Obstacle = { x: number; z: number; r: number };
@@ -24,10 +25,11 @@ function surfaceTexture(name: string, color = false) {
 }
 
 /** Photograph-based rock stays at a consistent real-world scale, including on the cliff tops. */
-function rockMaterial() {
+function rockMaterial(originalWall = false) {
   const material = new THREE.MeshStandardMaterial({
     map: surfaceTexture("rock", true), normalMap: surfaceTexture("rock-normal"),
-    normalScale: new THREE.Vector2(0.65, 0.65), color: 0xe9e6df, roughness: 0.97,
+    normalScale: new THREE.Vector2(originalWall ? 0.65 : 0.55, originalWall ? 0.65 : 0.55),
+    color: originalWall ? 0xe9e6df : 0xf1eee5, roughness: 0.97,
   });
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = `varying vec3 vCovePosition;\nvarying vec3 vCoveNormal;\n${shader.vertexShader}`
@@ -76,16 +78,24 @@ function rockMaterial() {
 
 /** A sheltered, walkable cove. Geometry and materials are owned/disposed by the beach scene. */
 export class Cove {
-  private ambient = new THREE.HemisphereLight(0xf2f5f6, 0x9a8d77, 2);
+  private ambient = new THREE.HemisphereLight(0xf2f5f6, 0xd7d4c7, 2);
   private sun = new THREE.DirectionalLight(0xfff1de, 2.2);
-  private firelight = new THREE.PointLight(FIRE_COLORS.amber, 8, 14, 1.4);
+  private firelight = new THREE.PointLight(FIRE_COLORS.amber, 0.4, 4.2, 2);
   private bulbs = new THREE.MeshBasicMaterial({ color: 0xffd798 });
   private night = 0;
-  private fireStrength = 1;
-  private fireTargetStrength = 1;
+  private fireStrength = 0.045;
+  private fireTargetStrength = 0.045;
+  private fireHasFuel = false;
   private fireFlare = 0;
   private fireTargetColor = new THREE.Color(FIRE_COLORS.amber);
+  private fireAmber = new THREE.Color(FIRE_COLORS.amber);
+  private fireWarmWhite = new THREE.Color(0xffebcf);
+  private fireLightTint = new THREE.Color(FIRE_COLORS.amber);
   private lanternGlow = new THREE.Color(0xffb27a);
+  private moonGlow = new THREE.Color(0xc7d8ec);
+  private neutralSky = new THREE.Color(0xf4f7fa);
+  private nightLights: ReturnType<typeof buildNightLights>;
+  private shelterLights: THREE.PointLight[] = [];
   private lastUpdateTime: number | null = null;
 
   constructor(scene: THREE.Scene, obstacles: Obstacle[]) {
@@ -103,6 +113,9 @@ export class Cove {
     this.firelight.position.set(CAMPFIRE.x, 1.1, CAMPFIRE.z);
     scene.add(this.ambient, this.sun, this.sun.target, this.firelight);
     buildShelters(scene);
+    scene.traverse((object) => {
+      if (object instanceof THREE.PointLight && object.name.startsWith("shelter-light-")) this.shelterLights.push(object);
+    });
 
     const rock = rockMaterial();
     const woodMap = surfaceTexture("wood", true);
@@ -114,8 +127,9 @@ export class Cove {
     const dark = new THREE.MeshStandardMaterial({ color: 0x292b28, roughness: 0.9 });
     const leaf = new THREE.MeshStandardMaterial({ color: 0x737552, side: THREE.DoubleSide, roughness: 1 });
 
-    // One continuous eroded ridge follows the cove, avoiding repeated tower silhouettes.
-    const cliff = new THREE.Mesh(this.cliffGeometry(), rock);
+    // Restore the original stone walls while retaining the new beach and local lighting.
+    const cliff = new THREE.Mesh(this.cliffGeometry(), rockMaterial(true));
+    cliff.name = "cove-original-ridge";
     cliff.castShadow = cliff.receiveShadow = true;
     scene.add(cliff);
 
@@ -198,6 +212,7 @@ export class Cove {
 
     const wire = new THREE.LineBasicMaterial({ color: 0x4b4638 });
     const festoonBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 10, 8), this.bulbs, 50);
+    const festoonPositions: THREE.Vector3[] = [];
     let bulbIndex = 0;
     // Keep the shared sky-viewing circle open overhead; string lights frame the fire instead.
     for (const [z, halfSpan] of [[12.5, 14.8], [17.8, 20]]) {
@@ -217,9 +232,11 @@ export class Cove {
       for (let i = 1; i <= 25; i++) {
         const point = points[i * 2];
         festoonBulbs.setMatrixAt(bulbIndex++, lightPlacement.makeTranslation(point.x, point.y - 0.08, point.z));
+        festoonPositions.push(new THREE.Vector3(point.x, point.y - 0.08, point.z));
       }
     }
     scene.add(festoonBulbs);
+    this.nightLights = buildNightLights(scene, lanterns, festoonPositions);
 
     // Thin curved dune-grass blades stay along the outer edge of the walkable sand.
     const grassGeometry = new THREE.PlaneGeometry(0.035, 0.6, 1, 4);
@@ -308,25 +325,34 @@ export class Cove {
 
   applyDaylight(d: Daylight) {
     this.night = d.fire;
-    // 밤에는 하늘 가득한 풍등이 모래와 절벽에 따뜻한 빛을 얹는다 (너무 어둡고 무섭지 않게)
-    this.ambient.intensity = 0.35 + (1 - d.stars) * 0.7 + Math.max(0, d.sun[1]) * 1.5 + d.lanterns * 0.9;
-    this.ambient.color.setRGB(...d.cloud).lerp(this.lanternGlow, d.lanterns * 0.75);
-    this.sun.intensity = 0.3 + Math.max(0, d.sun[1]) * 2.3 + d.lanterns * 0.25;
-    this.sun.color.setRGB(...d.sunColor).lerp(this.lanternGlow, d.lanterns * 0.5);
-    this.sun.position.set(d.sun[0] * 80, Math.max(18, d.sun[1] * 80), d.sun[2] * 80);
+    // After 22:00, moonlight only sketches silhouettes. Warmth belongs to nearby lamps.
+    const deep = d.deepNight;
+    const fill = 1.1 + (1 - d.stars) * 0.45 + Math.max(0, d.sun[1]) * 0.7;
+    this.ambient.intensity = THREE.MathUtils.lerp(fill, 0.12, deep);
+    this.ambient.color.setRGB(...d.cloud, THREE.SRGBColorSpace)
+      .lerp(this.neutralSky, 0.65).lerp(this.moonGlow, d.stars * 0.85)
+      .lerp(this.lanternGlow, d.lanterns * 0.035);
+    this.ambient.groundColor.setHex(0xd7d4c7).lerp(new THREE.Color(0x49546b), deep);
+    this.sun.intensity = THREE.MathUtils.lerp(0.22 + Math.max(0, d.sun[1]) * 1.85, 0.055, deep);
+    this.sun.color.setRGB(...d.sunColor, THREE.SRGBColorSpace).lerp(this.moonGlow, d.stars * 0.8);
+    const light = d.sun[1] > 0 ? d.sun : d.moon;
+    this.sun.position.set(light[0] * 80, Math.max(24, light[1] * 80), light[2] * 80);
+    this.nightLights.applyDaylight(d.fire);
+    for (const lamp of this.shelterLights) lamp.intensity = 1.5 + d.fire * 7.5;
   }
 
   /** Shared fire choices ease into the lighting instead of flashing on every room update. */
   setFireState(logCount: number, color: string) {
     const logs = Number.isFinite(logCount) ? THREE.MathUtils.clamp(logCount, 0, 12) : 3;
-    // 장작이 0 이어도 불씨가 모래를 은은히 비춘다
-    this.fireTargetStrength = Math.sqrt((logs + 0.6) / 3.6);
+    this.fireHasFuel = logs > 0;
+    // Bare embers illuminate only their own pit. A tall, full fire need not bleach the sand.
+    this.fireTargetStrength = logs === 0 ? 0.045 : 0.18 + 1.22 * Math.sqrt(logs / 12);
     this.fireTargetColor.setHex(FIRE_COLORS[color] ?? FIRE_COLORS.amber);
   }
 
   /** 방금 넣은 장작이 타오르는 정도 (CoastalFire.flareAmount). 조명도 같이 밝아진다 */
   setFireFlare(amount: number) {
-    this.fireFlare = Math.max(0, amount);
+    this.fireFlare = Number.isFinite(amount) ? THREE.MathUtils.clamp(amount, 0, 1) : 0;
   }
 
   /** Use the fire shader's already blended color so powder and rainbow also light the sand. */
@@ -339,12 +365,15 @@ export class Cove {
     this.lastUpdateTime = time;
     const blend = 1 - Math.exp(-dt * 4);
     this.fireStrength += (this.fireTargetStrength - this.fireStrength) * blend;
-    this.firelight.color.lerp(this.fireTargetColor, blend);
-    const strength = this.fireStrength * (1 + this.fireFlare * 0.9);
-    this.firelight.distance = 10 + strength * 4;
-    // 불씨만 남았을 땐 더 크게, 천천히 일렁인다
-    const calm = 1.6 - Math.min(1, this.fireStrength);
-    const flicker = 1 + Math.sin(time * 7.3) * 0.08 + (Math.sin(time * 2.3) * 0.06 + Math.sin(time * 11.7) * 0.03) * calm;
-    this.firelight.intensity = strength * (8 + this.night * 10) * flicker;
+    // Colored powder still tints nearby surfaces; a warm white component keeps cotton/stone matte.
+    this.fireLightTint.copy(this.fireHasFuel ? this.fireTargetColor : this.fireAmber).lerp(this.fireWarmWhite, 0.3);
+    this.firelight.color.lerp(this.fireLightTint, blend);
+    const flare = this.fireHasFuel ? this.fireFlare : 0;
+    const strength = this.fireStrength * (1 + flare * 0.22);
+    this.firelight.distance = 4 + this.fireStrength * 4;
+    this.firelight.position.y = 0.25 + this.fireStrength * 0.85;
+    // Gentle, low-frequency breathing replaces the restless pulsing of dying embers.
+    const breath = 1 + Math.sin(time * 0.65) * 0.018 + Math.sin(time * 1.7 + 0.6) * 0.003;
+    this.firelight.intensity = strength * (6 + this.night * 8) * breath;
   }
 }

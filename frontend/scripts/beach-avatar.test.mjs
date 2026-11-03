@@ -6,6 +6,7 @@ import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -22,8 +23,9 @@ const { cellW: CELL_W, cellH: CELL_H } = CHAR_ATLAS;
 const CHINS = [40, 38];
 const frameColumn = (node) => Math.round(node.tex.offset.x * CHAR_ATLAS.cols);
 const stargazing = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot", "applyLyingTransform", "stargazingBodyPoint"]);
+const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "BED_CAPACITY", "claimedBedSlot"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...atlas, ...stargazing, CAMPFIRE: { x: 0, z: 12 }, performance,
+  THREE, ...atlas, ...stargazing, ...bedding, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ width: 0, height: 0, getContext: () => null }) },
 }, ["BeachEngine"]);
 

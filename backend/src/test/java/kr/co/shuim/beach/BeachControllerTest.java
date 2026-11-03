@@ -58,8 +58,10 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled"), out.keySet());
+        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled", "bedEnabled", "careCapabilities"), out.keySet());
         assertEquals(true, out.get("restEnabled"));
+        assertEquals(true, out.get("bedEnabled"));
+        assertEquals(new BeachRoom.CareCapabilities(true, false), out.get("careCapabilities"));
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
         assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
@@ -75,7 +77,7 @@ class BeachControllerTest {
         assertEquals(1, out.get("count"));
         assertEquals(Map.of("communityId", "circle-a", "count", 1, "capacity", 100), controller.count("circle-a", request));
         BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
-            new BeachController.Care("u-x", "hug")));
+            new BeachController.Care("u-x", "comfort")), request);
         assertEquals("gone", tick.care());
         assertEquals(0, tick.received().comfort());
         verify(blocks, times(1)).excludedIds("u-1");
@@ -98,9 +100,9 @@ class BeachControllerTest {
         assertEquals(1, ((Map<?, ?>) out.get("me")).get("skin"));
         String ticket = (String) out.get("ticket");
         var observer = beach.enter("circle-a", "u-observer", "다른 사람", Set.of(), "female");
-        controller.tick(new BeachController.TickBody(ticket, null, null, null, false, null, "male"));
+        controller.tick(new BeachController.TickBody(ticket, null, null, null, false, null, "male"), request);
         assertEquals(0, beach.tick(observer.ticket(), 0, 10, 0, false, null, null).players().get(0).skin());
-        controller.tick(new BeachController.TickBody(ticket, null, null, null, false, null));
+        controller.tick(new BeachController.TickBody(ticket, null, null, null, false, null), request);
         assertEquals(0, beach.tick(observer.ticket(), 0, 10, 0, false, null, null).players().get(0).skin());
     }
 
@@ -225,10 +227,10 @@ class BeachControllerTest {
 
     @Test
     void unknownTicketIsGoneAndLeaveIsAlwaysOk() {
-        ApiException e = assertThrows(ApiException.class, () -> controller.tick(new BeachController.TickBody("nope", 0.0, 0.0, 0.0, false, null)));
+        ApiException e = assertThrows(ApiException.class, () -> controller.tick(new BeachController.TickBody("nope", 0.0, 0.0, 0.0, false, null), request));
         assertEquals(410, e.status());
         assertEquals(BeachController.GONE, e.getMessage());
-        assertEquals(410, assertThrows(ApiException.class, () -> controller.tick(null)).status());
+        assertEquals(410, assertThrows(ApiException.class, () -> controller.tick(null, request)).status());
         assertEquals(Map.of("ok", true), controller.leave(new BeachController.TicketBody("nope")));
         assertEquals(Map.of("ok", true), controller.leave(null));
     }

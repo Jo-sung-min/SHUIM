@@ -40,10 +40,17 @@ public class BeachRoom {
     public static final double CARE_RADIUS = 20;
     /** 한 번에 내려주는 다른 사람 수 (가까운 순) */
     public static final int MAX_PLAYERS = 40;
-    public static final Set<String> CARE_KINDS = Set.of("comfort", "hug");
+    public static final Set<String> CARE_KINDS = Set.of("comfort", "hug", "wave");
     public static final String REST_SPOT = "starlight";
     public static final int REST_SLOTS = 8;
     public static final double REST_X = 7, REST_Z = 7, REST_FEET_RADIUS = 2.65, REST_REACH = 5.5;
+    public static final int BED_SLOTS = 3;
+    private record RestSpot(String id, double x, double z, int capacity, boolean bed) {}
+    private static final Map<String, RestSpot> REST_SPOTS = Map.of(
+        REST_SPOT, new RestSpot(REST_SPOT, REST_X, REST_Z, REST_SLOTS, false),
+        "hut-pine", new RestSpot("hut-pine", -13, 23, BED_SLOTS, true),
+        "hut-wave", new RestSpot("hut-wave", 0, 25, BED_SLOTS, true),
+        "hut-sunset", new RestSpot("hut-sunset", 13, 23, BED_SLOTS, true));
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
@@ -65,7 +72,7 @@ public class BeachRoom {
         static PlayerView of(Presence p) {
             synchronized (p) {
                 return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving,
-                    p.restSlot == null ? "standing" : "lying", p.restSlot == null ? null : REST_SPOT, p.restSlot);
+                    p.restSlot == null ? "standing" : "lying", p.restSpot, p.restSlot);
             }
         }
     }
@@ -75,27 +82,38 @@ public class BeachRoom {
     public record RestPresence(String pose, String spotId, Integer slot, double x, double z, double yaw) {
         static RestPresence of(Presence p) {
             synchronized (p) {
-                return new RestPresence(p.restSlot == null ? "standing" : "lying", p.restSlot == null ? null : REST_SPOT,
+                return new RestPresence(p.restSlot == null ? "standing" : "lying", p.restSpot,
                     p.restSlot, p.x, p.z, p.yaw);
             }
         }
     }
 
     /** 이번 방문에서 받은 위로·안아주기 수 */
-    public record Received(int comfort, int hug) {}
+    public record Received(int comfort, int hug, int wave) {
+        public Received(int comfort, int hug) { this(comfort, hug, 0); }
+    }
+    public record CareCapabilities(boolean wave, boolean hug) {}
 
     /** tick 응답. care 는 위로를 보내지 않았으면 null ("sent" | "cooldown" | "gone") */
     public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
-                             BeachFireService.FireView fire, long serverTime, RestPresence selfRest) {
+                             BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
+                             @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities) {
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care) {
-            this(players, events, count, received, care, null, 0, null);
+            this(players, events, count, received, care, null, 0, null, null);
         }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime) {
-            this(players, events, count, received, care, fire, serverTime, null);
+            this(players, events, count, received, care, fire, serverTime, null, null);
+        }
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                          BeachFireService.FireView fire, long serverTime, RestPresence selfRest) {
+            this(players, events, count, received, care, fire, serverTime, selfRest, null);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, value.serverTime(), selfRest);
+            return new TickResult(players, events, count, received, care, value, value.serverTime(), selfRest, careCapabilities);
+        }
+        public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities);
         }
     }
 
@@ -111,6 +129,7 @@ public class BeachRoom {
         private volatile double x, z, yaw;
         private volatile boolean moving;
         private volatile Integer restSlot;
+        private volatile String restSpot;
         private double standingX, standingZ, standingYaw;
         private volatile long lastSeen;
         private volatile long lastCareAt = NEVER;
@@ -118,6 +137,7 @@ public class BeachRoom {
         private final ConcurrentLinkedQueue<CareEvent> inbox = new ConcurrentLinkedQueue<>();
         private final AtomicInteger receivedComfort = new AtomicInteger();
         private final AtomicInteger receivedHug = new AtomicInteger();
+        private final AtomicInteger receivedWave = new AtomicInteger();
 
         private Presence(String pid, String ticket, String userId, String nick, int skin, int botIndex, Set<String> excluded,
                          double x, double z, double yaw, long now) {
@@ -239,7 +259,8 @@ public class BeachRoom {
         Presence me = ticket == null ? null : byTicket.get(ticket);
         if (me == null || me.bot()) throw ApiException.gone(BeachController.GONE);
         if (!"lie".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("눕기나 일어나기를 골라 주세요.");
-        if (spotId != null && !REST_SPOT.equals(spotId)) throw ApiException.badRequest("별빛 자리를 다시 골라 주세요.");
+        RestSpot spot = REST_SPOTS.get(spotId == null ? REST_SPOT : spotId);
+        if (spot == null) throw ApiException.badRequest("쉴 자리를 다시 골라 주세요.");
         synchronized (me) {
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
@@ -247,33 +268,36 @@ public class BeachRoom {
                     me.z = clamp(me.standingZ, MIN_Z, MAX_Z, REST_Z + REST_REACH);
                     me.yaw = me.standingYaw;
                     me.restSlot = null;
+                    me.restSpot = null;
                 }
                 me.moving = false;
                 me.lastSeen = now;
                 return RestPresence.of(me);
             }
             if (me.restSlot != null) {
+                if (!spot.id().equals(me.restSpot)) throw new ApiException(409, "먼저 일어난 뒤 다른 자리를 골라 주세요.");
                 me.lastSeen = now;
                 return RestPresence.of(me); // Lost responses can be retried without taking another slot.
             }
-            if (Math.hypot(me.x - REST_X, me.z - REST_Z) > REST_REACH) {
-                throw ApiException.badRequest("별빛 자리 가까이에서 누워 주세요.");
+            if (Math.hypot(me.x - spot.x(), me.z - spot.z()) > REST_REACH) {
+                throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
-            boolean[] used = new boolean[REST_SLOTS];
+            boolean[] used = new boolean[spot.capacity()];
             for (Presence other : byTicket.values()) {
                 Integer slot = other.restSlot;
-                if (slot != null && live(other, now)) used[slot] = true;
+                if (slot != null && spot.id().equals(other.restSpot) && live(other, now)) used[slot] = true;
             }
             int slot = 0;
-            while (slot < REST_SLOTS && used[slot]) slot++;
-            if (slot == REST_SLOTS) throw new ApiException(409, "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
+            while (slot < spot.capacity() && used[slot]) slot++;
+            if (slot == spot.capacity()) throw new ApiException(409, spot.bed() ? "이 오두막의 침구가 모두 사용 중이에요. 다른 오두막을 골라 주세요." : "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
             me.standingX = me.x;
             me.standingZ = me.z;
             me.standingYaw = me.yaw;
-            double theta = slot * Math.PI * 2 / REST_SLOTS;
-            me.x = REST_X + Math.sin(theta) * REST_FEET_RADIUS;
-            me.z = REST_Z + Math.cos(theta) * REST_FEET_RADIUS;
+            double theta = spot.bed() ? Math.PI : slot * Math.PI * 2 / REST_SLOTS;
+            me.x = spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
+            me.z = spot.bed() ? spot.z() - 0.1 : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
             me.yaw = theta;
+            me.restSpot = spot.id();
             me.restSlot = slot;
             me.moving = false;
             me.lastSeen = now;
@@ -293,6 +317,11 @@ public class BeachRoom {
     }
 
     public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, character, false);
+    }
+
+    /** Privileged actions default to denied; only the authenticated controller may authorize a hug. */
+    public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character, boolean hugAllowed) {
         long now = clock.getAsLong();
         maybeSweep(now);
         Presence me = ticket == null ? null : byTicket.get(ticket);
@@ -317,7 +346,7 @@ public class BeachRoom {
         advanceBots(now);
 
         // 위로는 inbox 를 비우기 전에 보내서, 보낸 사람도 같은 응답에서 자기 효과를 본다
-        String care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now);
+        String care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now, hugAllowed);
 
         // Other ticks update Presence concurrently. Sort immutable coordinates so comparisons stay consistent.
         double originX = me.x, originZ = me.z;
@@ -332,13 +361,15 @@ public class BeachRoom {
             .toList();
         List<CareEvent> events = new ArrayList<>();
         for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
-        return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get()),
+        return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
             care, null, now, RestPresence.of(me));
     }
 
     /** "sent" | "cooldown" | "gone". 종류가 이상하면 400 */
-    private String care(Presence me, String toId, String kind, long now) {
-        if (kind == null || !CARE_KINDS.contains(kind)) throw ApiException.badRequest("위로해주기나 안아주기만 할 수 있어요.");
+    private String care(Presence me, String toId, String kind, long now, boolean hugAllowed) {
+        if (kind == null || !CARE_KINDS.contains(kind)) throw ApiException.badRequest("인사, 위로, 포옹 중에서 골라 주세요.");
+        if ("hug".equals(kind) && !hugAllowed) return "forbidden";
+        if (me.userId.equals(toId)) return "gone";
         if (me.excluded.contains(toId)) return "gone";
         List<Presence> targets = byTicket.values().stream()
             .filter(p -> p != me && p.userId.equals(toId) && live(p, now) && p.sees(me))
@@ -352,7 +383,11 @@ public class BeachRoom {
         me.lastCareTo.put(toId, now);
         for (Presence t : targets) {
             CareEvent ev = new CareEvent(kind, me.pid, me.userId, me.nick, t.pid, t.userId, t.nick, now);
-            ("hug".equals(kind) ? t.receivedHug : t.receivedComfort).incrementAndGet();
+            switch (kind) {
+                case "hug" -> t.receivedHug.incrementAndGet();
+                case "wave" -> t.receivedWave.incrementAndGet();
+                default -> t.receivedComfort.incrementAndGet();
+            }
             for (Presence r : byTicket.values()) {
                 if (r.bot()) continue; // 가짜 방문자는 inbox 를 비우지 않으니 쌓아 두지 않는다
                 boolean recipient = r == me || r.userId.equals(t.userId) || dist2(r, t) <= CARE_RADIUS * CARE_RADIUS;

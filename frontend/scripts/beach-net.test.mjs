@@ -54,6 +54,44 @@ test("an expired ticket remains recoverable in the same community", async () => 
   await assert.rejects(api.tickBeach({ ticket: "expired", x: 0, z: 9, yaw: 0, moving: false }), (error) => error instanceof api.BeachGone && !(error instanceof api.BeachUnavailable));
 });
 
+test("entry capabilities fail closed for legacy or malformed permissions and change across accounts", async () => {
+  for (const careCapabilities of [undefined, null, "admin", { wave: "true", hug: 1 }]) {
+    const entered = await setup(async () => response({ careCapabilities })).enterBeach("ours");
+    assert.equal(entered.careCapabilities.wave, false);
+    assert.equal(entered.careCapabilities.hug, false);
+  }
+  const grants = [{ wave: true, hug: true }, { wave: true, hug: false }];
+  const api = setup(async () => response({ careCapabilities: grants.shift() }));
+  assert.equal((await api.enterBeach("ours")).careCapabilities.hug, true);
+  assert.equal((await api.enterBeach("ours")).careCapabilities.hug, false, "a new member entry cannot retain the previous admin's capability");
+});
+
+test("wave targets the selected person and revoked hug stays a non-terminal tick result", async () => {
+  const calls = [];
+  const api = setup(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    return response({ care: body.care.kind === "wave" ? "sent" : "forbidden", careCapabilities: { wave: true, hug: false }, received: { comfort: 0, hug: 0, wave: 1 }, players: [], events: [], count: 2 });
+  });
+  const tick = { ticket: "my-ticket", x: 0, z: 9, yaw: 0, moving: false };
+  assert.equal((await api.tickBeach({ ...tick, care: { to: "chosen-person", kind: "wave" } })).care, "sent");
+  const rejected = await api.tickBeach({ ...tick, care: { to: "chosen-person", kind: "hug" } });
+  assert.equal(rejected.care, "forbidden");
+  assert.equal(rejected.careCapabilities.hug, false);
+  assert.equal(rejected.count, 2, "permission denial does not discard the live room snapshot");
+  assert.equal(rejected.received.wave, 1);
+  assert.deepEqual(calls.map(call => call.care), [{ to: "chosen-person", kind: "wave" }, { to: "chosen-person", kind: "hug" }]);
+});
+
+test("movement-only ticks leave capabilities absent while malformed refreshed grants fail closed", async () => {
+  const tick = { ticket: "ticket", x: 0, z: 9, yaw: 0, moving: false };
+  const movement = await setup(async () => response({})).tickBeach(tick);
+  assert.equal(movement.careCapabilities, undefined);
+  const refreshed = await setup(async () => response({ careCapabilities: { wave: true, hug: "admin" } })).tickBeach(tick);
+  assert.equal(refreshed.careCapabilities.wave, true);
+  assert.equal(refreshed.careCapabilities.hug, false);
+});
+
 test("a timed-out reentry rejects so the polling loop can release its in-flight guard and retry", async () => {
   const timeout = new Error("entry timeout");
   timeout.name = "TimeoutError";
@@ -97,7 +135,18 @@ test("full or expired shared-rest claims remain errors, never fabricated lying s
 test("malformed shared-rest confirmations cannot move or pose the avatar", async () => {
   const valid = { pose: "lying", spotId: "starlight", slot: 0, x: 7, z: 9.65, yaw: 0 };
   for (const invalid of [null, { ...valid, slot: 8 }, { ...valid, slot: -1 }, { ...valid, spotId: "other" }, { ...valid, x: "7" }, { ...valid, yaw: null }, { ...valid, pose: "standing" }]) {
-    await assert.rejects(setup(async () => response(invalid)).setBeachRest("ticket", "lie"), /별빛 자리의 상태/);
+    await assert.rejects(setup(async () => response(invalid)).setBeachRest("ticket", "lie"), /쉴 자리의 상태/);
+  }
+});
+
+test("hut claims send the selected hut, accept only its three slots, and preserve starlight defaults", async () => {
+  for (const spotId of ["hut-pine", "hut-wave", "hut-sunset"]) {
+    let sent;
+    const state = { pose: "lying", spotId, slot: 2, x: 1.9, z: 24.9, yaw: Math.PI };
+    const api = setup(async (_url, options) => { sent = JSON.parse(options.body); return response(state); });
+    assert.equal((await api.setBeachRest("ticket", "lie", spotId)).slot, 2);
+    assert.equal(sent.spotId, spotId);
+    await assert.rejects(setup(async () => response({ ...state, slot: 3 })).setBeachRest("ticket", "lie", spotId), /쉴 자리의 상태/);
   }
 });
 

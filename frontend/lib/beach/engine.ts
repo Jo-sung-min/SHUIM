@@ -11,14 +11,20 @@ import * as THREE from "three";
 import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
 import { type Daylight, daylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
-import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
+import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, claimedBedSlot, type BedState } from "./shelters";
 import { findClearApproach, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { FirePowderPlayback } from "./fire-powder";
+import { captureScenePhoto } from "./photo";
 import { SkyLanterns } from "./lanterns";
+import { CareGestures, type CareAnchor } from "./care-effects";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
 import type { CareKind, FireState, RemotePlayer, RestPresence } from "./net";
 export type { StargazingState } from "./stargazing";
+export type { BedState } from "./shelters";
+function claimedRestSlot(state: { pose?: string; spotId?: string | null; slot?: number | null }): StargazingSlot | null {
+  return claimedStargazingSlot(state) ?? claimedBedSlot(state);
+}
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
@@ -33,6 +39,7 @@ export interface EngineHandlers {
   onSelect: (player: RemotePlayer | null) => void;
   onRestChange?: (state: RestState | null) => void;
   onStargazingChange?: (state: StargazingState) => void;
+  onBedChange?: (state: BedState | null) => void;
   onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
@@ -94,6 +101,7 @@ void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix 
 
 const SKY_FRAG = `
 uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uStars; uniform float uTime; uniform float uLantern;
+uniform float uDeepNight; uniform vec3 uSkyTop; uniform vec3 uSkyHorizon; uniform vec3 uMoon;
 varying vec3 vDir;
 ${NOISE_GLSL}
 void main() {
@@ -104,6 +112,9 @@ void main() {
   vec2 skyUv = vec2(0.5 + sin(atan(d.x, -d.z)) * 0.12, max(0.54, uv.y));
   float seaFacing = smoothstep(0.12, 0.8, -d.z);
   vec3 col = mix(texture2D(uPhoto, skyUv).rgb, texture2D(uPhoto, uv).rgb, seaFacing) * uPhotoTint;
+  // Deep night keeps a fine blue horizon, with an almost-black sky above it.
+  vec3 nightSky = mix(uSkyHorizon, uSkyTop, smoothstep(-0.03, 0.65, d.y));
+  col = mix(col, nightSky, uDeepNight * smoothstep(-0.02, 0.12, d.y) * 0.78);
   if (uStars > 0.0 && d.y > 0.0) {
     vec2 sp = d.xz / (d.y + 0.25) * 90.0;
     vec2 cell = floor(sp);
@@ -111,14 +122,19 @@ void main() {
     float star = step(0.992, s);
     vec2 off = fract(sp) - 0.5 - (vec2(hash(cell + 7.3), hash(cell + 3.1)) - 0.5) * 0.6;
     float dot_ = 1.0 - smoothstep(0.0, 0.18, length(off));
-    float tw = 0.65 + 0.35 * sin(uTime * (1.5 + s * 3.0) + s * 60.0);
+    float tw = 0.82 + 0.18 * sin(uTime * mix(1.5 + s * 3.0, 0.35 + s * 0.45, uDeepNight) + s * 60.0);
     col += star * dot_ * tw * uStars * smoothstep(0.0, 0.25, d.y) * (0.6 + 0.4 * hash(cell + 1.7));
   }
+  // A small pearl moon and a very soft halo, rather than a wash over the landscape.
+  float moonDistance = length(d - uMoon);
+  float moonDisc = 1.0 - smoothstep(0.0075, 0.009, moonDistance);
+  float moonHalo = exp(-moonDistance * moonDistance / 0.0018) * 0.018;
+  col += vec3(0.85, 0.9, 1.0) * (moonDisc * 0.85 + moonHalo) * uDeepNight * smoothstep(0.0, 0.12, d.y);
   if (uLantern > 0.0) {
-    // 수백 개 풍등이 올린 따뜻한 빛무리가 밤하늘을 은은하게 물들인다
+    // At late hours, each lantern remains a light rather than tinting the entire sky.
     float low = 1.0 - smoothstep(-0.05, 0.5, d.y);
     float haze = noise(vec2(atan(d.x, -d.z) * 2.5, d.y * 4.0 + uTime * 0.015));
-    col += vec3(1.0, 0.52, 0.18) * uLantern * (0.035 + 0.1 * low) * (0.7 + 0.6 * haze);
+    col += vec3(1.0, 0.52, 0.18) * uLantern * (0.035 + 0.1 * low) * (0.7 + 0.6 * haze) * mix(1.0, 0.08, uDeepNight);
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -130,7 +146,7 @@ void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Pos
 const SEA_FRAG = `
 uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uFoam; uniform vec3 uSkyRef;
 uniform vec3 uLightDir; uniform vec3 uLightColor; uniform float uSpec; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uCamPos;
-uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uLantern;
+uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uLantern; uniform float uDeepNight;
 varying vec3 vWorld;
 ${NOISE_GLSL}
 float waves(vec2 p, float t) {
@@ -161,7 +177,7 @@ void main() {
   float up = smoothstep(0.0, 0.15, uLightDir.y);
   col += uLightColor * (pow(nh, 90.0) * 0.27 + pow(nh, 24.0) * 0.035) * uSpec * up;
   // 밤이면 풍등 불빛이 물결에 주황빛으로 어린다
-  col += vec3(0.95, 0.5, 0.2) * uLantern * (0.035 + fres * 0.18) * (0.6 + 0.6 * noise(p * 1.7 + vec2(t * 0.25, -t * 0.4)));
+  col += vec3(0.95, 0.5, 0.2) * uLantern * (0.035 + fres * 0.18) * (0.6 + 0.6 * noise(p * 1.7 + vec2(t * 0.25, -t * 0.4))) * mix(1.0, 0.12, uDeepNight);
   float edge = vWorld.z + 0.7 + sin(t * 0.8 + p.x * 0.18) * 0.7 + noise(vec2(p.x * 0.5, t * 0.3)) * 0.6;
   float foamLine = 1.0 - smoothstep(0.04, 0.48, abs(edge));
   float foamNoise = noise(p * 7.5 + vec2(t * 0.2, 0.0)) * noise(p * 18.0 - t * 0.3);
@@ -222,6 +238,7 @@ interface FxNode {
   vel: THREE.Vector3;
   life: number;
   ttl: number;
+  size: number;
   swirl: number;
   base: THREE.Vector3;
   kind: "heart" | "sparkle" | "leaf" | "glow" | "petal";
@@ -267,6 +284,7 @@ export class BeachEngine {
 
   private players = new Map<string, PlayerNode>();
   private fx: FxNode[] = [];
+  private careGestures: CareGestures | null = null;
   private fxTex!: Record<FxNode["kind"], THREE.Texture>;
   /** 3인칭일 때 보이는 내 캐릭터 */
   private selfNode: { sprite: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>; mat: THREE.MeshBasicMaterial; tex: THREE.Texture; shadow: THREE.Mesh; animT: number } | null = null;
@@ -283,6 +301,7 @@ export class BeachEngine {
   private restSeat: (typeof SHELTER_SEATS)[number] | null = null;
   private returnFromSeat: { x: number; z: number } | null = null;
   private lastRestState = "";
+  private lastBedState = "";
   private eyeHeight = EYE;
   private skyRest: StargazingSlot | null = null;
   private beforeSkyRest: { pitch: number } | null = null;
@@ -346,6 +365,15 @@ export class BeachEngine {
     return this.ready;
   }
 
+  /** Photograph only the rendered world, after every environment asset is ready. */
+  async capturePhoto(): Promise<Blob> {
+    await this.ready;
+    if (this.disposed || this.renderer.getContext().isContextLost()) {
+      throw new Error("화면이 다시 준비되면 사진을 찍어 주세요.");
+    }
+    return captureScenePhoto(this.renderer, this.scene, this.camera);
+  }
+
   /* ---------------- 만들기 ---------------- */
   private hour() {
     if (this.hourOverride !== null) return this.hourOverride;
@@ -354,12 +382,13 @@ export class BeachEngine {
   }
 
   private buildSky() {
-    this.photo = this.loadEnvironmentTexture("/beach/real/cove-panorama.png", false);
+    this.photo = this.loadEnvironmentTexture("/beach/real/paradise-panorama-v1.webp", false);
     this.photo.wrapS = THREE.RepeatWrapping;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
         uPhoto: { value: this.photo }, uPhotoTint: { value: new THREE.Vector3(1, 1, 1) },
         uStars: { value: 0 }, uTime: { value: 0 }, uLantern: { value: 0 },
+        uDeepNight: { value: 0 }, uSkyTop: { value: new THREE.Vector3() }, uSkyHorizon: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() },
       },
       vertexShader: SKY_VERT,
       fragmentShader: SKY_FRAG,
@@ -371,6 +400,7 @@ export class BeachEngine {
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(400, 28, 14), this.skyMat);
     this.sky.renderOrder = -10;
     this.sky.frustumCulled = false;
+    this.sky.layers.enable(1); // Sky-only camera excludes every hut, cliff and avatar.
     this.scene.add(this.sky);
   }
 
@@ -389,10 +419,10 @@ export class BeachEngine {
 
   private buildGround() {
     this.sandMat = new THREE.MeshStandardMaterial({
-      map: this.loadEnvironmentTexture("/beach/real/sand.jpg", true, [40, 36]),
-      normalMap: this.loadEnvironmentTexture("/beach/real/sand-normal.jpg", false, [40, 36]),
-      roughnessMap: this.loadEnvironmentTexture("/beach/real/sand-roughness.jpg", false, [40, 36]),
-      color: 0xe7d9c0, normalScale: new THREE.Vector2(0.42, 0.42), roughness: 1,
+      map: this.loadEnvironmentTexture("/beach/real/white-sand-v1.webp", true, [120, 75]),
+      normalMap: this.loadEnvironmentTexture("/beach/real/sand-normal.jpg", false, [120, 75]),
+      roughnessMap: this.loadEnvironmentTexture("/beach/real/sand-roughness.jpg", false, [120, 75]),
+      color: 0xf5f2e7, normalScale: new THREE.Vector2(0.2, 0.2), roughness: 1,
     });
     this.sandMat.onBeforeCompile = (shader) => {
       shader.vertexShader = "varying vec3 vCoastWorld;\n" + shader.vertexShader;
@@ -400,9 +430,9 @@ export class BeachEngine {
       shader.fragmentShader = "varying vec3 vCoastWorld;\n" + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\nfloat wetSand = 1.0 - smoothstep(-0.8, 2.8, vCoastWorld.z);\ndiffuseColor.rgb *= 1.0 - wetSand * 0.3;");
     };
-    const sand = new THREE.Mesh(new THREE.PlaneGeometry(80, 72), this.sandMat);
+    const sand = new THREE.Mesh(new THREE.PlaneGeometry(240, 150), this.sandMat);
     sand.rotation.x = -Math.PI / 2;
-    sand.position.set(0, 0, 33); // 절벽으로 감싸인 모래밭, z: -3 ~ 69
+    sand.position.set(0, 0, 72); // Shoreline stays at z=-3; the white sand reaches the distant ridge.
     sand.renderOrder = 0;
     sand.receiveShadow = true;
     this.scene.add(sand);
@@ -413,6 +443,7 @@ export class BeachEngine {
         uSkyRef: { value: new THREE.Vector3() }, uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightColor: { value: new THREE.Vector3(1, 1, 1) }, uSpec: { value: 1 },
         uFog: { value: new THREE.Vector3() }, uFogNear: { value: 28 }, uFogFar: { value: 150 }, uCamPos: { value: new THREE.Vector3() },
         uPhoto: { value: this.photo }, uPhotoTint: this.skyMat.uniforms.uPhotoTint, uLantern: this.skyMat.uniforms.uLantern,
+        uDeepNight: this.skyMat.uniforms.uDeepNight,
       },
       vertexShader: WORLD_VERT,
       fragmentShader: SEA_FRAG,
@@ -473,8 +504,10 @@ export class BeachEngine {
   }
 
   setView(view: ViewMode) {
+    if (this.isBedLying && view === "first") return;
     if (this.disposed || view === this.view) return;
     this.view = view;
+    if (this.skyRest && view === "first") this.self.pitch = 1.50;
     this.followSnap = true;
     this.handlers.onViewChange?.(view);
   }
@@ -538,6 +571,13 @@ export class BeachEngine {
     return this.walkTo(stargazingApproach(this.self.x, this.self.z), { x: STARGAZING.x, z: STARGAZING.z });
   }
 
+  walkToBed(spotId: string): Promise<AutoWalkResult> {
+    const shelter = SHELTERS.find((s) => `hut-${s.id}` === spotId);
+    if (this.disposed || this.skyRest || !shelter) return Promise.resolve("cancelled");
+    if (this.restSeat) this.standUp();
+    return this.walkTo({ x: shelter.x, z: shelter.z - 1.2 }, { x: shelter.x, z: shelter.z + 1 });
+  }
+
   cancelAutoWalk() {
     this.cancelAuto("cancelled");
     this.self.moving = false;
@@ -545,19 +585,44 @@ export class BeachEngine {
   }
 
   get isLying() { return Boolean(this.skyRest); }
+  get isBedLying() { return Boolean(this.skyRest && this.skyRest.spotId !== STARGAZING.id); }
+
+  getBedState(): BedState | null {
+    const shelter = this.isBedLying
+      ? SHELTERS.find((s) => `hut-${s.id}` === this.skyRest?.spotId)
+      : SHELTERS.find((s) => Math.abs(this.self.x - s.x) < s.width / 2 - 0.35 && this.self.z > s.z - s.depth / 2 - 1.3 && this.self.z < s.z + s.depth / 2 - 0.3);
+    if (!shelter) return null;
+    const spotId = `hut-${shelter.id}`;
+    const used = new Set<number>();
+    for (const player of this.players.values()) {
+      const bed = claimedBedSlot(player.data);
+      if (bed?.spotId === spotId) used.add(bed.slot);
+    }
+    if (this.skyRest?.spotId === spotId) used.add(this.skyRest.slot);
+    return { spotId, shelterName: shelter.name, near: true, lying: this.skyRest?.spotId === spotId, occupied: used.size, capacity: BED_CAPACITY };
+  }
+
+  private updateBedState() {
+    const state = this.getBedState();
+    const key = state ? `${state.spotId}:${state.lying}:${state.occupied}` : "";
+    if (key === this.lastBedState) return;
+    this.lastBedState = key;
+    this.handlers.onBedChange?.(state);
+  }
 
   /** Only a server-confirmed claim changes posture. Repeated ticks preserve camera dragging. */
   applyRest(state: RestPresence) {
     if (this.disposed || !state) return;
-    const slot = claimedStargazingSlot(state);
+    const slot = claimedRestSlot(state);
     if (slot) {
-      if (this.skyRest?.slot === slot.slot) return;
+      if (this.skyRest?.spotId === slot.spotId && this.skyRest.slot === slot.slot) return;
       if (!this.skyRest) this.beforeSkyRest = { pitch: this.self.pitch };
       if (this.restSeat) this.standUp();
       this.skyRest = slot;
+      this.setView("third");
       this.self.x = slot.x; this.self.z = slot.z;
       this.self.yaw = slot.yaw; this.self.pitch = 1.25;
-      this.eyeHeight = STARGAZING.avatarY + 0.16;
+      this.eyeHeight = (slot.avatarY ?? STARGAZING.avatarY) + 0.16;
     } else if (state.pose === "standing" && this.skyRest) {
       if (![state.x, state.z, state.yaw].every(Number.isFinite)) return;
       this.skyRest = null;
@@ -574,15 +639,16 @@ export class BeachEngine {
   }
 
   private updateStargazingState() {
+    this.updateBedState();
     const slots = new Set<number>();
     for (const player of this.players.values()) {
       const slot = claimedStargazingSlot(player.data);
       if (slot) slots.add(slot.slot);
     }
-    if (this.skyRest) slots.add(this.skyRest.slot);
+    if (this.skyRest?.spotId === STARGAZING.id) slots.add(this.skyRest.slot);
     const state: StargazingState = {
       near: Math.hypot(this.self.x - STARGAZING.x, this.self.z - STARGAZING.z) <= STARGAZING.nearRadius,
-      lying: Boolean(this.skyRest), occupied: slots.size, capacity: STARGAZING.capacity,
+      lying: this.skyRest?.spotId === STARGAZING.id, occupied: slots.size, capacity: STARGAZING.capacity,
     };
     const key = `${state.near}:${state.lying}:${state.occupied}`;
     if (key !== this.lastStargazingState) {
@@ -680,8 +746,13 @@ export class BeachEngine {
     this.cove?.applyDaylight(d);
     const u = this.skyMat.uniforms;
     const night = d.stars;
-    // 풍등이 뜨는 밤엔 하늘 사진을 덜 어둡게, 조금 따뜻하게 남긴다
-    (u.uPhotoTint.value as THREE.Vector3).set(1 - night * (0.85 - d.lanterns * 0.04), 1 - night * (0.79 - d.lanterns * 0.02), 1 - night * 0.64);
+    const photoTint = u.uPhotoTint.value as THREE.Vector3;
+    photoTint.set(1 - night * (0.85 - d.lanterns * 0.04), 1 - night * (0.79 - d.lanterns * 0.02), 1 - night * 0.64);
+    photoTint.multiplyScalar(1 - d.deepNight * 0.78);
+    u.uDeepNight.value = d.deepNight;
+    (u.uSkyTop.value as THREE.Vector3).set(...d.skyTop);
+    (u.uSkyHorizon.value as THREE.Vector3).set(...d.skyHorizon);
+    (u.uMoon.value as THREE.Vector3).set(...d.moon);
     u.uStars.value = d.stars;
     u.uLantern.value = d.lanterns;
     this.lanterns?.setAmount(d.lanterns);
@@ -701,10 +772,9 @@ export class BeachEngine {
     s.uFogFar.value = d.fogFar;
 
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.setRGB(0.64 * (1 - night * 0.85), 0.68 * (1 - night * 0.79), 0.72 * (1 - night * 0.64), THREE.SRGBColorSpace);
-    fog.color.lerp(new THREE.Color().setRGB(0.42, 0.26, 0.16, THREE.SRGBColorSpace), d.lanterns * 0.4);
-    fog.near = 45;
-    fog.far = 230;
+    fog.color.setRGB(...d.fog, THREE.SRGBColorSpace);
+    fog.near = 70;
+    fog.far = 270;
     this.renderer.setClearColor(fog.color, 1);
 
     for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
@@ -749,7 +819,7 @@ export class BeachEngine {
       const k = e.pointerType === "mouse" ? 0.0042 : 0.0072;
       this.self.yaw -= dx * k;
       this.self.pitch = this.skyRest
-        ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, 0.35, 1.52)
+        ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, this.view === "first" ? 1.40 : 0.88, this.view === "first" ? 1.56 : 1.50)
         : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
       this.faceGoal = null;
     }
@@ -815,10 +885,10 @@ export class BeachEngine {
       let best = 28;
       for (const [id, p] of this.players) {
         const v = p.sprite.position.clone();
-        const resting = claimedStargazingSlot(p.data);
+        const resting = claimedRestSlot(p.data);
         if (resting) {
           const middle = stargazingBodyPoint(resting, AVATAR_HEIGHT / 2);
-          v.set(middle.x, STARGAZING.avatarY, middle.z);
+          v.set(middle.x, resting.avatarY ?? STARGAZING.avatarY, middle.z);
         } else v.y += AVATAR_HEIGHT / 2;
         v.project(this.camera);
         if (v.z > 1) continue;
@@ -850,7 +920,7 @@ export class BeachEngine {
         this.players.set(p.pid, node);
       }
       node.data = p;
-      const resting = claimedStargazingSlot(p);
+      const resting = claimedRestSlot(p);
       node.target = resting ? { x: resting.x, z: resting.z, yaw: resting.yaw, moving: false } : { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving };
       node.seen = now;
       if (node.labelNick !== p.nick) this.setLabel(node, p.nick);
@@ -951,27 +1021,49 @@ export class BeachEngine {
     tex.offset.set(col / CHAR_ATLAS.cols, 1 - (row + 1) / CHAR_ATLAS.rows);
   }
 
-  /* ---------------- 위로 · 안아주기 이펙트 ---------------- */
-  /** toPid 가 null 이면 내가 받은 것: 눈앞에 띄운다 */
-  playCare(kind: CareKind, toPid: string | null) {
-    if (!this.fxTex) return;
-    let at: THREE.Vector3;
-    let node: PlayerNode | null = null;
-    if (toPid) {
-      node = this.players.get(toPid) ?? null;
-      if (!node) return;
-      at = new THREE.Vector3(node.cur.x, 0.9, node.cur.z);
-      node.bounce = kind === "hug" ? 1 : 0.5;
-    } else if (this.view === "third") {
-      at = new THREE.Vector3(this.self.x, 1.1, this.self.z); // 3인칭: 내 캐릭터 위에
-    } else {
-      const f = this.facing();
-      at = new THREE.Vector3(this.self.x + f.x * 1.6, EYE - 0.35, this.self.z + f.z * 1.6);
+  /* ---------------- 인사 · 위로 · 안아주기 이펙트 ---------------- */
+  private careAnchor(pid: string | null): CareAnchor | null {
+    const node = pid === null ? null : this.players.get(pid);
+    if (pid !== null && !node) return null;
+    const resting = node ? claimedRestSlot(node.data) : this.skyRest;
+    if (pid === null && this.view === "first") {
+      const direction = this.camera.getWorldDirection(new THREE.Vector3());
+      return { position: this.camera.position.clone().addScaledVector(direction, 1.65).add(new THREE.Vector3(0, -0.24, 0)), close: true, resting: Boolean(resting) };
     }
-    const k = toPid ? 1 : 0.7; // 눈앞(내가 받은 것)은 가까워서 조금 작게
+    if (resting) {
+      const point = stargazingBodyPoint(resting, 0.92);
+      return { position: new THREE.Vector3(point.x, (resting.avatarY ?? STARGAZING.avatarY) + 0.24 + Math.sin(resting.incline ?? 0) * 0.92, point.z), close: false, resting: true };
+    }
+    const position = node?.cur ?? this.self;
+    return { position: new THREE.Vector3(position.x, this.deckHeight(position.x, position.z) + 1.03, position.z), close: false, resting: false };
+  }
+
+  /** Called for confirmed events only. Null identifies local self; omitted source keeps legacy calls valid. */
+  playCare(kind: CareKind, toPid: string | null, fromPid?: string | null) {
+    if (this.disposed || !this.fxTex) return;
+    const target = this.careAnchor(toPid);
+    if (kind === "wave" || kind === "hug") {
+      this.careGestures ??= new CareGestures(this.scene, this.camera, pid => this.careAnchor(pid));
+    }
+    if (kind === "wave") {
+      const sender = fromPid === undefined ? toPid : fromPid;
+      this.careGestures?.play("wave", sender);
+      const source = sender === null ? null : this.players.get(sender);
+      if (source && !claimedRestSlot(source.data)) source.bounce = Math.max(source.bounce, 0.18);
+      if (target) for (let i = 0; i < 3; i++) {
+        this.spawnFx("sparkle", target.position, new THREE.Vector3((i - 1) * 0.15, 0.35, 0), 1, target.close ? 0.08 : 0.13, i * 0.10, 0xffedb5);
+      }
+      return;
+    }
+    if (!target) return;
+    const at = target.position;
+    const node = toPid === null ? null : this.players.get(toPid);
+    if (node && !claimedRestSlot(node.data)) node.bounce = kind === "hug" ? 0.25 : 0.5;
+    const k = target.close ? 0.6 : 1;
     if (kind === "hug") {
-      for (let i = 0; i < 7; i++) this.spawnFx("heart", at, new THREE.Vector3((Math.random() - 0.5) * 1.1, 0.8 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6), 1.3 + Math.random() * 0.5, (0.2 + Math.random() * 0.1) * k, i * 0.07);
-      this.spawnFx("glow", at.clone().setY(at.y - 0.1), new THREE.Vector3(0, 0.2, 0), 1.1, 2.4 * k, 0, 0xff8fb0);
+      this.careGestures?.play("hug", toPid);
+      for (let i = 0; i < 4; i++) this.spawnFx("heart", at, new THREE.Vector3((i % 2 ? 1 : -1) * 0.18, 0.45 + i * 0.08, 0), 1.6, (0.14 + i * 0.015) * k, i * 0.14, i % 2 ? 0xffd8bd : 0xffb4ce);
+      this.spawnFx("glow", at, new THREE.Vector3(0, 0.08, 0), 1.8, 1.2 * k, 0, 0xffb7c8);
     } else {
       for (let i = 0; i < 8; i++) this.spawnFx("sparkle", at, new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.5 + Math.random() * 0.8, (Math.random() - 0.5) * 1.2), 1.4 + Math.random() * 0.5, (0.18 + Math.random() * 0.08) * k, i * 0.06, undefined, true);
       for (let i = 0; i < 4; i++) this.spawnFx("leaf", at, new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.35 + Math.random() * 0.4, (Math.random() - 0.5) * 0.8), 1.8 + Math.random() * 0.4, 0.22 * k, i * 0.1, undefined, true);
@@ -987,10 +1079,11 @@ export class BeachEngine {
     sprite.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.5));
     sprite.renderOrder = 5;
     this.scene.add(sprite);
-    this.fx.push({ sprite, mat, vel, life: -delay, ttl, swirl: swirl ? Math.random() * Math.PI * 2 : -1, base: sprite.position.clone(), kind });
+    this.fx.push({ sprite, mat, vel, life: -delay, ttl, size, swirl: swirl ? Math.random() * Math.PI * 2 : -1, base: sprite.position.clone(), kind });
   }
 
   private updateFx(dt: number) {
+    this.careGestures?.update(dt);
     for (let i = this.fx.length - 1; i >= 0; i--) {
       const f = this.fx[i];
       f.life += dt;
@@ -1011,7 +1104,7 @@ export class BeachEngine {
         f.vel.y *= 1 - dt * 0.4;
       }
       f.mat.opacity = f.kind === "glow" ? Math.sin(t * Math.PI) * 0.55 : t < 0.15 ? t / 0.15 : 1 - Math.max(0, (t - 0.6) / 0.4);
-      if (f.kind === "glow") { const s = 1.6 + t * 1.6; f.sprite.scale.set(s, s, 1); }
+      if (f.kind === "glow") { const s = f.size * (0.8 + t * 0.5); f.sprite.scale.set(s, s, 1); }
     }
   }
 
@@ -1092,6 +1185,7 @@ export class BeachEngine {
   }
 
   private updateSelf(dt: number) {
+    this.camera.layers?.set(this.skyRest?.spotId === STARGAZING.id && this.view === "first" ? 1 : 0);
     if (this.skyRest) {
       this.self.x = this.skyRest.x; this.self.z = this.skyRest.z; this.self.moving = false;
       this.placeStargazingCamera(dt);
@@ -1159,10 +1253,20 @@ export class BeachEngine {
   private placeStargazingCamera(dt: number) {
     const resting = this.skyRest;
     if (!resting) return;
+    if (this.isBedLying) {
+      // The open sea-facing front is the only sightline: stay below the roof and in front of the bed.
+      const shelter = SHELTERS.find((s) => `hut-${s.id}` === resting.spotId)!;
+      const wanted = new THREE.Vector3(shelter.x + (resting.x - shelter.x) * 0.85, 2.85, shelter.z - 2.9);
+      if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
+      else this.followCam.lerp(wanted, Math.min(1, dt * 10));
+      this.camera.position.copy(this.followCam);
+      this.camera.lookAt(resting.x, 1.02, resting.z + 0.9);
+      return;
+    }
     if (this.view === "first") {
       const head = stargazingBodyPoint(resting, 1.42);
       this.camera.position.set(head.x, STARGAZING.avatarY + 0.16, head.z);
-      this.camera.rotation.set(this.self.pitch, this.self.yaw, 0, "YXZ");
+      this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, 1.40, 1.56), this.self.yaw, 0, "YXZ");
       return;
     }
     const elevation = THREE.MathUtils.clamp(this.self.pitch, 0.88, 1.5);
@@ -1298,7 +1402,7 @@ export class BeachEngine {
     const smooth = Math.min(1, dt * 7);
     let selectedNode: PlayerNode | null = null;
     for (const [pid, p] of this.players) {
-      const resting = claimedStargazingSlot(p.data);
+      const resting = claimedRestSlot(p.data);
       const far = Math.hypot(p.target.x - p.cur.x, p.target.z - p.cur.z);
       if (resting) { p.cur.x = resting.x; p.cur.z = resting.z; p.cur.yaw = resting.yaw; }
       else if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
@@ -1325,7 +1429,7 @@ export class BeachEngine {
       if (p.label) {
         if (resting) {
           const outside = stargazingBodyPoint(resting, -0.38);
-          p.label.position.set(outside.x, 0.3, outside.z);
+          p.label.position.set(outside.x, (resting.avatarY ?? STARGAZING.avatarY) + 0.18, outside.z);
           p.label.scale.set(1.5, 0.375, 1);
           p.label.visible = pid === this.selected && dl > 2.5 && dl < 20;
         } else {
@@ -1337,9 +1441,9 @@ export class BeachEngine {
       if (pid === this.selected) selectedNode = p;
     }
     if (selectedNode) {
-      const resting = claimedStargazingSlot(selectedNode.data);
+      const resting = claimedRestSlot(selectedNode.data);
       const point = resting ? stargazingBodyPoint(resting, AVATAR_HEIGHT / 2) : selectedNode.cur;
-      this.ring.position.set(point.x, resting ? STARGAZING.avatarY + 0.01 : this.deckHeight(point.x, point.z) + 0.03, point.z);
+      this.ring.position.set(point.x, resting ? (resting.avatarY ?? STARGAZING.avatarY) + 0.01 : this.deckHeight(point.x, point.z) + 0.03, point.z);
       const s = 1 + Math.sin(this.time * 5) * 0.07;
       this.ring.scale.set(s, s, 1);
       this.ringMat.opacity = 0.75 + Math.sin(this.time * 5) * 0.2;
@@ -1384,9 +1488,12 @@ export class BeachEngine {
     }
     for (const f of this.fx) { this.scene.remove(f.sprite); f.mat.dispose(); }
     this.fx = [];
+    this.careGestures?.dispose();
+    this.careGestures = null;
     this.lanterns?.dispose();
     this.lanterns = null;
     const textures = new Set<THREE.Texture>();
+    for (const texture of Object.values(this.fxTex ?? {})) textures.add(texture);
     const materials = new Set<THREE.Material>();
     const geometries = new Set<THREE.BufferGeometry>();
     this.scene.traverse((o) => {

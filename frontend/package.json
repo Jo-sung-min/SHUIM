@@ -11,7 +11,7 @@
     "test:offline": "node --test scripts/service-worker.test.mjs",
     "test:records": "node --test scripts/records-sync.test.mjs",
     "test:privacy": "node --test scripts/community-cache.test.mjs",
-    "test:beach": "node --test scripts/beach-net.test.mjs scripts/beach-shelters.test.mjs scripts/beach-avatar.test.mjs scripts/beach-appearance.test.mjs scripts/beach-lanterns.test.mjs scripts/beach-stargazing.test.mjs scripts/fire-commerce.test.mjs scripts/fire-powder.test.mjs",
+    "test:beach": "node --test scripts/beach-net.test.mjs scripts/beach-shelters.test.mjs scripts/beach-avatar.test.mjs scripts/beach-appearance.test.mjs scripts/beach-lanterns.test.mjs scripts/beach-stargazing.test.mjs scripts/beach-environment.test.mjs scripts/beach-photo.test.mjs scripts/beach-care.test.mjs scripts/fire-commerce.test.mjs scripts/fire-powder.test.mjs scripts/fire-visual.test.mjs",
     "test:points": "node --test scripts/points.test.mjs",
     "test:availability": "node --test scripts/service-availability.test.mjs",
     "test:media": "node --test scripts/photo-edit.test.mjs scripts/upload.test.mjs",

@@ -15,7 +15,7 @@ const BeachScene = dynamic(() => import("@/components/beach/BeachScene"), {
     <div className={styles.root}>
       <div className={styles.center} role="status" aria-live="polite">
         <p className={styles.loadingDots}>바닷가로 가는 중</p>
-        <small>절벽 아래 우리만의 모닥불 곁으로</small>
+        <small>하얀 모래와 파도 소리 곁으로</small>
       </div>
     </div>
   ),

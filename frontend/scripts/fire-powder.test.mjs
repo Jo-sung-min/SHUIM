@@ -14,7 +14,8 @@ async function load(file, dependencies, names) {
   return context.api;
 }
 const { FirePowderPlayback } = await load("../lib/beach/fire-powder.ts", {}, ["FirePowderPlayback"]);
-const { CoastalFire } = await load("../lib/beach/fire.ts", { THREE }, ["CoastalFire"]);
+const { buildFirewood } = await load("../lib/beach/firewood.ts", { THREE }, ["buildFirewood"]);
+const { CoastalFire } = await load("../lib/beach/fire.ts", { THREE, buildFirewood }, ["CoastalFire"]);
 const event = (id, startedAt = 100_000, color = "rainbow") => ({ id, color, startedAt, expiresAt: startedAt + 90_000 });
 const state = (serverTime, powder = null) => ({ serverTime, powderEnabled: true, powder });
 
@@ -98,7 +99,10 @@ test("the fire keeps crossed logs, separate tongues and a bounded sparse particl
   assert.equal(logs.count, 12);
   const a = new THREE.Matrix4(), b = new THREE.Matrix4();
   logs.getMatrixAt(0, a); logs.getMatrixAt(1, b);
-  const first = new THREE.Vector3(0, 1, 0).transformDirection(a), second = new THREE.Vector3(0, 1, 0).transformDirection(b);
+  logs.geometry.computeBoundingBox();
+  const size = logs.geometry.boundingBox.getSize(new THREE.Vector3());
+  const axis = size.z >= size.y && size.z >= size.x ? new THREE.Vector3(0, 0, 1) : size.y >= size.x ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const first = axis.clone().transformDirection(a), second = axis.clone().transformDirection(b);
   assert.ok(Math.abs(first.dot(second)) < 0.8, "wood is stacked across different axes instead of parallel cylinders");
   assert.equal(scene.getObjectByName("campfire-tongues").count, 17);
   assert.ok(scene.getObjectByName("campfire-embers").geometry.getAttribute("position").count <= 24);

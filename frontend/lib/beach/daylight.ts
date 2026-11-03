@@ -37,9 +37,11 @@ export interface Daylight {
   fire: number;
   /** 밤하늘 풍등이 떠 있는 정도 0~1 (저녁에 하나둘 올라 밤에 가득, 아침·낮엔 0) */
   lanterns: number;
+  /** 21:30~22:00에 깊어져 04:30까지 이어지고 새벽에 사라지는 심야 강도 */
+  deepNight: number;
 }
 
-type Key = Omit<Daylight, "hour" | "label" | "sun" | "moon" | "fogNear" | "fogFar" | "fire" | "lanterns">;
+type Key = Omit<Daylight, "hour" | "label" | "sun" | "moon" | "fogNear" | "fogFar" | "fire" | "lanterns" | "deepNight">;
 
 const c = (h: string): RGB => {
   const n = parseInt(h.slice(1), 16);
@@ -50,12 +52,12 @@ const NIGHT: Key = {
   skyTop: c("#070c22"), skyHorizon: c("#182548"), sunColor: c("#ffffff"), cloud: c("#222a44"), cloudAmount: 0.35,
   seaDeep: c("#07152d"), seaShallow: c("#123050"), foam: c("#8ea2c0"),
   // 풍등 불빛을 받아 밤에도 캐릭터가 따뜻하게 보이도록 푸른 기를 줄였다
-  sandTint: [0.4, 0.45, 0.62], tint: [0.76, 0.68, 0.7], fog: c("#141f3d"), stars: 1, sunGlow: 0, specular: 0.6,
+  sandTint: [0.76, 0.79, 0.85], tint: [0.82, 0.82, 0.86], fog: c("#263b50"), stars: 1, sunGlow: 0, specular: 0.6,
 };
 const DAWN: Key = {
   skyTop: c("#2b3a6a"), skyHorizon: c("#e2906f"), sunColor: c("#ffd0a0"), cloud: c("#6a5a7a"), cloudAmount: 0.4,
   seaDeep: c("#16365a"), seaShallow: c("#3a6a88"), foam: c("#d8c8c8"),
-  sandTint: [0.8, 0.7, 0.74], tint: [0.82, 0.74, 0.78], fog: c("#c98a80"), stars: 0.35, sunGlow: 0.9, specular: 0.7,
+  sandTint: [0.88, 0.84, 0.84], tint: [0.88, 0.83, 0.86], fog: c("#c9aaa5"), stars: 0.35, sunGlow: 0.9, specular: 0.7,
 };
 const SUNRISE: Key = {
   skyTop: c("#6b93cf"), skyHorizon: c("#ffc58f"), sunColor: c("#fff0c8"), cloud: c("#ffd9c0"), cloudAmount: 0.45,
@@ -80,12 +82,12 @@ const AFTERNOON: Key = {
 const SUNSET: Key = {
   skyTop: c("#4a4f92"), skyHorizon: c("#ff9a5a"), sunColor: c("#ffd8a0"), cloud: c("#ffb088"), cloudAmount: 0.5,
   seaDeep: c("#27477a"), seaShallow: c("#7a7f9c"), foam: c("#ffe6d0"),
-  sandTint: [1, 0.82, 0.7], tint: [1, 0.8, 0.68], fog: c("#f2a070"), stars: 0.05, sunGlow: 1, specular: 1.1,
+  sandTint: [1, 0.9, 0.82], tint: [1, 0.88, 0.79], fog: c("#e4b696"), stars: 0.05, sunGlow: 1, specular: 1.1,
 };
 const DUSK: Key = {
   skyTop: c("#1c2552"), skyHorizon: c("#c85a62"), sunColor: c("#ffb080"), cloud: c("#4a3a62"), cloudAmount: 0.45,
   seaDeep: c("#132a4e"), seaShallow: c("#2e4b70"), foam: c("#c9b4c4"),
-  sandTint: [0.72, 0.62, 0.7], tint: [0.74, 0.64, 0.72], fog: c("#6c4a6e"), stars: 0.5, sunGlow: 0.5, specular: 0.8,
+  sandTint: [0.82, 0.78, 0.84], tint: [0.83, 0.78, 0.85], fog: c("#6f6b82"), stars: 0.5, sunGlow: 0.5, specular: 0.8,
 };
 
 const KEYS: [number, Key][] = [
@@ -135,15 +137,23 @@ export function daylightAt(hourIn: number): Daylight {
   const fire = hour >= 17.3 ? smooth((hour - 17.3) / 1) : hour <= 7 ? 1 - smooth((hour - 6) / 1) : 0;
   const stars = k("stars");
   const lanterns = Math.max(0, Math.min(1, (stars - 0.25) / 0.6));
+  // Evening keeps its existing color. Deep night arrives gently and meets dawn without a seam.
+  const deepNight = hour >= 21.5 ? smooth((hour - 21.5) / 0.5) : hour <= 4.5 ? 1 : 1 - smooth(hour - 4.5);
   return {
     hour,
     label: labelOf(hour),
     sun: bodyDir(theta, 1.15),
     moon: bodyDir(theta + Math.PI, 0.9),
-    skyTop: kc("skyTop"), skyHorizon: kc("skyHorizon"), sunColor: kc("sunColor"), cloud: kc("cloud"), cloudAmount: k("cloudAmount"),
-    seaDeep: kc("seaDeep"), seaShallow: kc("seaShallow"), foam: kc("foam"),
-    sandTint: kc("sandTint"), tint: kc("tint"), fog: kc("fog"), fogNear: 28, fogFar: 150,
-    stars, sunGlow: k("sunGlow"), specular: k("specular"), fire, lanterns,
+    skyTop: mixRgb(kc("skyTop"), c("#020713"), deepNight),
+    skyHorizon: mixRgb(kc("skyHorizon"), c("#0a1528"), deepNight),
+    sunColor: kc("sunColor"), cloud: mixRgb(kc("cloud"), c("#111b2b"), deepNight), cloudAmount: k("cloudAmount"),
+    seaDeep: mixRgb(kc("seaDeep"), c("#030b15"), deepNight),
+    seaShallow: mixRgb(kc("seaShallow"), c("#0b202c"), deepNight),
+    foam: mixRgb(kc("foam"), c("#445367"), deepNight),
+    sandTint: mixRgb(kc("sandTint"), [0.3, 0.35, 0.43], deepNight),
+    tint: mixRgb(kc("tint"), [0.58, 0.62, 0.69], deepNight),
+    fog: mixRgb(kc("fog"), c("#0a1421"), deepNight), fogNear: 28, fogFar: 150,
+    stars, sunGlow: k("sunGlow"), specular: mix(k("specular"), 0.33, deepNight), fire, lanterns, deepNight,
   };
 }
 

@@ -27,7 +27,7 @@ class BeachRoomTest {
     }
 
     private static TickResult care(BeachRoom room, Presence from, Presence to, String kind) {
-        return room.tick(from.ticket(), from.x(), from.z(), from.yaw(), false, to.userId(), kind);
+        return room.tick(from.ticket(), from.x(), from.z(), from.yaw(), false, to.userId(), kind, null, true);
     }
 
     private static List<String> pids(TickResult r) { return r.players().stream().map(PlayerView::pid).toList(); }

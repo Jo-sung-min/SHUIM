@@ -6,7 +6,7 @@ export const STARGAZING = {
   avatarY: 0.125,
 } as const;
 
-export interface StargazingSlot { slot: number; spotId: string; x: number; z: number; yaw: number }
+export interface StargazingSlot { slot: number; spotId: string; x: number; z: number; yaw: number; avatarY?: number; incline?: number }
 export interface StargazingState { near: boolean; lying: boolean; occupied: number; capacity: number }
 
 export function stargazingSlot(slot: number): StargazingSlot | null {
@@ -26,8 +26,8 @@ export function stargazingBodyPoint(slot: StargazingSlot, distance: number) {
 }
 
 export function applyLyingTransform(object: THREE.Object3D, slot: StargazingSlot) {
-  object.position.set(slot.x, STARGAZING.avatarY, slot.z);
-  object.rotation.set(-Math.PI / 2, slot.yaw, 0, "YXZ");
+  object.position.set(slot.x, slot.avatarY ?? STARGAZING.avatarY, slot.z);
+  object.rotation.set(-Math.PI / 2 + (slot.incline ?? 0), slot.yaw, 0, "YXZ");
 }
 
 export function stargazingApproach(x: number, z: number) {

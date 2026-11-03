@@ -1,4 +1,17 @@
-/* 하단 컨트롤 바: 바닷가 HUD 의 어두운 글래스(반투명 블러 + 얇은 흰 테두리 + 둥근 모서리)와 같은 결 */
+/* 모닥불 곁의 투명 바에서 낮과 밤의 공통 글자색을 따른다. */
+.trayAction { box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1 1 0; gap:1px; width:100%; min-width:0; height:56px; min-height:56px; padding:3px 2px; border:1px solid transparent; border-radius:15px; background:transparent; color:var(--beach-ink,#34433e); font:inherit; cursor:pointer; text-align:center; touch-action:manipulation; transition:transform .15s,background .15s,opacity .15s; }
+.trayAction strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:11px; font-weight:650; line-height:1.2; letter-spacing:-.025em; white-space:nowrap; }
+.trayAction small { max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:9px; font-weight:400; line-height:1.2; color:var(--beach-muted,#68756f); white-space:nowrap; }
+.trayIcon { display:grid; place-items:center; flex:none; width:22px; height:22px; border-radius:8px; font-size:18px; line-height:1; background:#ffffff1f; color:inherit; }
+.trayIcon svg { width:18px; height:18px; }
+.trayWood .trayIcon { background:#edca8a26; color:color-mix(in srgb,var(--beach-ink,#34433e) 72%,#aa895e); }
+.trayPowder .trayIcon { background:#b8a4df26; color:color-mix(in srgb,var(--beach-ink,#34433e) 78%,#ab90c5); }
+.trayAction:hover:not(:disabled) { background:#ffffff2e; }
+.trayAction:active:not(:disabled) { transform:scale(.95); background:#ffffff2e; }
+.trayAction:focus-visible { outline:2px solid var(--beach-ink,#34433e); outline-offset:-2px; background:#ffffff2e; }
+.trayAction:disabled { opacity:.45; cursor:default; transform:none; }
+.trayAction[data-busy="true"] { opacity:.82; }
+@media(prefers-reduced-motion:reduce) { .trayAction { transition:none; } }
 .bar {
   display:flex; align-items:center; gap:10px; width:100%; max-width:100%; padding:8px 8px 8px 14px;
   border-radius:22px; border:1px solid rgba(255,255,255,.22); background:rgba(16,14,28,.46); color:#fff;
@@ -57,6 +70,9 @@
 .powderButton[data-busy="true"] { opacity:.85; }
 .powderButton:focus-visible, .powderChoice:focus-visible, .powderConfirm:focus-visible { outline:3px solid #dfc6ff; outline-offset:3px; }
 .woodButton[data-busy="true"] .woodLabel > span, .powderButton[data-busy="true"] svg { display:none; }
+.powderScope { --surface:#fff; --surface-2:#f0f4f1; --text:#34433e; --text-2:#55665f; --text-3:#738179; --border:#dfe7e1; --border-strong:#c5d2c9; color:var(--text); color-scheme:light; }
+.powderScope :global(.sheet) { background:linear-gradient(145deg,#fffffff5,#f6faf4ed); border-top-color:#fff; box-shadow:0 -14px 40px #143c2214; -webkit-backdrop-filter:blur(24px) saturate(120%); backdrop-filter:blur(24px) saturate(120%); }
+.powderScope :global(.sheet-backdrop) { background:#17332935; }
 .powderSheet { padding:2px 0 8px; color:var(--text); touch-action:pan-y; }
 .powderIntro { margin:2px 0 18px; font-size:14px; line-height:1.7; color:var(--text-2); }
 .powderIntro > span { font-size:12px; color:var(--text-3); }

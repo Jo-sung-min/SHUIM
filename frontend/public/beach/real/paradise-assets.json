@@ -1,0 +1,29 @@
+{
+  "created": "2026-11-04",
+  "generator": "OpenAI built-in image_gen",
+  "delivery": "Generated originals remain in the local image generation output. Project assets are encoded as WebP at quality 92 without resizing or composition changes.",
+  "assets": [
+    {
+      "file": "paradise-panorama-v1.webp",
+      "width": 1774,
+      "height": 887,
+      "reference": "cove-panorama.png",
+      "purpose": "Open sky and distant green headlands for the paradise beach environment and its entry preview.",
+      "prompt": "Use case: precise-object-edit. Asset type: a wide 2:1 photographic environment panorama for the Sorow 3D beach scene, ideally 2048x1024 or larger. Edit this reference panorama into a serene paradise cove. Keep the level central ocean horizon exactly halfway up the image, with uninterrupted open ocean in the middle third and spacious blue sky across the entire upper half. Replace the nearby dry barren side cliffs with much more distant, tall pale limestone headlands framing only the far left and right edges at the horizon, at least 150 meters away in apparent distance; their tops are lush emerald moss, trailing greenery and natural coastal trees. Do not place cliffs overhead or close to camera. Replace foreground sand with soft clean white coral sand, very subtle fine ripples, no footprints or stones. Water is clear inviting pale turquoise near shore deepening to blue, delicate small white foam edge. Gentle neutral morning daylight, airy welcoming atmosphere, realistic natural landscape photography, no golden orange color cast, no overly saturated tropical postcard filter. Preserve simple uncluttered composition appropriate for a game backdrop: no people, no houses, no furniture, no lights, no text, no logo. Upper sky should be softly graded with only sparse wispy clouds and no giant cloud banks, suitable for looking straight upward. High detail, calm graceful shore."
+    },
+    {
+      "file": "white-sand-v1.webp",
+      "width": 1254,
+      "height": 1254,
+      "purpose": "Fine near-white coral sand albedo, repeated across the walkable shore.",
+      "prompt": "Use case: photorealistic-natural. Asset type: seamless square tileable diffuse/albedo ground texture for a 3D paradise beach, 1024x1024 or larger. Orthographic perfectly top-down view of very fine, clean WHITE CORAL SAND. Warm near-white ivory grains, faint low-contrast natural wind ripples distributed evenly with delicate organic irregularity. Soft uniform shadowless illumination, no directional lighting, no vignette, no visible tile edge, no perspective. The complete image must be almost white, with subtle micrograin detail suitable for repeating many times across a large landscape. Not brown, not orange, not gray gravel. No footprints, stones, shells, leaves, water, objects, text, borders, or high-contrast streaks. Seamless all four edges. Realistic refined powdery sand material, calm luxurious white-sand beach."
+    },
+    {
+      "file": "white-cotton-v1.webp",
+      "width": 1254,
+      "height": 1254,
+      "purpose": "Soft bright ivory cotton for resort bedding and pillows.",
+      "prompt": "Use case: photorealistic-natural. Asset type: seamless square 1024x1024 diffuse/albedo fabric texture for soft white resort duvets and pillows in a 3D beach cottage. Perfectly orthographic top-down close view of clean fine-woven off-white cotton linen, plush softly brushed surface, barely visible tiny natural fibers and delicate thread weave. Neutral bright ivory-white color, extremely low contrast. Uniform shadowless illumination, all four edges seamlessly tileable. No seams, stitched panels, folds, pillows or complete objects in the picture, no perspective, no directional shadows, no wrinkles, no yellow or brown cast, no text, no border. This is a refined white bedding material texture, different from sand: tiny woven cotton threads are visible under magnification, very soft and airy."
+    }
+  ]
+}

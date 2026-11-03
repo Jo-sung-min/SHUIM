@@ -16,10 +16,11 @@ async function loadModule(file, dependencies, exports) {
   return context.api;
 }
 
-const shelters = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "buildShelters"]);
+const shelters = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "buildShelters", "BED_CAPACITY", "bedSlot", "claimedBedSlot"]);
 const { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } = shelters;
 const { findClearApproach, resolveWalls } = await loadModule("../lib/beach/navigation.ts", {}, ["findClearApproach", "resolveWalls"]);
-const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, ...shelters }, ["Cove", "CAMPFIRE"]);
+const { buildNightLights } = await loadModule("../lib/beach/night-lights.ts", { THREE }, ["buildNightLights"]);
+const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, ...shelters, buildNightLights }, ["Cove", "CAMPFIRE"]);
 const stargazing = await loadModule("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot"]);
 const { BeachEngine, PLACEMENT } = await loadModule("../lib/beach/engine.ts", {
   THREE, ...shelters, ...stargazing, findClearApproach, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },

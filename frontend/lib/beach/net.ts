@@ -5,7 +5,7 @@ import type { BeachCharacter } from "./appearance";
 /**
  * 바닷가 서버와 주고받기. 각 소로우에 멤버 전용 방(/api/beach, BeachRoom)이 하나씩 있다.
  *  - enter: 세션으로 한 번 인증하고 티켓을 받는다 (여기서만 DB 를 쓴다)
- *  - tick:  내 위치를 올리고 다른 사람들·받은 위로를 내려받는다 (티켓만으로, 움직일 땐 0.5초, 서 있으면 1.5초마다)
+ *  - tick: 내 위치와 받은 행동을 주고받는다. 행동을 보낼 때는 서버가 현재 로그인·권한도 확인한다.
  *  - leave: 나간다 (탭을 닫을 때도 keepalive 로 보낸다)
  * 티켓이 만료되면(10초 넘게 tick 이 없었을 때) 410 이 오고, 화면은 다시 enter 한다.
  */
@@ -20,6 +20,8 @@ export interface EnterResponse {
   count: number;
   fire: FireState;
   restEnabled?: boolean;
+  bedEnabled?: boolean;
+  careCapabilities?: CareCapabilities;
 }
 
 /** A shared rest slot is assigned by the server, never claimed locally. */
@@ -69,7 +71,19 @@ export interface RemotePlayer {
   slot?: number | null;
 }
 
-export type CareKind = "comfort" | "hug";
+export type CareKind = "comfort" | "hug" | "wave";
+
+export interface CareCapabilities {
+  wave: boolean;
+  hug: boolean;
+}
+
+/** Missing or malformed permission data never grants a new action. */
+function readCareCapabilities(value: unknown): CareCapabilities {
+  if (!value || typeof value !== "object") return { wave: false, hug: false };
+  const data = value as Record<string, unknown>;
+  return { wave: data.wave === true, hug: data.hug === true };
+}
 
 export interface CareEvent {
   kind: CareKind;
@@ -96,8 +110,9 @@ export interface TickResponse {
   players: RemotePlayer[];
   events: CareEvent[];
   count: number;
-  received: { comfort: number; hug: number };
-  care?: "sent" | "cooldown" | "gone";
+  received: { comfort: number; hug: number; wave?: number };
+  care?: "sent" | "cooldown" | "gone" | "forbidden";
+  careCapabilities?: CareCapabilities | null;
   fire: FireState;
   selfRest?: RestPresence;
 }
@@ -155,8 +170,16 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   return json;
 }
 
-export const enterBeach = (communityId: string, character?: BeachCharacter) => post<EnterResponse>("/api/beach/enter", { communityId, character }, { signal: AbortSignal.timeout(8000) });
-export const tickBeach = (body: TickRequest) => post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
+export async function enterBeach(communityId: string, character?: BeachCharacter): Promise<EnterResponse> {
+  const response = await post<EnterResponse>("/api/beach/enter", { communityId, character }, { signal: AbortSignal.timeout(8000) });
+  return { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
+}
+
+export async function tickBeach(body: TickRequest): Promise<TickResponse> {
+  const response = await post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
+  // Movement-only ticks do not refresh privileges. A confirmed action response does.
+  return response.careCapabilities == null ? response : { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
+}
 export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId }, { signal: AbortSignal.timeout(8000) });
 export async function addFirePowder(ticket: string, requestId: string, color: PowderColor): Promise<FireState> {
   const state = await post<FireState>("/api/beach/fire/powder", { ticket, requestId, color }, { signal: AbortSignal.timeout(8000) });
@@ -166,18 +189,19 @@ export async function addFirePowder(ticket: string, requestId: string, color: Po
   return state;
 }
 
-export async function setBeachRest(ticket: string, action: "lie" | "stand"): Promise<RestPresence> {
+export async function setBeachRest(ticket: string, action: "lie" | "stand", spotId = "starlight"): Promise<RestPresence> {
   let state: RestPresence;
   try {
-    state = await post<RestPresence>("/api/beach/rest", { ticket, action, ...(action === "lie" ? { spotId: "starlight" } : {}) }, { signal: AbortSignal.timeout(8000) });
+    state = await post<RestPresence>("/api/beach/rest", { ticket, action, ...(action === "lie" ? { spotId } : {}) }, { signal: AbortSignal.timeout(8000) });
   } catch (cause) {
     if (cause instanceof Error && (cause.name === "AbortError" || cause.name === "TimeoutError")) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
     throw cause;
   }
   const validPose = state && (state.pose === "standing"
     ? state.spotId === null && state.slot === null
-    : state.pose === "lying" && state.spotId === "starlight" && Number.isInteger(state.slot) && state.slot! >= 0 && state.slot! < 8);
-  if (!validPose || ![state.x, state.z, state.yaw].every(Number.isFinite)) throw new Error("별빛 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    : state.pose === "lying" && Number.isInteger(state.slot) && state.slot! >= 0 && (
+      state.spotId === "starlight" ? state.slot! < 8 : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3));
+  if (!validPose || ![state.x, state.z, state.yaw].every(Number.isFinite)) throw new Error("쉴 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   return state;
 }
 

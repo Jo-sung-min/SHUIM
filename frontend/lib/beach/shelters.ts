@@ -21,6 +21,10 @@ export interface ShelterSeat {
 }
 
 export interface ShelterCollider { minX: number; maxX: number; minZ: number; maxZ: number }
+export interface BedSlot { slot: number; spotId: string; x: number; z: number; yaw: number; avatarY: number; incline: number }
+export interface BedState { spotId: string; shelterName: string; near: boolean; lying: boolean; occupied: number; capacity: number }
+export const BED_CAPACITY = 3;
+export const BED_AVATAR_Y = 0.82;
 
 /** The whole sea-facing side (-Z) is an entrance; the rear faces the cliff. */
 export const SHELTERS: readonly Shelter[] = [
@@ -30,15 +34,25 @@ export const SHELTERS: readonly Shelter[] = [
 ];
 
 export const SHELTER_SEATS: readonly ShelterSeat[] = SHELTERS.flatMap((shelter) =>
-  [-1.65, 0, 1.65].map((offset, index) => ({
+  [-1.9, 0, 1.9].map((offset, index) => ({
     id: `${shelter.id}-${index + 1}`,
     shelterId: shelter.id,
     name: shelter.name,
     x: shelter.x + offset,
-    z: shelter.z + 0.9,
+    z: shelter.z - 0.3,
     yaw: 0 as const,
   })),
 );
+
+export function bedSlot(spotId: string, slot: number): BedSlot | null {
+  const shelter = SHELTERS.find((s) => `hut-${s.id}` === spotId);
+  if (!shelter || !Number.isInteger(slot) || slot < 0 || slot >= BED_CAPACITY) return null;
+  return { spotId, slot, x: shelter.x + (slot - 1) * 1.9, z: shelter.z - 0.1, yaw: Math.PI, avatarY: BED_AVATAR_Y, incline: 0.25 };
+}
+
+export function claimedBedSlot(state: { pose?: string; spotId?: string | null; slot?: number | null }): BedSlot | null {
+  return state.pose === "lying" && typeof state.spotId === "string" && typeof state.slot === "number" ? bedSlot(state.spotId, state.slot) : null;
+}
 
 export const SHELTER_COLLIDERS: readonly ShelterCollider[] = SHELTERS.flatMap((shelter) => {
   const { x, z, width, depth } = shelter;
@@ -54,7 +68,7 @@ export const SHELTER_COLLIDERS: readonly ShelterCollider[] = SHELTERS.flatMap((s
       minZ: z - halfDepth - 0.03,
       maxZ: z - halfDepth + 0.27,
     })),
-    { minX: x - 2.95, maxX: x + 2.95, minZ: z + 0.55, maxZ: z + 2.08 },
+    { minX: x - 2.85, maxX: x + 2.85, minZ: z - 0.4, maxZ: z + 2.08 },
     ...[-1, 1].map((side) => ({
       minX: x + side * 3.22 - 0.43,
       maxX: x + side * 3.22 + 0.43,
@@ -75,7 +89,8 @@ type Part = {
 function shelterTexture(file: string, color = false): THREE.Texture | null {
   // Navigation tests run without a DOM; texture decoding only belongs to the browser.
   if (typeof document === "undefined") return null;
-  const texture = new THREE.TextureLoader().load(`/beach/real/${file}.jpg`);
+  const asset = file === "fabric" ? "white-cotton-v1.webp" : `${file}.jpg`;
+  const texture = new THREE.TextureLoader().load(`/beach/real/${asset}`);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.anisotropy = 8;
   texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -204,27 +219,27 @@ export function buildShelters(scene: THREE.Scene): void {
       add(walls, x, y, back, Math.max(0.12, gableWidth), 0.16, 0.2, timber[(row + 1) % timber.length]);
     }
 
-    // A deep cushioned bench faces the sea. Its front edge is behind a roomy interior aisle.
-    add(frame, x, 0.48, z + 1.27, 5.9, 0.22, 1.44, 0xb69266);
-    for (const legX of [-2.35, 0, 2.35]) {
-      for (const legZ of [0.73, 1.5]) add(frame, x + legX, 0.3, z + legZ, 0.19, 0.28, 0.19, 0x79583e);
-    }
-    add(frame, x, 1.08, z + 1.97, 5.9, 0.94, 0.2, 0xb99569);
-    for (const side of [-1, 1]) {
-      add(frame, x + side * 2.82, 0.84, z + 1.25, 0.2, 0.16, 1.45, 0xbc986d);
-      add(frame, x + side * 2.82, 0.65, z + 0.7, 0.16, 0.4, 0.16, 0xae885d);
-      add(fabric, x + side * 2.73, 0.95, z + 1.32, 0.25, 0.47, 1.24, 0xf2eee3);
-    }
-    [-1.65, 0, 1.65].forEach((offset, index) => {
-      add(fabric, x + offset, 0.72, z + 1.24, 1.63, 0.28, 1.34, 0xfffcf3);
-      add(fabric, x + offset, 1.15, z + 1.78, 1.62, 0.77, 0.29, 0xf5f0e4, 0, -0.12);
-      add(fabric, x + offset, 0.97, z + 1.49, 1.35, 0.29, 0.2, index === 1 ? accent : 0xeee4d3, 0, -0.15);
+    // Three distinct daybeds share the open ocean view. The foot of each is also a seat.
+    [-1.9, 0, 1.9].forEach((offset, index) => {
+      const bx = x + offset;
+      add(frame, bx, 0.45, z + 0.84, 1.8, 0.2, 2.48, 0xb69266);
+      for (const side of [-1, 1]) for (const end of [-0.25, 1.87]) {
+        add(frame, bx + side * 0.7, 0.3, z + end, 0.15, 0.28, 0.15, 0x96724f);
+      }
+      add(frame, bx, 0.96, z + 2.06, 1.8, 1.0, 0.14, 0xc1a17c);
+      add(fabric, bx, 0.66, z + 0.82, 1.74, 0.25, 2.4, 0xfffcf3);
+      add(fabric, bx, 1.02, z + 1.99, 1.66, 0.65, 0.15, 0xe9e1d2);
+      // Support the tilted head, leaving the actual atlas eyes and cheeks above the duvet edge.
+      add(fabric, bx, 0.975, z + 1.42, 1.08, 0.18, 0.54, index === 1 ? 0xe9e1dd : 0xe4ece0, index === 1 ? 0.015 : -0.015, -0.12);
+      add(fabric, bx, 0.97, z + 0.32, 1.76, 0.20, 1.44, 0xfff9ed);
+      add(fabric, bx, 1.085, z + 0.95, 1.73, 0.04, 0.16, 0xf9f3e8);
+      // Fine stitching follows one continuous puffy quilt; no raised rigid-looking slats.
+      for (let seam = 0; seam < 5; seam++) {
+        add(fabric, bx - 0.58 + seam * 0.29, 1.071, z + 0.29, 0.008, 0.003, 1.05, 0xeae2d5);
+      }
+      for (const side of [-1, 1]) add(fabric, bx + side * 0.86, 0.78, z + 0.33, 0.07, 0.38, 1.4, 0xf5eddf);
+      add(woven, bx, 0.72, z - 0.39, 1.72, 0.43, 0.035, 0xf5eddf);
     });
-    // Small loose cushions and a folded throw give each shared shelter its own character.
-    add(fabric, x - 2.17, 1.09, z + 1.4, 0.67, 0.58, 0.26, accent, -0.2, -0.15);
-    add(fabric, x + 2.17, 1.08, z + 1.38, 0.64, 0.55, 0.26, 0xd4bd9e, 0.2, -0.16);
-    add(woven, x + 2.05, 0.87, z + 0.98, 0.78, 0.025, 0.9, accent);
-    add(woven, x + 2.05, 0.67, z + 0.54, 0.78, 0.4, 0.025, accent);
 
     // Rattan-sided occasional tables stay beside the aisle, leaving every seat a clear approach.
     for (const side of [-1, 1]) {

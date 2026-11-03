@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import styles from "./Joystick.module.css";
 
 const RADIUS = 40;
@@ -9,11 +9,14 @@ const RADIUS = 40;
  * 터치 기기용 화면 조이스틱. 왼쪽 아래에 늘 보이고, 손가락을 대고 끄는 만큼 걷는다 (-1~1, y 는 앞으로가 양수).
  * 캔버스가 아니라 이 요소가 포인터를 잡으므로 둘러보기(캔버스 드래그)와 섞이지 않는다. 마우스로 끌어도 똑같이 움직인다
  */
-export default function Joystick({ onMove }: { onMove: (x: number, y: number) => void }) {
+export default function Joystick({ onMove, raised = false }: { onMove: (x: number, y: number) => void; raised?: boolean }) {
   const baseRef = useRef<HTMLDivElement>(null);
   const pointerRef = useRef<number | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
+  const moveRef = useRef(onMove);
+  moveRef.current = onMove;
+  useEffect(() => () => moveRef.current(0, 0), []);
 
   const update = (e: ReactPointerEvent<HTMLDivElement>) => {
     const base = baseRef.current;
@@ -38,7 +41,7 @@ export default function Joystick({ onMove }: { onMove: (x: number, y: number) =>
   return (
     <div
       ref={baseRef}
-      className={`${styles.base} ${active ? styles.active : ""}`}
+      className={`${styles.base} ${active ? styles.active : ""} ${raised ? styles.raised : ""}`}
       role="application"
       aria-label="걷기 조이스틱: 끌어서 걸어요"
       onPointerDown={(e) => {

@@ -69,7 +69,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
         <div className={styles.text}>
           <span className={styles.eyebrow}><IconLock />우리만의 프라이빗 해변</span>
           <h2>소로우 바닷가</h2>
-          <p>절벽 아래 작은 해변, 바다를 보며 쉬어가요.</p>
+          <p>하얀 모래와 푸른 바다, 포근하게 쉬어가요.</p>
         </div>
         {circles.length > 1 ? (
           <div className={styles.selector}>

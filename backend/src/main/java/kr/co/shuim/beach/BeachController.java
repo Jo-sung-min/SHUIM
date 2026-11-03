@@ -37,7 +37,7 @@ public class BeachController {
         this.circles = circles;
     }
 
-    /** { to: 유저 id, kind: "comfort" | "hug" } */
+    /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
     public record Care(String to, String kind) {}
     /** character 는 남녀 기본 캐릭터를 바꿀 때 선택하며, 생략하면 현재 모습 유지 */
     public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
@@ -79,6 +79,8 @@ public class BeachController {
         out.put("community", Map.of("id", circle.id(), "slug", circle.slug(), "name", circle.name()));
         out.put("capacity", BeachRoom.CAPACITY);
         out.put("restEnabled", true);
+        out.put("bedEnabled", true);
+        out.put("careCapabilities", new BeachRoom.CareCapabilities(true, auth.isAdmin(me)));
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", BeachRoom.MIN_Z, "maxZ", BeachRoom.MAX_Z));
@@ -92,24 +94,43 @@ public class BeachController {
     /**
      * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind }, character?: "male" | "female" }
      *   → { players: [{ pid, id, nick, skin, x, z, yaw, moving }], events: [{ kind, fromPid, fromId, fromNick, toPid, toId, toNick, at }],
-     *       count, received: { comfort, hug }, care?: "sent" | "cooldown" | "gone" }
+     *       count, received: { comfort, hug, wave }, care?: "sent" | "cooldown" | "gone" | "forbidden", careCapabilities?: { wave, hug } }
      * 방문 티켓으로 위치를 갱신하고 영속 모닥불 상태를 함께 내려준다. 만료 티켓은 410.
      */
     @PostMapping("/api/beach/tick")
-    public BeachRoom.TickResult tick(@RequestBody(required = false) TickBody body) {
+    public BeachRoom.TickResult tick(@RequestBody(required = false) TickBody body, HttpServletRequest req) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
         String careTo = body.care() == null ? null : body.care().to();
         String careKind = body.care() == null ? null : body.care().kind();
+        BeachRoom.CareCapabilities capabilities = null;
+        boolean denied = false;
+        if (body.care() != null) {
+            // Read the current session role, never a client flag or the role at entry.
+            // Ordinary position polls retain the existing credential-ticket flow without a database lookup.
+            DbUser actor = auth.currentUser(req).orElse(null);
+            boolean ownedMember = false;
+            if (actor != null) {
+                try {
+                    BeachService.Visit visit = beach.requireVisit(body.ticket(), actor.id());
+                    requireMember(visit.communityId(), actor);
+                    ownedMember = true;
+                } catch (ApiException e) {
+                    if (e.status() != 403) throw e;
+                }
+            }
+            capabilities = new BeachRoom.CareCapabilities(ownedMember, ownedMember && auth.isAdmin(actor));
+            denied = !ownedMember || ("hug".equals(careKind) && !capabilities.hug());
+        }
         BeachRoom.TickResult r = beach.tick(body.ticket(),
             body.x() == null ? Double.NaN : body.x(),
             body.z() == null ? Double.NaN : body.z(),
             body.yaw() == null ? Double.NaN : body.yaw(),
-            Boolean.TRUE.equals(body.moving()), careTo, careKind, body.character());
+            Boolean.TRUE.equals(body.moving()), denied ? null : careTo, careKind, body.character(), capabilities != null && capabilities.hug());
         if (r == null) throw ApiException.gone(GONE);
-        return r;
+        return capabilities == null ? r : r.withCareCapabilities(capabilities, denied);
     }
 
-    /** POST /api/beach/rest { ticket, action: "lie" | "stand", spotId?: "starlight" } */
+    /** POST /api/beach/rest { ticket, action: "lie" | "stand", spotId?: "starlight" | "hut-pine" | "hut-wave" | "hut-sunset" } */
     @PostMapping("/api/beach/rest")
     public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);

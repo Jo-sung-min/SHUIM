@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildFirewood } from "./firewood";
 import type { PowderSample } from "./fire-powder";
 import type { PowderColor } from "./net";
 
@@ -27,6 +28,20 @@ const EMBER_POWER = 0.07;
 const FLARE_STRENGTH = 0.9;
 const FLARE_DECAY_SECONDS = 4.5;
 
+/** Keep the familiar half-full fire; a full stack reaches twice its former flame height. */
+export function fireFuelProfile(logs: number) {
+  const fuel = (Number.isFinite(logs) ? Math.round(THREE.MathUtils.clamp(logs, 0, 12)) : 3) / 12;
+  const lower = THREE.MathUtils.smoothstep(fuel, 0, 0.5);
+  const upper = THREE.MathUtils.smoothstep(fuel, 0.5, 1);
+  return {
+    power: EMBER_POWER + (1 - EMBER_POWER) * fuel,
+    heightScale: 0.16 + lower * 0.84 + upper,
+    widthScale: 0.66 + lower * 0.34 + upper * 0.15,
+    motion: 0.16 + lower * 0.84,
+    flameOpacity: 0.12 + lower * 0.88,
+  };
+}
+
 /** Instanced tongues and charred wood, glowing coals, light smoke, sparks and a brief powder toss. */
 export class CoastalFire {
   private flames: THREE.InstancedMesh;
@@ -38,7 +53,8 @@ export class CoastalFire {
   private powderStarted = -100;
   private powderFlareAt: number | null = null;
   private powderSample: PowderSample = { color: null, weight: 0, hue: 0 };
-  private targetPower = EMBER_POWER + (1 - EMBER_POWER) * (3 / 12);
+  private fuelProfile = fireFuelProfile(3);
+  private targetPower = this.fuelProfile.power;
   private baseColors = FIRE_PALETTES.amber.map((color) => new THREE.Color(color));
   private powderColors = FIRE_PALETTES.amber.map((color) => new THREE.Color(color));
   private targetColors = FIRE_PALETTES.amber.map((color) => new THREE.Color(color));
@@ -48,60 +64,24 @@ export class CoastalFire {
   private flareLevel = 0;
 
   constructor(scene: THREE.Scene, x: number, z: number) {
-    const wood = typeof document === "undefined"
-      ? new THREE.Texture()
-      : new THREE.TextureLoader().load("/beach/real/wood.jpg");
-    wood.colorSpace = THREE.SRGBColorSpace;
-    wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
-    wood.anisotropy = 4;
-    const logMaterial = new THREE.MeshStandardMaterial({ map: wood, color: 0x655b50, roughness: 1, emissive: 0x7d2107, emissiveIntensity: 0.1 });
-    logMaterial.onBeforeCompile = (shader) => {
-      shader.vertexShader = `varying vec3 vLogPosition; varying vec3 vLogNormal;\n${shader.vertexShader}`
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLogPosition = position; vLogNormal = normal;");
-      shader.fragmentShader = `varying vec3 vLogPosition; varying vec3 vLogNormal;\n${NOISE}\n${shader.fragmentShader}`
-        .replace("#include <map_fragment>", `#include <map_fragment>
-          float grain = turbulence(vLogPosition.xy * vec2(24.0, 7.0) + vLogPosition.z * 9.0);
-          float charred = smoothstep(0.24, 0.8, grain + (1.0 - smoothstep(0.2, 0.72, abs(vLogPosition.y))) * 0.25);
-          diffuseColor.rgb *= mix(vec3(0.72, 0.64, 0.55), vec3(0.18, 0.16, 0.14), charred);
-          float endGrain = 0.13 + 0.09 * sin(length(vLogPosition.xz) * 190.0 + grain * 4.0);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.105, 0.076) * (0.65 + endGrain), smoothstep(0.65, 0.9, abs(vLogNormal.y)));
-        `)
-        .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= pow(max(0.0, 1.0 - abs(grain * 2.0 - 1.0)), 24.0) * 0.55;");
-    };
-    const logGeometry = new THREE.CylinderGeometry(0.12, 0.16, 1.5, 14, 7);
-    const barkVertices = logGeometry.getAttribute("position");
-    for (let i = 0; i < barkVertices.count; i++) {
-      const x = barkVertices.getX(i), y = barkVertices.getY(i), z = barkVertices.getZ(i);
-      const angle = Math.atan2(x, z);
-      const bark = 0.94 + Math.sin(angle * 5 + y * 7) * 0.06 + Math.cos(angle * 3 - y * 12) * 0.035;
-      barkVertices.setXYZ(i, x * bark, y, z * bark);
-    }
-    logGeometry.computeVertexNormals();
-    this.logs = new THREE.InstancedMesh(logGeometry, logMaterial, 12);
+    this.logs = buildFirewood(scene, x, z);
     const transform = new THREE.Object3D();
-    for (let i = 0; i < 12; i++) {
-      const a = (i % 3) * Math.PI / 3 + Math.floor(i / 3) * 0.41;
-      const spread = 0.2 + (i % 3) * 0.075;
-      transform.position.set(x + Math.sin(a) * spread, 0.23 + Math.floor(i / 4) * 0.12, z + Math.cos(a) * spread);
-      transform.rotation.set(Math.PI / 2 + Math.sin(i * 2.1) * 0.09, a, Math.sin(i) * 0.08, "YXZ");
-      transform.scale.setScalar(0.86 + (i % 4) * 0.07);
-      transform.updateMatrix();
-      this.logs.setMatrixAt(i, transform.matrix);
-    }
-    this.logs.count = 3;
-    this.logs.name = "campfire-charred-logs";
-    this.logs.castShadow = this.logs.receiveShadow = true;
-    scene.add(this.logs);
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uPower: { value: this.targetPower },
+        uHeightScale: { value: this.fuelProfile.heightScale },
+        uWidthScale: { value: this.fuelProfile.widthScale },
+        uMotion: { value: this.fuelProfile.motion },
+        uFlameOpacity: { value: this.fuelProfile.flameOpacity },
+        uEmberGlow: { value: 0.84 },
         uOuter: { value: this.targetColors[0].clone() },
         uMid: { value: this.targetColors[1].clone() },
         uCore: { value: this.targetColors[2].clone() },
       },
       vertexShader: `
         uniform float uTime; uniform float uPower;
+        uniform float uHeightScale; uniform float uWidthScale; uniform float uMotion;
         attribute float aSeed;
         varying vec2 vUv; varying float vSeed;
         void main() {
@@ -116,22 +96,23 @@ export class CoastalFire {
           vec3 cameraUp = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
           float overhead = smoothstep(0.3, 0.95, abs(normalize(cameraPosition - world).y));
           vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), cameraUp, overhead * 0.55));
-          float sway = sin(rise * 7.0 - uTime * 3.2 + aSeed * 23.0) * rise * rise * 0.15;
-          sway += sin(rise * 12.0 - uTime * 4.8 + aSeed * 11.0) * rise * 0.045;
-          float pulse = 0.94 + sin(uTime * 3.7 + aSeed * 31.0) * 0.055 + sin(uTime * 6.2 + aSeed * 9.0) * 0.025;
-          float width = length(instanceMatrix[0].xyz) * (0.7 + heat * 0.3);
-          float height = length(instanceMatrix[1].xyz) * (0.42 + heat * 1.44) * pulse;
+          float sway = sin(rise * 7.0 - uTime * 3.2 * uMotion + aSeed * 23.0) * rise * rise * 0.15 * uMotion;
+          sway += sin(rise * 12.0 - uTime * 4.8 * uMotion + aSeed * 11.0) * rise * 0.045 * uMotion;
+          float pulse = 0.94 + sin(uTime * 3.7 * uMotion + aSeed * 31.0) * 0.055 + sin(uTime * 6.2 * uMotion + aSeed * 9.0) * 0.025;
+          float width = length(instanceMatrix[0].xyz) * (0.7 + heat * 0.3) * uWidthScale;
+          float height = length(instanceMatrix[1].xyz) * (0.42 + heat * 1.44) * pulse * uHeightScale;
           world += right * (position.x + sway) * width + up * position.y * height;
           gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
         }
       `,
       fragmentShader: `
         uniform float uTime; uniform float uPower;
+        uniform float uMotion; uniform float uFlameOpacity;
         uniform vec3 uOuter; uniform vec3 uMid; uniform vec3 uCore;
         varying vec2 vUv; varying float vSeed;
         ${NOISE}
         void main() {
-          float t = uTime * (1.25 + vSeed * 0.6);
+          float t = uTime * (1.25 + vSeed * 0.6) * uMotion;
           vec2 p = vec2((vUv.x - 0.5) * 2.0, vUv.y);
           float flow = turbulence(vec2(p.x * 2.8 + vSeed * 29.0, p.y * 5.8 - t * 2.25));
           float detail = noise(vec2(p.x * 8.0 - vSeed * 11.0, p.y * 13.0 - t * 3.1));
@@ -143,7 +124,7 @@ export class CoastalFire {
           float fork = (1.0 - smoothstep(0.025, 0.115, abs(p.x + bend * 0.5))) * smoothstep(0.38, 0.72, p.y);
           float wisps = smoothstep(0.13, 0.49, flow + (1.0 - p.y) * 0.22);
           float alpha = body * top * wisps * (1.0 - fork * 0.8) * smoothstep(0.0, 0.13, p.y);
-          alpha *= (0.48 + flow * 0.27) * 0.4 * smoothstep(0.0, 0.035, uPower);
+          alpha *= (0.48 + flow * 0.27) * 0.4 * smoothstep(0.0, 0.035, uPower) * uFlameOpacity;
           float core = pow(body, 4.0) * exp(-p.y * 5.0) * (0.7 + flow * 0.4);
           vec3 color = mix(uOuter, uMid, clamp(body * 0.78 + detail * 0.16 - p.y * 0.22, 0.0, 1.0));
           color = mix(color, uCore * 1.1, core);
@@ -182,56 +163,73 @@ export class CoastalFire {
       uniforms: this.material.uniforms,
       vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
       fragmentShader: `
-        varying vec2 vUv; uniform float uTime; uniform float uPower;
-        uniform vec3 uOuter; uniform vec3 uMid;
+        varying vec2 vUv; uniform float uPower; uniform float uEmberGlow;
         ${NOISE}
         void main() {
           vec2 p = (vUv - 0.5) * 2.0;
-          float edge = 1.0 - smoothstep(0.72, 1.0, length(p));
-          float cracks = pow(1.0 - abs(turbulence(p * 11.0) * 2.0 - 1.0), 12.0);
-          float pulse = 0.82 + noise(p * 4.0 + uTime * 0.32) * 0.3;
-          float heat = (0.12 + sqrt(uPower) * 0.8) * cracks * pulse;
-          vec3 color = mix(vec3(0.018, 0.012, 0.008), mix(uOuter, uMid, heat), heat * edge);
+          float radius = length(p);
+          float edge = 1.0 - smoothstep(0.74, 1.0, radius);
+          // Quiet, broad patches of warmth under ash, with no moving crack network.
+          float warmth = noise(p * 2.8 + vec2(3.4, 8.7));
+          float center = pow(max(0.0, 1.0 - radius * radius), 0.65);
+          float glow = center * (0.32 + warmth * 0.68) * uEmberGlow;
+          vec3 ash = vec3(0.038, 0.028, 0.023) * (0.85 + warmth * 0.15);
+          vec3 ember = mix(vec3(0.42, 0.035, 0.008), vec3(1.0, 0.25, 0.035), smoothstep(0.35, 0.86, warmth));
+          vec3 color = ash + ember * glow * (0.42 + sqrt(uPower) * 0.22);
           gl_FragColor = vec4(color, edge);
           #include <colorspace_fragment>
         }
       `,
       transparent: true, depthWrite: false, toneMapped: false,
     });
-    const coalBed = new THREE.Mesh(new THREE.CircleGeometry(1.03, 48), coalBedMaterial);
+    const coalBed = new THREE.Mesh(new THREE.CircleGeometry(0.96, 48), coalBedMaterial);
+    coalBed.name = "campfire-ember-bed";
     coalBed.rotation.x = -Math.PI / 2;
     coalBed.position.set(x, 0.035, z);
     scene.add(coalBed);
 
-    this.coalMaterial = new THREE.MeshStandardMaterial({ color: 0x292724, emissive: FIRE_PALETTES.amber[0], emissiveIntensity: 0.2, roughness: 1 });
+    this.coalMaterial = new THREE.MeshStandardMaterial({ color: 0x52483e, emissive: 0xe95719, emissiveIntensity: 0.56, roughness: 1 });
     this.coalMaterial.onBeforeCompile = (shader) => {
-      shader.vertexShader = `varying vec3 vCoalPosition;\n${shader.vertexShader}`
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvCoalPosition = position;");
-      shader.fragmentShader = `varying vec3 vCoalPosition;\n${NOISE}\n${shader.fragmentShader}`
+      shader.uniforms.uEmberGlow = this.material.uniforms.uEmberGlow;
+      shader.vertexShader = `varying vec3 vCoalPosition; varying vec3 vCoalNormal;\n${shader.vertexShader}`
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvCoalPosition = position; vCoalNormal = normal;");
+      shader.fragmentShader = `varying vec3 vCoalPosition; varying vec3 vCoalNormal; uniform float uEmberGlow;\n${NOISE}\n${shader.fragmentShader}`
         .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
-          float fissure = pow(1.0 - abs(turbulence(vCoalPosition.xy * 5.0 + vCoalPosition.z * 2.3) * 2.0 - 1.0), 18.0);
-          totalEmissiveRadiance *= 0.015 + fissure * 1.2;
-          diffuseColor.rgb *= 0.45 + noise(vCoalPosition.xz * 14.0) * 0.55;
+          float ashGrain = noise(vCoalPosition.xz * 3.5 + vec2(2.6, 9.2));
+          float heart = pow(max(0.0, 1.0 - length(vCoalPosition.xz) * 1.5), 1.3);
+          float ashCap = smoothstep(0.3, 0.85, abs(vCoalNormal.y));
+          float quietHeat = (0.12 + heart * 0.56) * (0.3 + ashGrain * 0.4) * mix(0.9, 0.22, ashCap);
+          totalEmissiveRadiance *= quietHeat * uEmberGlow;
+          diffuseColor.rgb *= 0.72 + ashGrain * 0.16 + ashCap * 0.12;
         `);
     };
-    const coalGeometry = new THREE.SphereGeometry(1, 9, 6);
-    const coalVertices = coalGeometry.getAttribute("position");
-    for (let i = 0; i < coalVertices.count; i++) {
-      const x = coalVertices.getX(i), y = coalVertices.getY(i), z = coalVertices.getZ(i);
-      const uneven = 0.84 + Math.sin(x * 12.3 + y * 7.1 + z * 9.4) * 0.1 + Math.cos(x * 5.7 - z * 11.4) * 0.07;
-      coalVertices.setXYZ(i, x * uneven, y * uneven, z * uneven);
+    // Shallow split charcoal, rather than round knobbly lumps or animated holes.
+    const coalOutline = [[-0.55, -0.33], [-0.18, -0.52], [0.28, -0.38], [0.52, -0.09], [0.34, 0.31], [0.02, 0.48], [-0.42, 0.21]];
+    const coalPositions: number[] = [];
+    const chipPoint = (index: number, upper: boolean) => {
+      const [px, pz] = coalOutline[index];
+      return [px * (upper ? 0.78 : 1), upper ? 0.22 + Math.sin(index * 2.1) * 0.1 : -0.35, pz * (upper ? 0.78 : 1)];
+    };
+    for (let i = 0; i < coalOutline.length; i++) {
+      const next = (i + 1) % coalOutline.length;
+      const a = chipPoint(i, false), b = chipPoint(next, false), c = chipPoint(i, true), d = chipPoint(next, true);
+      coalPositions.push(0, 0.37, 0, ...d, ...c, ...a, ...c, ...d, ...a, ...d, ...b, 0, -0.35, 0, ...a, ...b);
     }
+    const coalGeometry = new THREE.BufferGeometry();
+    coalGeometry.setAttribute("position", new THREE.Float32BufferAttribute(coalPositions, 3));
     coalGeometry.computeVertexNormals();
-    const coals = new THREE.InstancedMesh(coalGeometry, this.coalMaterial, 22);
+    const coals = new THREE.InstancedMesh(coalGeometry, this.coalMaterial, 16);
     coals.name = "campfire-charcoal";
-    for (let i = 0; i < 22; i++) {
+    const coalColor = new THREE.Color();
+    for (let i = 0; i < 16; i++) {
       const a = i * 2.399963;
-      const radius = 0.2 + ((i * 7) % 17) / 17 * 0.6;
-      transform.position.set(x + Math.cos(a) * radius, 0.08, z + Math.sin(a) * radius);
-      transform.rotation.set(i * 0.2, a, 0);
-      transform.scale.set(0.1 + (i % 3) * 0.025, 0.06 + (i % 2) * 0.025, 0.08 + (i % 4) * 0.02);
+      const radius = Math.sqrt((i + 0.5) / 16) * 0.77;
+      transform.position.set(x + Math.cos(a) * radius, 0.062, z + Math.sin(a) * radius);
+      transform.rotation.set(Math.sin(i * 1.7) * 0.1, a + 0.4, Math.cos(i * 2.2) * 0.08);
+      transform.scale.set(0.22 + (i % 4) * 0.045, 0.055 + (i % 3) * 0.012, 0.12 + (i % 3) * 0.018);
       transform.updateMatrix();
       coals.setMatrixAt(i, transform.matrix);
+      coals.setColorAt(i, coalColor.setHex([0xd5c0a6, 0xb8a38c, 0xe2d0b9, 0xc3b19b][i % 4]));
     }
     coals.receiveShadow = true;
     scene.add(coals);
@@ -372,7 +370,8 @@ export class CoastalFire {
     const count = Number.isFinite(logs) ? Math.round(THREE.MathUtils.clamp(logs, 0, 12)) : 3;
     this.logs.count = count;
     // 장작이 0 이어도 불씨는 남는다 (불멍 상태). 장작 수에 따라 그 위로 커진다
-    this.targetPower = EMBER_POWER + (1 - EMBER_POWER) * (count / 12);
+    this.fuelProfile = fireFuelProfile(count);
+    this.targetPower = this.fuelProfile.power;
     const palette = FIRE_PALETTES[color] ?? FIRE_PALETTES.amber;
     for (let i = 0; i < 3; i++) this.baseColors[i].setHex(palette[i]);
   }
@@ -431,14 +430,17 @@ export class CoastalFire {
     const goal = Math.min(1.4, this.targetPower + this.flareLevel * 0.8);
     const blend = 1 - Math.exp(-dt * (goal > uniforms.uPower.value ? 4 : 2.2));
     uniforms.uPower.value += (goal - uniforms.uPower.value) * blend;
+    for (const [name, target] of [
+      ["uHeightScale", this.fuelProfile.heightScale], ["uWidthScale", this.fuelProfile.widthScale],
+      ["uMotion", this.fuelProfile.motion], ["uFlameOpacity", this.fuelProfile.flameOpacity],
+    ] as const) uniforms[name].value += (target - uniforms[name].value) * blend;
+    uniforms.uEmberGlow.value = 0.84 + Math.sin(time * 0.48) * 0.055 + Math.sin(time * 0.83 + 1.2) * 0.025;
     for (const [i, name] of ["uOuter", "uMid", "uCore"].entries()) uniforms[name].value.lerp(this.targetColors[i], blend);
     this.flames.visible = true;
     void camera; // Every tongue faces the current camera in its vertex shader, including overhead views.
     this.powderParticles.visible = time - this.powderStarted < 2.5;
     this.lightTint.copy(uniforms.uMid.value).lerp(uniforms.uCore.value, 0.12);
-    this.coalMaterial.emissive.copy(uniforms.uOuter.value);
-    // 불씨 상태에선 잔불이 느리게 일렁인다
-    const glowPulse = 1 + (Math.sin(time * 2.1) * 0.5 + Math.sin(time * 3.7) * 0.3) * 0.18 * (1 - Math.min(1, uniforms.uPower.value));
-    this.coalMaterial.emissiveIntensity = (0.18 + Math.sqrt(uniforms.uPower.value) * 0.75) * glowPulse;
+    // Charcoal keeps its natural amber warmth even when a colored powder is burning above it.
+    this.coalMaterial.emissiveIntensity = 0.56 + Math.min(1, uniforms.uPower.value) * 0.24;
   }
 }
