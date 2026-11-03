@@ -95,6 +95,12 @@ public class CircleService {
             .query((rs, i) -> circleRow(rs)).optional().orElseThrow(() -> ApiException.notFound("소로우를 찾을 수 없어요"));
     }
 
+    /** 다른 기능이 소로우의 고유 id 로 접근할 때도 실제로 존재하는 소로우인지 확인한다. */
+    public Circle byId(String id) {
+        return jdbc.sql(CIRCLE_SELECT + " WHERE c.id = ?").param(id)
+            .query((rs, i) -> circleRow(rs)).optional().orElseThrow(() -> ApiException.notFound("소로우를 찾을 수 없어요"));
+    }
+
     public Optional<Member> member(String circleId, String userId) {
         if (userId == null) return Optional.empty();
         return jdbc.sql("SELECT role, status, is_primary, verified_at FROM community_members WHERE community_id = ? AND user_id = ?").param(circleId).param(userId)

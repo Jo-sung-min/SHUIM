@@ -2,6 +2,7 @@ package kr.co.shuim.beach;
 
 import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
+import kr.co.shuim.circle.CircleService;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.config.ApiException;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,61 +18,128 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class BeachControllerTest {
+    private final AuthService auth = mock(AuthService.class);
+    private final BlockService blocks = mock(BlockService.class);
+    private final CircleService circles = mock(CircleService.class);
+    private final BeachService beach = new BeachService();
+    private final BeachController controller = new BeachController(auth, blocks, beach, circles);
+    private final MockHttpServletRequest request = new MockHttpServletRequest();
+    private final MockHttpServletResponse response = new MockHttpServletResponse();
+
     private static DbUser user(String id, Long blockedAt) {
         return new DbUser(id, null, "닉", "user", true, blockedAt, null, 0);
     }
 
-    private static BeachController controller(AuthService auth, BlockService blocks) {
-        return new BeachController(auth, blocks, new BeachService(new org.springframework.mock.env.MockEnvironment(), false));
+    private static CircleService.Circle circle(String id) {
+        return new CircleService.Circle(id, id, "함께 소로우", "life", null, false, "open", "public",
+            "", "", "u-1", 0, 0, 1, 0, false);
+    }
+
+    private void activeMember(String communityId) {
+        when(auth.requireUser(any(), any())).thenReturn(user("u-1", null));
+        when(auth.currentUser(any())).thenReturn(Optional.of(user("u-1", null)));
+        when(circles.byId(communityId)).thenReturn(circle(communityId));
+        when(circles.member(communityId, "u-1")).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
+    }
+
+    private Map<String, Object> enter(String id) {
+        return controller.enter(new BeachController.EnterBody(id), request, response);
     }
 
     @Test
-    void enterReturnsTicketMeSpawnBoundsAndCount() {
-        AuthService auth = mock(AuthService.class);
-        BlockService blocks = mock(BlockService.class);
-        when(auth.requireUser(any(), any())).thenReturn(user("u-1", null));
+    void enterReturnsScopedTicketCommunityCapacitySpawnAndCount() {
+        activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
-        BeachController c = controller(auth, blocks);
-        Map<String, Object> out = c.enter(new MockHttpServletRequest(), new MockHttpServletResponse());
-        assertEquals(Set.of("ticket", "me", "spawn", "bounds", "count"), out.keySet());
+        Map<String, Object> out = enter("circle-a");
+        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count"), out.keySet());
         assertEquals(32, ((String) out.get("ticket")).length());
+        assertEquals("circle-a", out.get("communityId"));
+        assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
+        assertEquals(100, out.get("capacity"));
         @SuppressWarnings("unchecked") Map<String, Object> me = (Map<String, Object>) out.get("me");
         assertEquals(Set.of("pid", "id", "nick", "skin"), me.keySet());
         assertEquals("u-1", me.get("id"));
         assertEquals("닉", me.get("nick"));
         @SuppressWarnings("unchecked") Map<String, Object> spawn = (Map<String, Object>) out.get("spawn");
         assertEquals(Set.of("x", "z", "yaw"), spawn.keySet());
-        @SuppressWarnings("unchecked") Map<String, Object> bounds = (Map<String, Object>) out.get("bounds");
-        assertEquals(Map.of("minX", -28.0, "maxX", 28.0, "minZ", -2.0, "maxZ", 30.0), bounds);
+        assertTrue((double) spawn.get("z") >= 2.8 && (double) spawn.get("z") <= 4);
+        assertEquals(Map.of("minX", -14.0, "maxX", 14.0, "minZ", -1.0, "maxZ", 20.0), out.get("bounds"));
         assertEquals(1, out.get("count"));
-        // 들어올 때 받은 차단 목록이 presence 에 남는다 (tick 에서는 DB 를 보지 않는다)
-        BeachRoom.TickResult r = c.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
+        assertEquals(Map.of("communityId", "circle-a", "count", 1, "capacity", 100), controller.count("circle-a", request));
+        BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
             new BeachController.Care("u-x", "hug")));
-        assertEquals("gone", r.care());
-        assertEquals(0, r.received().comfort());
+        assertEquals("gone", tick.care());
+        assertEquals(0, tick.received().comfort());
         verify(blocks, times(1)).excludedIds("u-1");
         verifyNoMoreInteractions(blocks);
     }
 
     @Test
-    void blockedAccountsCannotEnter() {
-        AuthService auth = mock(AuthService.class);
-        BlockService blocks = mock(BlockService.class);
+    void blockedAccountsCannotEnterOrCount() {
         when(auth.requireUser(any(), any())).thenReturn(user("u-1", 1L));
-        ApiException e = assertThrows(ApiException.class, () -> controller(auth, blocks).enter(new MockHttpServletRequest(), new MockHttpServletResponse()));
-        assertEquals(403, e.status());
+        when(auth.currentUser(any())).thenReturn(Optional.of(user("u-1", 1L)));
+        assertEquals(403, assertThrows(ApiException.class, () -> enter("circle-a")).status());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.count("circle-a", request)).status());
+        verifyNoInteractions(blocks, circles);
+    }
+
+    @Test
+    void missingCircleNeverFallsBackToSharedBeach() {
+        activeMember("circle-a");
+        assertEquals(400, assertThrows(ApiException.class, () -> enter(null)).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> enter(" ")).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> controller.enter(null, request, response)).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> controller.count(null, request)).status());
+        when(circles.byId("missing")).thenThrow(ApiException.notFound("소로우를 찾을 수 없어요"));
+        assertEquals(404, assertThrows(ApiException.class, () -> enter("missing")).status());
         verifyNoInteractions(blocks);
     }
 
     @Test
+    void nonmembersListenersAndPendingMembersCannotEnterOrReadOccupancy() {
+        activeMember("circle-a");
+        when(circles.member("circle-a", "u-1")).thenReturn(Optional.empty());
+        // Public posts and listening never confer membership of the private beach.
+        assertEquals(403, assertThrows(ApiException.class, () -> enter("circle-a")).status());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.count("circle-a", request)).status());
+        when(circles.member("circle-a", "u-1")).thenReturn(Optional.of(new CircleService.Member("member", "pending", false, false)));
+        assertEquals(403, assertThrows(ApiException.class, () -> enter("circle-a")).status());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.count("circle-a", request)).status());
+        verifyNoInteractions(blocks);
+    }
+
+    @Test
+    void membershipOfAnotherCircleDoesNotGrantAccess() {
+        activeMember("circle-a");
+        when(circles.byId("circle-b")).thenReturn(circle("circle-b"));
+        assertEquals(403, assertThrows(ApiException.class, () -> enter("circle-b")).status());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.count("circle-b", request)).status());
+        assertEquals(0, beach.count("circle-b"));
+    }
+
+    @Test
+    void countRequiresExistingSession() {
+        when(auth.currentUser(any())).thenReturn(Optional.empty());
+        assertEquals(401, assertThrows(ApiException.class, () -> controller.count("circle-a", request)).status());
+        verifyNoInteractions(circles, blocks);
+    }
+
+    @Test
+    void fullBeachReturnsConflictWithoutOverflowing() {
+        activeMember("circle-a");
+        for (int i = 0; i < BeachRoom.CAPACITY; i++) beach.enter("circle-a", "u-" + i, "닉", Set.of());
+        ApiException e = assertThrows(ApiException.class, () -> enter("circle-a"));
+        assertEquals(409, e.status());
+        assertEquals(100, beach.count("circle-a"));
+    }
+
+    @Test
     void unknownTicketIsGoneAndLeaveIsAlwaysOk() {
-        BeachController c = controller(mock(AuthService.class), mock(BlockService.class));
-        ApiException e = assertThrows(ApiException.class, () -> c.tick(new BeachController.TickBody("nope", 0.0, 0.0, 0.0, false, null)));
+        ApiException e = assertThrows(ApiException.class, () -> controller.tick(new BeachController.TickBody("nope", 0.0, 0.0, 0.0, false, null)));
         assertEquals(410, e.status());
         assertEquals(BeachController.GONE, e.getMessage());
-        assertEquals(410, assertThrows(ApiException.class, () -> c.tick(null)).status());
-        assertEquals(Map.of("ok", true), c.leave(new BeachController.TicketBody("nope")));
-        assertEquals(Map.of("ok", true), c.leave(null));
-        assertEquals(Map.of("count", 0), c.count());
+        assertEquals(410, assertThrows(ApiException.class, () -> controller.tick(null)).status());
+        assertEquals(Map.of("ok", true), controller.leave(new BeachController.TicketBody("nope")));
+        assertEquals(Map.of("ok", true), controller.leave(null));
     }
 }

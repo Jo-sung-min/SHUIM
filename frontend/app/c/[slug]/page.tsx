@@ -8,6 +8,7 @@ import {
   CircleDetail, JOIN_MODE_LABEL, confirmVerify, fetchCircle, joinCircle, kindLabel, leaveCircle, setPrimaryCircle, startVerify, toggleCircleFollow,
 } from "@/lib/circles";
 import CirclePosts, { circlePostsOf } from "@/components/CirclePosts";
+import BeachCard from "@/components/beach/BeachCard";
 import { SampleTag, Verified, circleInitial } from "@/components/CircleRow";
 import { LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar } from "@/components/ui";
@@ -127,6 +128,8 @@ export default function CirclePage() {
             )}
           </div>
         </section>
+
+        {member && <BeachCard circles={[c]} />}
 
         <div className={styles.band} aria-hidden="true" />
 

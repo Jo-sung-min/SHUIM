@@ -25,7 +25,9 @@ import java.util.function.LongSupplier;
  */
 public class BeachRoom {
     /** 세계 경계 (m). 물가는 z = 0, 바다는 z 가 음수 쪽. 들어오는 위치는 전부 이 안으로 자른다 */
-    public static final double MIN_X = -28, MAX_X = 28, MIN_Z = -2, MAX_Z = 30;
+    public static final double MIN_X = -14, MAX_X = 14, MIN_Z = -1, MAX_Z = 20;
+    /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
+    public static final int CAPACITY = 100;
     /** 이만큼 tick 이 없으면 나간 것 */
     public static final long IDLE_MS = 10_000;
     /** 게으른 정리는 아무리 자주 와도 이 간격으로만 */
@@ -42,7 +44,7 @@ public class BeachRoom {
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
     private static final int[] BOT_SKINS = {1, 4, 6};
-    private static final double[][] BOT_CENTERS = {{-8, 10}, {6, 14}, {0, 20}};
+    private static final double[][] BOT_CENTERS = {{-5, 8}, {5, 11}, {0, 16}};
 
     private static final long NEVER = Long.MIN_VALUE / 4;
 
@@ -150,13 +152,16 @@ public class BeachRoom {
 
     /* ---------- 들어오기 · 나가기 ---------- */
 
-    /** 바닷가에 들어온다. 물가를 바라보며(yaw 0 = -z 쪽) 모래밭 가운데 근처에서 시작 */
-    public Presence enter(String userId, String nick, Set<String> excluded) {
+    /** 물가에서 들어와 모닥불(0, 9)과 뒤편 절벽을 바라보며 시작 */
+    public synchronized Presence enter(String userId, String nick, Set<String> excluded) {
         long now = clock.getAsLong();
-        maybeSweep(now);
+        // 입장 확인과 추가를 같은 잠금 안에서 처리해 동시 입장에도 100명을 넘지 않는다.
+        sweep(now);
+        if (byTicket.size() >= CAPACITY) throw new ApiException(409, "바닷가에 100명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
         ThreadLocalRandom r = ThreadLocalRandom.current();
+        double x = r.nextDouble(-1.5, 1.5), z = r.nextDouble(2.8, 4);
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick, skinOf(userId), 0,
-            excluded == null ? Set.of() : Set.copyOf(excluded), r.nextDouble(-4, 4), r.nextDouble(8, 12), 0, now);
+            excluded == null ? Set.of() : Set.copyOf(excluded), x, z, Math.atan2(x, z - 9), now);
         byTicket.put(p.ticket, p);
         return p;
     }
@@ -274,7 +279,7 @@ public class BeachRoom {
     private static boolean live(Presence p, long now) { return p.bot() || now - p.lastSeen <= IDLE_MS; }
 
     /**
-     * 가짜 방문자는 시계의 함수라 어느 tick 에서 계산해도 같은 자리: x = cx + 6 sin(t/9000 + i), z = cz + 3 sin(t/13000 + 2i).
+     * 가짜 방문자는 시계의 함수라 어느 tick 에서 계산해도 같은 자리: x = cx + 2 sin(t/9000 + i), z = cz + 1.5 sin(t/13000 + 2i).
      * yaw 는 진행 방향 (facing = (-sin yaw, -cos yaw) 이라 yaw 0 이 바다 쪽), 0.15 m/s 보다 빠르면 걷는 중
      */
     private void advanceBots(long now) {
@@ -282,11 +287,11 @@ public class BeachRoom {
             int i = b.botIndex;
             double t = now;
             double ax = t / 9000 + i, az = t / 13000 + 2 * i;
-            double vx = 6 * Math.cos(ax) / 9;   // m/s
-            double vz = 3 * Math.cos(az) / 13;
+            double vx = 2 * Math.cos(ax) / 9;   // m/s
+            double vz = 1.5 * Math.cos(az) / 13;
             double speed = Math.hypot(vx, vz);
-            b.x = clamp(BOT_CENTERS[i - 1][0] + 6 * Math.sin(ax), MIN_X, MAX_X, b.x);
-            b.z = clamp(BOT_CENTERS[i - 1][1] + 3 * Math.sin(az), MIN_Z, MAX_Z, b.z);
+            b.x = clamp(BOT_CENTERS[i - 1][0] + 2 * Math.sin(ax), MIN_X, MAX_X, b.x);
+            b.z = clamp(BOT_CENTERS[i - 1][1] + 1.5 * Math.sin(az), MIN_Z, MAX_Z, b.z);
             b.moving = speed > 0.15;
             if (speed > 0.01) b.yaw = Math.atan2(-vx, -vz);
             b.lastSeen = now;

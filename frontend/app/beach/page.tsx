@@ -1,6 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import styles from "@/components/beach/beach.module.css";
 
 /**
@@ -13,12 +15,18 @@ const BeachScene = dynamic(() => import("@/components/beach/BeachScene"), {
     <div className={styles.root}>
       <div className={styles.center} role="status" aria-live="polite">
         <p className={styles.loadingDots}>바닷가로 가는 중</p>
-        <small>파도 소리가 들리는 곳으로</small>
+        <small>절벽 아래 우리만의 모닥불 곁으로</small>
       </div>
     </div>
   ),
 });
 
 export default function BeachPage() {
-  return <BeachScene />;
+  return <Suspense><ScopedBeach /></Suspense>;
+}
+
+function ScopedBeach() {
+  const search = useSearchParams();
+  const communityId = search.get("communityId") ?? "";
+  return <BeachScene key={communityId} communityId={communityId} />;
 }

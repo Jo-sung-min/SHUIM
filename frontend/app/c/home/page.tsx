@@ -78,7 +78,7 @@ export default function CircleHomePage() {
           <Link href="/c" className={`${styles.mineChip} ${styles.add}`}><IconPlus aria-hidden="true" />소로우 찾기</Link>
         </div>
 
-        <BeachCard />
+        <BeachCard circles={mine.member.filter((c) => c.status === "active")} />
 
         <div className={styles.head}>
           <h2>{chips.length ? "내 소로우 사연" : "커뮤니티 소로우"}</h2>

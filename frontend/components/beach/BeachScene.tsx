@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { BeachEngine, webglSupported, type JoystickState } from "@/lib/beach/engine";
-import { BeachGone, enterBeach, leaveBeach, tickBeach, type CareEvent, type CareKind, type RemotePlayer } from "@/lib/beach/net";
+import { BeachEngine, webglSupported, type JoystickState, type RestState } from "@/lib/beach/engine";
+import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconChevronL, IconClose, IconHeart, IconLeaf, IconUsers } from "@/components/Icons";
+import { IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconUsers } from "@/components/Icons";
+import { route } from "@/lib/routes";
 import styles from "./beach.module.css";
 
 const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요" };
@@ -19,7 +20,7 @@ const TICK_IDLE = 1500;
  *  - 사람을 탭하면 아래에 닉네임과 "위로해주기 · 안아주기". 보낸 건 다음 tick 에 실려 간다
  *  - 받으면 화면 가장자리 빛 + 눈앞 이펙트 + 토스트 + 햅틱
  */
-export default function BeachScene() {
+export default function BeachScene({ communityId }: { communityId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<BeachEngine | null>(null);
   const ticketRef = useRef<string | null>(null);
@@ -29,12 +30,17 @@ export default function BeachScene() {
   const inFlightRef = useRef(false);
   const failRef = useRef(0);
   const aliveRef = useRef(true);
+  const blockedRef = useRef(false);
+  const tickRunnerRef = useRef<() => Promise<void>>(async () => {});
   const selectedRef = useRef<RemotePlayer | null>(null);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
   const [count, setCount] = useState<number | null>(null);
+  const [capacity, setCapacity] = useState(100);
+  const [community, setCommunity] = useState<EnterResponse["community"] | null>(null);
   const [selected, setSelected] = useState<RemotePlayer | null>(null);
+  const [rest, setRest] = useState<RestState | null>(null);
   const [received, setReceived] = useState({ comfort: 0, hug: 0 });
   const [joy, setJoy] = useState<JoystickState | null>(null);
   const [flash, setFlash] = useState<{ kind: CareKind; id: number } | null>(null);
@@ -62,36 +68,54 @@ export default function BeachScene() {
 
   const scheduleTick = useCallback((delay?: number) => {
     window.clearTimeout(timerRef.current);
-    if (!aliveRef.current) return;
+    if (!aliveRef.current || blockedRef.current) return;
     const engine = engineRef.current;
     const base = engine?.getSelf().moving ? TICK_MOVING : TICK_IDLE;
     const backoff = failRef.current ? Math.min(6000, 1000 * 2 ** failRef.current) : 0;
-    timerRef.current = window.setTimeout(() => void runTick(), delay ?? Math.max(base, backoff));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    timerRef.current = window.setTimeout(() => void tickRunnerRef.current(), delay ?? Math.max(base, backoff));
+  }, []);
+
+  const stopWithError = useCallback((cause: Error) => {
+    blockedRef.current = true;
+    window.clearTimeout(timerRef.current);
+    engineRef.current?.stop();
+    if (ticketRef.current) leaveBeach(ticketRef.current);
+    ticketRef.current = null;
+    setSelected(null);
+    setRest(null);
+    setError(cause.message);
+    setPhase("error");
   }, []);
 
   const reenter = useCallback(async () => {
-    const entered = await enterBeach();
+    const entered = await enterBeach(communityId);
+    if (!aliveRef.current) { leaveBeach(entered.ticket); return; }
     ticketRef.current = entered.ticket;
     meRef.current = entered.me;
     setCount(entered.count);
-  }, []);
+    setCapacity(entered.capacity);
+    setCommunity(entered.community);
+  }, [communityId]);
 
   const runTick = useCallback(async () => {
     const engine = engineRef.current;
     const ticket = ticketRef.current;
-    if (!aliveRef.current || !engine || inFlightRef.current || document.hidden) return;
+    if (!aliveRef.current || blockedRef.current || !engine || inFlightRef.current || document.hidden) return;
+    inFlightRef.current = true;
     if (!ticket) {
       try {
         await reenter();
-      } catch {
+      } catch (e) {
+        inFlightRef.current = false;
+        if (!aliveRef.current) return;
+        if (e instanceof BeachUnavailable) { stopWithError(e); return; }
         failRef.current++;
         setLost(failRef.current >= 2);
         scheduleTick();
         return;
       }
     }
-    inFlightRef.current = true;
+    if (!aliveRef.current || !ticketRef.current) { inFlightRef.current = false; return; }
     const self = engine.getSelf();
     const care = pendingCareRef.current;
     pendingCareRef.current = null;
@@ -120,7 +144,10 @@ export default function BeachScene() {
       failRef.current = 0;
       setLost(false);
     } catch (e) {
-      if (e instanceof BeachGone) {
+      if (!aliveRef.current) return;
+      if (e instanceof BeachUnavailable) {
+        stopWithError(e);
+      } else if (e instanceof BeachGone) {
         ticketRef.current = null; // 다음 tick 에서 다시 들어간다
         if (care) pendingCareRef.current = care;
       } else {
@@ -132,12 +159,19 @@ export default function BeachScene() {
       inFlightRef.current = false;
       scheduleTick();
     }
-  }, [handleEvent, reenter, scheduleTick]);
+  }, [handleEvent, reenter, scheduleTick, stopWithError]);
+  tickRunnerRef.current = runTick;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     aliveRef.current = true;
+    blockedRef.current = false;
+    if (!communityId) {
+      setPhase("error");
+      setError("내 소로우에서 함께 쉴 바닷가를 골라 주세요.");
+      return;
+    }
     if (!webglSupported()) {
       setPhase("error");
       setError("이 기기에서는 바닷가를 그릴 수 없어요. 다른 브라우저로 열어 보세요.");
@@ -148,11 +182,13 @@ export default function BeachScene() {
     let cancelled = false; // 개발 모드 StrictMode 가 효과를 두 번 돌려도 첫 입장은 바로 나간다
     (async () => {
       try {
-        const entered = await enterBeach();
+        const entered = await enterBeach(communityId);
         if (cancelled || !aliveRef.current) { leaveBeach(entered.ticket); return; }
         ticketRef.current = entered.ticket;
         meRef.current = entered.me;
         setCount(entered.count);
+        setCapacity(entered.capacity);
+        setCommunity(entered.community);
         engine = new BeachEngine(canvas, {
           bounds: entered.bounds,
           spawn: entered.spawn,
@@ -160,6 +196,7 @@ export default function BeachScene() {
           handlers: {
             onSelect: (p) => setSelected(p),
             onJoystick: (s) => setJoy(s),
+            onRestChange: (state) => setRest(state),
           },
         });
         engineRef.current = engine;
@@ -173,15 +210,14 @@ export default function BeachScene() {
         window.setTimeout(() => setHint(false), 6000);
         scheduleTick(0);
       } catch (e) {
-        if (!aliveRef.current) return;
-        setPhase("error");
-        setError(e instanceof Error ? e.message : "바닷가에 들어가지 못했어요.");
+        if (cancelled || !aliveRef.current) return;
+        stopWithError(e instanceof Error ? e : new Error("바닷가에 들어가지 못했어요."));
       }
     })();
 
     const onVisibility = () => {
       const eng = engineRef.current;
-      if (!eng) return;
+      if (!eng || blockedRef.current) return;
       if (document.hidden) {
         eng.stop();
         window.clearTimeout(timerRef.current);
@@ -212,7 +248,7 @@ export default function BeachScene() {
       engineRef.current?.dispose();
       engineRef.current = null;
     };
-  }, [scheduleTick]);
+  }, [communityId, scheduleTick, stopWithError]);
 
   const sendCare = (kind: CareKind) => {
     const target = selectedRef.current;
@@ -227,26 +263,26 @@ export default function BeachScene() {
 
   const cooling = Date.now() < coolUntil;
   const gotAny = received.comfort + received.hug > 0;
+  const returnHref = community ? route(`/c/${community.slug}`) : "/c/home";
 
   return (
     <div className={styles.root}>
-      <canvas ref={canvasRef} className={styles.canvas} aria-label="소로우 바닷가 (1인칭)" />
+      <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 바닷가 (1인칭)`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
       <div className={styles.top}>
-        <Link href="/c/home" className={styles.glass} aria-label="바닷가 나가기"><IconChevronL />나가기</Link>
+        <Link href={returnHref} className={styles.glass} aria-label="바닷가 나가기"><IconChevronL />나가기</Link>
         <div className={styles.chips}>
           {timeLabel && <span className={`${styles.glass} ${styles.chip}`}>{timeLabel}</span>}
-          {count !== null && <span className={`${styles.glass} ${styles.chip}`} aria-label={`지금 ${count}명`}><IconUsers />{count}명</span>}
+          {count !== null && <span className={`${styles.glass} ${styles.chip}`} aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<span className={styles.capacity}>/ {capacity}</span></span>}
         </div>
       </div>
 
-      {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
-      {hint && !lost && (
-        <p className={styles.hint} role="status">
-          왼쪽을 끌어 걷고, 오른쪽을 끌어 둘러봐요.<br />사람을 누르면 위로를 건넬 수 있어요.
-        </p>
-      )}
+      {community && phase === "ready" && <div className={styles.place}>
+        <span><IconLock />우리만의 프라이빗 해변</span>
+        <h1>{community.name} 바닷가</h1>
+        <p>큰 절벽 아래, 모닥불과 바다를 향한 오두막.</p>
+      </div>}
 
       {joy && (
         <div className={styles.joyRing} style={{ left: joy.originX, top: joy.originY }} aria-hidden="true">
@@ -254,7 +290,25 @@ export default function BeachScene() {
         </div>
       )}
 
-      {gotAny && <div className={`${styles.glass} ${styles.received} ${selected ? styles.lifted : ""}`} role="status">이번에 받은 위로 {received.comfort} · 포옹 {received.hug}</div>}
+      <div className={styles.bottomHud}>
+      {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
+      {hint && !lost && !selected && !gotAny && !rest && phase === "ready" && (
+        <p className={styles.hint} role="status">
+          <span className={styles.touchHint}>왼쪽을 끌어 걷고, 오른쪽을 끌어 둘러봐요.</span><span className={styles.keyboardHint}>WASD·방향키로 걷고, 화면을 끌어 둘러봐요.</span><br />오두막에 앉아 쉬거나 사람을 눌러 위로를 건네요.
+        </p>
+      )}
+
+      {phase === "ready" && rest && (
+        <button type="button" className={styles.restButton} onClick={() => engineRef.current?.toggleRest()} aria-keyshortcuts="E">
+          <span className={styles.restCopy}>
+            <strong>{rest.seated ? "일어나기" : "앉아서 바다 보기"}</strong>
+            <small>{rest.seated ? "바다를 바라보며 쉬는 중" : rest.shelterName}</small>
+          </span>
+          <kbd className={styles.restKey} aria-hidden="true">E</kbd>
+        </button>
+      )}
+
+      {gotAny && <div className={`${styles.glass} ${styles.received}`} role="status">이번에 받은 위로 {received.comfort} · 포옹 {received.hug}</div>}
 
       {selected && (
         <div className={styles.panel} role="dialog" aria-label={`${selected.nick}님에게`}>
@@ -271,17 +325,18 @@ export default function BeachScene() {
           </div>
         </div>
       )}
+      </div>
 
       {phase === "loading" && (
         <div className={styles.center} role="status" aria-live="polite">
           <p className={styles.loadingDots}>바닷가로 가는 중</p>
-          <small>파도 소리가 들리는 곳으로</small>
+          <small>절벽 아래 우리만의 모닥불 곁으로</small>
         </div>
       )}
       {phase === "error" && (
         <div className={styles.center} role="alert">
           <p>{error}</p>
-          <Link href="/c/home" className={styles.glass}><IconChevronL />내 소로우로 돌아가기</Link>
+          <Link href={returnHref} className={styles.glass}><IconChevronL />소로우로 돌아가기</Link>
         </div>
       )}
     </div>

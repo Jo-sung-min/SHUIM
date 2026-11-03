@@ -1,26 +1,32 @@
 "use client";
 
 /**
- * 소로우 바닷가 엔진 (three.js 코어만). 하늘·바다·모래는 셰이더로, 캐릭터·소품은 도트 스프라이트 빌보드로 그린다.
- * 실시간 조명은 없다: 시간대(lib/beach/daylight)의 색을 셰이더 uniform 과 스프라이트 색조에 넣어 전부 물들인다.
+ * 사진 파노라마와 PBR 해안 지형 위에 도트 캐릭터를 함께 그리는 바닷가.
+ * 캐릭터 아틀라스만 nearest 필터를 쓰고, 배경은 부드러운 질감과 실제 조명을 쓴다.
  *
- * 성능: 안티앨리어싱 없음, DPR 상한, 보일 때만 그리기, 프레임이 떨어지면 해상도를 낮추고 30fps 로 제한. 그림자·포스트프로세싱 없음.
+ * 성능: DPR 상한, 인스턴스 지형, 보일 때만 그리기, 느린 기기는 해상도와 그림자 품질 조절.
  * 이 파일은 /beach 를 열 때만 동적으로 내려받는다 (three 가 첫 번들에 섞이지 않게).
  */
 import * as THREE from "three";
 import { CHAR_ATLAS, CHAR_FRAME, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
 import { type Daylight, daylightAt } from "./daylight";
+import { CAMPFIRE, Cove } from "./cove";
+import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
+import { resolveWalls } from "./navigation";
+import { CoastalFire } from "./fire";
 import type { CareKind, RemotePlayer } from "./net";
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
 export interface JoystickState { originX: number; originY: number; dx: number; dy: number }
+export interface RestState { shelterName: string; seated: boolean }
 
 export interface EngineHandlers {
   /** 사람을 탭해 골랐거나(플레이어) 빈 곳을 탭해 풀었을 때(null) */
   onSelect: (player: RemotePlayer | null) => void;
   /** 터치 조이스틱을 그리기 위한 상태 (손을 떼면 null) */
   onJoystick: (state: JoystickState | null) => void;
+  onRestChange?: (state: RestState | null) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
   onQuality?: (level: "high" | "low") => void;
 }
@@ -51,20 +57,17 @@ varying vec3 vDir;
 void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
 const SKY_FRAG = `
-uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uSunGlow;
-uniform vec3 uMoonDir; uniform float uStars; uniform vec3 uCloud; uniform float uCloudAmount; uniform float uTime;
+uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uStars; uniform float uTime;
 varying vec3 vDir;
 ${NOISE_GLSL}
 void main() {
   vec3 d = normalize(vDir);
-  float h = max(d.y, 0.0);
-  vec3 col = mix(uHorizon, uTop, pow(h, 0.5));
-  float sd = max(dot(d, uSunDir), 0.0);
-  float sunUp = smoothstep(-0.08, 0.05, uSunDir.y);
-  col += uSunColor * sunUp * (smoothstep(0.9987, 0.9993, sd) + pow(sd, 64.0) * 0.6 * uSunGlow + pow(sd, 5.0) * 0.18 * uSunGlow);
-  float md = max(dot(d, uMoonDir), 0.0);
-  float moonUp = smoothstep(-0.05, 0.08, uMoonDir.y) * uStars;
-  col += vec3(0.95, 0.96, 1.0) * moonUp * (smoothstep(0.9992, 0.9996, md) * 0.9 + pow(md, 200.0) * 0.5);
+  vec2 uv = vec2(atan(d.x, -d.z) / 6.2831853 + 0.5, asin(clamp(d.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+  // The photographed sea faces -Z. Above the rear ridge, use its uninterrupted sky
+  // so the two edges of the panorama cannot form a visible vertical seam.
+  vec2 skyUv = vec2(0.5 + sin(atan(d.x, -d.z)) * 0.12, max(0.54, uv.y));
+  float seaFacing = smoothstep(0.12, 0.8, -d.z);
+  vec3 col = mix(texture2D(uPhoto, skyUv).rgb, texture2D(uPhoto, uv).rgb, seaFacing) * uPhotoTint;
   if (uStars > 0.0 && d.y > 0.0) {
     vec2 sp = d.xz / (d.y + 0.25) * 90.0;
     vec2 cell = floor(sp);
@@ -75,13 +78,6 @@ void main() {
     float tw = 0.65 + 0.35 * sin(uTime * (1.5 + s * 3.0) + s * 60.0);
     col += star * dot_ * tw * uStars * smoothstep(0.0, 0.25, d.y) * (0.6 + 0.4 * hash(cell + 1.7));
   }
-  if (d.y > 0.02) {
-    vec2 cp = d.xz / (d.y + 0.18) * 2.2 + vec2(uTime * 0.012, uTime * 0.004);
-    float n = noise(cp) * 0.55 + noise(cp * 2.3 + 11.0) * 0.3 + noise(cp * 5.1 + 23.0) * 0.15;
-    float cl = smoothstep(0.62 - uCloudAmount * 0.2, 0.86, n) * smoothstep(0.02, 0.22, d.y);
-    col = mix(col, uCloud, cl * 0.9);
-  }
-  if (d.y < 0.0) col = uHorizon;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -92,51 +88,44 @@ void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Pos
 const SEA_FRAG = `
 uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uFoam; uniform vec3 uSkyRef;
 uniform vec3 uLightDir; uniform vec3 uLightColor; uniform float uSpec; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uCamPos;
+uniform sampler2D uPhoto; uniform vec3 uPhotoTint;
 varying vec3 vWorld;
 ${NOISE_GLSL}
 float waves(vec2 p, float t) {
-  return sin(p.x * 0.32 + t * 1.1) * 0.5 + sin(p.y * 0.5 - t * 1.7 + p.x * 0.1) * 0.6 + noise(p * 0.22 + vec2(t * 0.12, -t * 0.28)) * 1.4;
+  return sin(p.y * 1.2 + p.x * 0.12 - t * 1.1) * 0.13
+    + sin(p.x * 2.7 + p.y * 1.8 + t * 0.85) * 0.045
+    + noise(p * 3.4 + vec2(t * 0.19, -t * 0.34)) * 0.09
+    + noise(p * 9.1 - t * 0.23) * 0.025;
 }
 void main() {
   vec2 p = vWorld.xz; float t = uTime;
+  float dist = distance(uCamPos, vWorld);
   float w = waves(p, t);
-  float e = 0.35;
+  float e = 0.08;
   float wx = waves(p + vec2(e, 0.0), t) - w;
   float wz = waves(p + vec2(0.0, e), t) - w;
-  vec3 n = normalize(vec3(-wx * 1.6, 1.0, -wz * 1.6));
-  float shore = clamp(-vWorld.z / 14.0, 0.0, 1.0);
-  vec3 col = mix(uShallow, uDeep, shore);
+  float ripple = mix(0.32, 0.065, smoothstep(12.0, 100.0, dist));
+  vec3 n = normalize(vec3(-wx / e * ripple, 1.0, -wz / e * ripple));
+  float shore = clamp(-vWorld.z / 18.0, 0.0, 1.0);
+  vec3 col = mix(uShallow * vec3(0.6, 0.72, 0.69), vec3(0.17, 0.31, 0.34) * uPhotoTint, shore);
   vec3 V = normalize(uCamPos - vWorld);
-  float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
-  col = mix(col, uSkyRef, fres * 0.55);
+  float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
+  vec3 reflection = reflect(-V, n);
+  vec2 reflectedUv = vec2(atan(reflection.x, -reflection.z) / 6.2831853 + 0.5, asin(clamp(reflection.y, 0.0, 1.0)) / 3.1415927 + 0.5);
+  vec3 reflectedSky = texture2D(uPhoto, reflectedUv).rgb * uPhotoTint;
+  col = mix(col, reflectedSky * 0.84, fres * 0.82);
   vec3 H = normalize(uLightDir + V);
   float nh = max(dot(n, H), 0.0);
   float up = smoothstep(0.0, 0.15, uLightDir.y);
-  col += uLightColor * (pow(nh, 160.0) * uSpec + pow(nh, 24.0) * 0.25 * uSpec) * up;
-  col = mix(col, uFoam, smoothstep(1.7, 2.4, w) * 0.35);
+  col += uLightColor * (pow(nh, 90.0) * 0.27 + pow(nh, 24.0) * 0.035) * uSpec * up;
   float edge = vWorld.z + 0.7 + sin(t * 0.8 + p.x * 0.18) * 0.7 + noise(vec2(p.x * 0.5, t * 0.3)) * 0.6;
-  float foamLine = 1.0 - smoothstep(0.0, 1.4, abs(edge));
-  float foamNoise = noise(p * 1.8 + vec2(t * 0.5, 0.0));
-  col = mix(col, uFoam, foamLine * (0.45 + 0.55 * foamNoise));
+  float foamLine = 1.0 - smoothstep(0.04, 0.48, abs(edge));
+  float foamNoise = noise(p * 7.5 + vec2(t * 0.2, 0.0)) * noise(p * 18.0 - t * 0.3);
+  col = mix(col, uFoam, foamLine * smoothstep(0.04, 0.44, foamNoise) * 0.88);
   float alpha = 1.0 - smoothstep(-0.2, 1.6, edge);
-  float dist = distance(uCamPos, vWorld);
-  col = mix(col, uFog, smoothstep(uFogNear, uFogFar, dist));
+  vec3 farSea = texture2D(uPhoto, vec2(0.5, 0.475)).rgb * uPhotoTint;
+  col = mix(col, farSea, smoothstep(55.0, 260.0, dist));
   gl_FragColor = vec4(col, alpha);
-}`;
-
-const SAND_FRAG = `
-uniform sampler2D uMap; uniform vec3 uTint; uniform vec3 uFog; uniform vec3 uCamPos; uniform float uFogNear; uniform float uFogFar; uniform float uTime;
-varying vec3 vWorld;
-void main() {
-  vec3 near_ = texture2D(uMap, vWorld.xz * 0.28).rgb;
-  vec3 far_ = texture2D(uMap, vWorld.xz * 0.05).rgb;
-  float dist = distance(uCamPos, vWorld);
-  vec3 col = mix(near_, far_, smoothstep(10.0, 40.0, dist)) * uTint;
-  float edge = vWorld.z + 0.7 + sin(uTime * 0.8 + vWorld.x * 0.18) * 0.7;
-  float wet = 1.0 - smoothstep(0.0, 3.0, edge);
-  col *= 1.0 - wet * 0.26;
-  col = mix(col, uFog, smoothstep(uFogNear, uFogFar, dist));
-  gl_FragColor = vec4(col, 1.0);
 }`;
 
 /* ---------------- 도우미 ---------------- */
@@ -163,30 +152,10 @@ function pixelTexture(t: THREE.Texture, srgb: boolean) {
 
 const v3 = (c: readonly number[]) => new THREE.Vector3(c[0], c[1], c[2]);
 
-/** 바닷가의 소품 배치. 야자수는 뒤쪽 모래 언덕, 바위는 양 끝 물가, 모닥불은 가운데 */
+/** 절벽 안쪽 휴식 공간. 가운데 모닥불 주변은 비워 둔다. */
 const PLACEMENT: { prop: PropName; x: number; z: number; scale: number; decal?: boolean; r?: number }[] = [
-  { prop: "palm", x: -22, z: 24, scale: 1.7, r: 0.6 },
-  { prop: "palm2", x: -14, z: 27.5, scale: 1.5, r: 0.6 },
-  { prop: "palm", x: 16, z: 26.5, scale: 1.6, r: 0.6 },
-  { prop: "palm2", x: 24, z: 22, scale: 1.8, r: 0.6 },
-  { prop: "palm", x: -27, z: 15, scale: 1.4, r: 0.6 },
-  { prop: "palm2", x: 27.5, z: 11, scale: 1.5, r: 0.6 },
-  { prop: "umbrella", x: -9, z: 15.5, scale: 1.3, r: 0.35 },
-  { prop: "umbrella", x: 11.5, z: 13.5, scale: 1.3, r: 0.35 },
-  { prop: "rock", x: -26, z: 0.8, scale: 1.4, r: 1.0 },
-  { prop: "rock2", x: -23.5, z: 2.4, scale: 1.3, r: 0.7 },
-  { prop: "rock", x: 25, z: 1.2, scale: 1.5, r: 1.0 },
-  { prop: "rock2", x: 22.5, z: 0.3, scale: 1.2, r: 0.7 },
-  { prop: "rock2", x: 27.5, z: 4, scale: 1.1, r: 0.7 },
-  { prop: "sign", x: -3.2, z: 14.2, scale: 1.1, r: 0.35 },
-  { prop: "mat", x: -8.6, z: 17.4, scale: 1.3, decal: true },
-  { prop: "mat", x: 12.2, z: 15.6, scale: 1.3, decal: true },
 ];
-const SHELLS: [PropName, number, number][] = [
-  ["shell", -6, 2.1], ["star", 3.5, 1.4], ["shell2", 9, 3.2], ["shell", -14, 4.6], ["star", 18, 2.8], ["shell2", -19, 6.1],
-  ["shell", 14.5, 7.4], ["shell2", -2.5, 5.8], ["star", -10.5, 8.9], ["shell", 6.5, 9.6], ["shell2", 21, 6.6], ["shell", -24, 9.1],
-];
-const FIRE = { x: 0, z: 18.5 };
+const FIRE = CAMPFIRE;
 
 interface PlayerNode {
   data: RemotePlayer;
@@ -218,7 +187,7 @@ export class BeachEngine {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
-  private clock = new THREE.Clock();
+  private clock = new THREE.Timer();
   private raf = 0;
   private running = false;
   private disposed = false;
@@ -227,11 +196,14 @@ export class BeachEngine {
   private sky!: THREE.Mesh;
   private skyMat!: THREE.ShaderMaterial;
   private seaMat!: THREE.ShaderMaterial;
-  private sandMat!: THREE.ShaderMaterial;
+  private sandMat!: THREE.MeshStandardMaterial;
+  private photo!: THREE.Texture;
+  private assetLoads: Promise<void>[] = [];
+  private cove!: Cove;
   private charTex!: THREE.Texture;
   private propTex!: THREE.Texture;
   private tinted: THREE.Material[] = [];
-  private fire: { sprite: THREE.Sprite; frames: THREE.Texture[]; logs: THREE.Texture; glow: THREE.Sprite; glowMat: THREE.SpriteMaterial } | null = null;
+  private fire: CoastalFire | null = null;
   private obstacles: { x: number; z: number; r: number }[] = [];
   private shadowGeo = new THREE.PlaneGeometry(0.9, 0.45);
   private shadowMat!: THREE.MeshBasicMaterial;
@@ -248,6 +220,10 @@ export class BeachEngine {
   private joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   private look = { active: false, id: -1, lx: 0, ly: 0, sx: 0, sy: 0, t: 0, moved: false };
   private selected: string | null = null;
+  private restSeat: (typeof SHELTER_SEATS)[number] | null = null;
+  private returnFromSeat: { x: number; z: number } | null = null;
+  private lastRestState = "";
+  private eyeHeight = EYE;
 
   private daylight: Daylight;
   private hourOverride: number | null;
@@ -269,23 +245,29 @@ export class BeachEngine {
     this.handlers = opts.handlers;
     this.bounds = opts.bounds;
     this.hourOverride = opts.hourOverride;
-    this.self = { x: opts.spawn.x, z: opts.spawn.z, yaw: opts.spawn.yaw, moving: false, pitch: -0.02, bobT: 0 };
+    this.self = { x: opts.spawn.x, z: opts.spawn.z, yaw: opts.spawn.yaw, moving: false, pitch: 0.07, bobT: 0 };
     this.mobile = typeof navigator !== "undefined" && (navigator.maxTouchPoints > 0 || /Android|iPhone|iPad/i.test(navigator.userAgent));
     this.scale = this.mobile ? 0.85 : 1;
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance", stencil: false, depth: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1.3 : 1.5));
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.sortObjects = true;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
-    this.camera = new THREE.PerspectiveCamera(this.mobile ? 72 : 66, 1, 0.1, 520);
+    this.camera = new THREE.PerspectiveCamera(this.mobile ? 68 : 62, 1, 0.1, 520);
     this.camera.rotation.order = "YXZ";
     this.daylight = daylightAt(this.hour());
     this.scene.fog = new THREE.Fog(0xffffff, this.daylight.fogNear, this.daylight.fogFar);
 
     this.buildSky();
     this.buildGround();
-    this.ready = this.loadAtlases().then(() => {
+    this.cove = new Cove(this.scene, this.obstacles);
+    this.ready = Promise.all([this.loadAtlases(), ...this.assetLoads]).then(() => {
       this.buildProps();
       this.applyDaylight(this.daylight);
     });
@@ -307,17 +289,19 @@ export class BeachEngine {
   }
 
   private buildSky() {
+    this.photo = this.loadEnvironmentTexture("/beach/real/cove-panorama.png", false);
+    this.photo.wrapS = THREE.RepeatWrapping;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        uTop: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-        uSunColor: { value: new THREE.Vector3(1, 1, 1) }, uSunGlow: { value: 0 }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
-        uStars: { value: 0 }, uCloud: { value: new THREE.Vector3(1, 1, 1) }, uCloudAmount: { value: 0.4 }, uTime: { value: 0 },
+        uPhoto: { value: this.photo }, uPhotoTint: { value: new THREE.Vector3(1, 1, 1) },
+        uStars: { value: 0 }, uTime: { value: 0 },
       },
       vertexShader: SKY_VERT,
       fragmentShader: SKY_FRAG,
       side: THREE.BackSide,
       depthWrite: false,
       depthTest: false,
+      toneMapped: false,
     });
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(400, 28, 14), this.skyMat);
     this.sky.renderOrder = -10;
@@ -325,28 +309,37 @@ export class BeachEngine {
     this.scene.add(this.sky);
   }
 
+  private loadEnvironmentTexture(path: string, srgb = true, repeat?: [number, number]) {
+    let complete!: () => void;
+    let fail!: (error: unknown) => void;
+    this.assetLoads.push(new Promise<void>((resolve, reject) => { complete = resolve; fail = reject; }));
+    const texture = new THREE.TextureLoader().load(path, complete, undefined, fail);
+    texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    if (repeat) { texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(...repeat); }
+    return texture;
+  }
+
   private buildGround() {
-    const sandTex = new THREE.TextureLoader().load("/beach/sand.png", (t) => {
-      t.wrapS = THREE.RepeatWrapping;
-      t.wrapT = THREE.RepeatWrapping;
-      t.magFilter = THREE.LinearFilter;
-      t.minFilter = THREE.LinearMipmapLinearFilter;
-      t.colorSpace = THREE.NoColorSpace;
-      t.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
-      t.needsUpdate = true;
+    this.sandMat = new THREE.MeshStandardMaterial({
+      map: this.loadEnvironmentTexture("/beach/real/sand.jpg", true, [40, 36]),
+      normalMap: this.loadEnvironmentTexture("/beach/real/sand-normal.jpg", false, [40, 36]),
+      roughnessMap: this.loadEnvironmentTexture("/beach/real/sand-roughness.jpg", false, [40, 36]),
+      color: 0xe7d9c0, normalScale: new THREE.Vector2(0.42, 0.42), roughness: 1,
     });
-    this.sandMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uMap: { value: sandTex }, uTint: { value: new THREE.Vector3(1, 1, 1) }, uFog: { value: new THREE.Vector3() }, uCamPos: { value: new THREE.Vector3() },
-        uFogNear: { value: 28 }, uFogFar: { value: 150 }, uTime: { value: 0 },
-      },
-      vertexShader: WORLD_VERT,
-      fragmentShader: SAND_FRAG,
-    });
-    const sand = new THREE.Mesh(new THREE.PlaneGeometry(900, 160), this.sandMat);
+    this.sandMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = "varying vec3 vCoastWorld;\n" + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvCoastWorld = (modelMatrix * vec4(position, 1.0)).xyz;");
+      shader.fragmentShader = "varying vec3 vCoastWorld;\n" + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\nfloat wetSand = 1.0 - smoothstep(-0.8, 2.8, vCoastWorld.z);\ndiffuseColor.rgb *= 1.0 - wetSand * 0.3;");
+    };
+    const sand = new THREE.Mesh(new THREE.PlaneGeometry(80, 72), this.sandMat);
     sand.rotation.x = -Math.PI / 2;
-    sand.position.set(0, 0, 77); // z: -3 ~ 157
+    sand.position.set(0, 0, 33); // 절벽으로 감싸인 모래밭, z: -3 ~ 69
     sand.renderOrder = 0;
+    sand.receiveShadow = true;
     this.scene.add(sand);
 
     this.seaMat = new THREE.ShaderMaterial({
@@ -354,11 +347,13 @@ export class BeachEngine {
         uTime: { value: 0 }, uDeep: { value: new THREE.Vector3() }, uShallow: { value: new THREE.Vector3() }, uFoam: { value: new THREE.Vector3(1, 1, 1) },
         uSkyRef: { value: new THREE.Vector3() }, uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightColor: { value: new THREE.Vector3(1, 1, 1) }, uSpec: { value: 1 },
         uFog: { value: new THREE.Vector3() }, uFogNear: { value: 28 }, uFogFar: { value: 150 }, uCamPos: { value: new THREE.Vector3() },
+        uPhoto: { value: this.photo }, uPhotoTint: this.skyMat.uniforms.uPhotoTint,
       },
       vertexShader: WORLD_VERT,
       fragmentShader: SEA_FRAG,
       transparent: true,
       depthWrite: false,
+      toneMapped: false,
     });
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 420), this.seaMat);
     sea.rotation.x = -Math.PI / 2;
@@ -384,59 +379,9 @@ export class BeachEngine {
     this.scene.add(this.ring);
   }
 
-  private propSprite(name: PropName, x: number, z: number, scale: number) {
-    const r = PROP[name];
-    const mat = new THREE.SpriteMaterial({ map: regionTexture(this.propTex, r, PROPS_ATLAS.width, PROPS_ATLAS.height), transparent: true, alphaTest: 0.1, depthWrite: true });
-    const s = new THREE.Sprite(mat);
-    s.center.set(0.5, 0);
-    s.scale.set(r.w * PX * scale, r.h * PX * scale, 1);
-    s.position.set(x, 0, z);
-    s.renderOrder = 3;
-    this.tinted.push(mat);
-    this.scene.add(s);
-    return s;
-  }
-
-  private decal(name: PropName, x: number, z: number, scale: number, rot = 0) {
-    const r = PROP[name];
-    const mat = new THREE.MeshBasicMaterial({ map: regionTexture(this.propTex, r, PROPS_ATLAS.width, PROPS_ATLAS.height), transparent: true, alphaTest: 0.1, depthWrite: false });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(r.w * PX * scale, r.h * PX * scale), mat);
-    m.rotation.x = -Math.PI / 2;
-    m.rotation.z = rot;
-    m.position.set(x, 0.02, z);
-    m.renderOrder = 2;
-    this.tinted.push(mat);
-    this.scene.add(m);
-    return m;
-  }
-
   private buildProps() {
-    for (const p of PLACEMENT) {
-      if (p.decal) this.decal(p.prop, p.x, p.z, p.scale, ((p.x * 7) % 10) / 10 - 0.5);
-      else this.propSprite(p.prop, p.x, p.z, p.scale);
-      if (p.r) this.obstacles.push({ x: p.x, z: p.z, r: p.r });
-    }
-    SHELLS.forEach(([name, x, z], i) => this.decal(name, x, z, 0.9, (i * 1.7) % 3.1));
-
-    // 모닥불: 불꽃 3프레임 + 밤에만 켜지는 빛
-    const frames = (["fire0", "fire1", "fire2"] as PropName[]).map((n) => regionTexture(this.propTex, PROP[n], PROPS_ATLAS.width, PROPS_ATLAS.height));
-    const logs = regionTexture(this.propTex, PROP.logs, PROPS_ATLAS.width, PROPS_ATLAS.height);
-    const fireMat = new THREE.SpriteMaterial({ map: logs, transparent: true, alphaTest: 0.1, depthWrite: true });
-    const fire = new THREE.Sprite(fireMat);
-    fire.center.set(0.5, 0);
-    fire.scale.set(PROP.fire0.w * PX * 1.3, PROP.fire0.h * PX * 1.3, 1);
-    fire.position.set(FIRE.x, 0, FIRE.z);
-    fire.renderOrder = 3;
-    this.scene.add(fire);
-    this.tinted.push(fireMat);
-    const glowMat = new THREE.SpriteMaterial({ map: this.fxTex.glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xff8a3a, opacity: 0 });
-    const glow = new THREE.Sprite(glowMat);
-    glow.scale.set(9, 9, 1);
-    glow.position.set(FIRE.x, 0.9, FIRE.z);
-    glow.renderOrder = 4;
-    this.scene.add(glow);
-    this.fire = { sprite: fire, frames, logs, glow, glowMat };
-    this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.0 });
+    this.fire = new CoastalFire(this.scene, FIRE.x, FIRE.z);
+    this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.35 });
   }
 
   /* ---------------- 시간대 ---------------- */
@@ -451,16 +396,11 @@ export class BeachEngine {
 
   private applyDaylight(d: Daylight) {
     this.daylight = d;
+    this.cove?.applyDaylight(d);
     const u = this.skyMat.uniforms;
-    (u.uTop.value as THREE.Vector3).set(...d.skyTop);
-    (u.uHorizon.value as THREE.Vector3).set(...d.skyHorizon);
-    (u.uSunDir.value as THREE.Vector3).set(...d.sun);
-    (u.uSunColor.value as THREE.Vector3).set(...d.sunColor);
-    u.uSunGlow.value = d.sunGlow;
-    (u.uMoonDir.value as THREE.Vector3).set(...d.moon);
+    const night = d.stars;
+    (u.uPhotoTint.value as THREE.Vector3).set(1 - night * 0.85, 1 - night * 0.79, 1 - night * 0.64);
     u.uStars.value = d.stars;
-    (u.uCloud.value as THREE.Vector3).set(...d.cloud);
-    u.uCloudAmount.value = d.cloudAmount;
 
     const s = this.seaMat.uniforms;
     (s.uDeep.value as THREE.Vector3).set(...d.seaDeep);
@@ -476,16 +416,10 @@ export class BeachEngine {
     s.uFogNear.value = d.fogNear;
     s.uFogFar.value = d.fogFar;
 
-    const g = this.sandMat.uniforms;
-    (g.uTint.value as THREE.Vector3).set(...d.sandTint);
-    (g.uFog.value as THREE.Vector3).set(...d.fog);
-    g.uFogNear.value = d.fogNear;
-    g.uFogFar.value = d.fogFar;
-
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.setRGB(d.fog[0], d.fog[1], d.fog[2], THREE.SRGBColorSpace);
-    fog.near = d.fogNear;
-    fog.far = d.fogFar;
+    fog.color.setRGB(0.64 * (1 - night * 0.85), 0.68 * (1 - night * 0.79), 0.72 * (1 - night * 0.64), THREE.SRGBColorSpace);
+    fog.near = 45;
+    fog.far = 230;
     this.renderer.setClearColor(fog.color, 1);
 
     for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
@@ -567,6 +501,16 @@ export class BeachEngine {
     const target = e.target as HTMLElement | null;
     if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === "Escape" && this.restSeat) {
+      if (e.type === "keydown") this.standUp();
+      return;
+    }
+    if (k === "e" && (this.restSeat || this.nearbySeat())) {
+      this.keys.delete("e");
+      if (e.type === "keydown" && !e.repeat) this.toggleRest();
+      e.preventDefault();
+      return;
+    }
     if (!["w", "a", "s", "d", "q", "e", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift"].includes(k)) return;
     if (e.type === "keydown") this.keys.add(k);
     else this.keys.delete(k);
@@ -641,7 +585,7 @@ export class BeachEngine {
     const tex = this.charTex.clone();
     tex.repeat.set(1 / CHAR_ATLAS.cols, 1 / CHAR_ATLAS.rows);
     tex.needsUpdate = true;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1, depthWrite: true });
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1, depthWrite: true, toneMapped: false });
     mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
     const sprite = new THREE.Sprite(mat);
     sprite.center.set(0.5, 0);
@@ -689,7 +633,7 @@ export class BeachEngine {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.minFilter = THREE.LinearFilter;
     tex.generateMipmaps = false;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, toneMapped: false });
     const label = new THREE.Sprite(mat);
     label.scale.set(2.2, 0.55, 1);
     label.center.set(0.5, 0);
@@ -790,7 +734,7 @@ export class BeachEngine {
   start() {
     if (this.running || this.disposed) return;
     this.running = true;
-    this.clock.start();
+    this.clock.reset();
     this.lastRender = performance.now();
     const loop = () => {
       if (!this.running) return;
@@ -819,6 +763,7 @@ export class BeachEngine {
   private setQuality(level: "high" | "low") {
     if (this.quality === level) return;
     this.quality = level;
+    this.renderer.shadowMap.enabled = level === "high";
     this.scale = level === "low" ? (this.mobile ? 0.65 : 0.75) : this.mobile ? 0.85 : 1;
     this.renderer.setPixelRatio(level === "low" ? 1 : Math.min(window.devicePixelRatio || 1, this.mobile ? 1.3 : 1.5));
     this.resize();
@@ -828,6 +773,7 @@ export class BeachEngine {
   private frame() {
     const now = performance.now();
     if (this.quality === "low" && now - this.lastRender < 31) return; // 30fps 제한
+    this.clock.update(now);
     const dt = Math.min(0.05, this.clock.getDelta());
     const elapsed = now - this.lastRender;
     this.lastRender = now;
@@ -861,6 +807,7 @@ export class BeachEngine {
     const turn = (k.has("ArrowLeft") || k.has("q") ? 1 : 0) - (k.has("ArrowRight") || k.has("e") ? 1 : 0);
     if (turn) this.self.yaw += turn * 1.9 * dt;
     const len = Math.hypot(mx, my);
+    if (this.restSeat && len > 0.08) this.standUp();
     if (len > 1) { mx /= len; my /= len; }
     const speed = WALK_SPEED * (k.has("Shift") ? 1.6 : 1) * Math.min(1, len);
     this.self.moving = len > 0.08;
@@ -875,9 +822,12 @@ export class BeachEngine {
       this.self.bobT += dt * speed * 2.6;
     }
     const bob = this.self.moving ? Math.sin(this.self.bobT) * 0.035 : 0;
-    this.camera.position.set(this.self.x, EYE + bob, this.self.z);
+    const targetEye = this.deckHeight(this.self.x, this.self.z) + (this.restSeat ? 1.30 : EYE);
+    this.eyeHeight += (targetEye - this.eyeHeight) * Math.min(1, dt * 9);
+    this.camera.position.set(this.self.x, this.eyeHeight + bob, this.self.z);
     this.camera.rotation.set(this.self.pitch, this.self.yaw, 0);
     this.sky.position.copy(this.camera.position);
+    this.updateRestState();
   }
 
   private collide(x: number, z: number): [number, number] {
@@ -887,7 +837,63 @@ export class BeachEngine {
       const min = o.r + 0.35;
       if (d < min && d > 1e-4) { x = o.x + (dx / d) * min; z = o.z + (dz / d) * min; }
     }
-    return [x, z];
+    return resolveWalls(x, z, SHELTER_COLLIDERS);
+  }
+
+  private deckHeight(x: number, z: number) {
+    return SHELTERS.find((s) => Math.abs(x - s.x) <= s.width / 2 && Math.abs(z - s.z) <= s.depth / 2)?.floorY ?? 0;
+  }
+
+  private nearbySeat() {
+    // Requiring the player to be inside prevents sitting through a back or side wall.
+    const shelter = SHELTERS.find((s) => Math.abs(this.self.x - s.x) < s.width / 2 - 0.4 && Math.abs(this.self.z - s.z) < s.depth / 2 - 0.3);
+    if (!shelter) return null;
+    let nearest: (typeof SHELTER_SEATS)[number] | null = null;
+    let distance = 2.25;
+    for (const seat of SHELTER_SEATS) {
+      if (seat.shelterId !== shelter.id) continue;
+      const d = Math.hypot(this.self.x - seat.x, this.self.z - seat.z);
+      if (d < distance) { nearest = seat; distance = d; }
+    }
+    return nearest;
+  }
+
+  /** A reachable bench offers a sea-facing seat; walking or the same action gets up. */
+  toggleRest() {
+    if (this.disposed) return;
+    if (this.restSeat) { this.standUp(); return; }
+    const seat = this.nearbySeat();
+    if (!seat) return;
+    this.returnFromSeat = { x: this.self.x, z: this.self.z };
+    this.restSeat = seat;
+    this.self.x = seat.x;
+    this.self.z = seat.z;
+    this.self.yaw = seat.yaw;
+    this.self.pitch = 0.015;
+    this.self.moving = false;
+    this.keys.clear();
+    this.joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+    this.handlers.onJoystick(null);
+    this.updateRestState();
+  }
+
+  private standUp() {
+    if (!this.restSeat) return;
+    if (this.returnFromSeat) {
+      this.self.x = this.returnFromSeat.x;
+      this.self.z = this.returnFromSeat.z;
+    }
+    this.restSeat = null;
+    this.returnFromSeat = null;
+    this.updateRestState();
+  }
+
+  private updateRestState() {
+    const seat = this.restSeat ?? this.nearbySeat();
+    const key = seat ? `${seat.shelterId}:${Boolean(this.restSeat)}` : "";
+    if (key === this.lastRestState) return;
+    this.lastRestState = key;
+    this.handlers.onRestChange?.(seat ? { shelterName: seat.name, seated: Boolean(this.restSeat) } : null);
   }
 
   private updatePlayers(dt: number) {
@@ -912,16 +918,17 @@ export class BeachEngine {
       this.setFrame(p, view, frame, p.data.skin);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
-      p.sprite.position.set(p.cur.x, hop, p.cur.z);
-      p.shadow.position.set(p.cur.x, 0.015, p.cur.z);
+      const deck = this.deckHeight(p.cur.x, p.cur.z);
+      p.sprite.position.set(p.cur.x, deck + hop, p.cur.z);
+      p.shadow.position.set(p.cur.x, deck + 0.015, p.cur.z);
       if (p.label) {
-        p.label.position.set(p.cur.x, 1.62 + hop, p.cur.z);
+        p.label.position.set(p.cur.x, deck + 1.62 + hop, p.cur.z);
         p.label.visible = dl < 24;
       }
       if (pid === this.selected) selectedNode = p;
     }
     if (selectedNode) {
-      this.ring.position.set(selectedNode.cur.x, 0.03, selectedNode.cur.z);
+      this.ring.position.set(selectedNode.cur.x, this.deckHeight(selectedNode.cur.x, selectedNode.cur.z) + 0.03, selectedNode.cur.z);
       const s = 1 + Math.sin(this.time * 5) * 0.07;
       this.ring.scale.set(s, s, 1);
       this.ringMat.opacity = 0.75 + Math.sin(this.time * 5) * 0.2;
@@ -932,27 +939,16 @@ export class BeachEngine {
     void dt;
     this.skyMat.uniforms.uTime.value = this.time;
     this.seaMat.uniforms.uTime.value = this.time;
-    this.sandMat.uniforms.uTime.value = this.time;
+    this.cove.update(this.time);
     (this.seaMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
-    (this.sandMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
-    if (this.fire) {
-      const lit = this.daylight.fire;
-      const mat = this.fire.sprite.material as THREE.SpriteMaterial;
-      if (lit > 0.05) {
-        const frame = this.fire.frames[Math.floor(this.time * 9) % 3];
-        if (mat.map !== frame) { mat.map = frame; mat.needsUpdate = true; }
-        this.fire.glowMat.opacity = lit * (0.42 + Math.sin(this.time * 7.3) * 0.06 + Math.sin(this.time * 3.1) * 0.05);
-      } else {
-        if (mat.map !== this.fire.logs) { mat.map = this.fire.logs; mat.needsUpdate = true; }
-        this.fire.glowMat.opacity = 0;
-      }
-    }
+    this.fire?.update(this.time, this.camera);
   }
 
   /* ---------------- 정리 ---------------- */
   dispose() {
     this.disposed = true;
     this.stop();
+    this.clock.dispose();
     const c = this.canvas;
     c.removeEventListener("pointerdown", this.onPointerDown);
     c.removeEventListener("pointermove", this.onPointerMove);
@@ -965,16 +961,24 @@ export class BeachEngine {
     this.players.clear();
     for (const f of this.fx) { this.scene.remove(f.sprite); f.mat.dispose(); }
     this.fx = [];
+    const textures = new Set<THREE.Texture>();
+    const materials = new Set<THREE.Material>();
     this.scene.traverse((o) => {
+      if (o instanceof THREE.InstancedMesh) o.dispose();
+      if (o instanceof THREE.DirectionalLight || o instanceof THREE.PointLight) o.shadow.dispose();
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();
       const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
       for (const mat of mats) {
-        const map = (mat as THREE.SpriteMaterial).map;
-        if (map) map.dispose();
-        mat.dispose();
+        for (const value of Object.values(mat)) if (value instanceof THREE.Texture) textures.add(value);
+        if (mat instanceof THREE.ShaderMaterial) {
+          for (const uniform of Object.values(mat.uniforms)) if (uniform.value instanceof THREE.Texture) textures.add(uniform.value);
+        }
+        materials.add(mat);
       }
     });
+    for (const texture of textures) texture.dispose();
+    for (const material of materials) material.dispose();
     this.scene.clear();
     this.charTex?.dispose();
     this.propTex?.dispose();

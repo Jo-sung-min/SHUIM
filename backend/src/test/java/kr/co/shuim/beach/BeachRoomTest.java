@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -37,7 +40,8 @@ class BeachRoomTest {
         assertEquals(12, a.pid().length());
         assertEquals(32, a.ticket().length());
         assertNotEquals(a.pid(), a.ticket());
-        assertTrue(a.x() >= -4 && a.x() <= 4 && a.z() >= 8 && a.z() <= 12 && a.yaw() == 0);
+        assertTrue(a.x() >= -1.5 && a.x() <= 1.5 && a.z() >= 2.8 && a.z() <= 4);
+        assertEquals(Math.atan2(a.x(), a.z() - 9), a.yaw());
         assertEquals(BeachRoom.skinOf("u-a"), a.skin());
         assertTrue(a.skin() >= 0 && a.skin() < 8);
 
@@ -169,10 +173,10 @@ class BeachRoomTest {
         Presence near = room.enter("u-c", "다", Set.of());
         Presence far = room.enter("u-d", "라", Set.of());
         at(room, a, 0, 10);
-        at(room, b1, 5, 10);
-        at(room, b2, 28, 30);
-        at(room, near, 10, 10);   // b1 에서 5 m
-        at(room, far, -20, 10);   // b1 에서 25 m
+        at(room, b1, 10, 0);
+        at(room, b2, 14, 20);
+        at(room, near, 0, 0);    // b1 에서 10 m, b2 에서는 20 m 밖
+        at(room, far, -14, 20);  // 받는 두 사람 모두 20 m 밖
 
         TickResult ra = care(room, a, b1, "hug");
         assertEquals("sent", ra.care());
@@ -187,21 +191,21 @@ class BeachRoomTest {
         assertEquals("나", e.toNick());
         assertEquals(clock.get(), e.at());
 
-        TickResult rb1 = at(room, b1, 5, 10);
+        TickResult rb1 = at(room, b1, 10, 0);
         assertEquals(2, rb1.events().size());
         assertEquals(1, rb1.received().hug());
         assertEquals(0, rb1.received().comfort());
-        TickResult rb2 = at(room, b2, 28, 30);
+        TickResult rb2 = at(room, b2, 14, 20);
         assertEquals(2, rb2.events().size());
         assertEquals(1, rb2.received().hug());
         // 구경꾼: b1 근처는 b1 것만, b2 는 멀어서 못 본다
-        TickResult rn = at(room, near, 10, 10);
+        TickResult rn = at(room, near, 0, 0);
         assertEquals(1, rn.events().size());
         assertEquals(b1.pid(), rn.events().get(0).toPid());
         assertEquals(0, rn.received().hug());
-        assertTrue(at(room, far, -20, 10).events().isEmpty());
+        assertTrue(at(room, far, -14, 20).events().isEmpty());
         // 한 번 가져가면 비어 있다
-        assertTrue(at(room, b1, 5, 10).events().isEmpty());
+        assertTrue(at(room, b1, 10, 0).events().isEmpty());
         assertTrue(at(room, a, 0, 10).events().isEmpty());
     }
 
@@ -277,9 +281,9 @@ class BeachRoomTest {
         BeachRoom room = room();
         List<Presence> all = new ArrayList<>();
         for (int i = 0; i < 45; i++) all.add(room.enter("u-" + i, "n" + i, Set.of()));
-        for (int i = 0; i < 45; i++) at(room, all.get(i), -22 + i, 10); // 0번이 맨 왼쪽, 1 m 간격
+        for (int i = 0; i < 45; i++) at(room, all.get(i), -13 + i * 0.5, 10); // 0번이 맨 왼쪽, 0.5 m 간격
         Presence me = all.get(0);
-        TickResult r = at(room, me, -22, 10);
+        TickResult r = at(room, me, -13, 10);
         assertEquals(45, r.count());
         assertEquals(BeachRoom.MAX_PLAYERS, r.players().size());
         double prev = -1;
@@ -294,5 +298,55 @@ class BeachRoomTest {
         assertFalse(ids.contains("u-41"));
         assertFalse(ids.contains("u-44"));
         assertFalse(ids.contains("u-0"));
+    }
+
+    @Test
+    void capacityIsOneHundredAndLeavingOrExpiringFreesSpace() {
+        BeachRoom room = room();
+        Presence first = room.enter("u-first", "닉", Set.of());
+        for (int i = 1; i < BeachRoom.CAPACITY; i++) room.enter("u-" + i, "닉", Set.of());
+        assertEquals(100, room.count());
+        assertEquals(409, assertThrows(ApiException.class, () -> room.enter("overflow", "닉", Set.of())).status());
+        room.leave(first.ticket());
+        assertNotNull(room.enter("replacement", "닉", Set.of()));
+        assertEquals(100, room.count());
+        clock.addAndGet(BeachRoom.IDLE_MS + 1);
+        assertNotNull(room.enter("new-visit", "닉", Set.of()));
+        assertEquals(1, room.count());
+    }
+
+    @Test
+    void simultaneousEntriesCannotExceedCapacity() throws Exception {
+        BeachRoom room = room();
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> entries = new ArrayList<>();
+        try (var executor = Executors.newFixedThreadPool(16)) {
+            for (int i = 0; i < 160; i++) {
+                String id = "u-" + i;
+                entries.add(executor.submit(() -> {
+                    start.await();
+                    try {
+                        room.enter(id, "닉", Set.of());
+                        return true;
+                    } catch (ApiException e) {
+                        assertEquals(409, e.status());
+                        return false;
+                    }
+                }));
+            }
+            start.countDown();
+            int admitted = 0;
+            for (Future<Boolean> result : entries) if (result.get()) admitted++;
+            assertEquals(100, admitted);
+            assertEquals(100, room.count());
+        }
+    }
+
+    @Test
+    void capacityAlsoIncludesAnySimulatedVisitors() {
+        BeachRoom room = new BeachRoom(clock::get, true);
+        for (int i = 0; i < 97; i++) room.enter("u-" + i, "닉", Set.of());
+        assertEquals(100, room.count());
+        assertEquals(409, assertThrows(ApiException.class, () -> room.enter("overflow", "닉", Set.of())).status());
     }
 }

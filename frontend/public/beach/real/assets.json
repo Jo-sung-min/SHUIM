@@ -1,0 +1,188 @@
+[
+  {
+    "file": "rock.jpg",
+    "source": "https://polyhaven.com/a/marble_cliff_05",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/marble_cliff_05/marble_cliff_05_diff_1k.jpg",
+    "authors": [
+      "Amal Kumar"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Diffuse",
+    "resolution": "1k",
+    "tileMeters": 20,
+    "md5": "84d207d6f6d8a52c41da48144b951eab",
+    "bytes": 987798
+  },
+  {
+    "file": "rock-normal.jpg",
+    "source": "https://polyhaven.com/a/marble_cliff_05",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/marble_cliff_05/marble_cliff_05_nor_gl_1k.jpg",
+    "authors": [
+      "Amal Kumar"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "nor_gl",
+    "resolution": "1k",
+    "tileMeters": 20,
+    "md5": "40ef330d85d99dc57cff6a19bc70f830",
+    "bytes": 997297
+  },
+  {
+    "file": "rock-roughness.jpg",
+    "source": "https://polyhaven.com/a/marble_cliff_05",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/marble_cliff_05/marble_cliff_05_rough_1k.jpg",
+    "authors": [
+      "Amal Kumar"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Rough",
+    "resolution": "1k",
+    "tileMeters": 20,
+    "md5": "105bba43b8ddc9a889e41a94ff36f6c9",
+    "bytes": 550656
+  },
+  {
+    "file": "wood.jpg",
+    "source": "https://polyhaven.com/a/weathered_brown_planks",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_brown_planks/weathered_brown_planks_diff_1k.jpg",
+    "authors": [
+      "Dimitrios Savva",
+      "Rico Cilliers"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Diffuse",
+    "resolution": "1k",
+    "tileMeters": 1.8,
+    "md5": "e2fbdf7ed402e272e33e3f7ba707cf69",
+    "bytes": 226049
+  },
+  {
+    "file": "wood-normal.jpg",
+    "source": "https://polyhaven.com/a/weathered_brown_planks",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_brown_planks/weathered_brown_planks_nor_gl_1k.jpg",
+    "authors": [
+      "Dimitrios Savva",
+      "Rico Cilliers"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "nor_gl",
+    "resolution": "1k",
+    "tileMeters": 1.8,
+    "md5": "1180a2ce3566529b25128252e02bd049",
+    "bytes": 223250
+  },
+  {
+    "file": "wood-roughness.jpg",
+    "source": "https://polyhaven.com/a/weathered_brown_planks",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_brown_planks/weathered_brown_planks_rough_1k.jpg",
+    "authors": [
+      "Dimitrios Savva",
+      "Rico Cilliers"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Rough",
+    "resolution": "1k",
+    "tileMeters": 1.8,
+    "md5": "4893f3ee360a4e1e30b96a157e65e50a",
+    "bytes": 234672
+  },
+  {
+    "file": "fabric.jpg",
+    "source": "https://polyhaven.com/a/cotton_jersey",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cotton_jersey/cotton_jersey_diff_1k.jpg",
+    "authors": [
+      "colormass",
+      "Rico Cilliers"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Diffuse",
+    "resolution": "1k",
+    "tileMeters": 0.3,
+    "md5": "d2f4493fdd48634b50d40f810ce9deb7",
+    "bytes": 581360
+  },
+  {
+    "file": "fabric-normal.jpg",
+    "source": "https://polyhaven.com/a/cotton_jersey",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cotton_jersey/cotton_jersey_nor_gl_1k.jpg",
+    "authors": [
+      "colormass",
+      "Rico Cilliers"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "nor_gl",
+    "resolution": "1k",
+    "tileMeters": 0.3,
+    "md5": "2dcc9dda3b726477f607c808e52f1833",
+    "bytes": 678670
+  },
+  {
+    "file": "fabric-roughness.jpg",
+    "source": "https://polyhaven.com/a/cotton_jersey",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cotton_jersey/cotton_jersey_rough_1k.jpg",
+    "authors": [
+      "colormass",
+      "Rico Cilliers"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Rough",
+    "resolution": "1k",
+    "tileMeters": 0.3,
+    "md5": "ac691d215d3aca34dcd6ea2d03937286",
+    "bytes": 865264
+  },
+  {
+    "file": "sand.jpg",
+    "source": "https://polyhaven.com/a/sand_03",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sand_03/sand_03_diff_1k.jpg",
+    "authors": [
+      "Charlotte Baglioni"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Diffuse",
+    "resolution": "1k",
+    "tileMeters": 2,
+    "md5": "84bde2b8bea6351805f67a15682b36b2",
+    "bytes": 703132
+  },
+  {
+    "file": "sand-normal.jpg",
+    "source": "https://polyhaven.com/a/sand_03",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sand_03/sand_03_nor_gl_1k.jpg",
+    "authors": [
+      "Charlotte Baglioni"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "nor_gl",
+    "resolution": "1k",
+    "tileMeters": 2,
+    "md5": "ad8d6ce28344b1d8f241cbd7796243dc",
+    "bytes": 884706
+  },
+  {
+    "file": "sand-roughness.jpg",
+    "source": "https://polyhaven.com/a/sand_03",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sand_03/sand_03_rough_1k.jpg",
+    "authors": [
+      "Charlotte Baglioni"
+    ],
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "map": "Rough",
+    "resolution": "1k",
+    "tileMeters": 2,
+    "md5": "b09beddb9981ec5fb402c12f04751c15",
+    "bytes": 291218
+  }
+]
