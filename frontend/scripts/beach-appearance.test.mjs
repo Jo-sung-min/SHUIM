@@ -62,7 +62,7 @@ test("enter and movement updates send the selected character for remote players"
       calls.push({ url, body: JSON.parse(options.body) });
       return new Response("{}", { status: 200 });
     },
-    Error,
+    Error, AbortSignal,
   }, ["enterBeach", "tickBeach"]);
   await api.enterBeach("circle", "female");
   await api.tickBeach({ ticket: "ticket", x: 1, z: 2, yaw: 0, moving: false, character: "male" });

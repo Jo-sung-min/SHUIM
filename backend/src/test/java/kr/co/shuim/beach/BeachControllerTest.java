@@ -58,7 +58,8 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime"), out.keySet());
+        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled"), out.keySet());
+        assertEquals(true, out.get("restEnabled"));
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
         assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
@@ -131,6 +132,44 @@ class BeachControllerTest {
         assertEquals(0, existing.skin());
         mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
             .content("{\"ticket\":\"expired\",\"character\":\"female\"}"))
+            .andExpect(status().isGone());
+    }
+
+    @Test
+    void restEndpointValidatesBodiesReturnsAuthoritativePoseAndKeepsNullStandingFields() throws Exception {
+        activeMember("circle-a");
+        String ticket = (String) enter("circle-a").get("ticket");
+        beach.tick(ticket, 7, 12, .5, false, null, null);
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"action\":\"lie\",\"spotId\":\"starlight\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("lying"))
+            .andExpect(jsonPath("$.slot").value(0)).andExpect(jsonPath("$.x").value(7))
+            .andExpect(jsonPath("$.z").value(9.65));
+        for (String invalid : List.of("\"sleep\"", "\"\"", "null", "7", "true", "{}", "[]")) {
+            mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + ticket + "\",\"action\":" + invalid + "}"))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"action\":\"stand\",\"spotId\":\"other\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"x\":20,\"z\":20,\"moving\":true}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.selfRest.pose").value("lying"))
+            .andExpect(jsonPath("$.selfRest.z").value(9.65));
+        String standing = mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"action\":\"stand\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("standing"))
+            .andExpect(jsonPath("$.x").value(7)).andExpect(jsonPath("$.z").value(12))
+            .andReturn().getResponse().getContentAsString();
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(standing);
+        assertTrue(json.has("spotId") && json.get("spotId").isNull());
+        assertTrue(json.has("slot") && json.get("slot").isNull());
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isGone());
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"missing\",\"action\":\"lie\"}"))
             .andExpect(status().isGone());
     }
 

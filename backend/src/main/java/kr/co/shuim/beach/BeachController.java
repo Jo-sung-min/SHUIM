@@ -50,6 +50,7 @@ public class BeachController {
         public EnterBody(String communityId) { this(communityId, null); }
     }
     public record WoodBody(String ticket, String requestId) {}
+    public record RestBody(String ticket, String action, String spotId) {}
 
     private CircleService.Circle requireMember(String communityId, DbUser me) {
         if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
@@ -76,6 +77,7 @@ public class BeachController {
         out.put("communityId", circle.id());
         out.put("community", Map.of("id", circle.id(), "slug", circle.slug(), "name", circle.name()));
         out.put("capacity", BeachRoom.CAPACITY);
+        out.put("restEnabled", true);
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", BeachRoom.MIN_Z, "maxZ", BeachRoom.MAX_Z));
@@ -104,6 +106,13 @@ public class BeachController {
             Boolean.TRUE.equals(body.moving()), careTo, careKind, body.character());
         if (r == null) throw ApiException.gone(GONE);
         return r;
+    }
+
+    /** POST /api/beach/rest { ticket, action: "lie" | "stand", spotId?: "starlight" } */
+    @PostMapping("/api/beach/rest")
+    public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body) {
+        if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
+        return beach.rest(body.ticket(), body.action(), body.spotId());
     }
 
     /** POST /api/beach/leave { ticket } → { ok: true } (모르는 티켓이어도 ok) */

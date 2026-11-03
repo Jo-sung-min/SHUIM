@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { BeachEngine, webglSupported, type RestState, type ViewMode } from "@/lib/beach/engine";
-import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, type FireState, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
+import { BeachEngine, webglSupported, type RestState, type StargazingState, type ViewMode } from "@/lib/beach/engine";
+import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, setBeachRest, type FireState, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconCheck, IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconUser, IconUsers } from "@/components/Icons";
+import { IconCheck, IconChevronL, IconClose, IconHeart, IconLeaf, IconLock, IconMoon, IconUser, IconUsers } from "@/components/Icons";
 import { route } from "@/lib/routes";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
 import Joystick from "./Joystick";
@@ -17,6 +17,9 @@ const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요"
 const TICK_MOVING = 500;
 const TICK_IDLE = 1500;
 const VIEW_KEY = "beach-view";
+const INTRO_VISIBLE_MS = 4000;
+const INTRO_FADE_MS = 700;
+type SkyPhase = "walking" | "joining" | "standing";
 
 /** 마지막에 고른 시점 (기기별로 기억) */
 function savedView(): ViewMode {
@@ -41,7 +44,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const failRef = useRef(0);
   const aliveRef = useRef(true);
   const blockedRef = useRef(false);
-  const tickRunnerRef = useRef<() => Promise<void>>(async () => {});
+  const tickRunnerRef = useRef<() => Promise<unknown>>(async () => {});
   const selectedRef = useRef<RemotePlayer | null>(null);
   const fireTimeRef = useRef(0);
   const fireLogsRef = useRef<number | null>(null);
@@ -49,6 +52,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const characterPickerRef = useRef<HTMLDivElement>(null);
   const characterTriggerRef = useRef<HTMLButtonElement>(null);
   const characterPickerId = useId();
+  const restEnabledRef = useRef(false);
+  const restMutationRef = useRef(false);
+  const skyBusyRef = useRef<SkyPhase | null>(null);
+  const skyOperationRef = useRef(0);
+  const woodBusyRef = useRef(false);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -60,6 +68,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [received, setReceived] = useState({ comfort: 0, hug: 0 });
   const [flash, setFlash] = useState<{ kind: CareKind; id: number } | null>(null);
   const [hint, setHint] = useState(false);
+  const [intro, setIntro] = useState<"visible" | "leaving" | "hidden">("hidden");
   const [timeLabel, setTimeLabel] = useState("");
   const [lost, setLost] = useState(false);
   const [fire, setFire] = useState<FireState | null>(null);
@@ -68,9 +77,33 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [view, setView] = useState<ViewMode>("first");
   const [character, setCharacter] = useState<BeachCharacter>("male");
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  const [restEnabled, setRestEnabled] = useState(false);
+  const [stargazing, setStargazing] = useState<StargazingState>({ near: false, lying: false, occupied: 0, capacity: 8 });
+  const [skyPhase, setSkyPhase] = useState<SkyPhase | null>(null);
+  const [woodBusy, setWoodBusy] = useState(false);
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
+
+  // Start once the scene is ready; ticket refreshes do not replay the entry copy.
+  useEffect(() => {
+    if (phase !== "ready") {
+      setIntro("hidden");
+      setHint(false);
+      return;
+    }
+    setIntro("visible");
+    setHint(true);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const fadeTimer = window.setTimeout(() => setIntro(reducedMotion ? "hidden" : "leaving"), INTRO_VISIBLE_MS);
+    const removeTimer = window.setTimeout(() => setIntro("hidden"), INTRO_VISIBLE_MS + INTRO_FADE_MS);
+    const hintTimer = window.setTimeout(() => setHint(false), 6000);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(removeTimer);
+      window.clearTimeout(hintTimer);
+    };
+  }, [phase, communityId]);
 
   const adoptCharacter = useCallback((me: EnterResponse["me"]): BeachCharacter => {
     // Retain an in-memory choice across ticket expiry even if local storage is blocked.
@@ -82,7 +115,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     return next;
   }, []);
 
-  const controlsPaused = characterPickerOpen || selected !== null;
+  const controlsPaused = characterPickerOpen || selected !== null || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
   }, [controlsPaused, phase]);
@@ -159,6 +192,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setSelected(null);
     setRest(null);
     setCharacterPickerOpen(false);
+    skyOperationRef.current++;
+    skyBusyRef.current = null;
+    restMutationRef.current = false;
+    setSkyPhase(null);
     setError(cause.message);
     setPhase("error");
   }, []);
@@ -173,28 +210,32 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setCount(entered.count);
     setCapacity(entered.capacity);
     setCommunity(entered.community);
+    restEnabledRef.current = entered.restEnabled === true;
+    setRestEnabled(restEnabledRef.current);
+    // A new ticket owns no slot from the previous visit.
+    engineRef.current?.applyRest({ pose: "standing", spotId: null, slot: null, ...entered.spawn });
     applyFire(entered.fire);
   }, [communityId, applyFire, adoptCharacter]);
 
-  const runTick = useCallback(async () => {
+  const runTick = useCallback(async (allowRestSync = false): Promise<boolean> => {
     const engine = engineRef.current;
     const ticket = ticketRef.current;
-    if (!aliveRef.current || blockedRef.current || !engine || inFlightRef.current || document.hidden) return;
+    if (!aliveRef.current || blockedRef.current || !engine || inFlightRef.current || document.hidden || (restMutationRef.current && !allowRestSync)) return false;
     inFlightRef.current = true;
     if (!ticket) {
       try {
         await reenter();
       } catch (e) {
         inFlightRef.current = false;
-        if (!aliveRef.current) return;
-        if (e instanceof BeachUnavailable) { stopWithError(e); return; }
+        if (!aliveRef.current) return false;
+        if (e instanceof BeachUnavailable) { stopWithError(e); return false; }
         failRef.current++;
         setLost(failRef.current >= 2);
         scheduleTick();
-        return;
+        return false;
       }
     }
-    if (!aliveRef.current || !ticketRef.current) { inFlightRef.current = false; return; }
+    if (!aliveRef.current || !ticketRef.current) { inFlightRef.current = false; return false; }
     const self = engine.getSelf();
     const care = pendingCareRef.current;
     pendingCareRef.current = null;
@@ -208,8 +249,9 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         character: characterRef.current ?? undefined,
         care: care ? { to: care.to, kind: care.kind } : undefined,
       });
-      if (!aliveRef.current) return;
+      if (!aliveRef.current) return false;
       engine.setPlayers(res.players);
+      if (res.selfRest) engine.applyRest(res.selfRest);
       setCount(res.count);
       setReceived(res.received);
       applyFire(res.fire);
@@ -224,8 +266,9 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       }
       failRef.current = 0;
       setLost(false);
+      return true;
     } catch (e) {
-      if (!aliveRef.current) return;
+      if (!aliveRef.current) return false;
       if (e instanceof BeachUnavailable) {
         stopWithError(e);
       } else if (e instanceof BeachGone) {
@@ -236,6 +279,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         setLost(failRef.current >= 2);
         if (care) pendingCareRef.current = care;
       }
+      return false;
     } finally {
       inFlightRef.current = false;
       scheduleTick();
@@ -273,6 +317,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         setCount(entered.count);
         setCapacity(entered.capacity);
         setCommunity(entered.community);
+        restEnabledRef.current = entered.restEnabled === true;
+        setRestEnabled(restEnabledRef.current);
         const initialView = savedView();
         setView(initialView);
         engine = new BeachEngine(canvas, {
@@ -289,6 +335,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
               try { localStorage.setItem(VIEW_KEY, next); } catch { /* 저장 못 해도 이번 방문엔 적용된다 */ }
             },
             onFireRangeChange: (near) => setNearFire(near),
+            onStargazingChange: (state) => setStargazing(state),
           },
         });
         engineRef.current = engine;
@@ -299,8 +346,6 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         if (cancelled || !aliveRef.current) { engine.dispose(); return; }
         engine.start();
         setPhase("ready");
-        setHint(true);
-        window.setTimeout(() => setHint(false), 6000);
         scheduleTick(0);
       } catch (e) {
         if (cancelled || !aliveRef.current) return;
@@ -340,6 +385,9 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       ticketRef.current = null;
       meRef.current = null;
       characterRef.current = null;
+      skyOperationRef.current++;
+      skyBusyRef.current = null;
+      restMutationRef.current = false;
       engineRef.current?.dispose();
       engineRef.current = null;
     };
@@ -359,20 +407,90 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     scheduleTick(0);
   };
 
+  const toggleStargazing = async () => {
+    const engine = engineRef.current;
+    if (!engine || !restEnabledRef.current || skyBusyRef.current || woodBusyRef.current || blockedRef.current) return;
+    if (!engine.isLying && stargazing.occupied >= stargazing.capacity) return;
+    const operation = ++skyOperationRef.current;
+    const current = () => aliveRef.current && !blockedRef.current && skyOperationRef.current === operation && engineRef.current === engine;
+    const action = engine.isLying ? "stand" : "lie";
+    const changePhase = (next: SkyPhase) => {
+      skyBusyRef.current = next;
+      setSkyPhase(next);
+    };
+    haptic();
+    try {
+      if (action === "lie") {
+        changePhase("walking");
+        const walk = await engine.walkToStargazing();
+        if (!current() || walk === "cancelled") return;
+        if (walk === "blocked") throw new Error("별빛 자리로 가는 길이 막혔어요. 조금 가까이에서 다시 눌러 주세요.");
+      }
+      changePhase(action === "lie" ? "joining" : "standing");
+      // Regular ticks continue during the walk. Reserve the network lane only now,
+      // then drain any older tick before syncing position and claiming/releasing a slot.
+      restMutationRef.current = true;
+      const waitUntil = performance.now() + 8500;
+      while (inFlightRef.current && current()) {
+        if (performance.now() >= waitUntil) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+      }
+      if (!current()) return;
+      if (!ticketRef.current) throw new Error("바닷가에 다시 연결하고 있어요. 잠시 후 다시 눌러 주세요.");
+      if (!(await runTick(true))) throw new Error("연결을 확인하지 못했어요. 잠시 후 다시 눌러 주세요.");
+      if (!current()) return;
+      const ticket = ticketRef.current;
+      if (!ticket || !restEnabledRef.current) throw new Error("별빛 자리를 준비하고 있어요. 잠시 후 다시 와 주세요.");
+      const confirmed = await setBeachRest(ticket, action);
+      if (!current()) return;
+      engine.applyRest(confirmed);
+      if (confirmed.pose === "lying") engine.setView("first");
+    } catch (cause) {
+      if (!current()) return;
+      if (cause instanceof BeachGone) {
+        ticketRef.current = null;
+        showToast("바닷가에 다시 연결하고 있어요. 잠시 후 다시 눌러 주세요.", { kind: "info" });
+      } else if (cause instanceof BeachUnavailable && (cause.status === 401 || cause.status === 403)) {
+        stopWithError(cause);
+      } else {
+        if (cause instanceof BeachUnavailable && cause.status === 404) {
+          restEnabledRef.current = false;
+          setRestEnabled(false);
+        }
+        showToast(cause instanceof Error ? cause.message : "자리를 확인하지 못했어요. 다시 시도해 주세요.", { kind: "info" });
+      }
+    } finally {
+      if (skyOperationRef.current === operation) {
+        skyBusyRef.current = null;
+        restMutationRef.current = false;
+        if (aliveRef.current) { setSkyPhase(null); scheduleTick(0); }
+      }
+    }
+  };
+
   /** 모닥불 앞까지 걸어간 뒤, 새 위치를 서버에 올리고(서버가 거리를 확인한다) 장작을 넣는다 */
   const onAddWood = useCallback(async (requestId: string, phase: (p: WoodPhase) => void) => {
     const engine = engineRef.current;
     if (!engine || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
-    phase("walking");
-    const walk = await engine.walkToFire();
-    if (walk === "cancelled") throw new Error("걸음을 멈춰서 장작을 넣지 못했어요. 다시 눌러 주세요.");
-    if (walk === "blocked") throw new Error("모닥불까지 가는 길이 막혔어요. 조금 더 가까이 가서 눌러 주세요.");
-    phase("adding");
-    while (inFlightRef.current && aliveRef.current) await new Promise((r) => window.setTimeout(r, 40)); // 진행 중인 tick 이 있으면 끝나길 기다린다
-    await runTick();
-    const ticket = ticketRef.current;
-    if (!ticket || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
-    return addFirewood(ticket, requestId);
+    if (engine.isLying) throw new Error("먼저 일어난 뒤 장작을 넣을 수 있어요.");
+    if (skyBusyRef.current || woodBusyRef.current) throw new Error("이동을 마친 뒤 다시 눌러 주세요.");
+    woodBusyRef.current = true;
+    setWoodBusy(true);
+    try {
+      phase("walking");
+      const walk = await engine.walkToFire();
+      if (walk === "cancelled") throw new Error("걸음을 멈춰서 장작을 넣지 못했어요. 다시 눌러 주세요.");
+      if (walk === "blocked") throw new Error("모닥불까지 가는 길이 막혔어요. 조금 더 가까이 가서 눌러 주세요.");
+      phase("adding");
+      while (inFlightRef.current && aliveRef.current) await new Promise((r) => window.setTimeout(r, 40));
+      if (!(await runTick())) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      const ticket = ticketRef.current;
+      if (!ticket || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
+      return await addFirewood(ticket, requestId);
+    } finally {
+      woodBusyRef.current = false;
+      if (aliveRef.current) setWoodBusy(false);
+    }
   }, [runTick]);
 
   const sendCare = (kind: CareKind) => {
@@ -388,6 +506,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
 
   const cooling = Date.now() < coolUntil;
   const gotAny = received.comfort + received.hug > 0;
+  const skyFull = !stargazing.lying && stargazing.occupied >= stargazing.capacity;
+  const skyActionLabel = !restEnabled ? "별빛 자리 준비 중" : skyPhase === "walking" ? "별빛 자리로 가는 중…" : skyPhase === "joining" ? "자리 잡는 중…" : skyFull ? "모든 자리가 찼어요" : stargazing.occupied > 0 ? "같이 눕기" : "하늘 보기";
   const returnHref = community ? route(`/c/${community.slug}`) : "/c/home";
 
   return (
@@ -424,28 +544,48 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         </div>
       </div>
 
-      {community && phase === "ready" && <div className={styles.place}>
+      {community && phase === "ready" && intro !== "hidden" && <div className={`${styles.place} ${intro === "leaving" ? styles.placeLeaving : ""}`} aria-hidden={intro === "leaving"}>
         <span><IconLock />우리만의 프라이빗 해변</span>
         <h1>{community.name} 바닷가</h1>
         <p>웅장한 절벽 아래, 바다를 향한 프라이빗 라운지.</p>
       </div>}
 
-      {phase === "ready" && !selected && !characterPickerOpen && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !selected && !characterPickerOpen && !stargazing.lying && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud}>
       {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
-      {phase === "ready" && fire && meRef.current && <CampfireControls
-        fire={fire} near={nearFire} disconnected={lost}
+      {phase === "ready" && !stargazing.lying && fire && meRef.current && <CampfireControls
+        fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || controlsPaused}
         onAddWood={onAddWood} onFireChange={applyFire}
         view={view} onToggleView={() => engineRef.current?.toggleView()}
       />}
-      {hint && !lost && !selected && !gotAny && !rest && phase === "ready" && (
+      {phase === "ready" && !selected && !characterPickerOpen && <div className={styles.skyControl} aria-label="별빛 자리" aria-busy={Boolean(skyPhase)}>
+        {stargazing.lying ? <>
+          <p className={styles.skyTogether}><IconMoon />함께 하늘을 보는 중<span>{stargazing.occupied} / {stargazing.capacity}</span></p>
+          <div className={styles.skyActions}>
+            <button type="button" className={styles.skyStand} disabled={Boolean(skyPhase) || lost} onClick={() => void toggleStargazing()}>
+              {skyPhase === "standing" ? "일어나는 중…" : "일어나기"}
+            </button>
+            <button type="button" className={styles.skyView} aria-pressed={view === "third"} disabled={Boolean(skyPhase)} onClick={() => engineRef.current?.toggleView()}>
+              {view === "third" ? <IconMoon /> : <IconUsers />}{view === "third" ? "하늘 보기" : "모여 보기"}
+            </button>
+          </div>
+        </> : <div className={styles.skyEntry}>
+          <button type="button" className={styles.skyGo} disabled={!restEnabled || Boolean(skyPhase) || woodBusy || lost || skyFull} onClick={() => void toggleStargazing()}>
+            <span className={styles.skyIcon} aria-hidden="true"><IconMoon /></span>
+            <span className={styles.skyCopy}><strong>{skyActionLabel}</strong><small>{!restEnabled ? "잠시 후 함께 쉬어가요" : skyPhase ? "조금만 기다려 주세요" : skyFull ? "자리가 나면 함께 누울 수 있어요" : stargazing.near ? "머리를 맞대고 잠깐 쉬어가요" : "별빛 자리로 걸어가요"}</small></span>
+            {restEnabled && <span className={styles.skyCount} aria-label={`${stargazing.capacity}자리 중 ${stargazing.occupied}명`}>{stargazing.occupied}<small>/ {stargazing.capacity}</small></span>}
+          </button>
+          {skyPhase === "walking" && <button type="button" className={styles.skyCancel} onClick={() => engineRef.current?.cancelAutoWalk()}>멈추기</button>}
+        </div>}
+      </div>}
+      {hint && !lost && !selected && !gotAny && !rest && !stargazing.lying && !skyPhase && phase === "ready" && (
         <p className={styles.hint} role="status">
           <span className={styles.touchHint}>왼쪽 조이스틱으로 걷고, 화면을 끌어 둘러봐요.</span><span className={styles.keyboardHint}>WASD·방향키로 걷고, 화면을 끌어 둘러봐요.</span><br />오두막에 앉아 쉬거나 사람을 눌러 위로를 건네요.
         </p>
       )}
 
-      {phase === "ready" && rest && (
+      {phase === "ready" && rest && !stargazing.lying && !skyPhase && (
         <button type="button" className={styles.restButton} onClick={() => engineRef.current?.toggleRest()} aria-keyshortcuts="E">
           <span className={styles.restCopy}>
             <strong>{rest.seated ? "일어나기" : "앉아서 바다 보기"}</strong>

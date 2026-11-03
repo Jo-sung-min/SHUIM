@@ -199,8 +199,8 @@ export class Cove {
     const wire = new THREE.LineBasicMaterial({ color: 0x4b4638 });
     const festoonBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 10, 8), this.bulbs, 50);
     let bulbIndex = 0;
-    for (const z of [7.5, 17.8]) {
-      const halfSpan = z > 10 ? 20 : 14.8;
+    // Keep the shared sky-viewing circle open overhead; string lights frame the fire instead.
+    for (const [z, halfSpan] of [[12.5, 14.8], [17.8, 20]]) {
       for (const x of [-halfSpan, halfSpan]) {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 5.2, 12), wood);
         post.position.set(x, 2.6, z);

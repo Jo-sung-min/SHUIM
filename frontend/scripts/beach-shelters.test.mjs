@@ -20,8 +20,9 @@ const shelters = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBo
 const { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } = shelters;
 const { resolveWalls } = await loadModule("../lib/beach/navigation.ts", {}, ["resolveWalls"]);
 const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, ...shelters }, ["Cove", "CAMPFIRE"]);
+const stargazing = await loadModule("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot"]);
 const { BeachEngine, PLACEMENT } = await loadModule("../lib/beach/engine.ts", {
-  THREE, ...shelters, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },
+  THREE, ...shelters, ...stargazing, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },
 }, ["BeachEngine", "PLACEMENT"]);
 const backendSource = await readFile(new URL("../../backend/src/main/java/kr/co/shuim/beach/BeachRoom.java", import.meta.url), "utf8");
 const boundValue = (name) => Number(backendSource.match(new RegExp(`\\b${name} = (-?\\d+(?:\\.\\d+)?)`))?.[1]);
@@ -40,6 +41,7 @@ function createWalker(x, z, yaw = Math.PI) {
     self: { x, z, yaw, moving: false, pitch: 0, bobT: 0 },
     bounds, obstacles, keys: new Set(), move: { x: 0, y: 0 }, auto: null, faceGoal: null, view: "first",
     restSeat: null, returnFromSeat: null, lastRestState: "", eyeHeight: 1.55,
+    players: new Map(), skyRest: null, lastStargazingState: "",
     camera: { position: new THREE.Vector3(), rotation: new THREE.Euler() },
     sky: { position: new THREE.Vector3() },
     handlers: { onJoystick() {}, onRestChange(value) { restEvents.push(value); } },

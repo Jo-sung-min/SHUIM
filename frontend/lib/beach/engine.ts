@@ -15,7 +15,9 @@ import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
 import { resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { SkyLanterns } from "./lanterns";
-import type { CareKind, FireState, RemotePlayer } from "./net";
+import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
+import type { CareKind, FireState, RemotePlayer, RestPresence } from "./net";
+export type { StargazingState } from "./stargazing";
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
@@ -29,6 +31,7 @@ export interface EngineHandlers {
   /** 사람을 탭해 골랐거나(플레이어) 빈 곳을 탭해 풀었을 때(null) */
   onSelect: (player: RemotePlayer | null) => void;
   onRestChange?: (state: RestState | null) => void;
+  onStargazingChange?: (state: StargazingState) => void;
   onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
@@ -279,6 +282,9 @@ export class BeachEngine {
   private returnFromSeat: { x: number; z: number } | null = null;
   private lastRestState = "";
   private eyeHeight = EYE;
+  private skyRest: StargazingSlot | null = null;
+  private beforeSkyRest: { pitch: number } | null = null;
+  private lastStargazingState = "";
 
   private daylight: Daylight;
   private hourOverride: number | null;
@@ -485,8 +491,10 @@ export class BeachEngine {
     this.fire = new CoastalFire(this.scene, FIRE.x, FIRE.z);
     this.fire.setState(this.fireState.logs, this.fireState.color);
     this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.35 });
-    this.lanterns = new SkyLanterns(this.scene, this.mobile ? 90 : 130);
+    this.lanterns = new SkyLanterns(this.scene, this.mobile ? 16 : 22);
     this.lanterns.setAmount(this.daylight.lanterns);
+    buildStargazingZone(this.scene);
+    this.updateStargazingState();
   }
 
   setFireState(state: FireState) {
@@ -503,19 +511,79 @@ export class BeachEngine {
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
   setMove(x: number, y: number) {
-    if (this.inputPaused) return;
+    if (this.inputPaused || this.skyRest) return;
     this.move.x = Math.max(-1, Math.min(1, x || 0));
     this.move.y = Math.max(-1, Math.min(1, y || 0));
   }
 
   /** 모닥불 앞(돌 둘레 바깥, 장작을 넣을 수 있는 거리 안)까지 알아서 걸어가 불을 바라본다 */
   walkToFire(): Promise<AutoWalkResult> {
-    if (this.disposed) return Promise.resolve("cancelled");
+    if (this.disposed || this.skyRest) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     const dx = this.self.x - FIRE.x, dz = this.self.z - FIRE.z;
     const d = Math.hypot(dx, dz) || 1;
     const stand = 2.3;
     return this.walkTo({ x: FIRE.x + (dx / d) * stand, z: FIRE.z + (dz / d) * stand }, { x: FIRE.x, z: FIRE.z });
+  }
+
+  /** Approach the shared circle. Claiming a mat still requires the server's response. */
+  walkToStargazing(): Promise<AutoWalkResult> {
+    if (this.disposed || this.skyRest) return Promise.resolve("cancelled");
+    if (this.restSeat) this.standUp();
+    return this.walkTo(stargazingApproach(this.self.x, this.self.z), { x: STARGAZING.x, z: STARGAZING.z });
+  }
+
+  cancelAutoWalk() {
+    this.cancelAuto("cancelled");
+    this.self.moving = false;
+    this.faceGoal = null;
+  }
+
+  get isLying() { return Boolean(this.skyRest); }
+
+  /** Only a server-confirmed claim changes posture. Repeated ticks preserve camera dragging. */
+  applyRest(state: RestPresence) {
+    if (this.disposed || !state) return;
+    const slot = claimedStargazingSlot(state);
+    if (slot) {
+      if (this.skyRest?.slot === slot.slot) return;
+      if (!this.skyRest) this.beforeSkyRest = { pitch: this.self.pitch };
+      if (this.restSeat) this.standUp();
+      this.skyRest = slot;
+      this.self.x = slot.x; this.self.z = slot.z;
+      this.self.yaw = slot.yaw; this.self.pitch = 1.25;
+      this.eyeHeight = STARGAZING.avatarY + 0.16;
+    } else if (state.pose === "standing" && this.skyRest) {
+      if (![state.x, state.z, state.yaw].every(Number.isFinite)) return;
+      this.skyRest = null;
+      this.self.x = state.x; this.self.z = state.z; this.self.yaw = state.yaw;
+      this.self.pitch = THREE.MathUtils.clamp(this.beforeSkyRest?.pitch ?? 0.07, -0.55, 0.5);
+      this.beforeSkyRest = null;
+      this.eyeHeight = this.deckHeight(state.x, state.z) + EYE;
+    } else return;
+    this.keys.clear(); this.move = { x: 0, y: 0 };
+    this.cancelAutoWalk();
+    this.followSnap = true;
+    this.updateRestState();
+    this.updateStargazingState();
+  }
+
+  private updateStargazingState() {
+    const slots = new Set<number>();
+    for (const player of this.players.values()) {
+      const slot = claimedStargazingSlot(player.data);
+      if (slot) slots.add(slot.slot);
+    }
+    if (this.skyRest) slots.add(this.skyRest.slot);
+    const state: StargazingState = {
+      near: Math.hypot(this.self.x - STARGAZING.x, this.self.z - STARGAZING.z) <= STARGAZING.nearRadius,
+      lying: Boolean(this.skyRest), occupied: slots.size, capacity: STARGAZING.capacity,
+    };
+    const key = `${state.near}:${state.lying}:${state.occupied}`;
+    if (key !== this.lastStargazingState) {
+      this.lastStargazingState = key;
+      this.handlers.onStargazingChange?.(state);
+    }
   }
 
   private walkTo(target: { x: number; z: number }, face: { x: number; z: number } | null): Promise<AutoWalkResult> {
@@ -675,7 +743,9 @@ export class BeachEngine {
     if (this.look.moved) {
       const k = e.pointerType === "mouse" ? 0.0042 : 0.0072;
       this.self.yaw -= dx * k;
-      this.self.pitch = Math.max(-0.55, Math.min(0.5, this.self.pitch - dy * k * 0.75));
+      this.self.pitch = this.skyRest
+        ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, 0.35, 1.52)
+        : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
       this.faceGoal = null;
     }
   };
@@ -709,6 +779,10 @@ export class BeachEngine {
       if (e.type === "keydown" && !e.repeat) this.toggleView();
       return;
     }
+    if (this.skyRest) {
+      if (k.startsWith("Arrow")) e.preventDefault();
+      return;
+    }
     if (!["w", "a", "s", "d", "q", "e", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift"].includes(k)) return;
     if (e.type === "keydown") this.keys.add(k);
     else this.keys.delete(k);
@@ -736,7 +810,11 @@ export class BeachEngine {
       let best = 28;
       for (const [id, p] of this.players) {
         const v = p.sprite.position.clone();
-        v.y += AVATAR_HEIGHT / 2;
+        const resting = claimedStargazingSlot(p.data);
+        if (resting) {
+          const middle = stargazingBodyPoint(resting, AVATAR_HEIGHT / 2);
+          v.set(middle.x, STARGAZING.avatarY, middle.z);
+        } else v.y += AVATAR_HEIGHT / 2;
         v.project(this.camera);
         if (v.z > 1) continue;
         const sx = ((v.x + 1) / 2) * rect.width, sy = ((1 - v.y) / 2) * rect.height;
@@ -767,7 +845,8 @@ export class BeachEngine {
         this.players.set(p.pid, node);
       }
       node.data = p;
-      node.target = { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving };
+      const resting = claimedStargazingSlot(p);
+      node.target = resting ? { x: resting.x, z: resting.z, yaw: resting.yaw, moving: false } : { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving };
       node.seen = now;
       if (node.labelNick !== p.nick) this.setLabel(node, p.nick);
     }
@@ -778,6 +857,7 @@ export class BeachEngine {
         if (this.selected === pid) this.select(null);
       }
     }
+    this.updateStargazingState();
   }
 
   private createPlayer(p: RemotePlayer): PlayerNode {
@@ -932,7 +1012,7 @@ export class BeachEngine {
 
   /* ---------------- 프레임 ---------------- */
   getSelf(): SelfState {
-    return { x: this.self.x, z: this.self.z, yaw: this.self.yaw, moving: this.self.moving };
+    return { x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.self.yaw, moving: this.skyRest ? false : this.self.moving };
   }
 
   private facing() {
@@ -1007,6 +1087,15 @@ export class BeachEngine {
   }
 
   private updateSelf(dt: number) {
+    if (this.skyRest) {
+      this.self.x = this.skyRest.x; this.self.z = this.skyRest.z; this.self.moving = false;
+      this.placeStargazingCamera(dt);
+      this.sky.position.copy(this.camera.position);
+      this.updateSelfAvatar(dt);
+      this.updateStargazingState();
+      if (this.nearFire) { this.nearFire = false; this.handlers.onFireRangeChange?.(false); }
+      return;
+    }
     const k = this.keys;
     let mx = this.move.x, my = this.move.y; // 조이스틱: 위로 밀면 앞으로
     if (k.has("w") || k.has("ArrowUp")) my += 1;
@@ -1056,11 +1145,33 @@ export class BeachEngine {
     this.sky.position.copy(this.camera.position);
     this.updateSelfAvatar(dt);
     this.updateRestState();
+    this.updateStargazingState();
     const near = Math.hypot(this.self.x - FIRE.x, this.self.z - FIRE.z) <= 4.6;
     if (near !== this.nearFire) { this.nearFire = near; this.handlers.onFireRangeChange?.(near); }
   }
 
-  /** 3인칭 카메라: 내 캐릭터 뒤 위에서 따라간다. 둘러보기(yaw·pitch)가 그대로 궤도를 돌린다. 벽·경계에 닿으면 가까이 붙는다 */
+  /** Lying eyes look at the sky; the alternate camera keeps all eight mats in view. */
+  private placeStargazingCamera(dt: number) {
+    const resting = this.skyRest;
+    if (!resting) return;
+    if (this.view === "first") {
+      const head = stargazingBodyPoint(resting, 1.42);
+      this.camera.position.set(head.x, STARGAZING.avatarY + 0.16, head.z);
+      this.camera.rotation.set(this.self.pitch, this.self.yaw, 0, "YXZ");
+      return;
+    }
+    const elevation = THREE.MathUtils.clamp(this.self.pitch, 0.88, 1.5);
+    const reach = stargazingCameraDistance(this.camera.fov, this.camera.aspect, elevation);
+    const horizontal = Math.cos(elevation) * reach;
+    const wanted = new THREE.Vector3(STARGAZING.x + Math.sin(this.self.yaw) * horizontal,
+      Math.sin(elevation) * reach + 0.4, STARGAZING.z + Math.cos(this.self.yaw) * horizontal);
+    if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
+    else this.followCam.lerp(wanted, Math.min(1, dt * 10));
+    this.camera.position.copy(this.followCam);
+    this.camera.lookAt(STARGAZING.x, 0.05, STARGAZING.z);
+  }
+
+  /** Follow the standing character, shortening the orbit near shelter walls. */
   private placeFollowCamera(dt: number) {
     const x = this.self.x, z = this.self.z;
     const focusY = this.deckHeight(x, z) + (this.restSeat ? 1.0 : 1.25);
@@ -1095,10 +1206,16 @@ export class BeachEngine {
     n.sprite.visible = shown;
     n.shadow.visible = shown;
     if (!shown) return;
+    if (this.skyRest) {
+      applyLyingTransform(n.sprite, this.skyRest);
+      n.shadow.visible = false;
+      this.setFrameOn(n.tex, CHAR_VIEW.front, CHAR_ANIM.idle.from, this.skin);
+      return;
+    }
     const deck = this.deckHeight(this.self.x, this.self.z);
     const cam = this.camera.position;
     n.sprite.position.set(this.self.x, deck, this.self.z);
-    n.sprite.rotation.y = Math.atan2(cam.x - this.self.x, cam.z - this.self.z);
+    n.sprite.rotation.set(0, Math.atan2(cam.x - this.self.x, cam.z - this.self.z), 0, "YXZ");
     n.shadow.position.set(this.self.x, deck + 0.015, this.self.z);
     n.animT += dt;
     this.setFrameOn(n.tex, viewFor(this.self.yaw, this.self.x, this.self.z, cam), charFrame(this.self.moving, n.animT), this.skin);
@@ -1134,7 +1251,7 @@ export class BeachEngine {
 
   /** A reachable bench offers a sea-facing seat; walking or the same action gets up. */
   toggleRest() {
-    if (this.disposed) return;
+    if (this.disposed || this.skyRest) return;
     if (this.restSeat) { this.standUp(); return; }
     const seat = this.nearbySeat();
     if (!seat) return;
@@ -1176,30 +1293,48 @@ export class BeachEngine {
     const smooth = Math.min(1, dt * 7);
     let selectedNode: PlayerNode | null = null;
     for (const [pid, p] of this.players) {
+      const resting = claimedStargazingSlot(p.data);
       const far = Math.hypot(p.target.x - p.cur.x, p.target.z - p.cur.z);
-      if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
+      if (resting) { p.cur.x = resting.x; p.cur.z = resting.z; p.cur.yaw = resting.yaw; }
+      else if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
       else { p.cur.x += (p.target.x - p.cur.x) * smooth; p.cur.z += (p.target.z - p.cur.z) * smooth; }
-      const walking = p.target.moving || far > 0.12;
+      const walking = !resting && (p.target.moving || far > 0.12);
       p.animT += dt;
       const frame = charFrame(walking, p.animT);
       const turn = p.target.yaw - p.cur.yaw;
       p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
-      p.sprite.rotation.y = Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z); // 늘 카메라를 본다
-      this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
+      if (resting) {
+        applyLyingTransform(p.sprite, resting);
+        this.setFrame(p, CHAR_VIEW.front, CHAR_ANIM.idle.from, p.data.skin);
+      } else {
+        p.sprite.rotation.set(0, Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z), 0, "YXZ");
+        this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
+      }
       const dl = Math.hypot(p.cur.x - cam.x, p.cur.z - cam.z);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
-      p.sprite.position.set(p.cur.x, deck + hop, p.cur.z);
+      if (!resting) p.sprite.position.set(p.cur.x, deck + hop, p.cur.z);
+      p.shadow.visible = !resting;
       p.shadow.position.set(p.cur.x, deck + 0.015, p.cur.z);
       if (p.label) {
-        p.label.position.set(p.cur.x, deck + AVATAR_HEIGHT + 0.14 + hop, p.cur.z);
-        p.label.visible = dl < 24;
+        if (resting) {
+          const outside = stargazingBodyPoint(resting, -0.38);
+          p.label.position.set(outside.x, 0.3, outside.z);
+          p.label.scale.set(1.5, 0.375, 1);
+          p.label.visible = pid === this.selected && dl > 2.5 && dl < 20;
+        } else {
+          p.label.position.set(p.cur.x, deck + AVATAR_HEIGHT + 0.14 + hop, p.cur.z);
+          p.label.scale.set(2.2, 0.55, 1);
+          p.label.visible = dl > 2.5 && dl < 24;
+        }
       }
       if (pid === this.selected) selectedNode = p;
     }
     if (selectedNode) {
-      this.ring.position.set(selectedNode.cur.x, this.deckHeight(selectedNode.cur.x, selectedNode.cur.z) + 0.03, selectedNode.cur.z);
+      const resting = claimedStargazingSlot(selectedNode.data);
+      const point = resting ? stargazingBodyPoint(resting, AVATAR_HEIGHT / 2) : selectedNode.cur;
+      this.ring.position.set(point.x, resting ? STARGAZING.avatarY + 0.01 : this.deckHeight(point.x, point.z) + 0.03, point.z);
       const s = 1 + Math.sin(this.time * 5) * 0.07;
       this.ring.scale.set(s, s, 1);
       this.ringMat.opacity = 0.75 + Math.sin(this.time * 5) * 0.2;
@@ -1242,13 +1377,16 @@ export class BeachEngine {
     }
     for (const f of this.fx) { this.scene.remove(f.sprite); f.mat.dispose(); }
     this.fx = [];
+    this.lanterns?.dispose();
+    this.lanterns = null;
     const textures = new Set<THREE.Texture>();
     const materials = new Set<THREE.Material>();
+    const geometries = new Set<THREE.BufferGeometry>();
     this.scene.traverse((o) => {
       if (o instanceof THREE.InstancedMesh) o.dispose();
       if (o instanceof THREE.DirectionalLight || o instanceof THREE.PointLight) o.shadow.dispose();
       const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
+      if (m.geometry) geometries.add(m.geometry);
       const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
       for (const mat of mats) {
         for (const value of Object.values(mat)) if (value instanceof THREE.Texture) textures.add(value);
@@ -1258,6 +1396,7 @@ export class BeachEngine {
         materials.add(mat);
       }
     });
+    for (const geometry of geometries) geometry.dispose();
     for (const texture of textures) texture.dispose();
     for (const material of materials) material.dispose();
     this.scene.clear();

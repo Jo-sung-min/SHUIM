@@ -85,6 +85,17 @@ public class BeachService {
         if (binding != null) binding.room().leave(ticket);
     }
 
+    public BeachRoom.RestPresence rest(String ticket, String action, String spotId) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        try {
+            return binding.room().rest(ticket, action, spotId);
+        } catch (ApiException e) {
+            if (e.status() == 410) tickets.remove(ticket, binding);
+            throw e;
+        }
+    }
+
     public int count(String communityId) {
         RoomBinding binding = rooms.get(communityId);
         return binding == null ? 0 : binding.room().count();

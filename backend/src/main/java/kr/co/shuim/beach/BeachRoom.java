@@ -1,5 +1,6 @@
 package kr.co.shuim.beach;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.config.ApiException;
 
@@ -40,6 +41,9 @@ public class BeachRoom {
     /** 한 번에 내려주는 다른 사람 수 (가까운 순) */
     public static final int MAX_PLAYERS = 40;
     public static final Set<String> CARE_KINDS = Set.of("comfort", "hug");
+    public static final String REST_SPOT = "starlight";
+    public static final int REST_SLOTS = 8;
+    public static final double REST_X = 7, REST_Z = 7, REST_FEET_RADIUS = 2.65, REST_REACH = 5.5;
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
@@ -52,9 +56,28 @@ public class BeachRoom {
     public record CareEvent(String kind, String fromPid, String fromId, String fromNick, String toPid, String toId, String toNick, long at) {}
 
     /** 다른 사람에게 보여 주는 모습. id 는 유저 id (위로를 보낼 때 쓴다), pid 는 이번 방문의 공개 id */
-    public record PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving) {
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
+                             String pose, String spotId, Integer slot) {
+        public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving) {
+            this(pid, id, nick, skin, x, z, yaw, moving, "standing", null, null);
+        }
         static PlayerView of(Presence p) {
-            return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving);
+            synchronized (p) {
+                return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving,
+                    p.restSlot == null ? "standing" : "lying", p.restSlot == null ? null : REST_SPOT, p.restSlot);
+            }
+        }
+    }
+
+    /** Position and pose are returned together so clients can recover the authoritative resting state. */
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record RestPresence(String pose, String spotId, Integer slot, double x, double z, double yaw) {
+        static RestPresence of(Presence p) {
+            synchronized (p) {
+                return new RestPresence(p.restSlot == null ? "standing" : "lying", p.restSlot == null ? null : REST_SPOT,
+                    p.restSlot, p.x, p.z, p.yaw);
+            }
         }
     }
 
@@ -63,12 +86,16 @@ public class BeachRoom {
 
     /** tick 응답. care 는 위로를 보내지 않았으면 null ("sent" | "cooldown" | "gone") */
     public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
-                             BeachFireService.FireView fire, long serverTime) {
+                             BeachFireService.FireView fire, long serverTime, RestPresence selfRest) {
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care) {
-            this(players, events, count, received, care, null, 0);
+            this(players, events, count, received, care, null, 0, null);
+        }
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                          BeachFireService.FireView fire, long serverTime) {
+            this(players, events, count, received, care, fire, serverTime, null);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, value.serverTime());
+            return new TickResult(players, events, count, received, care, value, value.serverTime(), selfRest);
         }
     }
 
@@ -83,6 +110,8 @@ public class BeachRoom {
         private final Set<String> excluded;
         private volatile double x, z, yaw;
         private volatile boolean moving;
+        private volatile Integer restSlot;
+        private double standingX, standingZ, standingYaw;
         private volatile long lastSeen;
         private volatile long lastCareAt = NEVER;
         private final Map<String, Long> lastCareTo = new ConcurrentHashMap<>();
@@ -190,7 +219,7 @@ public class BeachRoom {
     }
 
     /** 나간다. 모르는 티켓이어도 조용히 지나간다 */
-    public void leave(String ticket) {
+    public synchronized void leave(String ticket) {
         if (ticket == null) return;
         Presence p = byTicket.get(ticket);
         if (p != null && !p.bot()) byTicket.remove(ticket, p);
@@ -201,6 +230,55 @@ public class BeachRoom {
         if (ticket == null) return null;
         Presence p = byTicket.get(ticket);
         return p != null && live(p, clock.getAsLong()) ? p : null;
+    }
+
+    /** Slot assignment, release and expiry share the room lock. A ticket cannot reserve another room's slot. */
+    public synchronized RestPresence rest(String ticket, String action, String spotId) {
+        long now = clock.getAsLong();
+        sweep(now);
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot()) throw ApiException.gone(BeachController.GONE);
+        if (!"lie".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("눕기나 일어나기를 골라 주세요.");
+        if (spotId != null && !REST_SPOT.equals(spotId)) throw ApiException.badRequest("별빛 자리를 다시 골라 주세요.");
+        synchronized (me) {
+            if ("stand".equals(action)) {
+                if (me.restSlot != null) {
+                    me.x = clamp(me.standingX, MIN_X, MAX_X, REST_X);
+                    me.z = clamp(me.standingZ, MIN_Z, MAX_Z, REST_Z + REST_REACH);
+                    me.yaw = me.standingYaw;
+                    me.restSlot = null;
+                }
+                me.moving = false;
+                me.lastSeen = now;
+                return RestPresence.of(me);
+            }
+            if (me.restSlot != null) {
+                me.lastSeen = now;
+                return RestPresence.of(me); // Lost responses can be retried without taking another slot.
+            }
+            if (Math.hypot(me.x - REST_X, me.z - REST_Z) > REST_REACH) {
+                throw ApiException.badRequest("별빛 자리 가까이에서 누워 주세요.");
+            }
+            boolean[] used = new boolean[REST_SLOTS];
+            for (Presence other : byTicket.values()) {
+                Integer slot = other.restSlot;
+                if (slot != null && live(other, now)) used[slot] = true;
+            }
+            int slot = 0;
+            while (slot < REST_SLOTS && used[slot]) slot++;
+            if (slot == REST_SLOTS) throw new ApiException(409, "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
+            me.standingX = me.x;
+            me.standingZ = me.z;
+            me.standingYaw = me.yaw;
+            double theta = slot * Math.PI * 2 / REST_SLOTS;
+            me.x = REST_X + Math.sin(theta) * REST_FEET_RADIUS;
+            me.z = REST_Z + Math.cos(theta) * REST_FEET_RADIUS;
+            me.yaw = theta;
+            me.restSlot = slot;
+            me.moving = false;
+            me.lastSeen = now;
+            return RestPresence.of(me);
+        }
     }
 
     /* ---------- tick ---------- */
@@ -219,17 +297,23 @@ public class BeachRoom {
         maybeSweep(now);
         Presence me = ticket == null ? null : byTicket.get(ticket);
         if (me == null || me.bot()) return null;
-        if (!live(me, now)) {
-            byTicket.remove(ticket, me);
-            return null;
+        synchronized (me) {
+            if (byTicket.get(ticket) != me || !live(me, now)) {
+                byTicket.remove(ticket, me);
+                return null;
+            }
+            Integer selectedSkin = selectedSkin(character);
+            if (selectedSkin != null) me.skin = selectedSkin;
+            if (me.restSlot == null) {
+                me.x = clamp(x, MIN_X, MAX_X, me.x);
+                me.z = clamp(z, MIN_Z, MAX_Z, me.z);
+                if (Double.isFinite(yaw)) me.yaw = yaw;
+                me.moving = moving;
+            } else {
+                me.moving = false;
+            }
+            me.lastSeen = now;
         }
-        Integer selectedSkin = selectedSkin(character);
-        if (selectedSkin != null) me.skin = selectedSkin;
-        me.x = clamp(x, MIN_X, MAX_X, me.x);
-        me.z = clamp(z, MIN_Z, MAX_Z, me.z);
-        if (Double.isFinite(yaw)) me.yaw = yaw;
-        me.moving = moving;
-        me.lastSeen = now;
         advanceBots(now);
 
         // 위로는 inbox 를 비우기 전에 보내서, 보낸 사람도 같은 응답에서 자기 효과를 본다
@@ -248,7 +332,8 @@ public class BeachRoom {
             .toList();
         List<CareEvent> events = new ArrayList<>();
         for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
-        return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get()), care);
+        return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get()),
+            care, null, now, RestPresence.of(me));
     }
 
     /** "sent" | "cooldown" | "gone". 종류가 이상하면 400 */
@@ -298,9 +383,11 @@ public class BeachRoom {
         if (now - last >= SWEEP_EVERY_MS && lastSweep.compareAndSet(last, now)) sweep(now);
     }
 
-    private void sweep(long now) {
+    private synchronized void sweep(long now) {
         lastSweep.set(now);
-        byTicket.values().removeIf(p -> !p.bot() && !live(p, now));
+        byTicket.values().removeIf(p -> {
+            synchronized (p) { return !p.bot() && !live(p, now); }
+        });
         advanceBots(now);
     }
 

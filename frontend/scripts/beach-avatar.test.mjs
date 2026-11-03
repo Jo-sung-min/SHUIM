@@ -21,8 +21,9 @@ const { cellW: CELL_W, cellH: CELL_H } = CHAR_ATLAS;
 /** 승인된 남녀 정면 원본의 턱 위치. 머리 높이는 전체 키의 약 1/3이다. */
 const CHINS = [40, 38];
 const frameColumn = (node) => Math.round(node.tex.offset.x * CHAR_ATLAS.cols);
+const stargazing = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot", "applyLyingTransform", "stargazingBodyPoint"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...atlas, CAMPFIRE: { x: 0, z: 12 }, performance,
+  THREE, ...atlas, ...stargazing, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ width: 0, height: 0, getContext: () => null }) },
 }, ["BeachEngine"]);
 
@@ -74,7 +75,7 @@ function fixture(yaw = 0) {
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
     scene, camera, charTex: new THREE.Texture(), daylight: { tint: [1, 1, 1] },
     shadowGeo: new THREE.PlaneGeometry(1, 1), shadowMat: new THREE.MeshBasicMaterial(),
-    players: new Map(), selected: null, time: 0,
+    players: new Map(), selected: null, time: 0, self: { x: 0, z: 3 },
     ring: new THREE.Mesh(), ringMat: new THREE.MeshBasicMaterial(),
     canvas: { getBoundingClientRect: () => ({ width: 800, height: 600 }) },
     handlers: { onSelect: (value) => selected.push(value) },

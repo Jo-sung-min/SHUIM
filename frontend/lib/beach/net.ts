@@ -19,6 +19,17 @@ export interface EnterResponse {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   count: number;
   fire: FireState;
+  restEnabled?: boolean;
+}
+
+/** A shared rest slot is assigned by the server, never claimed locally. */
+export interface RestPresence {
+  pose: "standing" | "lying";
+  spotId: string | null;
+  slot: number | null;
+  x: number;
+  z: number;
+  yaw: number;
 }
 
 export type FireColor = "amber" | "rose" | "aurora" | "ocean" | "violet";
@@ -44,6 +55,9 @@ export interface RemotePlayer {
   z: number;
   yaw: number;
   moving: boolean;
+  pose?: RestPresence["pose"];
+  spotId?: string | null;
+  slot?: number | null;
 }
 
 export type CareKind = "comfort" | "hug";
@@ -76,6 +90,7 @@ export interface TickResponse {
   received: { comfort: number; hug: number };
   care?: "sent" | "cooldown" | "gone";
   fire: FireState;
+  selfRest?: RestPresence;
 }
 
 export interface BeachCount {
@@ -122,9 +137,24 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   return json;
 }
 
-export const enterBeach = (communityId: string, character?: BeachCharacter) => post<EnterResponse>("/api/beach/enter", { communityId, character });
-export const tickBeach = (body: TickRequest) => post<TickResponse>("/api/beach/tick", body);
+export const enterBeach = (communityId: string, character?: BeachCharacter) => post<EnterResponse>("/api/beach/enter", { communityId, character }, { signal: AbortSignal.timeout(8000) });
+export const tickBeach = (body: TickRequest) => post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
 export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId });
+
+export async function setBeachRest(ticket: string, action: "lie" | "stand"): Promise<RestPresence> {
+  let state: RestPresence;
+  try {
+    state = await post<RestPresence>("/api/beach/rest", { ticket, action, ...(action === "lie" ? { spotId: "starlight" } : {}) }, { signal: AbortSignal.timeout(8000) });
+  } catch (cause) {
+    if (cause instanceof Error && (cause.name === "AbortError" || cause.name === "TimeoutError")) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
+    throw cause;
+  }
+  const validPose = state && (state.pose === "standing"
+    ? state.spotId === null && state.slot === null
+    : state.pose === "lying" && state.spotId === "starlight" && Number.isInteger(state.slot) && state.slot! >= 0 && state.slot! < 8);
+  if (!validPose || ![state.x, state.z, state.yaw].every(Number.isFinite)) throw new Error("별빛 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  return state;
+}
 
 /** 나가기. 화면을 닫는 중에도 끝까지 가도록 keepalive. 실패해도 10초 뒤 서버가 알아서 치운다 */
 export function leaveBeach(ticket: string): void {

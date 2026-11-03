@@ -88,7 +88,8 @@ button.glass:active { transform: scale(0.96); }
 .characterSprite { display: block; width: 72px; height: 104px; flex: none; background: url("/beach/chars-v2.png") no-repeat; background-size: 2880px 208px; image-rendering: pixelated; }
 .characterPanel p { margin: 10px 0 0; font-size: 11px; font-weight: 400; line-height: 1.5; color: #877a6d; text-align: center; }
 @media (max-width: 420px) { .timeChip { display: none; } }
-.place { position: absolute; top: calc(74px + env(safe-area-inset-top)); left: 24px; max-width: min(88%, 420px); pointer-events: none; text-shadow: 0 2px 12px #182b30b3; }
+.place { position: absolute; top: calc(74px + env(safe-area-inset-top)); left: 24px; max-width: min(88%, 420px); pointer-events: none; text-shadow: 0 2px 12px #182b30b3; opacity: 1; transition: opacity .7s ease-out; }
+.placeLeaving { opacity: 0; }
 .place > span { display: inline-flex; align-items: center; gap: 5px; color: #fff3dc; font-size: 11px; font-weight: 600; letter-spacing: .03em; }
 .place svg { width: 12px; height: 12px; }
 .place h1 { margin: 6px 0; font-size: clamp(20px, 3vw, 28px); font-weight: 800; letter-spacing: -.04em; line-height: 1.25; overflow-wrap: anywhere; }
@@ -156,6 +157,29 @@ button.glass:active { transform: scale(0.96); }
 .restButton:active { transform: scale(.98); }
 .restButton:focus-visible { outline: 3px solid #f7d3a1; outline-offset: 4px; }
 @media (pointer: coarse) { .restKey { display: none; } }
+
+.skyControl { width: 100%; padding: 11px 13px; border: 1px solid #dcd9ff48; border-radius: 20px; background: #20263dbf; color: #f7f4ff; box-shadow: inset 0 1px 0 #ffffff17, 0 10px 32px -18px #080c25bf; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); pointer-events: auto; }
+.skyEntry { display: flex; align-items: center; gap: 9px; }
+.skyGo { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 49px; flex: 1; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: opacity .15s, transform .15s; }
+.skyIcon { display: grid; place-items: center; flex: none; width: 35px; height: 35px; border-radius: 12px; background: #e8dbff16; color: #efe3bf; }
+.skyIcon svg { width: 21px; height: 21px; }
+.skyCopy { display: grid; gap: 3px; min-width: 0; }
+.skyCopy strong { font-size: 13px; font-weight: 700; line-height: 1.35; letter-spacing: -.025em; }
+.skyCopy small { font-size: 10.5px; font-weight: 400; line-height: 1.45; color: #d4d5e4ba; }
+.skyCount { display: flex; align-items: baseline; gap: 3px; flex: none; margin-left: auto; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.skyCount small { font-size: 10px; font-weight: 400; color: #d4d5e49c; }
+.skyCancel, .skyStand, .skyView { min-height: 42px; padding: 9px 13px; border: 1px solid #e5dfff42; border-radius: 13px; background: #ebe5ff12; color: #f6f2ff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s, transform .15s; }
+.skyCancel { flex: none; padding: 8px 10px; font-size: 11px; }
+.skyTogether { display: flex; align-items: center; gap: 6px; margin: 0 1px 10px; font-size: 11px; color: #e8e0f7; }
+.skyTogether > svg { width: 14px; height: 14px; color: #f3dfae; }
+.skyTogether > span { margin-left: auto; color: #d4d5e4b3; font-variant-numeric: tabular-nums; }
+.skyActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.skyStand { background: #eae4f4; color: #3f3d51; border-color: transparent; }
+.skyView { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.skyView svg { width: 16px; height: 16px; }
+.skyGo:active, .skyCancel:active, .skyStand:active, .skyView:active { transform: scale(.97); }
+.skyGo:disabled, .skyCancel:disabled, .skyStand:disabled, .skyView:disabled { opacity: .48; cursor: default; transform: none; }
+.skyControl button:focus-visible { outline: 3px solid #f1d7a2; outline-offset: 4px; }
 
 /* 사람을 골랐을 때: 닉네임과 두 버튼 */
 .panel {
@@ -251,6 +275,6 @@ button.glass:active { transform: scale(0.96); }
 
 @media (prefers-reduced-motion: reduce) {
   .panel, .hint, .characterPanel { animation: none; }
-  .restButton, .characterTrigger, .characterChoice { transition: none; }
+  .restButton, .characterTrigger, .characterChoice, .place, .skyGo, .skyCancel, .skyStand, .skyView { transition: none; }
   .flash { animation-duration: 0.8s; }
 }
