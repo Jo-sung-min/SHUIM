@@ -42,6 +42,8 @@ class LocalMomentTest {
     void praiseStillHasThreeThemesWithNoRecords() {
         Moment m = TodayService.localPraise(req("praise", List.of(), List.of()));
         assertEquals(3, m.lines().size());
+        assertTrue(m.lines().get(0).contains("손대기 힘들 만큼 지쳐"), "기록이 없으면 부족이 아니라 지침으로 읽는다: " + m.lines().get(0));
+        for (String l : m.lines()) assertFalse(l.contains("기록이 많지") || l.contains("기록이 적"), "기록이 부족하다는 말 금지: " + l);
         assertTrue(m.lines().get(2).contains("칭찬받기를 눌렀다는"));
     }
 
@@ -64,7 +66,8 @@ class LocalMomentTest {
     void loveStillHasThreeParagraphsWithNoRecords() {
         Moment m = TodayService.localLove(req("love", List.of(), List.of()));
         assertEquals(3, m.lines().size());
-        assertTrue(m.lines().get(0).contains("지쳤겠구나"), "기록이 없어도 공감으로 시작");
+        assertTrue(m.lines().get(0).contains("손대기 힘들 만큼 지쳤구나"), "기록이 없으면 부족이 아니라 지침으로 읽는다: " + m.lines().get(0));
+        for (String l : m.lines()) assertFalse(l.contains("기록이 많지") || l.contains("기록이 적"), "기록이 부족하다는 말 금지: " + l);
         assertTrue(m.lines().get(1).contains("네 잘못이 아니야"));
     }
 }

@@ -108,7 +108,7 @@
 .sectionHeading h3 small { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--text-2); }
 .sectionHeading span { font-size: 13px; color: var(--text-2); }
 /* 제목 옆 작은 "추가" 버튼 (나를 위한 시간 칸 추가) */
-.sectionAdd { display: inline-flex; align-items: center; gap: 3px; min-height: 32px; padding: 4px 11px 4px 8px; border-radius: 999px; border: 1px solid var(--lg-line); background-color: var(--lg-fill); background-image: var(--lg-sheen); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow); color: var(--text-2); font-size: 13px; font-weight: 650; }
+.sectionAdd { display: inline-flex; flex: none; align-items: center; gap: 3px; min-height: 32px; margin-left: 12px; white-space: nowrap; padding: 4px 11px 4px 8px; border-radius: 999px; border: 1px solid var(--lg-line); background-color: var(--lg-fill); background-image: var(--lg-sheen); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow); color: var(--text-2); font-size: 13px; font-weight: 650; }
 .sectionAdd svg { width: 15px; height: 15px; }
 .sectionAdd:active { background-color: var(--lg-fill-strong); }
 /* 나를 위한 시간: 네모난 글라스 타일 4칸. 뒤에 네 색의 흐린 빛을 깔아 유리가 비쳐 보이게 하고,

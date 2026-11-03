@@ -282,6 +282,7 @@ public class TodayService {
         List<String> lines = new ArrayList<>();
         List<RecentDay> recent = b.recent();
         int recordedDays = recent.size() + (b.today().isEmpty() ? 0 : 1);
+        boolean noRecords = recordedDays == 0 && b.todayDid().isEmpty(); // 아무것도 손대지 못할 만큼 지친 날
 
         // 기록에서 힘들었던 날과 다시 올라온 날을 찾는다
         RecentDay lowDay = recent.stream().filter(r -> Optional.ofNullable(avg(r.record())).orElse(0.0) <= -2).findFirst().orElse(null);
@@ -312,6 +313,9 @@ public class TodayService {
         } else if (tired != null) {
             lines.add("몸 기록에 " + josa("\"" + tired + "\"", "이라고", "라고") + " 썼더라. 지친 몸으로 하루를 버티는 건 누구한테나 벅찬 일이야. "
                 + "오늘 좀 느려도 괜찮아. 그건 네 잘못이 아니야.");
+        } else if (noRecords) {
+            lines.add("아무것도 손대기 힘들 만큼 지쳐 있었구나. 뭔가를 적을 힘조차 남지 않은 날이 있다는 거, 알아. "
+                + "그건 네가 게을러서가 아니라 그만큼 많이 쓰고 버텨 왔다는 뜻이야. 오늘은 아무것도 안 해도 괜찮아.");
         } else {
             lines.add("요즘 너한테 좀 엄격했지. 잘한 건 당연하게 넘기고 못한 것만 오래 들여다봤을 거야. "
                 + "오늘은 그 잣대를 잠깐 내려놔도 괜찮아. 넌 이미 충분히 애쓰고 있어.");
@@ -324,7 +328,7 @@ public class TodayService {
             lines.add(recordedDays + "일 동안 너를 기록해 왔더라. 지치고 귀찮은 날에도 너를 들여다본 거잖아. "
                 + "그게 얼마나 마음을 써야 하는 일인지 알아. 혼자 조용히 애쓰고 있었구나.");
         } else {
-            lines.add("오늘 여기까지 오느라 마음이 많이 무거웠을 거야. 괜찮은 척하느라 애쓴 날도 있었겠지. "
+            lines.add("그런 몸과 마음으로도 오늘 여기까지 왔잖아. 괜찮은 척하느라 애쓴 날도 있었겠지. "
                 + "그걸 혼자 감당하느라 힘들었겠다. 그 마음, 나는 알아.");
         }
 
@@ -364,6 +368,7 @@ public class TodayService {
      */
     static Moment localLove(Request b) {
         List<String> lines = new ArrayList<>();
+        boolean noRecords = b.recent().isEmpty() && b.today().isEmpty() && b.todayDid().isEmpty(); // 아무것도 손대지 못할 만큼 지친 날
 
         // 기록에서 힘들었던 말을 찾는다: 마음 메모(힘든 말) → 몸 메모(잠 부족·커피)
         List<String> mindNotes = new ArrayList<>();
@@ -388,6 +393,9 @@ public class TodayService {
         } else if (todaySched.size() >= 3) {
             lines.add("오늘 할 일이 " + todaySched.size() + "개나 있네. 그걸 다 떠안고 있는 마음이 얼마나 무거울까. "
                 + "많이 버거웠겠구나. 해야 할 일 사이에서 너를 챙길 틈도 없었을 거야.");
+        } else if (noRecords) {
+            lines.add("아무것도 손대기 힘들 만큼 지쳤구나. 뭔가를 적을 힘조차 남지 않았던 거잖아. "
+                + "그 정도로 버거웠을 하루를 혼자 지나왔을 너를 생각하면 마음이 쓰여. 많이 힘들었지.");
         } else {
             lines.add("여기까지 오느라 많이 지쳤겠구나. 말로 다 하지 못한 마음도 있었을 거야. "
                 + "괜찮은 척하느라 애쓴 날도 있었겠지. 그 마음, 여기서는 그냥 내려놔도 돼.");
@@ -406,6 +414,9 @@ public class TodayService {
         } else if (mindNote != null || tired != null) {
             lines.add("그런 날에도 너는 너를 놓지 않고 기록으로 남겼어. 그만큼 애썼다는 뜻이야. "
                 + "힘든 건 네가 약해서가 아니라, 그만큼 열심히 살아 내고 있어서야. 그러니까 너무 자책하지 않아도 돼.");
+        } else if (noRecords) {
+            lines.add("손대지 못한 건 게을러서가 아니라 그만큼 지쳤다는 뜻이야. 그건 네 잘못이 아니야. "
+                + "쉬어야 할 때 쉬지 못하면 누구라도 멈추게 돼. 오늘은 아무것도 안 해도 괜찮아, 그럴 수 있어.");
         } else {
             lines.add("오늘 여기 와서 너를 돌보려고 한 것만으로도 충분해. 잘 해내지 못한 것 같은 날이 있어도, 그건 네 잘못이 아니야. "
                 + "누구나 그런 날이 있어, 그럴 수 있어. 오늘은 너한테 조금 덜 엄격해도 괜찮아.");
