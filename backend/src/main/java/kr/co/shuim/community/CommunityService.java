@@ -9,6 +9,8 @@ import kr.co.shuim.common.Ids;
 import kr.co.shuim.community.Model.*;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.profile.BadgeService;
+import kr.co.shuim.points.PointsService;
+import kr.co.shuim.points.PointsPolicy;
 import kr.co.shuim.upload.S3Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,16 +37,22 @@ public class CommunityService {
     private final boolean simulate;
     private final BlockService blocks;
     private final BadgeService badges;
+    private final PointsService points;
 
     @Autowired
     public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env,
-                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks, BadgeService badges) {
+                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks, BadgeService badges, PointsService points) {
         this.jdbc = jdbc;
         this.json = json;
         this.s3 = s3;
         this.simulate = simulate && !Arrays.asList(env.getActiveProfiles()).contains("prod");
         this.blocks = blocks;
         this.badges = badges;
+        this.points = points;
+    }
+
+    public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env, boolean simulate, BlockService blocks, BadgeService badges) {
+        this(jdbc, json, s3, env, simulate, blocks, badges, new PointsService(jdbc));
     }
 
     /** 테스트용: 배지 판정까지 같은 DB 로 */
@@ -89,16 +97,17 @@ public class CommunityService {
         });
 
         Map<String, String> titles = badges.allTitles(); // 닉네임 옆 칭호
-        List<User> allUsers = jdbc.sql("SELECT id, nick, role, blocked_at, blocked_reason FROM users")
-            .query((rs, i) -> new User(rs.getString("id"), rs.getString("nick"), "admin".equals(rs.getString("role")) ? "admin" : "user", Db.ms(rs, "blocked_at"), rs.getString("blocked_reason"), titles.get(rs.getString("id")))).list();
-        User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null));
+        List<User> allUsers = jdbc.sql("SELECT id, nick, role, blocked_at, blocked_reason, is_anonymous FROM users")
+            .query((rs, i) -> new User(rs.getString("id"), rs.getString("nick"), "admin".equals(rs.getString("role")) ? "admin" : "user", Db.ms(rs, "blocked_at"), rs.getString("blocked_reason"), titles.get(rs.getString("id")),
+                !rs.getBoolean("is_anonymous") && !PointsPolicy.SAMPLE_USERS.contains(rs.getString("id")))).list();
+        User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null, null, false));
         List<User> users = new ArrayList<>(allUsers.stream().filter(u -> !u.id().equals(me.id())).toList());
 
-        List<Post> posts = jdbc.sql("SELECT p.*, c.name AS circle_name, c.slug AS circle_slug FROM shout_posts p LEFT JOIN communities c ON c.id = p.community_id")
+        List<Post> posts = jdbc.sql("SELECT p.*, c.name AS circle_name, c.slug AS circle_slug, a.comment_id AS accepted_comment_id FROM shout_posts p LEFT JOIN communities c ON c.id = p.community_id LEFT JOIN comment_acceptances a ON a.post_id=p.id")
             .query((rs, i) -> new Post(
             rs.getString("id"), rs.getString("cat"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "post:" + rs.getString("id")), reportsOf(reportMap, "post:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
-            Db.textArray(rs, "images"), rs.getString("community_id"), rs.getObject("post_no", Integer.class), rs.getString("circle_name"), rs.getString("circle_slug"))).list();
+            Db.textArray(rs, "images"), rs.getString("community_id"), rs.getObject("post_no", Integer.class), rs.getString("circle_name"), rs.getString("circle_slug"), rs.getString("accepted_comment_id"))).list();
         List<Comment> comments = new ArrayList<>(jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
             rs.getString("id"), rs.getString("post_id"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
@@ -327,8 +336,10 @@ public class CommunityService {
             if (!postId.equals(p.postId())) throw ApiException.badRequest("다른 글의 댓글에는 답글을 달 수 없어요");
             parent = p.parentId() != null ? p.parentId() : parentId;
         }
+        String commentId = Ids.uid();
         jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text, parent_id) VALUES (?, ?, ?, ?, ?, ?)")
-            .param(Ids.uid()).param(kind).param(postId).param(me.id()).param(text(body, 300)).param(parent).update();
+            .param(commentId).param(kind).param(postId).param(me.id()).param(text(body, 300)).param(parent).update();
+        points.commentCreated(commentId);
         badges.refresh(me.id());
         return loadStore(me);
     }
@@ -338,6 +349,15 @@ public class CommunityService {
     public Store deleteComment(DbUser me, String id) {
         Db.lockCommunity(jdbc);
         jdbc.sql("DELETE FROM comments WHERE id = ? AND author_id = ?").param(id).param(me.id()).update();
+        return loadStore(me);
+    }
+
+    /** The author selects one top-level comfort comment. The selection cannot be replaced. */
+    @Transactional
+    public Store acceptComment(DbUser me, String postId, String commentId) {
+        Db.lockCommunity(jdbc);
+        assertNotBlocked(me);
+        points.acceptComment(me, postId, commentId);
         return loadStore(me);
     }
 
@@ -352,6 +372,7 @@ public class CommunityService {
             badges.refresh(me.id());
             // 내 위로(댓글)에 힘내요가 닿으면 그 댓글 쓴 사람의 배지도 다시 본다
             if ("comment".equals(kind)) jdbc.sql("SELECT author_id FROM comments WHERE id = ?").param(target.id()).query(String.class).optional().ifPresent(badges::refresh);
+            points.cheerAdded(kind, target.id(), me.id());
         }
         return loadStore(me);
     }

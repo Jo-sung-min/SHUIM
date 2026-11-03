@@ -51,6 +51,7 @@ app:
     unlink-basic-auth: ${TOSS_UNLINK_BASIC_AUTH:}
     api-base: ${TOSS_API_BASE:https://apps-in-toss-api.toss.im}
   payments:
+    sales-enabled: ${PAYMENT_SALES_ENABLED:false}
     # 서버가 1,000원/24시간을 고정한다. 키/상품 설정이 없으면 구매가 꺼진다.
     reconcile-delay-ms: ${PAYMENT_RECONCILE_DELAY_MS:60000}
     toss:

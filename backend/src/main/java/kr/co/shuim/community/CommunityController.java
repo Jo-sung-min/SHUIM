@@ -44,12 +44,13 @@ public class CommunityController {
                       HttpServletRequest req, HttpServletResponse res) {
         Map<String, Object> b = body == null ? Map.of() : body;
         DbUser me = auth.requireUser(req, res);
-        if (java.util.Set.of("post.create", "comment.create", "feed.create", "bio", "donate").contains(action)) consent.requireAccepted(me);
+        if (java.util.Set.of("post.create", "comment.create", "comment.accept", "feed.create", "bio", "donate").contains(action)) consent.requireAccepted(me);
         return switch (action) {
             case "post.create" -> community.createPost(me, b.get("cat"), b.get("text"), b.get("images"));
             case "post.delete" -> community.deletePost(me, str(b, "id"));
             case "comment.create" -> community.addComment(me, str(b, "postId"), b.get("text"), b.get("parentId") instanceof String p ? p : null);
             case "comment.delete" -> community.deleteComment(me, str(b, "id"));
+            case "comment.accept" -> community.acceptComment(me, str(b, "postId"), str(b, "commentId"));
             case "cheer" -> community.toggleCheer(me, target(b));
             case "report" -> community.report(me, target(b), b.get("reason"));
             case "feed.create" -> community.createFeedPost(me, b.get("text"), b.get("bg"), b.get("title"), b.containsKey("images") ? b.get("images") : b.get("image"), b.get("pages"), b.get("clientRequestId"));

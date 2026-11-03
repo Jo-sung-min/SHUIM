@@ -1,4 +1,6 @@
 .controls { display:flex; justify-content:center; gap:8px; max-width:100%; pointer-events:auto; }
+.fireStatus { display:flex; align-items:center; gap:9px; border:1px solid #f8ddae66; border-radius:17px; min-height:58px; background:#29261fdb; color:#fff2dc; padding:10px 14px; backdrop-filter:blur(18px); box-shadow:inset 0 1px 0 #ffffff15, 0 6px 24px #0002; text-align:left; }
+.fireStatus strong { display:block; font-size:13px; }.fireStatus small { display:block; margin-top:3px; font-size:10px; color:#e1d0b3; white-space:nowrap; }
 .fireButton, .woodButton { display:flex; align-items:center; gap:9px; border:1px solid #f8ddae66; border-radius:17px; min-height:58px; background:#29261fdb; color:#fff2dc; padding:10px 14px; cursor:pointer; font:inherit; backdrop-filter:blur(18px); box-shadow:inset 0 1px 0 #ffffff15, 0 6px 24px #0002; text-align:left; }
 .fireButton strong { display:block; font-size:13px; }.fireButton small { display:block; margin-top:3px; font-size:10px; color:#e1d0b3; white-space:nowrap; }
 .fireIcon { display:grid; place-items:center; width:26px; height:31px; color:#ffb66c; }.fireIcon svg { width:25px; height:29px; }

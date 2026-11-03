@@ -8,7 +8,10 @@ public final class Model {
     private Model() {}
 
     /** title = 대표 칭호(얻은 위로 배지 이름, 없으면 null 이라 JSON 에서 빠진다) */
-    public record User(String id, String nick, String role, Long blockedAt, String blockedReason, String title) {
+    public record User(String id, String nick, String role, Long blockedAt, String blockedReason, String title, Boolean registered) {
+        public User(String id, String nick, String role, Long blockedAt, String blockedReason, String title) {
+            this(id, nick, role, blockedAt, blockedReason, title, null);
+        }
         public User(String id, String nick, String role, Long blockedAt, String blockedReason) {
             this(id, nick, role, blockedAt, blockedReason, null);
         }
@@ -35,7 +38,11 @@ public final class Model {
      * 사연의 authorId 는 보낸 사람 본인과 관리자에게만 실제 값이고, 다른 사람에게는 "c:<소로우 id>" 로 가려진다.
      */
     public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
-                       String communityId, Integer postNo, String circle, String circleSlug) implements Item {
+                       String communityId, Integer postNo, String circle, String circleSlug, String acceptedCommentId) implements Item {
+        public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
+                    String communityId, Integer postNo, String circle, String circleSlug) {
+            this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, null);
+        }
         /** 광장의 자유 외침 */
         public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images) {
             this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, null, null, null, null);
@@ -47,7 +54,7 @@ public final class Model {
         public boolean inCircle() { return communityId != null; }
         /** 같은 글, 작성자만 바꿔서 (소로우 사연의 작성자 가리기) */
         public Post withAuthor(String author, List<Report> reports) {
-            return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug);
+            return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId);
         }
     }
 

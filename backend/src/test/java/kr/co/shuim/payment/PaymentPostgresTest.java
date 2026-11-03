@@ -66,8 +66,8 @@ class PaymentPostgresTest {
             var repository = context.getBean(PaymentRepository.class);
             var fire = new BeachFireService(new BeachFireRepository(jdbc, manager));
             var providers = providers();
-            var one = new PaymentService(repository, providers, fire);
-            var two = new PaymentService(new PaymentRepository(jdbc, manager), providers, fire);
+            var one = new PaymentService(repository, providers, fire, true);
+            var two = new PaymentService(new PaymentRepository(jdbc, manager), providers, fire, true);
             String order = create(one, user), receipt = UUID.randomUUID().toString();
             var requests = new ArrayList<java.util.concurrent.Callable<Long>>();
             for (int i = 0; i < 16; i++) {
@@ -95,14 +95,14 @@ class PaymentPostgresTest {
         var faultyFire = spy(realFire);
         doAnswer(call -> { call.callRealMethod(); throw new IllegalStateException("simulated failure after grant"); })
             .when(faultyFire).activateColor(anyString(), anyString(), anyString(), anyString());
-        var faulty = new PaymentService(repository, providers, faultyFire);
+        var faulty = new PaymentService(repository, providers, faultyFire, true);
         try {
             String order = create(faulty, user), receipt = UUID.randomUUID().toString();
             assertThrows(IllegalStateException.class, () -> faulty.confirmAit(user.id(), order, receipt));
             assertEquals("CREATED", repository.find(order).orElseThrow().status());
             assertEquals(receipt, repository.find(order).orElseThrow().providerOrderId());
             assertEquals(0L, jdbc.sql("SELECT count(*) FROM beach_fire_colors WHERE community_id=?").param(user.id()).query(Long.class).single());
-            var restarted = new PaymentService(repository, providers, realFire);
+            var restarted = new PaymentService(repository, providers, realFire, true);
             assertEquals(true, restarted.confirmAit(user.id(), order, receipt).get("verified"));
             when(providers.ait(any(), eq(receipt))).thenReturn(new PaymentProviders.Verified(PaymentProviders.State.REFUNDED, receipt, null));
             assertEquals("REFUNDED", restarted.reconcile(user.id(), order).get("status"));
@@ -114,7 +114,7 @@ class PaymentPostgresTest {
     @Test void receiptIdentitySurvivesAccountDeletionAndCannotBeReplayed() {
         DbUser user = member();
         var repository = new PaymentRepository(jdbc, manager);
-        var service = new PaymentService(repository, providers(), new BeachFireService(new BeachFireRepository(jdbc, manager)));
+        var service = new PaymentService(repository, providers(), new BeachFireService(new BeachFireRepository(jdbc, manager)), true);
         String order = create(service, user), receipt = UUID.randomUUID().toString();
         try {
             service.confirmAit(user.id(), order, receipt);
@@ -135,7 +135,7 @@ class PaymentPostgresTest {
         var repository = new PaymentRepository(jdbc, manager);
         var providers = providers();
         var fire = new BeachFireService(new BeachFireRepository(jdbc, manager));
-        var service = new PaymentService(repository, providers, fire);
+        var service = new PaymentService(repository, providers, fire, true);
         String order = (String) service.create(payer, owner.id(), "rose", "ait", UUID.randomUUID().toString()).get("orderId");
         String receipt = UUID.randomUUID().toString();
         try {

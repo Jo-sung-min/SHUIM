@@ -3,11 +3,12 @@
  * 소로우 바닷가 도트 그림 만들기:  node scripts/gen-beach-sprites.mjs
  *
  * 외부 저작물 없이 이 파일 안의 픽셀 템플릿과 간단한 그리기 함수로 PNG 를 만든다 (PNG 인코더도 여기 있음, 의존성 없음).
- *   public/beach/chars.png   캐릭터 아틀라스: 16×24 칸, 가로 12칸(앞·뒤·왼·오른 × 서있기·걷기1·걷기2) × 세로 8줄(색 변형)
+ *   public/beach/chars.png   캐릭터 아틀라스: 48×64 칸, 가로 12칸(앞·뒤·왼·오른 × 서있기·걷기1·걷기2) × 세로 8줄(색 변형)
  *   public/beach/props.png   소품·이펙트 아틀라스 (야자수·파라솔·바위·모닥불·하트·반짝임·잎·빛·그림자·조개 …)
  *   public/beach/sand.png    이어 붙일 수 있는 모래 질감 (128×128)
  *   lib/beach/atlas.ts       위 아틀라스의 좌표 상수 (생성 파일 — 손으로 고치지 말 것)
  */
+import { AVATAR_CELL, AVATAR_VARIANTS, drawAvatar } from "./beach-avatar-art.mjs";
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -139,138 +140,32 @@ function r(spec, width = 16) {
   return row;
 }
 const rows = (specs, width = 16) => specs.map((s) => r(s, width));
-const mirrorRows = (rs) => rs.map((row) => row.split("").reverse().join(""));
 
 /* ---------------- 캐릭터 ---------------- */
-const CELL_W = 16;
-const CELL_H = 24;
-
-// 앞모습 (0행은 걷기 프레임에서 위로 한 칸 들썩이려고 비워 둔다)
-const FRONT_BODY = rows([
-  "16.",
-  "5. 6o 5.",
-  "4. o 6h o 4.",
-  "3. o 8h o 3.",
-  "3. o 8h o 3.",
-  "3. o 8h o 3.",
-  "3. o 2h 4s 2h o 3.",
-  "3. o h 6s h o 3.",
-  "3. o 2s e 2s e 2s o 3.",
-  "3. o 8s o 3.",
-  "3. o S 6s S o 3.",
-  "4. o S 4s S o 4.",
-  "5. 6o 5.",
-  "4. 2o 4t 2o 4.",
-  "3. o 8t o 3.",
-  "2. o s o 6t o s o 2.",
-  "2. o s o 6t o s o 2.",
-  "2. o s o T 4t T o s o 2.",
-  "2. o S o 6T o S o 2.",
-]); // 19행 (0~18)
-const FRONT_LEGS_IDLE = rows([
-  "3. o 8p o 3.",
-  "3. o 2p o 2. o 2p o 3.",
-  "3. o 2p o 2. o 2p o 3.",
-  "3. o 2f o 2. o 2f o 3.",
-  "3. 4o 2. 4o 3.",
-]); // 5행 (19~23)
-const FRONT_LEGS_WALK = rows([
-  "3. o 8p o 3.",
-  "3. o 2p o 2. o 2p o 3.",
-  "3. o 2p o 2. o 2f o 3.",
-  "3. o 2f o 2. 4o 3.",
-  "3. 4o 9.",
-]);
-
-// 옆모습 (왼쪽을 본다)
-const SIDE_BODY = rows([
-  "16.",
-  "5. 6o 5.",
-  "4. o 6h o 4.",
-  "3. o 8h o 3.",
-  "3. o 8h o 3.",
-  "3. o 8h o 3.",
-  "3. o 2s 6h o 3.",
-  "3. o 3s 5h o 3.",
-  "3. o s e s 5h o 3.",
-  "3. o 4s 4h o 3.",
-  "3. o S 3s 4h o 3.",
-  "4. o 3s 3h o 4.",
-  "5. 6o 5.",
-  "4. 2o 4t 2o 4.",
-  "4. o 6t o 4.",
-  "4. o 2t T 3t o 4.",
-  "4. o 2t T 3t o 4.",
-  "4. o 2t T 3t o 4.",
-  "4. o 2T S 3T o 4.",
-]);
-const SIDE_LEGS_IDLE = rows([
-  "4. o 6p o 4.",
-  "5. o 4p o 5.",
-  "5. o 4p o 5.",
-  "5. o 4f o 5.",
-  "5. 6o 5.",
-]);
-const SIDE_LEGS_WALK1 = rows([
-  "4. o 6p o 4.",
-  "3. o 2p o 2. o 2p o 3.",
-  "2. o 2p o 4. o 2p o 2.",
-  "2. o 2f o 4. o 2f o 2.",
-  "2. 4o 4. 4o 2.",
-]);
-const SIDE_LEGS_WALK2 = rows([
-  "4. o 6p o 4.",
-  "4. o 2p o 2p o 5.",
-  "4. o 2p o 2p o 5.",
-  "4. o 2f o 2f o 5.",
-  "4. 7o 5.",
-]);
-
-// 몸(19행) + 다리(5행) = 24행. 걷기1은 몸을 한 칸 올려 들썩이고(맨 아래 행은 빈다), 걷기2는 제자리에서 다리만 바꾼다
-const BLANK = ".".repeat(CELL_W);
-const idle = (body, legs) => [...body, ...legs];
-const walkUp = (body, legs) => [...body.slice(1), ...legs, BLANK];
-const walkDown = (body, legs) => [...body, ...legs];
-
-const toBack = (rs) => rs.map((row) => row.replace(/[seSw]/g, (ch) => (ch === "S" ? "H" : "h")));
-
-const FRONT = { idle: idle(FRONT_BODY, FRONT_LEGS_IDLE), walk1: walkUp(FRONT_BODY, FRONT_LEGS_WALK), walk2: mirrorRows(walkUp(FRONT_BODY, FRONT_LEGS_WALK)) };
-const BACK = { idle: toBack(FRONT.idle), walk1: toBack(FRONT.walk1), walk2: toBack(FRONT.walk2) };
-const LEFT = { idle: idle(SIDE_BODY, SIDE_LEGS_IDLE), walk1: walkUp(SIDE_BODY, SIDE_LEGS_WALK1), walk2: walkDown(SIDE_BODY, SIDE_LEGS_WALK2) };
-const RIGHT = { idle: mirrorRows(LEFT.idle), walk1: mirrorRows(LEFT.walk1), walk2: mirrorRows(LEFT.walk2) };
-for (const v of [FRONT, BACK, LEFT, RIGHT]) for (const f of Object.values(v)) if (f.length !== CELL_H) throw new Error(`프레임 높이 ${f.length}`);
-
-/** 색 변형 8종: 살결·머리·옷·바지 */
-const VARIANTS = [
-  { skin: "#f1c9a5", hair: "#3b2a24", shirt: "#e9a9a0", pants: "#4a5a7a" },
-  { skin: "#e8b894", hair: "#1e1b22", shirt: "#8fb8de", pants: "#3a3f55" },
-  { skin: "#f6d4b8", hair: "#c98b4b", shirt: "#f3d58b", pants: "#6b7c59" },
-  { skin: "#d9a27a", hair: "#4a2f23", shirt: "#a9d9b8", pants: "#8c5a44" },
-  { skin: "#f1c9a5", hair: "#7a4b7e", shirt: "#fbf7f2", pants: "#5a6b8c" },
-  { skin: "#c98a62", hair: "#2b2b2b", shirt: "#e07f73", pants: "#e8d9c0" },
-  { skin: "#f6d4b8", hair: "#e3c27d", shirt: "#8a7be0", pants: "#2f2f3a" },
-  { skin: "#e8b894", hair: "#8b3a3a", shirt: "#c6e0f5", pants: "#d8a570" },
-];
-function charPalette(v) {
-  const skin = hex(v.skin), hair = hex(v.hair), shirt = hex(v.shirt), pants = hex(v.pants);
-  return {
-    o: hex("#2a2230"),
-    s: skin, S: shade(skin, 0.82),
-    h: hair, H: shade(hair, 0.75),
-    t: shirt, T: shade(shirt, 0.8),
-    p: pants, P: shade(pants, 0.8),
-    e: hex("#2a2230"), w: hex("#ffffff"),
-    f: shade(hex("#5a4636"), 1),
-  };
-}
-
-const CHAR_COLS = [FRONT.idle, FRONT.walk1, FRONT.walk2, BACK.idle, BACK.walk1, BACK.walk2, LEFT.idle, LEFT.walk1, LEFT.walk2, RIGHT.idle, RIGHT.walk1, RIGHT.walk2];
+const CELL_W = AVATAR_CELL.width;
+const CELL_H = AVATAR_CELL.height;
+const VARIANTS = AVATAR_VARIANTS;
+const CHAR_COLS = Array.from({ length: 12 }, (_, col) => ({ view: Math.floor(col / 3), frame: col % 3 }));
 const chars = new Raster(CELL_W * CHAR_COLS.length, CELL_H * VARIANTS.length);
-VARIANTS.forEach((v, row) => {
-  const pal = charPalette(v);
-  CHAR_COLS.forEach((f, col) => chars.blit(f, col * CELL_W, row * CELL_H, pal));
+VARIANTS.forEach((variant, row) => {
+  CHAR_COLS.forEach(({ view, frame }, col) => chars.copy(drawAvatar(Raster, variant, view, frame), 0, 0, CELL_W, CELL_H, col * CELL_W, row * CELL_H));
 });
 writeFileSync(path.join(outDir, "chars.png"), chars.png());
+
+// Optional original-resolution artwork contact sheet, enlarged with nearest pixels.
+const previewIndex = process.argv.indexOf("--preview");
+if (previewIndex >= 0 && process.argv[previewIndex + 1]) {
+  const factor = 3, tileW = CELL_W + 8, tileH = CELL_H + 8;
+  const sheet = new Raster(tileW * 8 * factor, tileH * 3 * factor);
+  sheet.rect(0, 0, sheet.w, sheet.h, hex("#f2ede5"));
+  [0, 3, 1].forEach((col, row) => VARIANTS.forEach((_, skin) => {
+    for (let y = 0; y < CELL_H; y++) for (let x = 0; x < CELL_W; x++) {
+      const color = chars.get(col * CELL_W + x, skin * CELL_H + y);
+      if (color[3]) sheet.rect((skin * tileW + x + 4) * factor, (row * tileH + y + 4) * factor, factor, factor, color);
+    }
+  }));
+  writeFileSync(process.argv[previewIndex + 1], sheet.png());
+}
 
 /* ---------------- 소품 · 이펙트 ---------------- */
 const props = new Raster(256, 128);

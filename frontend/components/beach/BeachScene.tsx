@@ -35,7 +35,6 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const tickRunnerRef = useRef<() => Promise<void>>(async () => {});
   const selectedRef = useRef<RemotePlayer | null>(null);
   const fireTimeRef = useRef(0);
-  const checkoutRef = useRef(false);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -62,17 +61,6 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     fireTimeRef.current = next.serverTime;
     setFire(next);
     engineRef.current?.setFireState(next);
-  }, []);
-
-  const onShopOpen = useCallback((open: boolean) => {
-    engineRef.current?.setInputPaused(open);
-  }, []);
-
-  const onCheckout = useCallback((active: boolean) => {
-    checkoutRef.current = active;
-    const engine = engineRef.current;
-    if (active) engine?.stop();
-    else if (!document.hidden && !blockedRef.current) engine?.start();
   }, []);
 
   const handleEvent = useCallback((ev: CareEvent) => {
@@ -193,7 +181,6 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     aliveRef.current = true;
     blockedRef.current = false;
     fireTimeRef.current = 0;
-    checkoutRef.current = false;
     if (!communityId) {
       setPhase("error");
       setError("내 소로우에서 함께 쉴 바닷가를 골라 주세요.");
@@ -251,7 +238,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         eng.stop();
         window.clearTimeout(timerRef.current);
       } else {
-        if (!checkoutRef.current) eng.start();
+        eng.start();
         scheduleTick(0);
       }
     };
@@ -329,9 +316,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       <div className={styles.bottomHud}>
       {lost && phase === "ready" && <div className={styles.lost} role="status">연결이 불안정해요. 다시 이어 보는 중…</div>}
       {phase === "ready" && fire && meRef.current && <CampfireControls
-        communityId={communityId} communityName={community?.name ?? "우리 소로우"}
-        userId={meRef.current.id} fire={fire} near={nearFire} disconnected={lost}
-        onAddWood={onAddWood} onFireChange={applyFire} onOpenChange={onShopOpen} onCheckoutChange={onCheckout}
+        fire={fire} near={nearFire} disconnected={lost}
+        onAddWood={onAddWood} onFireChange={applyFire}
       />}
       {hint && !lost && !selected && !gotAny && !rest && phase === "ready" && (
         <p className={styles.hint} role="status">

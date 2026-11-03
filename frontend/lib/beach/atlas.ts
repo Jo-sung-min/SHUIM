@@ -1,7 +1,7 @@
 /* 생성 파일 — scripts/gen-beach-sprites.mjs 가 만든다. 손으로 고치지 말 것 */
 
-/** 캐릭터 아틀라스(chars.png): 한 칸 16×24, 가로 12칸 × 세로 8줄(색 변형) */
-export const CHAR_ATLAS = { cellW: 16, cellH: 24, cols: 12, rows: 8, width: 192, height: 192 } as const;
+/** 캐릭터 아틀라스(chars.png): 한 칸 48×64, 가로 12칸 × 세로 8줄(색 변형) */
+export const CHAR_ATLAS = { cellW: 48, cellH: 64, cols: 12, rows: 8, width: 576, height: 512 } as const;
 /** 칸 순서: 보는 방향(앞·뒤·왼·오른) × 프레임(서있기·걷기1·걷기2) */
 export const CHAR_VIEW = { front: 0, back: 3, left: 6, right: 9 } as const;
 export const CHAR_FRAME = { idle: 0, walk1: 1, walk2: 2 } as const;

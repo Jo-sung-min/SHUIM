@@ -1,19 +1,28 @@
 # 불씨팝 결제 연결
 
-불씨팝은 선택한 소로우의 모닥불 색을 24시간 바꾸는 소비성 상품입니다. 로즈빛·오로라·블루 웨이브·라벤더는 각각 1,000원(KRW)으로 서버에 고정되어 있습니다. 이미 적용 중인 불씨팝이 있으면 다음 24시간 구간에 예약됩니다. 클라이언트의 가격·시간·성공 콜백만으로는 효과가 지급되지 않습니다.
+## 현재 상태: 판매 중지
+
+바닷가에는 모닥불 상태와 무료 장작 넣기만 표시합니다. 상점·가격·구매 버튼을 연결하지 않으며 결제 SDK를 호출하지 않습니다. 기존 상점은 `frontend/components/beach/ArchivedFirePopControls.tsx`, 기존 콜백은 `frontend/app/beach/payment/ArchivedPaymentCallback.tsx`에 보존했습니다. 두 컴포넌트 모두 현재 화면에서 가져오거나 렌더링하지 않습니다. 공개 `/beach/payment` 경로는 안내와 돌아가기 링크만 표시하며 자동 결제 확인을 실행하지 않습니다.
+
+서버 설정 `app.payments.sales-enabled`의 기본값과 예시 환경 변수 `PAYMENT_SALES_ENABLED`는 `false`입니다. 결제 키가 설정되어 있어도 카탈로그는 `available:false`, 빈 상품 목록을 반환하고 새 주문은 503으로 차단합니다. 판매 중지 상태의 웹 확인 API는 승인 POST를 실행하지 않고 제공자의 조회 GET만 사용하므로 새 결제를 승인하지 않습니다. 기존에 완료한 결제의 권리, 영수증 확인·복원, 환불 재조회와 예약 효과 동기화는 유지합니다.
+
+아래는 보존한 구현의 설정과 동작을 설명합니다. 서버 설정만 바꾸어도 프론트 결제 화면이 다시 연결되지는 않습니다. 향후 판매 재개 시 명시적인 화면 연결과 검증이 함께 필요합니다.
+
+불씨팝 구현은 선택한 소로우의 모닥불 색을 24시간 바꾸는 소비성 상품을 처리합니다. 로즈빛·오로라·블루 웨이브·라벤더는 각각 1,000원(KRW)으로 서버에 고정되어 있습니다. 이미 적용 중인 불씨팝이 있으면 다음 24시간 구간에 예약됩니다. 클라이언트의 가격·시간·성공 콜백만으로는 효과가 지급되지 않습니다.
 
 ## 웹: 토스페이먼츠
 
 토스페이먼츠 결제창 SDK v2의 API 개별 연동 키를 설정합니다. `test_ck_`와 `test_sk_`, 또는 `live_ck_`와 `live_sk_`의 환경이 일치해야 합니다. 주문 조회를 지원하지 않는 결제위젯/주문서형 `gck`·`gsk` 키는 사용하지 않습니다.
 
 ```dotenv
+PAYMENT_SALES_ENABLED=false
 TOSS_PAYMENTS_CLIENT_KEY=test_ck_...
 TOSS_PAYMENTS_SECRET_KEY=test_sk_...
 ```
 
-공개 클라이언트 키만 주문 생성 응답으로 전달합니다. 시크릿 키는 서버 환경에만 설정하고 프론트 환경 변수나 저장소에 넣지 않습니다. 결제 창의 성공 URL은 프론트의 `/beach/payment?communityId=...`, 실패 URL은 같은 경로에 `result=failed`를 추가한 URL입니다. 운영 HTTPS 도메인은 프론트 결제 모듈 설정에 맞춥니다.
+판매 기능이 활성화된 구현에서 공개 클라이언트 키만 주문 생성 응답으로 전달합니다. 시크릿 키는 서버 환경에만 설정하고 프론트 환경 변수나 저장소에 넣지 않습니다. 보존한 결제 모듈의 성공 URL은 `/beach/payment?communityId=...`, 실패 URL은 같은 경로에 `result=failed`를 추가한 URL입니다. 현재 공개 경로에는 콜백 구현이 연결되어 있지 않습니다. 향후 판매 재개 시 운영 HTTPS 도메인과 명시적인 콜백 연결을 함께 검증해야 합니다.
 
-서버는 승인 전에 로그인한 주문 소유자와 고정 금액을 확인합니다. `POST /v1/payments/confirm`에 주문 번호를 멱등 키로 보내고, 승인 응답이 유실되면 `GET /v1/payments/orders/{orderId}`로 같은 주문을 조회합니다. 응답의 주문 번호·결제 키·통화·총액과 `DONE` 상태가 모두 일치해야 지급합니다. 실제 카드 정보나 원본 결제 응답은 저장하지 않습니다.
+판매가 활성화된 경우 서버는 승인 전에 로그인한 주문 소유자와 고정 금액을 확인합니다. `POST /v1/payments/confirm`에 주문 번호를 멱등 키로 보내고, 승인 응답이 유실되면 `GET /v1/payments/orders/{orderId}`로 같은 주문을 조회합니다. 판매 중지 상태에서는 처음부터 조회 GET만 수행합니다. 응답의 주문 번호·결제 키·통화·총액과 `DONE` 상태가 모두 일치해야 지급합니다. 실제 카드 정보나 원본 결제 응답은 저장하지 않습니다.
 
 공식 문서: [결제창 연동](https://docs.tosspayments.com/guides/v2/payment-window/integration), [코어 API](https://docs.tosspayments.com/reference), [인증·멱등 키](https://docs.tosspayments.com/reference/using-api/authorization).
 
@@ -46,9 +55,9 @@ AIT_IAP_VIOLET_SKU=콘솔의_바이올렛_SKU
 
 | 요청 | 용도 |
 | --- | --- |
-| `GET /api/beach/fire/catalog?communityId=...&platform=web\|ait` | 가격·상품·준비 상태·현재 모닥불 |
-| `POST /api/beach/fire/orders` | `{communityId,color,platform,requestId}`로 주문 생성. `requestId`는 UUID이며 동일 계정의 재시도에 재사용 |
-| `POST /api/beach/fire/payments/confirm` | 웹 `{orderId,paymentKey,amount:1000}` 확인 |
+| `GET /api/beach/fire/catalog?communityId=...&platform=web\|ait` | 판매 중지는 `available:false`, 빈 상품 목록·현재 모닥불 |
+| `POST /api/beach/fire/orders` | 판매 중지는 503. 활성화 시 `{communityId,color,platform,requestId}`로 생성하며 `requestId`는 재사용 가능한 UUID |
+| `POST /api/beach/fire/payments/confirm` | 웹 `{orderId,paymentKey,amount:1000}` 확인. 판매 중지는 기존 제공자 결제 조회만 수행 |
 | `POST /api/beach/fire/payments/ait` | 앱인토스 `{orderId:서버주문,providerOrderId:앱인토스영수증}` 확인 |
 | `POST /api/beach/fire/payments/restore` | 같은 앱인토스 확인 절차로 복원 |
 | `GET /api/beach/fire/orders?communityId=...` | 자신의 해당 소로우 주문 최근 30개 |

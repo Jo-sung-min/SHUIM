@@ -61,6 +61,8 @@ export interface Report {
 export interface User {
   id: string;
   nick: string;
+  /** 실제 가입 계정 여부. 익명 방문자·샘플 계정은 포인트를 받을 수 없다. */
+  registered?: boolean;
   role?: "admin" | "user";
   blockedAt?: number;
   blockedReason?: string;
@@ -87,6 +89,8 @@ export interface Base {
 
 export interface Post extends Base {
   cat: ShoutCat;
+  /** 채택한 위로. 댓글이 삭제되어도 다시 채택하지 않도록 식별자를 유지한다. */
+  acceptedCommentId?: string;
   /** 사진 주소 (최대 SHOUT_MAX_IMAGES 장). 옛 글은 빈 배열 */
   images?: string[];
   /** 커뮤니티 소로우에 게시된 사연이면 그 소로우 (작성자는 "c:<소로우 id>" 로 가려져 온다) */

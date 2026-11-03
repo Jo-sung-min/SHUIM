@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CommunityStore, Target, api, commentsOf, fetchCommunity, isFlagged, isVisible, repliesOf, shoutCatById, topCommentsOf, userById } from "@/lib/community";
 import { hasCrisisSignal } from "@/lib/crisis";
 import HelpBanner from "@/components/HelpBanner";
-import { Empty, SkeletonCard, fmtRelative } from "@/components/ui";
+import { ConfirmSheet, Empty, SkeletonCard, fmtRelative } from "@/components/ui";
+import { toastSuccess } from "@/lib/toast";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { CheerButton, CommentComposer, CommentRow, LineAction, LoadError, ReplyTarget, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { IconBubble, IconChevronL, IconChevronR, IconClock, IconMore, IconSort } from "@/components/Icons";
@@ -34,6 +35,9 @@ export default function ShoutPostPage() {
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const [accepting, setAccepting] = useState<string | null>(null);
+  const [acceptBusy, setAcceptBusy] = useState(false);
+  const acceptLock = useRef(false);
   const barHidden = useHideOnScroll();
 
   const load = useCallback(async () => {
@@ -94,6 +98,20 @@ export default function ShoutPostPage() {
   const author = mine ? "나" : userById(s, post.authorId).nick;
   const hiddenByReports = isFlagged(post) && !revealed && !mine;
   const { title, rest } = splitShout(post.text);
+  const acceptComfort = async () => {
+    if (!accepting || acceptLock.current) return;
+    acceptLock.current = true;
+    setAcceptBusy(true);
+    try {
+      if (await run(setS, () => api.acceptComment(post.id, accepting))) {
+        setAccepting(null);
+        toastSuccess("마음에 닿은 위로를 채택했어요");
+      }
+    } finally {
+      acceptLock.current = false;
+      setAcceptBusy(false);
+    }
+  };
 
   return (
     <>
@@ -178,6 +196,7 @@ export default function ShoutPostPage() {
                 </button>
               )}
             </div>
+            {mine && s.me.registered && <p className="comfort-adoption-note">{post.acceptedCommentId ? "마음에 닿은 위로를 채택했어요. 채택은 글마다 한 번만 할 수 있어요." : "도움이 된 위로 하나를 채택해 감사한 마음을 전해 보세요."}</p>}
             {comments.length === 0 ? (
               <p className={styles.empty}>아직 위로가 없어요.<br />첫 한마디를 남겨 주세요.</p>
             ) : (
@@ -193,6 +212,8 @@ export default function ShoutPostPage() {
                     onReply={setReplyTo}
                     onReplyCheer={(r) => run(setS, () => api.toggleCheer({ kind: "comment", id: r.id }))}
                     onReplyMenu={(r) => setMenu({ kind: "comment", id: r.id })}
+                    onAccept={mine && s.me.registered === true && !s.me.blockedAt && userById(s, cm.authorId).registered === true && !post.acceptedCommentId && cm.authorId !== s.me.id && isVisible(s, post) && !isFlagged(post) && isVisible(s, cm) && !isFlagged(cm) ? () => setAccepting(cm.id) : undefined}
+                    acceptBusy={acceptBusy}
                   />
                 ))}
               </div>
@@ -212,6 +233,15 @@ export default function ShoutPostPage() {
         </>
       )}
 
+      <ConfirmSheet
+        open={Boolean(accepting)}
+        title="이 위로를 채택할까요?"
+        message={<>채택은 외침마다 한 번이며 바꿀 수 없어요. 위로를 남긴 분에게 온기 포인트 50P가 적립돼요. 하루 적립 한도에 따라 일부만 적립되거나 적립되지 않을 수 있어요.</>}
+        confirmLabel="위로 채택하기"
+        busy={acceptBusy}
+        onConfirm={() => void acceptComfort()}
+        onClose={() => setAccepting(null)}
+      />
       <TargetMenuSheet
         s={s}
         target={menu}

@@ -5,6 +5,7 @@ import kr.co.shuim.beach.BeachFireService;
 import kr.co.shuim.config.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.util.ArrayList;
@@ -31,7 +32,7 @@ class PaymentServiceTest {
     private final BeachFireService.FireView view = new BeachFireService.FireView(3, 12, 0.25, "amber", null, NOW, NOW + 600_000, null, 0);
 
     @BeforeEach void setup() {
-        service = new PaymentService(repository, providers, fire, () -> NOW);
+        service = new PaymentService(repository, providers, fire, () -> NOW, true);
         when(providers.configured(anyString())).thenReturn(true);
         when(providers.clientKey()).thenReturn("test_ck_public");
         when(providers.sku(anyString())).thenAnswer(call -> "sku-" + call.getArgument(0));
@@ -63,7 +64,7 @@ class PaymentServiceTest {
         assertEquals(true, ((Map<?, ?>) retry.get("result")).get("verified"));
         String expiredRequest = UUID.randomUUID().toString();
         service.create(user, "c1", "rose", "ait", expiredRequest);
-        var later = new PaymentService(repository, providers, fire, () -> NOW + PaymentService.INTENT_WINDOW_MS + 1);
+        var later = new PaymentService(repository, providers, fire, () -> NOW + PaymentService.INTENT_WINDOW_MS + 1, true);
         var expired = later.create(user, "c1", "rose", "ait", expiredRequest);
         assertEquals("CREATED", expired.get("status"));
         assertEquals(NOW + PaymentService.INTENT_WINDOW_MS, expired.get("intentExpiresAt"));
@@ -87,7 +88,7 @@ class PaymentServiceTest {
             for (var future : executor.invokeAll(tasks)) assertEquals(NOW + 86_400_000, future.get().get("expiresAt"));
         }
         verify(fire, times(1)).activateColor(eq("c1"), eq(user.id()), eq("rose"), eq("web:" + id));
-        var restarted = new PaymentService(repository, providers, fire, () -> NOW + 5000);
+        var restarted = new PaymentService(repository, providers, fire, () -> NOW + 5000, true);
         assertEquals(NOW, restarted.confirmWeb(user.id(), id, "pay", 1000).get("startsAt"));
         assertEquals(409, assertThrows(ApiException.class, () -> restarted.confirmWeb(user.id(), id, "different-key", 1000)).status());
     }
@@ -120,6 +121,62 @@ class PaymentServiceTest {
         when(providers.configured("web")).thenReturn(false);
         assertEquals(false, service.catalog(user, "c1", "web").get("available"));
         assertEquals(503, assertThrows(ApiException.class, () -> create("web")).status());
+    }
+
+    @Test void springDefaultsToSalesPausedWithoutAFlag() {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(PaymentRepository.class, () -> repository);
+            context.registerBean(PaymentProviders.class, () -> providers);
+            context.registerBean(BeachFireService.class, () -> fire);
+            context.register(PaymentService.class);
+            context.refresh();
+            var defaultService = context.getBean(PaymentService.class);
+            assertEquals(false, defaultService.catalog(user, "c1", "web").get("available"));
+            assertEquals(503, assertThrows(ApiException.class, () -> defaultService.create(user, "c1", "rose", "web", UUID.randomUUID().toString())).status());
+        }
+    }
+
+    @Test void salesPausedBlocksBothNewOrderTypesEvenWithConfiguredProviders() {
+        var paused = new PaymentService(repository, providers, fire, () -> NOW, false);
+        for (String provider : List.of("web", "ait")) {
+            var catalog = paused.catalog(user, "c1", provider);
+            assertEquals(false, catalog.get("available"));
+            assertEquals(List.of(), catalog.get("products"));
+            assertEquals(503, assertThrows(ApiException.class, () -> paused.create(user, "c1", "rose", provider, UUID.randomUUID().toString())).status());
+        }
+        assertTrue(repository.data.isEmpty());
+        verify(providers, never()).web(any(), anyString(), anyBoolean());
+        verify(providers, never()).ait(any(), anyString());
+        verify(fire, never()).activateColor(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test void salesPausedNeverApprovesWebPaymentButCanRecoverAnAlreadyPaidOrder() {
+        String id = create("web");
+        var paused = new PaymentService(repository, providers, fire, () -> NOW, false);
+        when(providers.web(any(), eq("pay"), eq(false)))
+            .thenReturn(new PaymentProviders.Verified(PaymentProviders.State.PENDING, id, null));
+        assertEquals(409, assertThrows(ApiException.class, () -> paused.confirmWeb(user.id(), id, "pay", 1000)).status());
+        verify(fire, never()).activateColor(anyString(), anyString(), anyString(), anyString());
+        when(providers.web(any(), eq("pay"), eq(false)))
+            .thenReturn(new PaymentProviders.Verified(PaymentProviders.State.PAID, id, null));
+        assertEquals(true, paused.confirmWeb(user.id(), id, "pay", 1000).get("verified"));
+        assertEquals(true, paused.confirmWeb(user.id(), id, "pay", 1000).get("verified"));
+        verify(providers, never()).web(any(), anyString(), eq(true));
+        verify(fire, times(1)).activateColor(eq("c1"), eq(user.id()), eq("rose"), eq("web:" + id));
+    }
+
+    @Test void salesPausedPreservesExistingAitReceiptsAndVerifiedRefunds() {
+        String id = create("ait");
+        var paused = new PaymentService(repository, providers, fire, () -> NOW, false);
+        assertEquals(true, paused.confirmAit(user.id(), id, "old-receipt").get("verified"));
+        assertEquals(true, paused.confirmAit(user.id(), id, "old-receipt").get("verified"));
+        when(providers.ait(any(), eq("old-receipt")))
+            .thenReturn(new PaymentProviders.Verified(PaymentProviders.State.REFUNDED, "old-receipt", null));
+        assertEquals("REFUNDED", paused.reconcile(user.id(), id).get("status"));
+        var grant = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(fire, times(1)).activateColor(eq("c1"), eq(user.id()), eq("rose"), grant.capture());
+        verify(fire).revokeColor(grant.getValue());
+        assertEquals(409, assertThrows(ApiException.class, () -> paused.confirmAit(user.id(), id, "old-receipt")).status());
     }
 
     static class MemoryRepository extends PaymentRepository {

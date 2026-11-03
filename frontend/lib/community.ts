@@ -12,7 +12,7 @@ import { loadNotifSeen } from "./storage";
 import { requireCommunityConsent } from "./consent";
 
 async function call<T = CommunityStore>(path: string, body?: unknown, method = "POST"): Promise<T> {
-  if (method === "POST" && /\/(post\.create|comment\.create|feed\.create|bio|donate)$/.test(path)) await requireCommunityConsent();
+  if (method === "POST" && /\/(post\.create|comment\.create|comment\.accept|feed\.create|bio|donate)$/.test(path)) await requireCommunityConsent();
   const generation = cacheGeneration;
   const res = await fetch(path, {
     method,
@@ -63,6 +63,7 @@ export const api = {
   createPost: (cat: ShoutCat, text: string, images: string[] = []) => call("/api/community/post.create", { cat, text, images }),
   deletePost: (id: string) => call("/api/community/post.delete", { id }),
   addComment: (postId: string, text: string, parentId?: string) => call("/api/community/comment.create", { postId, text, parentId }),
+  acceptComment: (postId: string, commentId: string) => call("/api/community/comment.accept", { postId, commentId }),
   deleteComment: (id: string) => call("/api/community/comment.delete", { id }),
   toggleCheer: (t: Target) => call("/api/community/cheer", t),
   report: (t: Target, reason: ReportReason) => call("/api/community/report", { ...t, reason }),

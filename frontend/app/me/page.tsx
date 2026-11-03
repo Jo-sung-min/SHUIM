@@ -14,6 +14,7 @@ import { useScrollMemory } from "@/lib/scroll-memory";
 import { toastSuccess } from "@/lib/toast";
 import { IconInbox, IconBell, IconBubble, IconCalendar, IconChevronL, IconFlag, IconMessage, IconNote, IconSettings, IconShare } from "@/components/Icons";
 import ProfileHeader from "@/components/ProfileHeader";
+import { PointsCard } from "@/components/PointsWallet";
 import BadgeShelf, { BadgeCelebration, BadgeIcon } from "@/components/BadgeShelf";
 import ProfileTabs from "@/components/ProfileTabs";
 import { shareProfile } from "@/lib/share-profile";
@@ -128,6 +129,7 @@ export default function MePage() {
               <div className="sk-card" role="status" aria-label="프로필을 불러오고 있어요"><div className="sk-row"><div className="sk sk-circle lg" /><div className="sk-col"><div className="sk sk-line lg w60" /><div className="sk w80" /></div></div></div>
             )}
 
+            {user && <PointsCard key={user.id} userId={user.id} />}
             {profile && <BadgeShelf earned={profile.badges} catalog={profile.badgeCatalog} />}
 
             {/* 나만 보이는 도구 줄 (다른 사람이 내 프로필을 열면 이 줄은 없다) */}

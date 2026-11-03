@@ -4,6 +4,7 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.beach.BeachFireService;
 import kr.co.shuim.config.ApiException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -27,13 +28,15 @@ public class PaymentService {
     private final PaymentProviders providers;
     private final BeachFireService fire;
     private final LongSupplier clock;
+    private final boolean salesEnabled;
 
     @Autowired
-    public PaymentService(PaymentRepository repository, PaymentProviders providers, BeachFireService fire) {
-        this(repository, providers, fire, System::currentTimeMillis);
+    public PaymentService(PaymentRepository repository, PaymentProviders providers, BeachFireService fire,
+                          @Value("${app.payments.sales-enabled:false}") boolean salesEnabled) {
+        this(repository, providers, fire, System::currentTimeMillis, salesEnabled);
     }
-    PaymentService(PaymentRepository repository, PaymentProviders providers, BeachFireService fire, LongSupplier clock) {
-        this.repository = repository; this.providers = providers; this.fire = fire; this.clock = clock;
+    PaymentService(PaymentRepository repository, PaymentProviders providers, BeachFireService fire, LongSupplier clock, boolean salesEnabled) {
+        this.repository = repository; this.providers = providers; this.fire = fire; this.clock = clock; this.salesEnabled = salesEnabled;
     }
 
     public Map<String, Object> catalog(DbUser user, String communityId, String platform) {
@@ -43,7 +46,7 @@ public class PaymentService {
         result.put("price", PRICE); result.put("currency", "KRW"); result.put("durationHours", 24);
         result.put("available", reason == null);
         if (reason != null) result.put("reason", reason);
-        result.put("products", COLOR_ORDER.stream().map(color -> {
+        result.put("products", !salesEnabled ? List.of() : COLOR_ORDER.stream().map(color -> {
             Map<String, Object> product = new LinkedHashMap<>();
             product.put("color", color); product.put("name", COLORS.get(color) + " 불씨팝"); product.put("price", PRICE);
             if ("ait".equals(platform) && providers.sku(color) != null && !providers.sku(color).isBlank()) product.put("sku", providers.sku(color));
@@ -103,7 +106,8 @@ public class PaymentService {
                 return attempted;
             });
         } catch (DuplicateKeyException duplicate) { throw new ApiException(409, "이미 다른 주문에 연결된 결제예요."); }
-        PaymentProviders.Verified verified = providers.web(order, paymentKey, true);
+        // While sales are off, only recover an already approved payment; never start a new charge.
+        PaymentProviders.Verified verified = providers.web(order, paymentKey, salesEnabled);
         return result(finish(order, verified));
     }
 
@@ -237,6 +241,7 @@ public class PaymentService {
         return Map.of("verified", true, "orderId", order.id(), "color", order.color(), "startsAt", order.startsAt(), "expiresAt", order.expiresAt(), "fire", fire.snapshot(order.communityId()));
     }
     private String unavailableReason(DbUser user, String platform) {
+        if (!salesEnabled) return "현재 판매 중인 결제 상품이 없어요.";
         if (user.anonymous()) return "로그인한 뒤 불씨팝을 구매할 수 있어요.";
         if (!providers.configured(platform)) return "ait".equals(platform) ? "앱인토스 결제 상품을 준비 중이에요." : "웹 결제를 준비 중이에요.";
         if ("ait".equals(platform) && !repository.tossLinked(user.id())) return "토스 로그인 후 앱인토스에서 구매해 주세요.";

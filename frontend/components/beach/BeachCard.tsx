@@ -61,7 +61,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
           <span className={styles.timeTint} style={{ backgroundColor: rgb(day.skyTop), opacity: 0.06 + day.stars * 0.48 }} />
           <span className={styles.people}>
             {[0, 2].map((skin, i) => (
-              <span key={skin} className={styles.person} style={{ backgroundPosition: `${-(i === 1 ? 6 : 0) * 32}px ${-skin * 48}px` }} />
+              <span key={skin} className={styles.person} style={{ backgroundPosition: `${-(i === 1 ? 6 : 0) * 36}px ${-skin * 48}px` }} />
             ))}
           </span>
         </div>

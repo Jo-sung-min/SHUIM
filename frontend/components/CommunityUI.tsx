@@ -90,12 +90,14 @@ export interface ReplyTarget { parentId: string; nick: string }
  * 댓글 한 줄. 최상위 댓글이면 아래에 "답글 달기"와 답글 목록(접기/펼치기)이 붙는다.
  * 답글(대댓글) 줄에서 "답글 달기"를 누르면 같은 부모 댓글에 그 사람 앞으로 답글이 달린다 (인스타그램처럼 한 단계만).
  */
-export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onReplyCheer, onReplyMenu }: {
+export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onReplyCheer, onReplyMenu, onAccept, acceptBusy }: {
   s: CommunityStore; comment: Comment; onCheer: () => void | Promise<unknown>; onMenu: () => void;
   onReply?: (target: ReplyTarget) => void;
   replies?: Comment[];
   onReplyCheer?: (reply: Comment) => void | Promise<unknown>;
   onReplyMenu?: (reply: Comment) => void;
+  onAccept?: () => void;
+  acceptBusy?: boolean;
 }) {
   const me = s.me.id;
   const author = userById(s, comment.authorId);
@@ -103,6 +105,7 @@ export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onRe
   const [openReplies, setOpenReplies] = useState(false);
   const parentId = comment.parentId ?? comment.id;
   const nick = comment.authorId === me ? "나" : author.nick;
+  const accepted = s.posts.some((post) => post.id === comment.postId && post.acceptedCommentId === comment.id);
   if (isFlagged(comment) && !show) {
     return (
       <div className="comment">
@@ -126,10 +129,12 @@ export function CommentRow({ s, comment, onCheer, onMenu, onReply, replies, onRe
           <span>{fmtRelative(comment.createdAt)}</span>
           <button className="icon-btn more" aria-label="더보기" onClick={onMenu}><IconMore style={{ width: 15, height: 15 }} /></button>
         </div>
+        {accepted && <span className="accepted-comfort">글쓴이가 채택한 위로</span>}
         <p className="text">{comment.text}</p>
         <div className="acts">
           <CheerButton small count={comment.cheers.length} on={comment.cheers.includes(me)} onClick={onCheer} />
           {onReply && <button type="button" className="reply-btn" onClick={() => onReply({ parentId, nick: author.nick })}>답글 달기</button>}
+          {onAccept && <button type="button" className="reply-btn accept-comfort-btn" disabled={acceptBusy} onClick={onAccept}>위로 채택</button>}
         </div>
       </div>
       {list.length > 0 && (

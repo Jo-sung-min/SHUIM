@@ -42,7 +42,7 @@ export interface EngineOptions {
 
 const WALK_SPEED = 3.2;
 const EYE = 1.55;
-const PX = 1 / 16; // 캐릭터 16px = 1m
+const AVATAR_HEIGHT = 1.8; // World size stays fixed when the artwork gains pixels.
 const CYCLE = [CHAR_FRAME.walk1, CHAR_FRAME.idle, CHAR_FRAME.walk2, CHAR_FRAME.idle];
 
 /* ---------------- 셰이더 ---------------- */
@@ -160,13 +160,13 @@ const FIRE = CAMPFIRE;
 
 interface PlayerNode {
   data: RemotePlayer;
-  sprite: THREE.Sprite;
-  mat: THREE.SpriteMaterial;
+  sprite: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  mat: THREE.MeshBasicMaterial;
   tex: THREE.Texture;
   shadow: THREE.Mesh;
   label: THREE.Sprite | null;
   labelNick: string;
-  cur: { x: number; z: number };
+  cur: { x: number; z: number; yaw: number };
   target: { x: number; z: number; yaw: number; moving: boolean };
   animT: number;
   bounce: number;
@@ -559,7 +559,7 @@ export class BeachEngine {
       let best = 28;
       for (const [id, p] of this.players) {
         const v = p.sprite.position.clone();
-        v.y = 0.8;
+        v.y += AVATAR_HEIGHT / 2;
         v.project(this.camera);
         if (v.z > 1) continue;
         const sx = ((v.x + 1) / 2) * rect.width, sy = ((1 - v.y) / 2) * rect.height;
@@ -607,11 +607,14 @@ export class BeachEngine {
     const tex = this.charTex.clone();
     tex.repeat.set(1 / CHAR_ATLAS.cols, 1 / CHAR_ATLAS.rows);
     tex.needsUpdate = true;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1, depthWrite: true, toneMapped: false });
+    const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.1, depthWrite: true, toneMapped: false });
     mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
-    const sprite = new THREE.Sprite(mat);
-    sprite.center.set(0.5, 0);
-    sprite.scale.set(CHAR_ATLAS.cellW * PX, CHAR_ATLAS.cellH * PX, 1);
+    // A real upright sheet follows world yaw. It is naturally edge-on from the side;
+    // only name tags and care effects continue to face the camera.
+    const geometry = new THREE.PlaneGeometry(AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH, AVATAR_HEIGHT);
+    geometry.translate(0, AVATAR_HEIGHT / 2, 0);
+    const sprite = new THREE.Mesh(geometry, mat);
+    sprite.rotation.y = p.yaw + Math.PI;
     sprite.position.set(p.x, 0, p.z);
     sprite.renderOrder = 3;
     this.scene.add(sprite);
@@ -622,7 +625,7 @@ export class BeachEngine {
     this.scene.add(shadow);
     const node: PlayerNode = {
       data: p, sprite, mat, tex, shadow, label: null, labelNick: "",
-      cur: { x: p.x, z: p.z }, target: { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving }, animT: Math.random() * 10, bounce: 0, seen: performance.now(),
+      cur: { x: p.x, z: p.z, yaw: p.yaw }, target: { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving }, animT: Math.random() * 10, bounce: 0, seen: performance.now(),
     };
     this.setLabel(node, p.nick);
     this.setFrame(node, CHAR_VIEW.front, CHAR_FRAME.idle, p.skin);
@@ -667,6 +670,7 @@ export class BeachEngine {
 
   private removePlayer(node: PlayerNode) {
     this.scene.remove(node.sprite, node.shadow);
+    node.sprite.geometry.dispose();
     node.mat.dispose();
     node.tex.dispose();
     if (node.label) {
@@ -931,14 +935,16 @@ export class BeachEngine {
       const walking = p.target.moving || far > 0.12;
       if (walking) p.animT += dt * 7;
       const frame = walking ? CYCLE[Math.floor(p.animT) % CYCLE.length] : CHAR_FRAME.idle;
-      // 보는 방향: 상대가 나를 등지면 뒷모습, 마주 보면 앞모습, 아니면 옆모습
-      const fx = -Math.sin(p.target.yaw), fz = -Math.cos(p.target.yaw);
+      const turn = p.target.yaw - p.cur.yaw;
+      p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
+      p.sprite.rotation.y = p.cur.yaw + Math.PI;
+      // Pick artwork for the viewed face, without rotating the sheet toward us.
+      const fx = -Math.sin(p.cur.yaw), fz = -Math.cos(p.cur.yaw);
       let dx = p.cur.x - cam.x, dz = p.cur.z - cam.z;
       const dl = Math.hypot(dx, dz) || 1;
       dx /= dl; dz /= dl;
       const dot = fx * dx + fz * dz;
-      const cross = fx * dz - fz * dx;
-      const view = dot > 0.45 ? CHAR_VIEW.back : dot < -0.45 ? CHAR_VIEW.front : cross > 0 ? CHAR_VIEW.left : CHAR_VIEW.right;
+      const view = dot > 0 ? CHAR_VIEW.back : CHAR_VIEW.front;
       this.setFrame(p, view, frame, p.data.skin);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
@@ -946,7 +952,7 @@ export class BeachEngine {
       p.sprite.position.set(p.cur.x, deck + hop, p.cur.z);
       p.shadow.position.set(p.cur.x, deck + 0.015, p.cur.z);
       if (p.label) {
-        p.label.position.set(p.cur.x, deck + 1.62 + hop, p.cur.z);
+        p.label.position.set(p.cur.x, deck + AVATAR_HEIGHT + 0.14 + hop, p.cur.z);
         p.label.visible = dl < 24;
       }
       if (pid === this.selected) selectedNode = p;
