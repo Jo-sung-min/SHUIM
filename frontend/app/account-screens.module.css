@@ -104,7 +104,8 @@
 .recordIcon svg { width: 20px; height: 20px; color: inherit; }
 .recordText { flex: 1; }
 .sectionHeading { display: flex; align-items: center; justify-content: space-between; margin: 28px 2px 12px; }
-.sectionHeading h3 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
+.sectionHeading h3 { margin: 0; font-size: 16px; line-height: 1.5; letter-spacing: -.02em; word-break: keep-all; text-wrap: balance; }
+.sectionHeading h3 small { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--text-2); }
 .sectionHeading span { font-size: 13px; color: var(--text-2); }
 /* 제목 옆 작은 "추가" 버튼 (나를 위한 시간 칸 추가) */
 .sectionAdd { display: inline-flex; align-items: center; gap: 3px; min-height: 32px; padding: 4px 11px 4px 8px; border-radius: 999px; border: 1px solid var(--lg-line); background-color: var(--lg-fill); background-image: var(--lg-sheen); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow); color: var(--text-2); font-size: 13px; font-weight: 650; }
@@ -183,7 +184,8 @@
 .quickLinks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .quickLink { padding: 18px 16px; display: grid; gap: 7px; }
 .quickLink > svg { width: 23px; height: 23px; color: var(--text-2); margin-bottom: 5px; }
-.quickLink b { font-size: 15px; }
+.quickLink b { font-size: 15px; font-weight: 600; line-height: 1.55; letter-spacing: -.02em; word-break: keep-all; }
+.quickWho { display: block; margin-bottom: 5px; font-size: 12px; color: var(--text-3); }
 .quickLink small { font-size: 13px; color: var(--text-2); line-height: 1.6; word-break: keep-all; }
 /* 결과 아래 한 줄: [SOROW AI] AI 응답은 … AI 이용 안내 */
 .aiNote { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 14px 4px 0; color: var(--text-2); font-size: 12px; line-height: 1.6; }
@@ -198,3 +200,7 @@
   .utilityGrid { gap: 5px; }
   .utilityGrid :global(.me-tile .lbl) { font-size: 12px; }
 }
+/* 사랑받기 기다리는 말: 한 줄씩 천천히 떠오른다 */
+.waitLine { margin: 0 0 14px; color: var(--tone-love); font-size: 15px; font-weight: 650; line-height: 1.5; animation: wait-line 2.6s ease-in-out both; }
+@keyframes wait-line { 0% { opacity: 0; transform: translateY(4px); } 18%, 82% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .waitLine { animation: none; } }

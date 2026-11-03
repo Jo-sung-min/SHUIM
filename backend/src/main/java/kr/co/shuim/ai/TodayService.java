@@ -42,8 +42,8 @@ public class TodayService {
         String override = b.prompts().get(mode);
         String system = override != null && !override.isBlank() ? cut(override, Prompts.MAX_LEN) : Prompts.DEFAULTS.get(mode);
         String ask = switch (mode) {
-            case "praise" -> "기록을 읽고 나를 칭찬해줘.";
-            case "love" -> "기록을 읽고 오늘 나를 사랑하는 방법을 알려줘.";
+            case "praise" -> "기록을 읽고 먼저 다독여 주고, 내 마음을 알아주고, 그다음 나를 칭찬해줘.";
+            case "love" -> "기록을 읽고 내 마음을 먼저 알아주고, 다독여 주고, 있는 그대로 사랑해줘.";
             case "review" -> "메모 전체와 오늘 기록을 읽고, 과거의 다짐과 오늘을 대조해 점검해줘.";
             default -> "오늘의 나 브리핑을 만들어줘.";
         };
@@ -275,34 +275,21 @@ public class TodayService {
     }
 
     /**
-     * 칭찬받기 (AI 가 없을 때): 반말로 은근하게, 서로 다른 주제 3개를 3문장씩.
-     * ① 해낸 것(행동·목표·꾸준함) ② 힘든 날을 버틴 방식 ③ 너만의 기준이나 마음씨. 조언·아쉬운 점은 없다.
+     * 칭찬받기 (AI 가 없을 때): 반말로 은근하게, 3문단을 3~4문장씩.
+     * ① 위로(힘든 날도 괜찮아) ② 공감(티 안 내고 버텼구나) ③ 칭찬(해낸 것·너만의 기준). 조언·아쉬운 점은 없다.
      */
     static Moment localPraise(Request b) {
         List<String> lines = new ArrayList<>();
         List<RecentDay> recent = b.recent();
         int recordedDays = recent.size() + (b.today().isEmpty() ? 0 : 1);
 
-        // ① 해낸 것
-        LinkedHashSet<String> didAll = new LinkedHashSet<>(b.todayDid());
-        for (RecentDay r : recent.subList(Math.max(0, recent.size() - 3), recent.size())) didAll.addAll(r.did());
-        List<String> doneSteps = b.goals().stream().flatMap(g -> g.steps().stream().filter(s -> Boolean.TRUE.equals(s.done())).map(s -> "'" + s.text() + "'")).toList();
-        if (!didAll.isEmpty()) {
-            lines.add("최근 며칠 동안 " + josa(String.join(", ", TodayDtos.head(new ArrayList<>(didAll), 3)), "을", "를") + " 직접 했더라. 누가 시킨 것도 아닌데 하루하루 챙겨 온 거잖아. "
-                + "이런 작은 걸 꾸준히 하는 사람이 결국 자기 하루를 지켜 내는 사람이야.");
-        } else if (!doneSteps.isEmpty()) {
-            lines.add("목표에서 " + String.join(", ", TodayDtos.head(doneSteps, 2)) + "까지 해냈더라. 큰 걸 작게 나눠서 하나씩 체크하는 거, 생각보다 쉽지 않아. "
-                + "너는 말보다 행동으로 조금씩 앞으로 가는 사람이야.");
-        } else if (recordedDays >= 2) {
-            lines.add(recordedDays + "일 동안 너를 기록해 왔더라. 매일 자기를 들여다보는 건 귀찮고 쉽지 않은 일이야. "
-                + "그걸 이어 왔다는 건 네가 너를 꽤 아끼고 있다는 뜻이야.");
-        } else {
-            lines.add("오늘 여기까지 와서 너를 들여다보려고 했잖아. 바쁘고 지친 날엔 그 마음먹기도 쉽지 않아. "
-                + "너는 스스로를 그냥 내버려 두지 않는 사람이야.");
-        }
-
-        // ② 힘든 날을 버틴 방식
+        // 기록에서 힘들었던 날과 다시 올라온 날을 찾는다
         RecentDay lowDay = recent.stream().filter(r -> Optional.ofNullable(avg(r.record())).orElse(0.0) <= -2).findFirst().orElse(null);
+        List<String> bodyNotes = new ArrayList<>();
+        for (RecentDay r : recent) { String n = note(r.record(), "body"); if (n != null) bodyNotes.add(n); }
+        String tb = note(b.today(), "body");
+        if (tb != null) bodyNotes.add(tb);
+        String tired = bodyNotes.stream().filter(n -> LOW_SLEEP.matcher(n).find() || COFFEE.matcher(n).find()).findFirst().orElse(null);
         String rise = null;
         outer:
         for (int i = 1; i < recent.size(); i++) {
@@ -316,21 +303,44 @@ public class TodayService {
                 }
             }
         }
+
+        // ① 위로: 힘든 날을 먼저 다독인다 (칭찬은 아직)
         if (lowDay != null) {
             String note = b.cats().stream().map(c -> note(lowDay.record(), c.id())).filter(Objects::nonNull).findFirst().orElse(null);
-            lines.add(lowDay.date().substring(5).replace("-", "/") + "은 꽤 힘든 날이었는데도 기록을 남겼더라" + (note != null ? ": \"" + note + "\"." : ".")
-                + " 무너진 날을 그대로 적어 두는 건 생각보다 용기가 필요한 일이야. 너는 힘든 날에도 너를 외면하지 않았어.");
-        } else if (rise != null) {
-            lines.add(rise + " 그런 날은 그냥 오지 않아. 그 전날들을 묵묵히 버틴 네가 만든 거야.");
+            lines.add(lowDay.date().substring(5).replace("-", "/") + "은 꽤 힘든 날이었지" + (note != null ? " (\"" + note + "\")" : "") + ". 그런 날이 있는 건 네가 부족해서가 아니야. "
+                + "그만큼 애쓰고 있다는 뜻이야. 그날의 너도 괜찮아, 정말 괜찮아.");
+        } else if (tired != null) {
+            lines.add("몸 기록에 " + josa("\"" + tired + "\"", "이라고", "라고") + " 썼더라. 지친 몸으로 하루를 버티는 건 누구한테나 벅찬 일이야. "
+                + "오늘 좀 느려도 괜찮아. 그건 네 잘못이 아니야.");
         } else {
-            lines.add("기록을 보면 크게 흔들리지 않고 자리를 지킨 날들이 이어져. 티 나지 않게 버티는 것도 실력이야. "
-                + "그 꾸준함이 분명 너를 지켜 주고 있어.");
+            lines.add("요즘 너한테 좀 엄격했지. 잘한 건 당연하게 넘기고 못한 것만 오래 들여다봤을 거야. "
+                + "오늘은 그 잣대를 잠깐 내려놔도 괜찮아. 넌 이미 충분히 애쓰고 있어.");
         }
 
-        // ③ 너만의 기준이나 마음씨
+        // ② 공감: 어떤 마음으로 살아 냈는지 알아준다
+        if (rise != null) {
+            lines.add(rise + " 그 사이에 네가 얼마나 애썼을지 알 것 같아. 아무도 모르게 혼자 다시 일어선 거잖아. 티 안 내고 버틴 날들, 나는 봤어.");
+        } else if (recordedDays >= 2) {
+            lines.add(recordedDays + "일 동안 너를 기록해 왔더라. 지치고 귀찮은 날에도 너를 들여다본 거잖아. "
+                + "그게 얼마나 마음을 써야 하는 일인지 알아. 혼자 조용히 애쓰고 있었구나.");
+        } else {
+            lines.add("오늘 여기까지 오느라 마음이 많이 무거웠을 거야. 괜찮은 척하느라 애쓴 날도 있었겠지. "
+                + "그걸 혼자 감당하느라 힘들었겠다. 그 마음, 나는 알아.");
+        }
+
+        // ③ 칭찬: 그제야 본인은 당연하게 넘겼을 좋은 점을 짚는다
+        LinkedHashSet<String> didAll = new LinkedHashSet<>(b.todayDid());
+        for (RecentDay r : recent.subList(Math.max(0, recent.size() - 3), recent.size())) didAll.addAll(r.did());
+        List<String> doneSteps = b.goals().stream().flatMap(g -> g.steps().stream().filter(s -> Boolean.TRUE.equals(s.done())).map(s -> "'" + s.text() + "'")).toList();
         MemoIn pinned = b.memos().stream().filter(m -> Boolean.TRUE.equals(m.pinned())).findFirst().orElse(null);
         ScheduleIn doneSched = b.schedule().stream().filter(s -> Boolean.TRUE.equals(s.done())).findFirst().orElse(null);
-        if (pinned != null) {
+        if (!didAll.isEmpty()) {
+            lines.add("그 와중에 " + josa(String.join(", ", TodayDtos.head(new ArrayList<>(didAll), 3)), "을", "를") + " 직접 했더라. 누가 시킨 것도 아닌데 하루하루 챙겨 온 거잖아. "
+                + "이런 작은 걸 꾸준히 하는 사람이 결국 자기 하루를 지켜 내는 사람이야. 그게 너야.");
+        } else if (!doneSteps.isEmpty()) {
+            lines.add("목표에서 " + String.join(", ", TodayDtos.head(doneSteps, 2)) + "까지 해냈더라. 큰 걸 작게 나눠서 하나씩 체크하는 거, 생각보다 쉽지 않아. "
+                + "너는 말보다 행동으로 조금씩 앞으로 가는 사람이야.");
+        } else if (pinned != null) {
             lines.add("메모에 이런 원칙을 적어 뒀더라: \"" + cut(pinned.text(), 60) + "\". 자기 기준을 글로 남겨 두는 사람은 흔들려도 다시 돌아올 자리가 있어. "
                 + "그게 너라서 좀 든든해.");
         } else if (doneSched != null) {
@@ -341,7 +351,7 @@ public class TodayService {
                 + "그래서 나는 네가 꽤 괜찮은 사람이라고 생각해.");
         }
 
-        return new Moment("요즘 너, 생각보다 훨씬 잘 버티고 있더라", lines, "네가 걸어온 길, 나는 꽤 멋있다고 생각해.");
+        return new Moment("힘든 날도 있었지만, 너 생각보다 훨씬 잘하고 있어", lines, "네가 걸어온 길, 나는 꽤 멋있다고 생각해.");
     }
 
     private static final Pattern LOW_SLEEP = Pattern.compile("잠\\s*(못|부족|안|[0-9]\\s*시간)|못\\s*잠|못\\s*잤|피곤|졸려|새벽까지|밤새");
@@ -349,62 +359,63 @@ public class TodayService {
     private static final Pattern HARD = Pattern.compile("불안|막막|힘들|못하|싫");
 
     /**
-     * 사랑받기 (AI 가 없을 때): 반말로 다정하게, 3문단을 3~4문장씩. 문단마다 "그러니까 너는 사랑받을 자격이 충분해"로 닫는다.
-     * ① 있는 그대로의 너 ② 힘들었던 날의 너 ③ 네가 가진 따뜻함. 조언·숙제는 없다.
+     * 사랑받기 (AI 가 없을 때): 반말로 다정하게, 3문단을 3~4문장씩.
+     * ① 공감(많이 힘들었겠구나) ② 위로(네 잘못이 아니야) ③ 조건 없는 사랑(있는 그대로 사랑받을 자격). 조언·숙제는 없다.
      */
     static Moment localLove(Request b) {
         List<String> lines = new ArrayList<>();
 
-        // ① 있는 그대로의 너
-        List<String> bodyNotes = new ArrayList<>();
-        for (RecentDay r : b.recent()) { String n = note(r.record(), "body"); if (n != null) bodyNotes.add(n); }
-        String tb = note(b.today(), "body");
-        if (tb != null) bodyNotes.add(tb);
-        String lowSleep = bodyNotes.stream().filter(n -> LOW_SLEEP.matcher(n).find()).findFirst().orElse(null);
-        String coffee = bodyNotes.stream().filter(n -> COFFEE.matcher(n).find()).findFirst().orElse(null);
-        String tired = lowSleep != null ? lowSleep : coffee;
-        if (tired != null) {
-            lines.add("몸 기록에 " + josa("\"" + tired + "\"", "이라고", "라고") + " 썼더라. 그렇게 지친 몸으로도 하루를 끝까지 살아 냈잖아. "
-                + "지친 너도, 쉬고 싶은 너도 다 너야. 그런 너는 있는 그대로 아껴질 자격이 충분해.");
-        } else {
-            lines.add("점수가 높든 낮든, 기록을 했든 못 했든 너는 너야. 뭘 해내야만 소중해지는 게 아니라 그냥 너라서 소중한 거야. "
-                + "그러니까 오늘의 너도 충분히 사랑받을 자격이 있어.");
-        }
-
-        // ② 힘들었던 날의 너
+        // 기록에서 힘들었던 말을 찾는다: 마음 메모(힘든 말) → 몸 메모(잠 부족·커피)
         List<String> mindNotes = new ArrayList<>();
         String tm = note(b.today(), "mind");
         if (tm != null) mindNotes.add(tm);
         for (int i = b.recent().size() - 1; i >= 0; i--) { String n = note(b.recent().get(i).record(), "mind"); if (n != null) mindNotes.add(n); }
         String mindNote = mindNotes.stream().filter(n -> HARD.matcher(n).find()).findFirst().orElse(null);
+        List<String> bodyNotes = new ArrayList<>();
+        for (RecentDay r : b.recent()) { String n = note(r.record(), "body"); if (n != null) bodyNotes.add(n); }
+        String tb = note(b.today(), "body");
+        if (tb != null) bodyNotes.add(tb);
+        String tired = bodyNotes.stream().filter(n -> LOW_SLEEP.matcher(n).find() || COFFEE.matcher(n).find()).findFirst().orElse(null);
         List<ScheduleIn> todaySched = b.schedule().stream().filter(s -> b.date().equals(s.date()) && !Boolean.TRUE.equals(s.done())).toList();
+
+        // ① 공감: 그 마음을 먼저 알아준다
         if (mindNote != null) {
-            lines.add(josa("\"" + mindNote + "\"", "이라고", "라고") + " 쓴 날이 있었지. 그런 마음이 드는 날에도 너는 너를 놓지 않고 기록으로 남겼어. "
-                + "흔들리는 날의 너도 하나도 모자라지 않아. 그런 날의 너야말로 더 따뜻하게 사랑받아 마땅해.");
+            lines.add(josa("\"" + mindNote + "\"", "이라고", "라고") + " 쓴 날이 있었지. 그 말을 적기까지 마음이 얼마나 무거웠을까. "
+                + "많이 힘들었겠구나. 누구한테도 다 말하지 못하고 혼자 그 마음을 안고 있었을 너를 생각하면, 나도 마음이 쓰여.");
+        } else if (tired != null) {
+            lines.add("몸 기록에 " + josa("\"" + tired + "\"", "이라고", "라고") + " 썼더라. 지친 몸으로 하루를 버티느라 많이 힘들었겠구나. "
+                + "쉬고 싶어도 마음 놓고 쉬지 못했을 거야. 그 고단함, 다 알 것 같아.");
         } else if (todaySched.size() >= 3) {
-            lines.add("오늘 할 일이 " + todaySched.size() + "개나 있네. 다 해내도, 하나도 못 해도 너의 가치는 그대로야. "
-                + "사랑은 할 일을 끝낸 사람한테만 주는 상이 아니야. 바쁜 오늘의 너도 충분히 사랑받을 자격이 있어.");
+            lines.add("오늘 할 일이 " + todaySched.size() + "개나 있네. 그걸 다 떠안고 있는 마음이 얼마나 무거울까. "
+                + "많이 버거웠겠구나. 해야 할 일 사이에서 너를 챙길 틈도 없었을 거야.");
         } else {
-            lines.add("힘든 날이 와도 너는 매번 다시 하루를 시작해 왔어. 그건 생각보다 큰 용기야. "
-                + "무너질 것 같은 날의 너까지, 너는 통째로 사랑받을 자격이 있어.");
+            lines.add("여기까지 오느라 많이 지쳤겠구나. 말로 다 하지 못한 마음도 있었을 거야. "
+                + "괜찮은 척하느라 애쓴 날도 있었겠지. 그 마음, 여기서는 그냥 내려놔도 돼.");
         }
 
-        // ③ 네가 가진 따뜻함
+        // ② 위로: 버텨 낸 것을 알아보고 짐을 내려놓게 한다
         String relNote = note(b.today(), "relation");
         if (relNote == null) for (int i = b.recent().size() - 1; i >= 0 && relNote == null; i--) relNote = note(b.recent().get(i).record(), "relation");
         MemoIn pinned = b.memos().stream().filter(m -> Boolean.TRUE.equals(m.pinned())).findFirst().orElse(null);
         if (relNote != null) {
-            lines.add("관계 기록에 " + josa("\"" + relNote + "\"", "이", "가") + " 있더라. 누군가를 생각하고 마음을 쓰는 너라서, 그 마음이 너한테도 똑같이 돌아와야 해. "
-                + "네가 남한테 주는 다정함만큼, 너도 다정하게 사랑받을 자격이 있어.");
+            lines.add("그 와중에도 관계 기록에 " + josa("\"" + relNote + "\"", "이", "가") + " 있더라. 힘든 날에도 누군가에게 마음을 쓴 너야. "
+                + "그 다정함은 하나도 당연한 게 아니야. 그러니 오늘 조금 지쳐 있어도, 그건 네 잘못이 아니야.");
         } else if (pinned != null) {
-            lines.add("스스로 정한 원칙도 있지: \"" + cut(pinned.text(), 60) + "\". 자기를 지키려고 기준을 세우는 건 자기를 아끼는 마음이 있어서야. "
-                + "그 마음만큼 너는 충분히 사랑받을 자격이 있어.");
+            lines.add("스스로 정한 원칙도 있지: \"" + cut(pinned.text(), 60) + "\". 흔들리는 날에도 너를 지키려고 기준을 세운 거잖아. "
+                + "그건 네가 너를 아끼고 있다는 뜻이야. 그러니 오늘 조금 흔들렸어도 괜찮아, 그럴 수 있어.");
+        } else if (mindNote != null || tired != null) {
+            lines.add("그런 날에도 너는 너를 놓지 않고 기록으로 남겼어. 그만큼 애썼다는 뜻이야. "
+                + "힘든 건 네가 약해서가 아니라, 그만큼 열심히 살아 내고 있어서야. 그러니까 너무 자책하지 않아도 돼.");
         } else {
-            lines.add("오늘 사랑받기를 눌렀다는 건 너를 돌보고 싶은 마음이 있다는 거야. 그 마음이 있는 사람은 따뜻한 사람이야. "
-                + "그런 너는 당연히, 충분히 사랑받을 자격이 있어.");
+            lines.add("오늘 여기 와서 너를 돌보려고 한 것만으로도 충분해. 잘 해내지 못한 것 같은 날이 있어도, 그건 네 잘못이 아니야. "
+                + "누구나 그런 날이 있어, 그럴 수 있어. 오늘은 너한테 조금 덜 엄격해도 괜찮아.");
         }
 
-        return new Moment("오늘의 너도, 충분히 사랑받을 자격이 있어", lines, "넌 있는 그대로, 사랑받기에 충분한 사람이야.");
+        // ③ 조건 없는 사랑: 조심스럽게, 하지만 분명하게
+        lines.add("점수가 높든 낮든, 뭘 해냈든 못 했든 너는 너야. 무언가를 해내야만 소중해지는 게 아니라, 그냥 너라서 소중한 거야. "
+            + "아무것도 해내지 않은 날의 너까지, 너는 있는 그대로 충분히 사랑받을 자격이 있어.");
+
+        return new Moment("많이 힘들었지, 그래도 넌 충분히 사랑받을 자격이 있어", lines, "넌 있는 그대로, 사랑받기에 충분한 사람이야.");
     }
 
     private static final Set<String> STOP = Set.of("오늘", "내일", "어제", "그때", "지금", "생각", "하루", "다시", "보기", "하기", "말기", "것이", "같은데", "같아도", "그냥", "조금", "많이", "정말", "너무", "오늘은", "오늘도", "나를", "내가", "나는", "있다", "없다", "했다", "한다", "것", "수", "더");

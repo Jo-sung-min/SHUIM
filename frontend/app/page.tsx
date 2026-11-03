@@ -266,8 +266,8 @@ export default function HomePage() {
   // 기본 4칸: AI 상태(오늘 캐시)로 done/busy 를 정한다
   const aiState: Record<string, { done: boolean; on: boolean; aria: string; busyLabel: string; doneLabel?: string }> = {
     briefing: { done: Boolean(briefing), on: false, aria: "오늘의 나 정리", busyLabel: "정리 중…", doneLabel: "정리 완료" },
-    praise: { done: Boolean(moments.praise), on: open === "praise", aria: MOMENTS.praise.heading, busyLabel: "생각 중…" },
-    love: { done: Boolean(moments.love), on: open === "love", aria: MOMENTS.love.heading, busyLabel: "생각 중…" },
+    praise: { done: Boolean(moments.praise), on: open === "praise", aria: MOMENTS.praise.heading, busyLabel: "좋은 점 찾는 중…" },
+    love: { done: Boolean(moments.love), on: open === "love", aria: MOMENTS.love.heading, busyLabel: "마음 담는 중…" },
     review: { done: Boolean(review), on: reviewOpen, aria: "메모로 나를 분석", busyLabel: "분석 중…" },
   };
   const runCare = (action: CareAction) => {
@@ -320,11 +320,20 @@ export default function HomePage() {
           {!filled && !didCount && <span className={styles.careDot} aria-hidden="true" />}
         </Link>
 
+        {/* 처음 온 날: 위의 오늘의 문장처럼, 문구는 명언과 시적인 한 줄로. 카드는 인용 + 출처 + 무엇을 하는 곳인지 */}
         {empty && <section aria-labelledby="home-start-title">
-          <div className={styles.sectionHeading}><h3 id="home-start-title">나의 속도로 시작해요</h3></div>
+          <div className={styles.sectionHeading}><h3 id="home-start-title">서두르지 않아도 괜찮아요.<br />오늘은 여기서부터, 나의 속도로.</h3></div>
           <div className={styles.quickLinks}>
-            <Link href="/memo" className={`card ${styles.quickLink}`}><IconNote /><b>생각을 담는 메모</b><small>스쳐 가는 마음도<br />짧게 남겨두세요.</small></Link>
-            <Link href="/shout" className={`card ${styles.quickLink}`}><IconBubble /><b>마음을 나누는 외침</b><small>혼자 담아두기 힘든<br />이야기를 나눠요.</small></Link>
+            <Link href="/memo" className={`card ${styles.quickLink}`}>
+              <IconNote />
+              <b>“우리는 삶을 두 번 맛보려고 쓴다. 그 순간에, 그리고 돌아보며.”</b>
+              <small><span className={styles.quickWho}>아나이스 닌</span>스쳐 간 마음을 한 줄로 남겨 두는 메모</small>
+            </Link>
+            <Link href="/shout" className={`card ${styles.quickLink}`}>
+              <IconBubble />
+              <b>“나눈 슬픔은 절반이 되고, 나눈 기쁨은 두 배가 된다.”</b>
+              <small><span className={styles.quickWho}>옛 속담</span>혼자 삼키기 힘든 이야기를 꺼내 놓는 외침</small>
+            </Link>
           </div>
         </section>}
 
@@ -332,7 +341,7 @@ export default function HomePage() {
         {!empty && (
           <section aria-labelledby="home-care-title">
           <div className={styles.sectionHeading}>
-            <h3 id="home-care-title">나를 위한 시간</h3>
+            <h3 id="home-care-title">자기 자신을 사랑하는 것, 그것이 평생 이어질 로맨스의 시작이다.<small>오스카 와일드</small></h3>
             <button type="button" className={styles.sectionAdd} onClick={() => setAdding(true)} aria-label="나를 위한 시간 칸 추가"><IconPlus />추가</button>
           </div>
           <div className={styles.care}>
@@ -381,7 +390,8 @@ export default function HomePage() {
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
         {/* 칭찬 / 사랑 */}
-        {(loading === "praise" || loading === "love") && <Skeleton />}
+        {loading === "praise" && <Skeleton messages={PRAISE_WAITING} />}
+        {loading === "love" && <Skeleton messages={LOVE_WAITING} />}
         {open && openMoment && !loading && (
           <section className="card moment" style={{ marginTop: 12 }}>
             <div className="head">
@@ -496,9 +506,20 @@ export default function HomePage() {
   );
 }
 
-function Skeleton() {
+/** 칭찬받기·사랑받기를 기다리는 동안 한 줄씩 바꿔 보여 주는 말: 곁에서 천천히 읽고 있다는 느낌으로 */
+const PRAISE_WAITING = ["네 하루를 천천히 읽고 있어", "힘든 날도 있었지, 알아", "네가 당연하게 넘긴 좋은 점을 찾고 있어", "조금만 기다려 줘, 곧 알려 줄게"];
+const LOVE_WAITING = ["네 하루를 천천히 읽고 있어", "그동안 많이 애썼지", "네 마음에 닿을 말을 고르고 있어", "조금만 기다려 줘, 곧 따뜻하게 닿을게"];
+
+function Skeleton({ messages }: { messages?: string[] }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (!messages) return;
+    const t = window.setInterval(() => setI((n) => (n + 1) % messages.length), 2600);
+    return () => window.clearInterval(t);
+  }, [messages]);
   return (
-    <section className="card" style={{ marginTop: 12 }} aria-busy="true">
+    <section className="card" style={{ marginTop: 12 }} aria-busy="true" aria-label={messages ? "따뜻한 말을 준비하고 있어요" : undefined}>
+      {messages && <p key={i} className={styles.waitLine} aria-hidden="true">{messages[i]}</p>}
       <div className="skeleton" style={{ height: 20, width: "70%", marginBottom: 14 }} />
       <div className="skeleton" style={{ height: 14, width: "100%" }} />
       <div className="skeleton" style={{ height: 14, width: "88%", marginTop: 8 }} />

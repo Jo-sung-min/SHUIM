@@ -24,16 +24,17 @@ class LocalMomentTest {
     }
 
     @Test
-    void praiseIsThreeLongGentleThemes() {
+    void praiseGoesComfortThenEmpathyThenPraise() {
         Moment m = TodayService.localPraise(req("praise", RECENT, List.of("운동")));
-        assertEquals(3, m.lines().size(), "주제는 딱 3개: " + m.lines());
+        assertEquals(3, m.lines().size(), "딱 3문단: " + m.lines());
         for (String l : m.lines()) {
-            assertTrue(sentences(l) >= 3, "주제마다 길게(3문장 이상): " + l);
+            assertTrue(sentences(l) >= 3, "문단마다 길게(3문장 이상): " + l);
             assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
             assertFalse(l.contains("최고") || l.contains("대단한 거야") || l.contains("박수"), "억지로 띄우지 않기: " + l);
         }
-        assertTrue(m.lines().get(0).contains("운동"), "해낸 행동을 짚는다");
-        assertTrue(m.lines().get(1).contains("불안함"), "힘든 날의 기록을 짚는다");
+        assertTrue(m.lines().get(0).contains("불안함") && m.lines().get(0).contains("괜찮아"), "① 힘든 날을 짚으며 위로: " + m.lines().get(0));
+        assertTrue(m.lines().get(1).contains("올라온 날"), "② 다시 올라온 날을 알아주는 공감: " + m.lines().get(1));
+        assertTrue(m.lines().get(2).contains("운동"), "③ 해낸 행동을 칭찬: " + m.lines().get(2));
         assertFalse(m.closing().contains("=="));
     }
 
@@ -45,23 +46,25 @@ class LocalMomentTest {
     }
 
     @Test
-    void loveIsThreeParagraphsSayingYouDeserveLove() {
+    void loveGoesEmpathyThenComfortThenLove() {
         Moment m = TodayService.localLove(req("love", RECENT, List.of()));
         assertEquals(3, m.lines().size(), "딱 3문단: " + m.lines());
         assertTrue(m.title().contains("자격"));
         for (String l : m.lines()) {
             assertTrue(sentences(l) >= 3, "문단마다 길게(3문장 이상): " + l);
-            assertTrue(l.contains("자격") || l.contains("마땅"), "사랑받을 자격으로 닫는다: " + l);
             assertFalse(l.contains("해봐") || l.contains("해 봐") || l.contains("해보는"), "조언 금지: " + l);
             assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
         }
-        assertTrue(m.lines().get(1).contains("불안함"), "기록 속 마음 메모를 짚는다");
+        assertTrue(m.lines().get(0).contains("불안함") && m.lines().get(0).contains("힘들었겠구나"), "① 기록 속 마음 메모를 짚으며 공감: " + m.lines().get(0));
+        assertTrue(m.lines().get(1).contains("자책하지 않아도"), "② 위로: " + m.lines().get(1));
+        assertTrue(m.lines().get(2).contains("사랑받을 자격"), "③ 조건 없는 사랑: " + m.lines().get(2));
     }
 
     @Test
     void loveStillHasThreeParagraphsWithNoRecords() {
         Moment m = TodayService.localLove(req("love", List.of(), List.of()));
         assertEquals(3, m.lines().size());
-        assertTrue(m.lines().get(2).contains("사랑받기를 눌렀다는"));
+        assertTrue(m.lines().get(0).contains("지쳤겠구나"), "기록이 없어도 공감으로 시작");
+        assertTrue(m.lines().get(1).contains("네 잘못이 아니야"));
     }
 }
