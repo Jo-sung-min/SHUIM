@@ -18,8 +18,8 @@ async function load(file, dependencies, names) {
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
 const { CHAR_ATLAS, CHAR_VIEW, CHAR_ANIM } = atlas;
 const { cellW: CELL_W, cellH: CELL_H } = CHAR_ATLAS;
-/** 턱 아래 (머리카락 꼭대기부터 여기까지가 머리) — scripts/aseprite/beach-character.lua 의 얼굴 타원 아래쪽 */
-const CHIN = 52;
+/** 정면 기본 포즈의 턱 끝 — scripts/aseprite/beach-character-art.lua 의 얼굴 실루엣 좌표 */
+const CHIN = 56;
 const frameColumn = (node) => Math.round(node.tex.offset.x * CHAR_ATLAS.cols);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...atlas, CAMPFIRE: { x: 0, z: 12 }, performance,

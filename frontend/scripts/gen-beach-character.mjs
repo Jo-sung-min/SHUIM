@@ -6,6 +6,7 @@
  *   public/beach/chars.png            캐릭터 아틀라스 (72×104 칸, 앞·뒤·왼·오른 × 서있기 4·걷기 6 × 색 변형 8줄)
  *   public/beach/chars.json           위 시트의 배치 정보
  *   scripts/aseprite/beach-character.aseprite   변형 0 의 프레임·태그가 붙은 편집용 원본
+ *   scripts/aseprite/beach-character-preview.png   8가지 색상의 3배 확대 미리보기
  * 을 만든다. 색·칸 크기·프레임 수는 scripts/beach-character.config.mjs 한 곳에서 정한다 (atlas.ts 도 같은 값을 쓴다).
  *
  * Aseprite 는 PATH 의 `aseprite` 나 ASEPRITE 환경변수, 없으면 C:\Program Files\Aseprite\Aseprite.exe 를 쓴다.
@@ -38,6 +39,7 @@ const args = [
   "--script-param", `out=${out}`,
   "--script-param", `json=${json}`,
   "--script-param", `ase=${ase}`,
+  "--script-param", `art=${path.join(root, "scripts", "aseprite", "beach-character-art.lua")}`,
   "--script", path.join(root, "scripts", "aseprite", "beach-character.lua"),
 ];
 const result = spawnSync(aseprite, args, { stdio: "inherit" });
@@ -46,4 +48,10 @@ if (result.status !== 0) {
   console.error(`Aseprite 가 실패했어요 (exit ${result.status})`);
   process.exit(result.status ?? 1);
 }
+const preview = spawnSync(aseprite, [
+  "-b", "--script-param", `sheet=${out}`,
+  "--script-param", `out=${path.join(root, "scripts", "aseprite", "beach-character-preview.png")}`,
+  "--script", path.join(root, "scripts", "aseprite", "preview-character.lua"),
+], { stdio: "inherit" });
+if (preview.status !== 0) process.exit(preview.status ?? 1);
 console.log(`→ ${path.relative(root, out)}, ${path.relative(root, json)}, ${path.relative(root, ase)}`);
