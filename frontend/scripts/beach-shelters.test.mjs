@@ -18,11 +18,11 @@ async function loadModule(file, dependencies, exports) {
 
 const shelters = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "buildShelters"]);
 const { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } = shelters;
-const { resolveWalls } = await loadModule("../lib/beach/navigation.ts", {}, ["resolveWalls"]);
+const { findClearApproach, resolveWalls } = await loadModule("../lib/beach/navigation.ts", {}, ["findClearApproach", "resolveWalls"]);
 const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, ...shelters }, ["Cove", "CAMPFIRE"]);
 const stargazing = await loadModule("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot"]);
 const { BeachEngine, PLACEMENT } = await loadModule("../lib/beach/engine.ts", {
-  THREE, ...shelters, ...stargazing, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },
+  THREE, ...shelters, ...stargazing, findClearApproach, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },
 }, ["BeachEngine", "PLACEMENT"]);
 const backendSource = await readFile(new URL("../../backend/src/main/java/kr/co/shuim/beach/BeachRoom.java", import.meta.url), "utf8");
 const boundValue = (name) => Number(backendSource.match(new RegExp(`\\b${name} = (-?\\d+(?:\\.\\d+)?)`))?.[1]);
@@ -42,7 +42,8 @@ function createWalker(x, z, yaw = Math.PI) {
     bounds, obstacles, keys: new Set(), move: { x: 0, y: 0 }, auto: null, faceGoal: null, view: "first",
     restSeat: null, returnFromSeat: null, lastRestState: "", eyeHeight: 1.55,
     players: new Map(), skyRest: null, lastStargazingState: "",
-    camera: { position: new THREE.Vector3(), rotation: new THREE.Euler() },
+    camera: { position: new THREE.Vector3(), rotation: new THREE.Euler(), aspect: 16 / 9 },
+    look: { active: false, moved: false },
     sky: { position: new THREE.Vector3() },
     handlers: { onJoystick() {}, onRestChange(value) { restEvents.push(value); } },
   });
@@ -56,6 +57,32 @@ function walk(engine, frames, yaw) {
   engine.keys.clear();
   engine.updateSelf(0.05);
 }
+
+test("fire approach avoids real benches from the star circle and all cardinal directions", async () => {
+  const starts = [[7, 10.8], [0, 3], [9, 12], [0, 22], [-9, 12]];
+  for (const aspect of [390 / 844, 16 / 9]) {
+    for (const [x, z] of starts) {
+      const { engine } = createWalker(x, z);
+      engine.camera.aspect = aspect;
+      const arrival = engine.walkToFire();
+      const target = engine.auto.path[0];
+      const description = `${aspect < 0.75 ? "mobile" : "desktop"} from (${x}, ${z})`;
+      const targetRadius = Math.hypot(target.x - CAMPFIRE.x, target.z - CAMPFIRE.z);
+      assert.ok(targetRadius >= 3.2 - 1e-8 && targetRadius <= 4.6, `${description} keeps a usable viewing distance`);
+      if (aspect < 0.75) assert.ok(Math.abs(targetRadius - 4.2) < 1e-8, `${description} preserves the wider mobile view`);
+      for (let i = 0; i <= 100; i++) {
+        const px = x + (target.x - x) * i / 100, pz = z + (target.z - z) * i / 100;
+        for (const obstacle of obstacles) {
+          assert.ok(Math.hypot(px - obstacle.x, pz - obstacle.z) >= obstacle.r + 0.35 - 1e-5, `${description} has a clear route around the benches`);
+        }
+      }
+      for (let frame = 0; frame < 600 && engine.auto; frame++) engine.stepAuto(0.05);
+      if (engine.auto) engine.cancelAutoWalk();
+      assert.equal(await arrival, "arrived", `${description} arrives without a detour loop`);
+      assert.ok(Math.hypot(engine.self.x - CAMPFIRE.x, engine.self.z - CAMPFIRE.z) <= 5, `${description} stays inside the server interaction radius`);
+    }
+  }
+});
 
 test("each ocean-facing shelter and its seats stay inside the server's walkable beach", () => {
   assert.ok(SHELTERS.length >= 3);

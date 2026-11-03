@@ -12,7 +12,7 @@ import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } fr
 import { type Daylight, daylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } from "./shelters";
-import { resolveWalls } from "./navigation";
+import { findClearApproach, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { FirePowderPlayback } from "./fire-powder";
 import { SkyLanterns } from "./lanterns";
@@ -525,10 +525,10 @@ export class BeachEngine {
   walkToFire(): Promise<AutoWalkResult> {
     if (this.disposed || this.skyRest) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
-    const dx = this.self.x - FIRE.x, dz = this.self.z - FIRE.z;
-    const d = Math.hypot(dx, dz) || 1;
     const stand = this.camera.aspect < 0.75 ? 4.2 : 3.2;
-    return this.walkTo({ x: FIRE.x + (dx / d) * stand, z: FIRE.z + (dz / d) * stand }, { x: FIRE.x, z: FIRE.z });
+    const target = findClearApproach(this.self, FIRE, stand, this.obstacles, SHELTER_COLLIDERS, this.bounds);
+    if (!target) return Promise.resolve("blocked");
+    return this.walkTo(target, { x: FIRE.x, z: FIRE.z });
   }
 
   /** Approach the shared circle. Claiming a mat still requires the server's response. */
