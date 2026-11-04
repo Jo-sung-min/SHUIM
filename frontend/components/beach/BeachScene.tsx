@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { assetCssUrl } from "@/lib/assets";
 import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type ViewMode } from "@/lib/beach/engine";
-import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, type FireworkEvent, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
+import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
@@ -81,7 +81,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const lightingBusyRef = useRef(false);
   const previewHourRef = useRef<number | null>(null);
   const fireworksBusyRef = useRef(false);
-  const fireworksRequestRef = useRef<string | null>(null);
+  const fireworksRequestRef = useRef<{ id: string; variant: FireworkVariant } | null>(null);
   const fireworksClockRef = useRef({ time: -1, cooldown: 0 });
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
@@ -209,7 +209,9 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     engineRef.current?.applyFireworks(events ?? [], time);
     if (time === previous.time && cooldown === previous.cooldown) return;
     fireworksClockRef.current = { time, cooldown };
-    setFireworksDeadline(Date.now() + Math.max(0, Math.min(15_000, cooldown - time)));
+    const remaining = Math.max(0, Math.min(15_000, cooldown - time));
+    // An expired cooldown is zero, so an idle tick cannot briefly disable and close the picker.
+    setFireworksDeadline(remaining > 0 ? Date.now() + remaining : 0);
   }, []);
 
   const openLighting = useCallback((open: boolean) => {
@@ -625,16 +627,17 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     };
   }, [communityId, scheduleTick, stopWithError, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks]);
 
-  const launchFireworks = async () => {
+  const launchFireworks = async (variant: FireworkVariant) => {
     const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
     if (!ticket || !engine || !fireworksControl || fireworksBusyRef.current || blockedRef.current || lost || Date.now() < fireworksDeadline) return;
     const belongsToVisit = () => aliveRef.current && !blockedRef.current && engineRef.current === engine && ticketRef.current === ticket && visitGenerationRef.current === visit;
     fireworksBusyRef.current = true; setFireworksBusy(true);
-    const requestId = fireworksRequestRef.current ?? crypto.randomUUID();
-    fireworksRequestRef.current = requestId;
+    const request = fireworksRequestRef.current ?? { id: crypto.randomUUID(), variant };
+    fireworksRequestRef.current = request;
+    if (request.variant !== variant) showToast("이전 요청을 먼저 확인할게요. 완료된 뒤 새 불꽃놀이를 골라 주세요.", { kind: "info" });
     haptic();
     try {
-      const result = await launchBeachFireworks(ticket, requestId);
+      const result = await launchBeachFireworks(ticket, request.id, request.variant);
       if (!belongsToVisit()) return;
       fireworksRequestRef.current = null;
       applyFireworks([result.event], result.serverTime, result.cooldownUntil);
@@ -960,7 +963,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label="바닷가 나가기"><IconChevronL />나가기</Link>
         {phase === "ready" && <div className={styles.adminTools}>
           {fireworksControl && <RoomFireworksControls deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
-            onLaunch={() => void launchFireworks()} />}
+            onLaunch={(variant) => void launchFireworks(variant)} />}
           {lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}
             busy={lightingBusy} disabled={lost} onOpenChange={openLighting} onSelect={mode => void changeLighting(mode)} />}
         </div>}

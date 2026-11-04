@@ -32,20 +32,23 @@ export interface EnterResponse {
   serverTime?: number;
 }
 
-export interface FireworkEvent { id: string; seed: number; startedAt: number; durationMs: number }
+export type FireworkVariant = "festival" | "songi" | "love";
+export interface FireworkEvent { id: string; seed: number; startedAt: number; durationMs: number; variant?: FireworkVariant }
 export interface FireworkLaunch { event: FireworkEvent; serverTime: number; cooldownUntil: number }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isTime = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const isFireworkVariant = (value: unknown): value is FireworkVariant => value === "festival" || value === "songi" || value === "love";
 
 /** Only a bounded server event can allocate fireworks particles. */
 export function readFireworkEvent(value: unknown): FireworkEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const event = value as FireworkEvent;
-  if (Object.keys(event).length !== 4 || !Object.keys(event).every(key => ["id", "seed", "startedAt", "durationMs"].includes(key))
+  if (![4, 5].includes(Object.keys(event).length) || !Object.keys(event).every(key => ["id", "seed", "startedAt", "durationMs", "variant"].includes(key))
     || typeof event.id !== "string" || !UUID_PATTERN.test(event.id)
     || !Number.isSafeInteger(event.seed) || event.seed < 1 || event.seed >= 2_147_483_647
-    || !isTime(event.startedAt) || event.startedAt > Number.MAX_SAFE_INTEGER - 15_000 || event.durationMs !== 12_000) return null;
-  return { id: event.id.toLowerCase(), seed: event.seed, startedAt: event.startedAt, durationMs: event.durationMs };
+    || !isTime(event.startedAt) || event.startedAt > Number.MAX_SAFE_INTEGER - 15_000 || event.durationMs !== 12_000
+    || (Object.hasOwn(event, "variant") && !isFireworkVariant(event.variant))) return null;
+  return { id: event.id.toLowerCase(), seed: event.seed, startedAt: event.startedAt, durationMs: event.durationMs, variant: event.variant ?? "festival" };
 }
 
 function readFireworksState(response: { fireworks?: unknown; fireworksCooldownUntil?: unknown; serverTime?: unknown }) {
@@ -61,7 +64,7 @@ function readFireworksState(response: { fireworks?: unknown; fireworksCooldownUn
       throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
     }
     const previous = unique.get(event.id);
-    if (previous && (previous.seed !== event.seed || previous.startedAt !== event.startedAt)) throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    if (previous && (previous.seed !== event.seed || previous.startedAt !== event.startedAt || previous.variant !== event.variant)) throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
     if (response.serverTime < event.startedAt + event.durationMs) unique.set(event.id, event);
   }
   return { fireworks: Array.from(unique.values()).sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id)),
@@ -261,8 +264,9 @@ export async function setBeachLighting(ticket: string, mode: RoomLightingMode): 
   if (!lighting || lighting.mode !== mode) throw new Error("방의 시간을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   return lighting;
 }
-export async function launchBeachFireworks(ticket: string, requestId: string): Promise<FireworkLaunch> {
-  const response = await post<FireworkLaunch>("/api/beach/fireworks", { ticket, requestId }, { signal: AbortSignal.timeout(8000) });
+export async function launchBeachFireworks(ticket: string, requestId: string, variant: FireworkVariant = "festival"): Promise<FireworkLaunch> {
+  if (!isFireworkVariant(variant)) throw new Error("불꽃놀이 종류를 다시 골라 주세요.");
+  const response = await post<FireworkLaunch>("/api/beach/fireworks", { ticket, requestId, variant }, { signal: AbortSignal.timeout(8000) });
   const event = readFireworkEvent(response?.event);
   if (!response || Object.keys(response).length !== 3 || !Object.keys(response).every(key => ["event", "serverTime", "cooldownUntil"].includes(key))
     || !event || !isTime(response.serverTime) || !isTime(response.cooldownUntil)

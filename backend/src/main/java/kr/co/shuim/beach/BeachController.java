@@ -1,5 +1,7 @@
 package kr.co.shuim.beach;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.auth.AuthService;
@@ -53,7 +55,18 @@ public class BeachController {
     public record PowderBody(String ticket, String requestId, String color) {}
     public record RestBody(String ticket, String action, String spotId) {}
     public record LightingBody(String ticket, String mode) {}
-    public record FireworksBody(String ticket, String requestId) {}
+    public record FireworksBody(String ticket, String requestId, JsonNode variant) {
+        public FireworksBody(String ticket, String requestId) { this(ticket, requestId, (JsonNode) null); }
+        public FireworksBody(String ticket, String requestId, String variant) {
+            this(ticket, requestId, variant == null ? null : TextNode.valueOf(variant));
+        }
+        String selectedVariant() {
+            // Absent means the legacy festival preset; explicit null and non-strings are malformed.
+            if (variant == null) return null;
+            if (!variant.isTextual()) throw ApiException.badRequest("불꽃놀이 종류를 다시 골라 주세요.");
+            return variant.textValue();
+        }
+    }
 
     private CircleService.Circle requireMember(String communityId, DbUser me) {
         if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
@@ -158,7 +171,7 @@ public class BeachController {
         return beach.setLighting(body.ticket(), me.id(), body.mode());
     }
 
-    /** POST /api/beach/fireworks { ticket, requestId: UUID }. A room-wide, retry-safe administrator action. */
+    /** POST /api/beach/fireworks { ticket, requestId: UUID, variant? }. A room-wide, retry-safe administrator action. */
     @PostMapping("/api/beach/fireworks")
     public BeachRoom.FireworkLaunch fireworks(@RequestBody(required = false) FireworksBody body, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
@@ -166,7 +179,7 @@ public class BeachController {
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireMember(visit.communityId(), me);
         if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 불꽃놀이를 시작할 수 있어요.");
-        return beach.launchFireworks(body.ticket(), me.id(), body.requestId());
+        return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), body.selectedVariant());
     }
 
     /** POST /api/beach/leave { ticket } → { ok: true } (모르는 티켓이어도 ok) */

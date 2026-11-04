@@ -8,12 +8,18 @@ function assetBase(value: string): string {
   } catch { return ""; }
 }
 
+export const DEFAULT_ASSET_BASE_URL = "https://cdn.sorow.co.kr";
+// Public image/model files live only on the CDN. An unset or malformed override
+// must keep the verified production origin instead of requesting deleted local files.
 // Next.js replaces this direct reference at build time in both server and client bundles.
-const BASE = assetBase(process.env.NEXT_PUBLIC_ASSET_BASE_URL ?? "");
-const ROOT_MEDIA = new Set(["/splash.webp", "/sorow-logo.png", "/favicon.svg"]);
+const BASE = assetBase(process.env.NEXT_PUBLIC_ASSET_BASE_URL ?? "") || DEFAULT_ASSET_BASE_URL;
+const ROOT_MEDIA = new Set([
+  "/splash.webp", "/sorow-logo.png", "/favicon.svg",
+  "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png",
+]);
 
 export function assetUrl(path: string): string {
-  if (!BASE || !path.startsWith("/") || path.startsWith("//")) return path;
+  if (!path.startsWith("/") || path.startsWith("//")) return path;
   try {
     const url = new URL(path, "https://public-assets.invalid");
     if (url.origin !== "https://public-assets.invalid") return path;

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 import { stripTypeScriptTypes } from "node:module";
 import vm from "node:vm";
 import assert from "node:assert/strict";
@@ -155,7 +156,7 @@ function sampleModel() {
 test("the Tripo model replaces fallback wood only after loading and keeps quiet embers at zero fuel", async () => {
   let resolve;
   const pending = new Promise(done => { resolve = done; });
-  const Model = await modelClass(url => { assert.equal(url, "/beach/models/tripo-firewood-mobile-v2.glb"); return pending; });
+  const Model = await modelClass(url => { assert.equal(url, assets.assetUrl("/beach/models/tripo-firewood-mobile-v2.glb")); return pending; });
   const scene = new THREE.Scene(), fallback = [new THREE.Group(), new THREE.Group()];
   scene.add(...fallback);
   const model = new Model(scene, 4, 12, fallback), source = sampleModel();
@@ -213,7 +214,7 @@ test("a failed model download preserves the working procedural campfire", async 
 });
 
 test("the shipped Tripo asset stays within mobile geometry and download budgets with no external resources", async () => {
-  const bytes = await readFile(new URL("../public/beach/models/tripo-firewood-mobile-v2.glb", import.meta.url));
+  const bytes = await readAssetBytes("/beach/models/tripo-firewood-mobile-v2.glb");
   assert.equal(bytes.readUInt32LE(0), 0x46546c67);
   assert.equal(bytes.readUInt32LE(8), bytes.length);
   assert.ok(bytes.length < 1.25 * 1024 * 1024, `optimized download is ${bytes.length} bytes`);
@@ -228,7 +229,7 @@ test("the shipped Tripo asset stays within mobile geometry and download budgets 
 });
 
 test("the shipped mobile model decodes with the same Three.js Meshopt loader used by the app", async () => {
-  const bytes = await readFile(new URL("../public/beach/models/tripo-firewood-mobile-v2.glb", import.meta.url));
+  const bytes = await readAssetBytes("/beach/models/tripo-firewood-mobile-v2.glb");
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const loader = new ThreeGLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   // Node has no browser image surface. Keep real geometry, transforms and Meshopt decoding;

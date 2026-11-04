@@ -18,6 +18,16 @@ out-ait/
 next-env.d.ts
 *.tsbuildinfo
 .vercel
+# Public media lives in S3/CDN; keep source binaries out of Git.
+frontend/public/**/*.png
+frontend/public/**/*.jpg
+frontend/public/**/*.jpeg
+frontend/public/**/*.webp
+frontend/public/**/*.svg
+frontend/public/**/*.gif
+frontend/public/**/*.avif
+frontend/public/**/*.ico
+frontend/public/**/*.glb
 
 # backend (Spring Boot / Gradle)
 .gradle/

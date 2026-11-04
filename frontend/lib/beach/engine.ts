@@ -77,6 +77,20 @@ export interface EngineOptions {
 const FOLLOW_DISTANCE = 5.4;
 const FOLLOW_DISTANCE_SEATED = 3.6;
 const BED_VIEW = { headDistance: 1.42, eyeOffset: 0.16, yawLimit: 0.3, minPitch: -0.08, maxPitch: 0.18, pitch: 0 };
+// Keep every first-person screen ray above the horizon, with room to look around below the zenith.
+const SKY_VIEW = { pitch: 1.50, minPitch: 0.75, maxPitch: 1.56, thirdMinPitch: 0.75, thirdMaxPitch: 1.50 };
+
+/** Spend extra pixels only when the camera renders the sky layer, with no terrain or shadows. */
+export function beachRenderSettings(width: number, height: number, deviceRatio: number, mobile: boolean, quality: "high" | "low", skyOnly: boolean) {
+  const dpr = Number.isFinite(deviceRatio) && deviceRatio > 0 ? deviceRatio : 1;
+  const scale = mobile ? 0.85 : quality === "low" ? 0.75 : 1;
+  if (mobile && skyOnly) {
+    const w = Math.max(1, Math.round(width)), h = Math.max(1, Math.round(height));
+    return { width: w, height: h, pixelRatio: Math.min(dpr, 2, Math.sqrt(1_500_000 / (w * h))) };
+  }
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)),
+    pixelRatio: quality === "low" ? 1 : Math.min(dpr, mobile ? 1.3 : 1.5) };
+}
 
 const WALK_SPEED = 3.2;
 const EYE = 1.55;
@@ -340,8 +354,10 @@ export class BeachEngine {
   quality: "high" | "low" = "high";
   private frameAvg = 16;
   private slowSince = 0;
+  private qualityWarmupUntil = Infinity;
   private lastRender = 0;
-  private scale: number;
+  private skyRenderMode = false;
+  private renderSize = { width: 0, height: 0, pixelRatio: 0 };
   private mobile: boolean;
 
   private handlers: EngineHandlers;
@@ -358,10 +374,7 @@ export class BeachEngine {
     this.self = { x: opts.spawn.x, z: opts.spawn.z, yaw: opts.spawn.yaw, moving: false, pitch: 0.07, bobT: 0 };
     this.orbitYaw = opts.spawn.yaw;
     this.mobile = typeof navigator !== "undefined" && (navigator.maxTouchPoints > 0 || /Android|iPhone|iPad/i.test(navigator.userAgent));
-    this.scale = this.mobile ? 0.85 : 1;
-
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance", stencil: false, depth: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1.3 : 1.5));
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.sortObjects = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -389,6 +402,10 @@ export class BeachEngine {
       this.updateSelfAvatar(0);
       this.updatePlayers(0);
       await this.fire?.whenReady();
+      // Asset decoding and the first shader compilations are not steady-state frame costs.
+      this.qualityWarmupUntil = performance.now() + 3000;
+      this.frameAvg = 16;
+      this.slowSince = 0;
     });
     this.applyDaylight(this.daylight);
     this.bindInput();
@@ -593,7 +610,7 @@ export class BeachEngine {
     if (this.isBedLying) {
       this.self.yaw = view === "first" ? 0 : this.skyRest!.yaw;
       this.self.pitch = view === "first" ? BED_VIEW.pitch : 1.25;
-    } else if (this.skyRest && view === "first") this.self.pitch = 1.50;
+    } else if (this.skyRest && view === "first") this.self.pitch = SKY_VIEW.pitch;
     this.followSnap = true;
     this.handlers.onViewChange?.(view);
   }
@@ -1002,7 +1019,8 @@ export class BeachEngine {
         if (this.view === "third") this.orbitYaw -= dx * k;
         else this.self.yaw -= dx * k;
         this.self.pitch = this.skyRest
-          ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, this.view === "first" ? 1.40 : 0.88, this.view === "first" ? 1.56 : 1.50)
+          ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, this.view === "first" ? SKY_VIEW.minPitch : SKY_VIEW.thirdMinPitch,
+            this.view === "first" ? SKY_VIEW.maxPitch : SKY_VIEW.thirdMaxPitch)
           : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
       }
       if (this.view === "first") this.faceGoal = null;
@@ -1343,18 +1361,26 @@ export class BeachEngine {
   resize() {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    this.renderer.setSize(Math.max(1, Math.round(w * this.scale)), Math.max(1, Math.round(h * this.scale)), false);
+    this.skyRenderMode = Boolean(this.skyRest && !this.isBedLying && this.view === "first");
+    const size = beachRenderSettings(w, h, window.devicePixelRatio || 1, this.mobile, this.quality, this.skyRenderMode);
+    if (!this.renderSize || size.width !== this.renderSize.width || size.height !== this.renderSize.height || size.pixelRatio !== this.renderSize.pixelRatio) {
+      // One allocation sets both dimensions and DPR; unchanged frames never resize the canvas.
+      this.renderer.setDrawingBufferSize(size.width, size.height, size.pixelRatio);
+      this.renderSize = size;
+    }
     this.camera.aspect = w / h;
     this.camera.fov = this.cameraFov();
     this.camera.updateProjectionMatrix();
+  }
+
+  private syncSkyResolution() {
+    if (this.skyRenderMode !== Boolean(this.skyRest && !this.isBedLying && this.view === "first")) this.resize();
   }
 
   private setQuality(level: "high" | "low") {
     if (this.quality === level) return;
     this.quality = level;
     this.renderer.shadowMap.enabled = level === "high";
-    this.scale = level === "low" ? (this.mobile ? 0.65 : 0.75) : this.mobile ? 0.85 : 1;
-    this.renderer.setPixelRatio(level === "low" ? 1 : Math.min(window.devicePixelRatio || 1, this.mobile ? 1.3 : 1.5));
     this.resize();
     this.handlers.onQuality?.(level);
   }
@@ -1367,10 +1393,15 @@ export class BeachEngine {
     const elapsed = now - this.lastRender;
     this.lastRender = now;
     // 프레임 시간 평균이 3초 넘게 느리면 화질을 낮춘다 (한 번 낮추면 이 방문 동안 유지). 탭 전환 같은 긴 멈춤은 세지 않는다
-    if (elapsed < 120) this.frameAvg += (elapsed - this.frameAvg) * 0.06;
-    if (this.quality === "high") {
-      if (this.frameAvg > 34) { if (!this.slowSince) this.slowSince = now; else if (now - this.slowSince > 3000) this.setQuality("low"); }
-      else this.slowSince = 0;
+    if (now >= this.qualityWarmupUntil && document.visibilityState !== "hidden" && elapsed > 0 && elapsed < 120) {
+      this.frameAvg += (elapsed - this.frameAvg) * 0.06;
+      if (this.quality === "high") {
+        if (this.frameAvg > 34) { if (!this.slowSince) this.slowSince = now; else if (now - this.slowSince > 3000) this.setQuality("low"); }
+        else this.slowSince = 0;
+      }
+    } else {
+      this.slowSince = 0;
+      this.frameAvg = 16;
     }
     this.time += dt;
 
@@ -1380,6 +1411,7 @@ export class BeachEngine {
     }
 
     this.updateSelf(dt);
+    this.syncSkyResolution();
     this.updatePlayers(dt);
     this.updateFx(dt);
     this.updateWorld(dt);
@@ -1486,11 +1518,11 @@ export class BeachEngine {
       if (this.view === "first") {
         const head = stargazingBodyPoint(resting, 1.42);
         this.camera.position.set(head.x, surface + 0.16, head.z);
-        this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, 1.40, 1.56), this.self.yaw, 0, "YXZ");
+        this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.minPitch, SKY_VIEW.maxPitch), this.self.yaw, 0, "YXZ");
         return;
       }
       const focus = stargazingBodyPoint(resting, 0.9);
-      const elevation = THREE.MathUtils.clamp(this.self.pitch, 0.88, 1.5);
+      const elevation = THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch);
       const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
       const reach = Math.max(4.4, 1.55 / (Math.tan(halfFov) * Math.max(0.3, Math.min(1, this.camera.aspect))));
       const horizontal = Math.cos(elevation) * reach;
@@ -1525,10 +1557,10 @@ export class BeachEngine {
     if (this.view === "first") {
       const head = stargazingBodyPoint(resting, 1.42);
       this.camera.position.set(head.x, STARGAZING.avatarY + 0.16, head.z);
-      this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, 1.40, 1.56), this.self.yaw, 0, "YXZ");
+      this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.minPitch, SKY_VIEW.maxPitch), this.self.yaw, 0, "YXZ");
       return;
     }
-    const elevation = THREE.MathUtils.clamp(this.self.pitch, 0.88, 1.5);
+    const elevation = THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch);
     const reach = stargazingCameraDistance(this.camera.fov, this.camera.aspect, elevation);
     const horizontal = Math.cos(elevation) * reach;
     const wanted = new THREE.Vector3(STARGAZING.x + Math.sin(this.orbitYaw) * horizontal,
@@ -1775,7 +1807,7 @@ export class BeachEngine {
     this.cove.update(this.time, this.camera);
     (this.seaMat.uniforms.uCamPos.value as THREE.Vector3).copy(this.camera.position);
     this.lanterns?.update(this.time);
-    this.fireworks?.update(this.camera);
+    this.fireworks?.update(this.camera, undefined, this.renderer.domElement.height);
   }
 
   /* ---------------- 정리 ---------------- */

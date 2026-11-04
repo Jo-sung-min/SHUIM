@@ -59,7 +59,7 @@ function fixture(skin = 0) {
     avatarModels: pool("male"), femaleAvatarModels: pool("female"),
     onsenAvatarModels: pool("male-onsen"), onsenAvatarReady: true, onsenAvatarRequested: true,
     femaleOnsenAvatarModels: pool("female-onsen"), femaleOnsenAvatarReady: true, femaleOnsenAvatarRequested: true,
-    fireworks: null, fx: [], clock: { dispose() {} }, renderer: { dispose() {} },
+    fireworks: null, fx: [], clock: { dispose() {} }, renderer: { domElement: { height: 900 }, dispose() {} },
   });
   engine.selfNode = engine.createSelfAvatar();
   return { engine, camera, changes };

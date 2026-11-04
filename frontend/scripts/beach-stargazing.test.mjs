@@ -7,6 +7,7 @@ import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { hotSpring } from "./beach-world-fixture.mjs";
+import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -34,7 +35,7 @@ const rest = (slot) => ({ pose: "lying", ...stargazingSlot(slot) });
 const standing = { pose: "standing", spotId: null, slot: null, x: 2, z: 4, yaw: 0.3 };
 
 // Read the approved sprite pixels: a geometric point high on the head only tests hair visibility.
-const spritePng = await readFile(new URL("../public/beach/chars-v2.png", import.meta.url));
+const spritePng = await readAssetBytes("/beach/chars-v2.png");
 const spriteWidth = spritePng.readUInt32BE(16), spriteHeight = spritePng.readUInt32BE(20);
 const compressedPixels = [];
 for (let offset = 8; offset < spritePng.length;) {
@@ -168,10 +169,11 @@ test("confirmed lying blocks movement, preserves dragged sky view across ticks, 
 });
 
 test("overhead view fits the complete circle at phone and narrow desktop aspect ratios", () => {
-  for (const aspect of [320 / 844, 390 / 844, 1920 / 911]) {
+  for (const aspect of [320 / 844, 390 / 844, 1920 / 911]) for (const pitch of [.75, 1.25, 1.50]) for (const yaw of [0, Math.PI / 2]) {
     const { engine, camera } = fixture();
     camera.aspect = aspect; camera.updateProjectionMatrix();
-    engine.applyRest(rest(0)); engine.setView("third"); engine.updateSelf(0.016);
+    engine.applyRest(rest(0)); engine.setView("third");
+    engine.self.pitch = pitch; engine.orbitYaw = yaw; engine.updateSelf(0.016);
     camera.updateMatrixWorld();
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 32) {
       const point = new THREE.Vector3(7 + Math.sin(angle) * 3.4, 0, 7 + Math.cos(angle) * 3.4).project(camera);
@@ -303,24 +305,48 @@ test("bed dragging uses sea-view limits, duplicate claims preserve the view, and
   close(camera.position.y, 1.55, "standing restores ordinary eye height");
 });
 
-test("star-view dragging retains its sky-only first-person and overhead third-person limits", () => {
-  const { engine, camera } = fixture();
-  const drag = dy => {
-    engine.look = { active: true, id: 1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
-    engine.onPointerMove({ pointerId: 1, pointerType: "touch", clientX: 0, clientY: dy });
-  };
-  engine.applyRest(rest(2)); engine.setView("first");
-  close(engine.self.pitch, 1.5);
-  drag(10000); close(engine.self.pitch, 1.4);
-  drag(-10000); close(engine.self.pitch, 1.56);
-  engine.updateSelf(0.016);
-  assert.equal(camera.layers.mask, 2);
-  engine.setView("third");
-  drag(10000); close(engine.self.pitch, 0.88);
-  drag(-10000); close(engine.self.pitch, 1.5);
-  engine.updateSelf(0.016);
-  assert.equal(camera.layers.mask, 1);
-  assert.equal(engine.selfNode.sprite.visible, true);
+test("mouse and touch can freely explore a wider sky from mats and floating spots without turning the body or flipping", () => {
+  for (const claim of [rest(2), { pose: "lying", spotId: "onsen-float", slot: 1 }]) {
+    for (const pointerType of ["mouse", "touch"]) for (const mobile of [false, true]) {
+      const { engine, camera } = fixture();
+      engine.mobile = mobile;
+      const drag = (dx, dy) => {
+        engine.look = { active: true, id: 1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
+        engine.onPointerMove({ pointerId: 1, pointerType, clientX: dx, clientY: dy });
+      };
+      engine.applyRest(claim); engine.setView("first");
+      const body = engine.getSelf();
+      close(engine.self.pitch, 1.5, "the default still looks almost straight up");
+      const initialYaw = engine.self.yaw;
+      drag(Math.PI / (pointerType === "mouse" ? .0042 : .0072), 10000);
+      close(engine.self.pitch, .75); close(engine.self.yaw, initialYaw - Math.PI);
+      engine.updateSelf(0.016); camera.updateMatrixWorld();
+      close(camera.rotation.x, .75);
+      assert.equal(camera.layers.mask, 2);
+      for (const x of [-1, 1]) for (const y of [-1, 1]) {
+        const ray = new THREE.Vector3(x, y, .5).unproject(camera).sub(camera.position).normalize();
+        assert.ok(ray.y > 0, "the wider first-person view still contains sky at every screen corner");
+      }
+      assert.deepEqual(engine.getSelf(), body, "looking around never changes the shared resting position or body yaw");
+      const yaw = engine.self.yaw;
+      engine.applyRest(claim);
+      close(engine.self.pitch, .75); close(engine.self.yaw, yaw, "duplicate server claims preserve the chosen view");
+      drag(0, -10000); close(engine.self.pitch, 1.56);
+      engine.updateSelf(0.016);
+      assert.ok(camera.rotation.x < Math.PI / 2, "the camera cannot turn upside down at the zenith");
+      close(camera.rotation.z, 0);
+      engine.setView("third");
+      drag(0, 10000); close(engine.self.pitch, .75);
+      engine.updateSelf(0.016);
+      assert.equal(camera.layers.mask, 1); assert.equal(engine.selfNode.sprite.visible, true);
+      assert.ok(camera.position.y > (engine.skyRest.avatarY ?? 0) + 1);
+      assert.ok(camera.getWorldDirection(new THREE.Vector3()).y < 0);
+      drag(0, -10000); close(engine.self.pitch, 1.5);
+      assert.deepEqual(engine.getSelf(), body);
+      engine.applyRest(standing);
+      close(engine.self.pitch, .07); close(engine.self.yaw, standing.yaw);
+    }
+  }
 });
 
 test("bed occupancy is per hut, excludes star mats, and local/remote occupants use the same raised pose", () => {

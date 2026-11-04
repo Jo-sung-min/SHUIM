@@ -13,7 +13,7 @@ import InlineScript from "@/components/InlineScript";
 import AitRuntime from "@/components/AitRuntime";
 import { IS_AIT } from "@/lib/ait";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
-import { publicAssetStyles } from "@/lib/assets";
+import { assetUrl, publicAssetStyles } from "@/lib/assets";
 
 /**
  * 사이트 전체 메타 태그. 제목·설명·파비콘·공유 이미지는 관리자가 /admin › 사이트 에서 바꾼 값(/api/site)을 쓰고,
@@ -43,11 +43,11 @@ export async function generateMetadata(): Promise<Metadata> {
       ? { icon: [{ url: favicon }], shortcut: [{ url: favicon }], apple: [{ url: favicon }] }
       : {
           icon: [
-            { url: "/favicon.svg", type: "image/svg+xml" },
-            { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+            { url: assetUrl("/favicon.svg"), type: "image/svg+xml" },
+            { url: assetUrl("/icon-192.png"), type: "image/png", sizes: "192x192" },
           ],
-          shortcut: [{ url: "/favicon.svg" }],
-          apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+          shortcut: [{ url: assetUrl("/favicon.svg") }],
+          apple: [{ url: assetUrl("/apple-icon.png"), sizes: "180x180", type: "image/png" }],
         },
     // openGraph.title/description 은 비워 두면 각 페이지의 제목·설명이 들어간다
     openGraph: {

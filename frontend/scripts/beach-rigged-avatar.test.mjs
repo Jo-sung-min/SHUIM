@@ -8,8 +8,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { assets } from "./assets-fixture.mjs";
+import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 
-const bytes = await readFile(new URL("../public/beach/models/tripo-male-rigged-mobile-v3.glb", import.meta.url));
+const bytes = await readAssetBytes("/beach/models/tripo-male-rigged-mobile-v3.glb");
 const modelFiles = { male: "tripo-male-rigged-mobile-v3.glb", female: "tripo-female-rigged-mobile-v2.glb", "male-onsen": "tripo-male-onsen-mobile-v1.glb", "female-onsen": "tripo-female-onsen-mobile-v1.glb" };
 const typed = await readFile(new URL("../lib/beach/rigged-avatar.ts", import.meta.url), "utf8");
 const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
@@ -21,7 +22,7 @@ async function model(kind = "male") {
     parser.loadTextureImage = () => Promise.resolve(new THREE.Texture());
     return { name: "CPU_texture_decode" };
   });
-  const data = kind === "male" ? bytes : await readFile(new URL(`../public/beach/models/${modelFiles[kind]}`, import.meta.url));
+  const data = kind === "male" ? bytes : await readAssetBytes(`/beach/models/${modelFiles[kind]}`);
   return loader.parseAsync(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), "");
 }
 
@@ -29,7 +30,7 @@ function runtime(load, kind = "male") {
   let requests = 0;
   class Loader {
     setMeshoptDecoder(decoder) { assert.equal(decoder, MeshoptDecoder); return this; }
-    loadAsync(url) { assert.equal(url, `/beach/models/${modelFiles[kind]}`); requests++; return load(); }
+    loadAsync(url) { assert.equal(url, assets.assetUrl(`/beach/models/${modelFiles[kind]}`)); requests++; return load(); }
   }
   const context = { THREE, GLTFLoader: Loader, MeshoptDecoder, cloneSkeleton, ...assets };
   vm.runInNewContext(`${source}\nglobalThis.api = { BeachAvatarModels, BeachAvatar };`, context);

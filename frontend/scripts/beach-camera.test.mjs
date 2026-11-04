@@ -27,6 +27,7 @@ const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls"]
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...atlas, ...resting, ...bedding, ...benches, ...navigation, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ getContext: () => null }) },
+  window: { devicePixelRatio: 3 },
 }, ["BeachEngine"]);
 const close = (value, expected, message) => assert.ok(Math.abs(value - expected) < 1e-6, message ?? `${value} ≈ ${expected}`);
 const angleClose = (value, expected, message) => close(Math.atan2(Math.sin(value - expected), Math.cos(value - expected)), 0, message);
@@ -118,9 +119,8 @@ test("first-person view reveals more scenery in both portrait and landscape with
   for (const mobile of [false, true]) for (const aspect of [390 / 844, 16 / 9]) {
     const { engine, camera } = fixture();
     engine.mobile = mobile;
-    engine.scale = 1;
     engine.canvas = { clientWidth: aspect * 900, clientHeight: 900 };
-    engine.renderer = { setSize() {} };
+    engine.renderer = { setDrawingBufferSize() {} };
     engine.resize();
     camera.updateMatrixWorld(true);
     const originalFov = camera.fov, originalProjection = camera.projectionMatrix.clone();

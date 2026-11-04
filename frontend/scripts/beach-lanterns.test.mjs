@@ -33,7 +33,7 @@ function setup() {
 
 test("paper lanterns wait for the true-alpha image and stay above the sea", () => {
   const { lanterns, paper, glow, far, requests, load } = setup();
-  assert.equal(requests[0].url, "/beach/real/sky-lantern-v2.png");
+  assert.equal(requests[0].url, assets.assetUrl("/beach/real/sky-lantern-v2.png"));
   assert.equal(paper.geometry.instanceCount, 22);
   assert.equal(far.geometry.getAttribute("aBase").count, 66);
   const bases = paper.geometry.getAttribute("aBase");

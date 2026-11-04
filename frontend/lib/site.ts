@@ -2,6 +2,7 @@
  * 사이트 정보와 SEO 기본값. 서버(generateMetadata·manifest·sitemap)와 클라이언트(관리자 화면)가 같이 쓴다.
  * 관리자가 /admin › 사이트 에서 바꾼 제목·설명·파비콘·공유 이미지는 /api/site 에서 오고, 없으면 여기 기본값.
  */
+import { assetUrl } from "./assets";
 
 export const SITE = {
   name: "소로우",
@@ -39,8 +40,8 @@ export function normalizeSite(j: Partial<Record<keyof SiteSettings, unknown>> | 
 
 export const siteTitle = (s: SiteSettings) => s.title?.trim() || SITE.fullName;
 export const siteDescription = (s: SiteSettings) => s.description?.trim() || SITE.description;
-/** 파비콘 주소: 올린 게 있으면 API, 없으면 기본 SVG */
-export const faviconHref = (s: SiteSettings) => (s.faviconAt ? `/api/site/favicon?v=${s.faviconAt}` : "/favicon.svg");
+/** 파비콘 주소: 올린 게 있으면 API, 없으면 CDN의 기본 SVG */
+export const faviconHref = (s: SiteSettings) => (s.faviconAt ? `/api/site/favicon?v=${s.faviconAt}` : assetUrl("/favicon.svg"));
 /** 공유(OG) 이미지 주소: 올린 게 있으면 API, 없으면 /og 에서 그려 주는 기본 이미지 */
 export const ogHref = (s: SiteSettings) => (s.ogAt ? `/api/site/og?v=${s.ogAt}` : "/og");
 

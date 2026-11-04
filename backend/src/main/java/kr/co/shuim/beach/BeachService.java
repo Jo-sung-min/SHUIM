@@ -120,10 +120,14 @@ public class BeachService {
 
     /** Only the owned visit selects a room; the authenticated controller authorizes launches. */
     public BeachRoom.FireworkLaunch launchFireworks(String ticket, String userId, String requestId) {
+        return launchFireworks(ticket, userId, requestId, null);
+    }
+
+    public BeachRoom.FireworkLaunch launchFireworks(String ticket, String userId, String requestId, String variant) {
         requireVisit(ticket, userId);
         RoomBinding binding = tickets.get(ticket);
         if (binding == null) throw ApiException.gone(BeachController.GONE);
-        return binding.room().launchFireworks(ticket, userId, requestId);
+        return binding.room().launchFireworks(ticket, userId, requestId, variant);
     }
 
     /** The ticket chooses the room; a client cannot supply a different community ID. */

@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "frontend" / "public"
+MANIFEST = ROOT / "frontend" / "public-assets.manifest.json"
 TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".svg": "image/svg+xml", ".gif": "image/gif",
@@ -57,16 +58,20 @@ def main():
     args = parser.parse_args()
     if not args.cdn.startswith("https://"):
         parser.error("CDN must use HTTPS")
-    files = inventory()
+    local_files = inventory()
+    published = json.loads(MANIFEST.read_text(encoding="utf-8"))["files"] if MANIFEST.exists() else []
+    by_key = {item["key"]: item for item in published}
+    by_key.update({item["key"]: item for item in local_files})
+    files = sorted(by_key.values(), key=lambda item: item["key"])
     report = {"bucket": args.bucket, "cdn": args.cdn.rstrip("/"), "count": len(files),
               "bytes": sum(f["bytes"] for f in files), "uploaded": [], "unchanged": [], "verified": [],
               "files": files}
-    print(json.dumps({k: report[k] for k in ("bucket", "cdn", "count", "bytes")}))
+    print(json.dumps({**{k: report[k] for k in ("bucket", "cdn", "count", "bytes")}, "localFiles": len(local_files)}))
     if not args.apply and not args.verify:
         print("Dry-run. Add --apply to upload; --verify to check CDN delivery. No remote changes made.")
         return
 
-    if args.apply:
+    if args.apply and local_files:
         import botocore.session
         from botocore.config import Config
         from botocore.exceptions import ClientError
@@ -82,7 +87,7 @@ def main():
         location = s3.get_bucket_location(Bucket=args.bucket).get("LocationConstraint") or "us-east-1"
         if location != args.region:
             raise ValueError(f"Bucket is in {location}; use the matching --region")
-        for item in files:
+        for item in local_files:
             old = None
             try:
                 old = s3.head_object(Bucket=args.bucket, Key=item["key"])
@@ -114,6 +119,8 @@ def main():
             })
             report["invalidation"] = result["Invalidation"]["Id"]
             print("CDN invalidation requested for uploaded paths")
+        MANIFEST.write_text(json.dumps({"baseUrl": report["cdn"], "bucket": args.bucket, "files": files},
+                                      ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     failures = []
     if args.verify:

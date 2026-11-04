@@ -34,7 +34,7 @@ AWS 서버에 S3 쓰기 권한이 있는 IAM 역할을 연결한 경우 키 세 
 - 공개 이미지 GET/HEAD에는 일관된 `Access-Control-Allow-Origin: *`가 필요합니다. 웹·앱의 WebGL 텍스처와 사진 캡처가 이를 사용합니다. CORS 설정은 S3 객체에 대한 읽기·쓰기 권한 자체를 부여하지 않습니다.
 - 현재 S3 GET/HEAD CORS와 CloudFront의 기존 SimpleCORS 정책을 함께 사용합니다. 출처별 응답을 같은 캐시에 섞지 않도록 읽기 CORS를 통일했습니다.
 - 사용자 사진의 서명된 PUT 업로드는 별도 규칙으로 `https://www.sorow.co.kr`, `https://sorow.co.kr`, 개발 주소 `http://127.0.0.1:3000`, `http://localhost:3000`, `http://localhost:5173`에서 허용했습니다. 다른 앱 출처가 추가되면 이 목록에 넣습니다.
-- 정적 파일의 캐시는 하루이며 파일 갱신 시 해당 경로만 무효화합니다. PWA 아이콘·매니페스트·서비스 워커 주소는 앱 출처에 유지합니다.
+- 정적 파일의 캐시는 하루이며 파일 갱신 시 해당 경로만 무효화합니다. PWA 아이콘도 CDN에서 읽고, 매니페스트·서비스 워커는 앱 출처에 유지합니다.
 
 [AWS S3 CORS 문서](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ManageCorsUsing.html), [CloudFront 응답 헤더 정책](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-response-headers-policies.html)
 
@@ -53,8 +53,12 @@ python scripts/sync-public-assets.py --verify
 
 자격증명은 명시한 `--profile`, 현재 프로세스의 AWS 환경변수, 로컬 `backend/.env` 또는 기본 AWS 자격증명 체인을 사용합니다. 오래된 `eb-cli` 프로필 대신 현재 `.env`의 키를 사용하려면 `--profile`을 생략합니다. 키 값은 출력하지 않습니다.
 
-스크립트는 `frontend/public`의 이미지와 GLB만 업로드합니다. 소스 코드, 환경변수, 모델 제작 메모 JSON은 올리지 않습니다. 원격 파일 삭제와 public-read ACL 변경은 하지 않습니다. 전송 결과는 로컬 `frontend/out/cdn-assets-report.json`에 저장됩니다. 새 업로드 직후 캐시 갱신 중 검증이 실패하면 잠시 후 `--verify`를 다시 실행합니다.
+새 이미지·GLB는 잠시 `frontend/public`의 원하는 경로에 놓고 스크립트를 실행합니다. 소스 코드, 환경변수, 모델 제작 메모 JSON은 올리지 않습니다. 원격 파일 삭제와 public-read ACL 변경은 하지 않습니다. 전송 결과는 로컬 `frontend/out/cdn-assets-report.json`에 저장됩니다. 새 업로드 직후 캐시 갱신 중 검증이 실패하면 잠시 후 `--verify`를 다시 실행합니다. 검증 후 원본은 로컬에서 제거하고 변경된 `frontend/public-assets.manifest.json`만 커밋합니다.
 
-## 로컬 파일로 돌아가기
+## 로컬·Git 용량 정리
 
-`NEXT_PUBLIC_ASSET_BASE_URL`을 비우고 다시 빌드합니다. public 파일도 함께 유지하므로 CDN 설정이 없는 개발 환경에서는 기존 로컬 경로를 사용합니다. CDN이 설정된 상태에서 네트워크가 끊기면 자동으로 로컬 파일을 재시도하는 구성은 아닙니다.
+CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지와 GLB(20,146,600바이트)를 로컬 public 폴더에서 제거했습니다. 추적되던 파일은 Git 삭제 변경으로 반영하고, public의 이미지·GLB 확장자는 `.gitignore`에 추가했습니다. 기존 커밋 기록은 다시 쓰지 않았습니다.
+
+주소·크기·해시는 `frontend/public-assets.manifest.json`에 남깁니다. 바이너리 검증 테스트는 필요한 파일을 CDN에서 메모리로만 읽고 해시를 검사하며 로컬 파일을 만들지 않습니다. 소스 제작 메모 JSON과 아직 CDN으로 올리지 않은 Aseprite 제작 원본은 삭제 범위에 포함하지 않았습니다.
+
+환경변수가 비어 있거나 잘못되어도 기본 주소 `https://cdn.sorow.co.kr`를 사용합니다. 로컬 원본이 없으므로 앱 이미지와 3D 장면에는 CDN 네트워크 연결이 필요합니다.

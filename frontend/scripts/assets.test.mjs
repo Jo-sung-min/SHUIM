@@ -7,25 +7,26 @@ import * as THREE from "three";
 import { assetsFor } from "./assets-fixture.mjs";
 
 const CDN = "https://cdn.sorow.co.kr";
-test("public media uses the configured CDN with the same path, while an unset or invalid base stays local", () => {
-  const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v1.glb"];
+test("public media defaults to the verified CDN and supports an optional replacement origin", () => {
+  const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v1.glb", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png"];
   for (const path of paths) {
-    assert.equal(assetsFor().assetUrl(path), path);
+    assert.equal(assetsFor().assetUrl(path), `${CDN}${path}`);
     assert.equal(assetsFor(` ${CDN}/// `).assetUrl(path), `${CDN}${path}`);
     assert.equal(assetsFor(`${CDN}/static/`).assetUrl(path), `${CDN}/static${path}`);
+    assert.equal(assetsFor("https://media.example.com/").assetUrl(path), `https://media.example.com${path}`);
   }
   for (const base of ["", "invalid", "javascript:alert(1)", "https://user:secret@cdn.sorow.co.kr", `${CDN}?key=value`, `${CDN}#fragment`]) {
-    assert.equal(assetsFor(base).assetUrl(paths[0]), paths[0]);
+    assert.equal(assetsFor(base).assetUrl(paths[0]), `${CDN}${paths[0]}`);
   }
   assert.equal(assetsFor(CDN).assetUrl("/beach/real/soft sand.webp?v=2#detail"), `${CDN}/beach/real/soft%20sand.webp?v=2#detail`);
 });
 
-test("CDN mapping leaves API, private uploads, external images and native app icons untouched", () => {
+test("CDN mapping leaves API, private uploads, external images and app navigation untouched", () => {
   const { assetUrl } = assetsFor(CDN);
   for (const path of [
     "/api/site/favicon?v=7", "/api/private/photo.png", "/uploads/member/photo.jpg", "/beach/../api/photo.jpg",
     "/beach/%2e%2e/api/photo.jpg", "/beach", "/beach/models/source.json", "/manifest.webmanifest",
-    "/icon-192.png", "/icon-512-maskable.png", "/apple-icon.png", "//private.example/photo.jpg",
+    "/offline.html", "/sw.js", "//private.example/photo.jpg",
     "https://uploads.example/photo.jpg?signature=abc", `${CDN}/beach/chars-v2.png`, "blob:local-photo", "data:image/png;base64,AA==",
   ]) assert.equal(assetUrl(path), path);
 });
@@ -37,6 +38,26 @@ test("shared CSS images and anonymous loader credentials follow the same configu
   assert.equal(api.publicAssetStyles["--sorow-logo-image"], `url("${CDN}/sorow-logo.png")`);
   assert.equal(api.publicAssetStyles["--beach-character-atlas"], `url("${CDN}/beach/chars-v2.png")`);
   assert.equal(api.publicAssetStyles["--beach-landscape-image"], `url("${CDN}/beach/real/paradise-panorama-v1.webp")`);
+});
+
+test("installation icons and the default favicon need no public image files, while custom site images retain their API", async () => {
+  const siteSource = stripTypeScriptTypes(await readFile(new URL("../lib/site.ts", import.meta.url), "utf8"))
+    .replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b)/g, "");
+  const siteContext = { ...assetsFor(), process: { env: {} } };
+  vm.runInNewContext(`${siteSource}\nglobalThis.api = { SITE, EMPTY_SITE, faviconHref, ogHref, siteDescription, siteTitle };`, siteContext);
+  const site = siteContext.api;
+  assert.equal(site.faviconHref(site.EMPTY_SITE), `${CDN}/favicon.svg`);
+  assert.equal(site.faviconHref({ ...site.EMPTY_SITE, faviconAt: 123 }), "/api/site/favicon?v=123");
+  assert.equal(site.ogHref(site.EMPTY_SITE), "/og", "the default share image is drawn by its route");
+  assert.equal(site.ogHref({ ...site.EMPTY_SITE, ogAt: 456 }), "/api/site/og?v=456");
+  const manifestSource = stripTypeScriptTypes(await readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"))
+    .replace(/^import\s+[^\n]+\n/gm, "").replace("export default async function", "async function");
+  const context = { ...assetsFor(), ...site, loadSiteSettings: async () => site.EMPTY_SITE };
+  vm.runInNewContext(`${manifestSource}\nglobalThis.run = manifest;`, context);
+  const manifest = await context.run();
+  assert.deepEqual(Array.from(manifest.icons, icon => icon.src), ["icon-192.png", "icon-512.png", "icon-512-maskable.png"].map(name => `${CDN}/${name}`));
+  assert.equal(manifest.icons[2].purpose, "maskable");
+  assert.equal(manifest.start_url, "/"); assert.equal(manifest.scope, "/");
 });
 
 test("actual Three.js loading entry points request CDN textures and models with capture-safe CORS", async () => {

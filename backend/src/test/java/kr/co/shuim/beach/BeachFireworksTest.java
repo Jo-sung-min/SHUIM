@@ -49,6 +49,9 @@ class BeachFireworksTest {
     private BeachRoom.FireworkLaunch launch(BeachRoom.Presence visitor, String requestId) {
         return controller.fireworks(new BeachController.FireworksBody(visitor.ticket(), requestId), request);
     }
+    private BeachRoom.FireworkLaunch launch(BeachRoom.Presence visitor, String requestId, String variant) {
+        return controller.fireworks(new BeachController.FireworksBody(visitor.ticket(), requestId, variant), request);
+    }
     private BeachRoom.TickResult poll(BeachRoom.Presence visitor) {
         return controller.tick(new BeachController.TickBody(visitor.ticket(), null, null, null, false, null), request);
     }
@@ -89,6 +92,7 @@ class BeachFireworksTest {
         var elsewhere = visitor("other", "operator");
         var result = launch(admin, UUID.randomUUID().toString());
         assertEquals(12_000, result.event().durationMs());
+        assertEquals("festival", result.event().variant());
         assertEquals(clock.get(), result.event().startedAt());
         assertEquals(clock.get(), result.serverTime());
         assertEquals(clock.get() + 15_000, result.cooldownUntil());
@@ -100,6 +104,47 @@ class BeachFireworksTest {
         var late = controller.enter(new BeachController.EnterBody("room"), request, new MockHttpServletResponse());
         assertEquals(List.of(result.event()), late.get("fireworks"));
         assertEquals(result.cooldownUntil(), late.get("fireworksCooldownUntil"));
+    }
+
+    @Test
+    void allThreeVariantsReachObserversAndRetriesCannotChangeTheOriginalStyle() {
+        var admin = visitor("room", "operator");
+        var observer = visitor("room", "observer");
+        for (String variant : List.of("festival", "songi", "love")) {
+            String requestId = UUID.randomUUID().toString();
+            var result = launch(admin, requestId, variant);
+            assertEquals(variant, result.event().variant());
+            assertEquals(12_000, result.event().durationMs());
+            assertEquals(clock.get() + 15_000, result.cooldownUntil());
+            assertEquals(List.of(result.event()), poll(observer).fireworks());
+            for (String retryVariant : List.of("festival", "songi", "love")) {
+                var retry = launch(admin, requestId, retryVariant);
+                assertEquals(result.event(), retry.event());
+                assertEquals(result.cooldownUntil(), retry.cooldownUntil());
+            }
+            advance(15_000, admin, observer);
+            assertEquals(result.event(), launch(admin, requestId, "love").event());
+            assertEquals(List.of(), poll(observer).fireworks(), "an expired variant retry does not create a new show");
+        }
+    }
+
+    @Test
+    void malformedJsonVariantsCannotConsumeTheCooldownOrOverwriteAnIdempotentRequest() throws Exception {
+        var admin = visitor("room", "operator");
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        String requestId = UUID.randomUUID().toString();
+        for (String invalid : List.of("null", "\"\"", "\"Festival\"", "\"love \"", "\"custom\"", "7", "true", "{}", "[]")) {
+            mvc.perform(post("/api/beach/fireworks").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + admin.ticket() + "\",\"requestId\":\"" + requestId + "\",\"variant\":" + invalid + "}"))
+                .andExpect(status().isBadRequest());
+        }
+        assertEquals(List.of(), beach.fireworks("room").events());
+        assertEquals(0, beach.fireworks("room").cooldownUntil());
+        mvc.perform(post("/api/beach/fireworks").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + admin.ticket() + "\",\"requestId\":\"" + requestId + "\",\"variant\":\"songi\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.event.variant").value("songi"));
+        assertEquals(400, assertThrows(ApiException.class, () -> launch(admin, requestId, "unknown")).status());
+        assertEquals("songi", launch(admin, requestId, "love").event().variant());
     }
 
     @Test
@@ -228,6 +273,7 @@ class BeachFireworksTest {
         actor(user("operator", "admin", false, null));
         mvc.perform(post("/api/beach/fireworks").contentType(MediaType.APPLICATION_JSON).content(forged))
             .andExpect(status().isOk()).andExpect(jsonPath("$.event.durationMs").value(12000))
+            .andExpect(jsonPath("$.event.variant").value("festival"))
             .andExpect(jsonPath("$.event.startedAt").value(clock.get()))
             .andExpect(jsonPath("$.serverTime").value(clock.get()))
             .andExpect(jsonPath("$.cooldownUntil").value(clock.get() + 15000));

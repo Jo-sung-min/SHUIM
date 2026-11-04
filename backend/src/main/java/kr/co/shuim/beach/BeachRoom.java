@@ -175,7 +175,7 @@ public class BeachRoom {
     public static final int FIREWORK_DURATION_MS = 12_000;
     public static final long FIREWORK_COOLDOWN_MS = 15_000;
     private static final long FIREWORK_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000L;
-    public record FireworkEvent(String id, int seed, long startedAt, int durationMs) {}
+    public record FireworkEvent(String id, int seed, long startedAt, int durationMs, String variant) {}
     public record FireworksState(List<FireworkEvent> events, long cooldownUntil, long serverTime) {}
     public record FireworkLaunch(FireworkEvent event, long serverTime, long cooldownUntil) {}
     private final LinkedHashMap<UUID, FireworkEvent> fireworkRequests = new LinkedHashMap<>();
@@ -190,7 +190,7 @@ public class BeachRoom {
     }
 
     /** Session role and membership are checked by the controller; the room lock rechecks ticket ownership. */
-    synchronized FireworkLaunch launchFireworks(String ticket, String userId, String requestId) {
+    synchronized FireworkLaunch launchFireworks(String ticket, String userId, String requestId, String variant) {
         long now = clock.getAsLong();
         Presence me = ticket == null ? null : byTicket.get(ticket);
         if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
@@ -203,6 +203,10 @@ public class BeachRoom {
         } catch (IllegalArgumentException e) {
             throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
         }
+        String selected = variant == null ? "festival" : variant;
+        if (!Set.of("festival", "songi", "love").contains(selected)) {
+            throw ApiException.badRequest("불꽃놀이 종류를 다시 골라 주세요.");
+        }
         // Keep retry identities beyond the animation lifetime without growing indefinitely.
         // At one launch per 15 seconds this holds at most 5,761 entries per room.
         var previous = fireworkRequests.entrySet().iterator();
@@ -213,7 +217,7 @@ public class BeachRoom {
         FireworkEvent retried = fireworkRequests.get(key);
         if (retried != null) return new FireworkLaunch(retried, now, fireworksCooldownUntil);
         if (now < fireworksCooldownUntil) throw new ApiException(429, "불꽃놀이가 끝난 뒤 잠시 기다려 주세요.");
-        FireworkEvent event = new FireworkEvent(UUID.randomUUID().toString(), ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE), now, FIREWORK_DURATION_MS);
+        FireworkEvent event = new FireworkEvent(UUID.randomUUID().toString(), ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE), now, FIREWORK_DURATION_MS, selected);
         activeFirework = event;
         fireworksCooldownUntil = now + FIREWORK_COOLDOWN_MS;
         fireworkRequests.put(key, event);

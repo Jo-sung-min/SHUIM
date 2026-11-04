@@ -31,22 +31,51 @@ test("fireworks and onsen controls require their own explicit server capabilitie
   assert.equal(entered.fireworksControl, true); assert.equal(entered.onsenEnabled, true);
 });
 
-test("fireworks launch sends only the owned ticket and stable retry UUID and accepts the confirmed event", async () => {
+test("fireworks launch sends the owned ticket, stable retry UUID and default style and accepts the confirmed event", async () => {
   const calls = [], result = { event: fireworksEvent, serverTime: 1_001_000, cooldownUntil: 1_015_000 };
   const api = setup(async (url, options) => { calls.push({ url, options }); return response(result); });
   const requestId = "fcf05151-67de-4974-bdb1-67e64d8549db";
   const first = await api.launchBeachFireworks("admin-visit", requestId);
   const retried = await api.launchBeachFireworks("admin-visit", requestId);
-  assert.deepEqual(JSON.parse(JSON.stringify(first)), result);
+  assert.deepEqual(JSON.parse(JSON.stringify(first)), { ...result, event: { ...fireworksEvent, variant: "festival" } });
   assert.equal(first.event.id, retried.event.id);
   for (const call of calls) {
     assert.equal(call.url, "/api/beach/fireworks");
-    assert.deepEqual(JSON.parse(call.options.body), { ticket: "admin-visit", requestId });
+    assert.deepEqual(JSON.parse(call.options.body), { ticket: "admin-visit", requestId, variant: "festival" });
     assert.equal(call.options.credentials, "same-origin");
     assert.ok(call.options.signal instanceof AbortSignal);
   }
   const oldRetry = await setup(async () => response({ ...result, serverTime: 1_030_000 })).launchBeachFireworks("admin-visit", requestId);
   assert.equal(oldRetry.event.startedAt, fireworksEvent.startedAt, "an expired retry is acknowledged without inventing a fresh start time");
+});
+
+test("all three fireworks styles round-trip and retry responses retain the server's original style", async () => {
+  for (const variant of ["festival", "songi", "love"]) {
+    let body;
+    const event = { ...fireworksEvent, variant };
+    const api = setup(async (_url, options) => { body = JSON.parse(options.body); return response({ event, serverTime: 1_001_000, cooldownUntil: 1_015_000 }); });
+    const launched = await api.launchBeachFireworks("admin", "stable-retry-id", variant);
+    assert.equal(body.variant, variant);
+    assert.equal(launched.event.variant, variant);
+    const changedRetry = await api.launchBeachFireworks("admin", "stable-retry-id", variant === "love" ? "songi" : "love");
+    assert.equal(changedRetry.event.variant, variant, "a retry acknowledges the existing event rather than inventing a new style");
+    const tick = await setup(async () => response({ ...fireworksState, fireworks: [event] })).tickBeach({ ticket: "observer" });
+    assert.equal(tick.fireworks[0].variant, variant);
+  }
+});
+
+test("legacy fireworks default to festival and malformed styles never reach the server or renderer", async () => {
+  const api = setup(async () => { throw new Error("must not send malformed styles"); });
+  assert.equal(api.readFireworkEvent(fireworksEvent).variant, "festival");
+  for (const variant of [null, "", "Festival", "love ", "custom", 1, true, {}, []]) {
+    assert.equal(api.readFireworkEvent({ ...fireworksEvent, variant }), null);
+    await assert.rejects(api.launchBeachFireworks("admin", "retry", variant), /불꽃놀이 종류/);
+    await assert.rejects(setup(async () => response({ ...fireworksState, fireworks: [{ ...fireworksEvent, variant }] })).enterBeach("room"));
+  }
+  assert.equal(api.readFireworkEvent({ ...fireworksEvent, variant: undefined }), null);
+  await assert.rejects(setup(async () => response({ ...fireworksState, fireworks: [fireworksEvent, { ...fireworksEvent, variant: "love" }] })).tickBeach({ ticket: "observer" }));
+  const compatible = await setup(async () => response({ ...fireworksState, fireworks: [fireworksEvent, { ...fireworksEvent, variant: "festival" }] })).tickBeach({ ticket: "observer" });
+  assert.equal(compatible.fireworks.length, 1);
 });
 
 test("fireworks snapshots deduplicate repeated IDs, order events and discard expired animations", async () => {

@@ -17,7 +17,7 @@ import InlineScript from "./InlineScript";
  */
 
 const STORAGE_KEY = "sorow:splash-seen";
-/** public/splash.webp 를 18×32 로 줄인 흐린 자리표시. 큰 이미지가 오기 전에도 같은 색감이 보이게 */
+/** CDN의 시작 그림을 18×32 로 줄인 자리표시. 큰 이미지가 오기 전에도 같은 색감이 보이게 */
 const PLACEHOLDER =
   "data:image/webp;base64,UklGRvYAAABXRUJQVlA4IOoAAABwBgCdASoSACAAPu1iqU2ppaOiMAgBMB2JQBWGbOZ8/XtbUgPWvGPb6uzBlxqGcl/MZ25gjT7pCsxR7cAA4VrTWVEDArlLSX//odMXhS3mn7EiKEchKBmsPywXl8/VuT3sXs6h+2jPVrRCq/7A/BKxcjccM5+4Cs623+qQI/3yJctR+18yZcSLaxKtRXjYAL4ySdtheU6pRlko5wxplmi0AaCk93PEWcN4MRZ7gstB0VBj0xDegPCI9HmsCDndsEiu72Rab4eGbxNAgr1lLgdHQD5TVRyLsNRr/F+38qJs8npF6Wdx/dvqAAA=";
 

@@ -8,6 +8,7 @@ import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { hotSpring } from "./beach-world-fixture.mjs";
+import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -59,7 +60,7 @@ function decodePng(png) {
   }
   return { width, height, rgba: out };
 }
-const { width, height, rgba } = decodePng(await readFile(new URL("../public/beach/chars-v2.png", import.meta.url)));
+const { width, height, rgba } = decodePng(await readAssetBytes("/beach/chars-v2.png"));
 const pixel = (col, row, x, y) => {
   const index = ((row * CHAR_ATLAS.cellH + y) * width + col * CHAR_ATLAS.cellW + x) * 4;
   return [...rgba.subarray(index, index + 4)];

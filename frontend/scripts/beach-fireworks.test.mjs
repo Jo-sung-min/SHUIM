@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import { assets } from "./assets-fixture.mjs";
+import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 
 const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/fireworks.ts", import.meta.url), "utf8"))
   .replace(/^import\s+[^\n]+\n/gm, "")
@@ -23,7 +24,7 @@ function fixture({ mobile = false, dom = true, height = 844 } = {}) {
   }
   const context = { THREE: { ...THREE, TextureLoader }, Date: { now: () => time }, ...assets };
   if (dom) { context.document = {}; context.window = { innerHeight: height }; }
-  vm.runInNewContext(`${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
   const scene = new THREE.Scene(), fireworks = new context.api.BeachFireworks(scene, { mobile });
   return { ...context.api, scene, fireworks, requests, setTime(value) { time = value; },
     load(index = 0) { requests[index].onLoad(requests[index].texture); } };
@@ -36,7 +37,7 @@ test("seeded trajectories are deterministic and mobile uses fewer finite particl
   for (const name of Object.keys(geometry.attributes)) assert.deepEqual(geometry.attributes[name].array, copy.attributes[name].array, name);
   assert.notDeepEqual(geometry.getAttribute("velocity").array, different.getAttribute("velocity").array);
   assert.ok(mobile.getAttribute("position").count < geometry.getAttribute("position").count * 0.6);
-  assert.ok(mobile.getAttribute("position").count < 1600 && geometry.getAttribute("position").count < 3600);
+  assert.ok(mobile.getAttribute("position").count < 4000 && geometry.getAttribute("position").count < 8000);
   const centers = mesh => {
     const p = mesh.getAttribute("position"), values = new Set();
     for (let index = 0; index < p.count; index++) values.add([p.getX(index), p.getY(index), p.getZ(index)].join(","));
@@ -60,6 +61,136 @@ test("seeded trajectories are deterministic and mobile uses fewer finite particl
     assert.ok(overSea > count / 2 && overhead > 0, "ocean bursts and an overhead finale serve both standing and lying viewers");
   }
   for (const candidate of [geometry, copy, different, mobile, zero, max]) candidate.dispose();
+});
+
+test("festival shells burst in three simultaneous groups with large radial expansion, willow trails and shockwave flashes", () => {
+  const { fireworkGeometry } = fixture({ dom: false });
+  const geometry = fireworkGeometry(371, true), timing = geometry.getAttribute("timing"), velocity = geometry.getAttribute("velocity");
+  const groups = new Map(); let willows = 0, rings = 0, radius = 0;
+  for (let index = 0; index < timing.count; index++) {
+    const mode = timing.getW(index), start = timing.getX(index);
+    if (mode === 3) groups.set(start, (groups.get(start) ?? 0) + 1);
+    if (mode === 5) rings++;
+    if (mode === 2) willows++;
+    if (mode === 0 || mode === 2) {
+      const speed = new THREE.Vector3().fromBufferAttribute(velocity, index).length();
+      radius = Math.max(radius, speed * (1 - Math.exp(-0.45 * 2)) / 0.45);
+    }
+  }
+  assert.deepEqual([...groups.values()], [3, 2, 3], "two or three shells share each exact detonation time");
+  assert.equal(rings, 8); assert.ok(willows > 500);
+  assert.ok(radius > 32, `the broadest blossom is over 64 metres across after two seconds: ${radius}`);
+  assert.equal(geometry.userData.phrase, ""); geometry.dispose();
+});
+
+test("both exact Korean messages use deterministic glyph particles and stay within the mobile budget", () => {
+  const { fireworkGeometry, FIREWORK_TEXT, FIREWORK_TEXT_CENTER } = fixture({ dom: false });
+  assert.equal(FIREWORK_TEXT.songi, "송이 안녕?"); assert.equal(FIREWORK_TEXT.love, "사랑해");
+  for (const [variant, expectedPoints] of [["songi", 659], ["love", 440]]) {
+    const mobile = fireworkGeometry(7, true, variant), desktop = fireworkGeometry(99, false, variant);
+    const letters = geometry => {
+      const points = [], timing = geometry.getAttribute("timing"), velocity = geometry.getAttribute("velocity"), origin = geometry.getAttribute("position");
+      for (let index = 0; index < timing.count; index++) if (timing.getW(index) === 4) {
+        points.push([velocity.getX(index), velocity.getY(index)]);
+        assert.deepEqual([origin.getX(index), origin.getY(index), origin.getZ(index)], Array.from(FIREWORK_TEXT_CENTER));
+        assert.ok(timing.getX(index) + timing.getY(index) + timing.getZ(index) < 12);
+      }
+      return points;
+    };
+    const points = letters(mobile);
+    assert.equal(points.length, expectedPoints);
+    assert.deepEqual(points, letters(desktop), "text strokes do not depend on seed, density, DOM or device font");
+    assert.equal(mobile.userData.phrase, FIREWORK_TEXT[variant]);
+    assert.ok(mobile.getAttribute("position").count <= 4000);
+    assert.ok(desktop.getAttribute("position").count <= 8000);
+    assert.ok(mobile.userData.textWidth > 25 && mobile.userData.textWidth < 60);
+    assert.ok(new Set(points.map(p => p[1])).size >= 20, "full multi-row glyph strokes retain Hangul detail");
+    mobile.dispose(); desktop.dispose();
+  }
+});
+
+test("message planes face standing and lying viewers and fit even a narrow phone frame", () => {
+  for (const variant of ["songi", "love"]) for (const aspect of [320 / 900, 390 / 844, 16 / 9]) {
+    const { fireworks, scene, setTime, FIREWORK_TEXT_CENTER } = fixture({ mobile: true });
+    fireworks.apply([{ ...event(), variant }], 100_000); setTime(105_000);
+    const object = scene.children[0], camera = new THREE.PerspectiveCamera(78, aspect, 0.1, 520);
+    for (const [x, y, z] of [[0, 1.8, 8], [0, 18.4, 45], [-2.4, 17.92, 41.88]]) {
+      camera.position.set(x, y, z); camera.lookAt(...FIREWORK_TEXT_CENTER); fireworks.update(camera);
+      const { uTextRight: right, uTextUp: up, uTextScale: scale, uAge: age } = object.material.uniforms;
+      assert.ok(Math.abs(right.value.dot(up.value)) < 1e-6);
+      assert.ok(new THREE.Vector3().crossVectors(right.value, up.value).dot(camera.getWorldDirection(new THREE.Vector3())) < -0.999);
+      assert.equal(age.value, 5); assert.ok(scale.value > 0 && scale.value <= 1);
+      const timing = object.geometry.getAttribute("timing"), points = object.geometry.getAttribute("velocity");
+      for (let index = 0; index < timing.count; index++) if (timing.getW(index) === 4) {
+        const point = new THREE.Vector3(...FIREWORK_TEXT_CENTER)
+          .addScaledVector(right.value, points.getX(index) * scale.value)
+          .addScaledVector(up.value, points.getY(index) * scale.value).project(camera);
+        assert.ok(Math.abs(point.x) < 0.85 && Math.abs(point.y) < 0.8, "no part of a glyph is clipped on a portrait phone");
+      }
+    }
+    assert.equal(object.geometry.userData.variant, variant); fireworks.dispose();
+  }
+  const legacy = fixture(); legacy.fireworks.apply([event()], 100_000);
+  assert.equal(legacy.scene.children[0].geometry.userData.variant, "festival"); legacy.fireworks.dispose();
+});
+
+test("default upward sky views keep both messages in frame without moving the shared burst geometry", () => {
+  for (const variant of ["songi", "love"]) for (const aspect of [320 / 900, 390 / 844]) {
+    const { fireworks, scene, FIREWORK_SKY_TEXT_CENTER, FIREWORK_TEXT_CENTER } = fixture({ mobile: true });
+    fireworks.apply([{ ...event(), variant }], 100_000);
+    const object = scene.children[0], positions = object.geometry.getAttribute("position").array.slice();
+    const camera = new THREE.PerspectiveCamera(82, aspect, 0.1, 520);
+    camera.layers.set(1);
+    for (const [x, y, z] of [[0, 17.92, 41.88], [-2.4, 17.92, 41.88], [7, 0.285, 5.58]]) {
+      camera.position.set(x, y, z);
+      // The actual default lying view looks straight up, rather than at the fireworks.
+      camera.rotation.set(Math.PI / 2, 0, 0, "YXZ");
+      fireworks.update(camera, 105_000, 1688);
+      const { uTextRight: right, uTextUp: up, uTextScale: scale, uTextCenter: center } = object.material.uniforms;
+      assert.deepEqual(center.value.toArray(), Array.from(FIREWORK_SKY_TEXT_CENTER));
+      const timing = object.geometry.getAttribute("timing"), points = object.geometry.getAttribute("velocity");
+      for (let index = 0; index < timing.count; index++) if (timing.getW(index) === 4) {
+        const point = center.value.clone()
+          .addScaledVector(right.value, points.getX(index) * scale.value)
+          .addScaledVector(up.value, points.getY(index) * scale.value).project(camera);
+        assert.ok(Math.abs(point.x) < 0.85 && Math.abs(point.y) < 0.95,
+          `the complete ${variant} message remains visible from the beach and onsen: ${point.toArray()}`);
+      }
+    }
+    camera.rotation.y = 0.25;
+    fireworks.update(camera, 105_000, 1688);
+    assert.deepEqual(object.material.uniforms.uTextCenter.value.toArray(), Array.from(FIREWORK_SKY_TEXT_CENTER), "dragging does not make the message follow the camera");
+    assert.deepEqual(object.geometry.getAttribute("position").array, positions, "ordinary shells keep their shared world trajectories");
+    camera.layers.set(0); fireworks.update(camera, 105_000, 844);
+    assert.deepEqual(object.material.uniforms.uTextCenter.value.toArray(), Array.from(FIREWORK_TEXT_CENTER), "standing and third-person views restore the seaward anchor");
+    fireworks.dispose();
+  }
+});
+
+test("higher drawing-buffer resolution preserves the CSS size of sparks, text dots and large flashes", () => {
+  const { fireworks, scene } = fixture({ mobile: true, height: 844 });
+  fireworks.apply([{ ...event(), variant: "songi" }], 100_000);
+  const object = scene.children[0], camera = new THREE.PerspectiveCamera(82, 390 / 844, 0.1, 520);
+  camera.position.set(0, 17.92, 41.88); camera.rotation.x = Math.PI / 2; camera.layers.set(1);
+  const detail = object.geometry.getAttribute("detail"), timing = object.geometry.getAttribute("timing");
+  const sampleModes = [0, 4, 3, 5];
+  const sizesAt = bufferHeight => {
+    fireworks.update(camera, 105_000, bufferHeight);
+    const { uViewport: viewport, uPointScale: pointScale, uTextScale: textScale } = object.material.uniforms;
+    assert.equal(viewport.value, bufferHeight, "actual render heights above 1400 are retained");
+    assert.equal(pointScale.value, bufferHeight / 844);
+    return sampleModes.flatMap(mode => {
+      let index = 0; while (timing.getW(index) !== mode) index++;
+      const size = detail.getX(index) * (mode === 4 ? textScale.value : 1);
+      return [1, 72, 520].map(depth => Math.max(1.6 * pointScale.value,
+        Math.min(96 * pointScale.value, size * camera.projectionMatrix.elements[5] * viewport.value / depth)) / (bufferHeight / 844));
+    });
+  };
+  const normal = sizesAt(844), high = sizesAt(1688);
+  for (let index = 0; index < normal.length; index++) assert.ok(Math.abs(normal[index] - high[index]) < 1e-6);
+  fireworks.update(camera, 105_000, Number.NaN);
+  assert.equal(object.material.uniforms.uViewport.value, 844, "an invalid optional height safely uses the CSS fallback");
+  fireworks.dispose();
 });
 
 test("late joiners start at the shared age and duplicate or delayed snapshots never rewind an existing show", () => {
@@ -92,7 +223,7 @@ test("expired, future and malformed events never create a show or download its i
   for (const invalid of [null, event("expired", 88_000), event("future", 100_001), { ...event(), id: "" },
     { ...event(), id: 42 }, { ...event(), seed: -1 }, { ...event(), seed: Number.NaN },
     { ...event(), seed: 1.5 }, { ...event(), seed: Number.MAX_SAFE_INTEGER + 1 },
-    { ...event(), startedAt: Number.POSITIVE_INFINITY }, { ...event(), durationMs: 120_000 }]) {
+    { ...event(), startedAt: Number.POSITIVE_INFINITY }, { ...event(), durationMs: 120_000 }, { ...event(), variant: "other" }]) {
     fireworks.apply([invalid], 100_000);
   }
   fireworks.apply([event()], Number.NaN);
@@ -136,7 +267,7 @@ test("active point draws stay bounded across repeated batches and expired shows 
 test("the optional alpha image loads once, while shader glow remains usable during loading or failure", () => {
   const { fireworks, scene, requests, load, FIREWORK_SPARK_URL } = fixture({ height: 2200 });
   fireworks.apply([event("one"), event("two")], 100_000); fireworks.update();
-  assert.equal(requests.length, 1); assert.equal(requests[0].url, FIREWORK_SPARK_URL);
+  assert.equal(requests.length, 1); assert.equal(requests[0].url, assets.assetUrl(FIREWORK_SPARK_URL));
   for (const object of scene.children) {
     assert.equal(object.material.uniforms.uImage.value, 0);
     assert.equal(object.material.uniforms.uViewport.value, 1400, "point sizes have a bounded viewport multiplier");
@@ -175,7 +306,7 @@ test("disposing releases every owned GPU resource once and a late texture cannot
 });
 
 test("the actual spark asset is a compact 256-pixel WebP with real transparency", async () => {
-  const bytes = await readFile(new URL("../public/beach/fx/firework-spark-v1.webp", import.meta.url));
+  const bytes = await readAssetBytes("/beach/fx/firework-spark-v1.webp");
   assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
   assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
   assert.equal(bytes.toString("ascii", 12, 16), "VP8X");
