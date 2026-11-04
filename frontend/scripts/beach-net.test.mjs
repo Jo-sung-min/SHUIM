@@ -150,6 +150,64 @@ test("hut claims send the selected hut, accept only its three slots, and preserv
   }
 });
 
+test("bench seating asks the server for a slot and standing releases it without claiming another", async () => {
+  const calls = [];
+  const api = setup(async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push({ url, body, signal: options.signal });
+    return response(body.action === "sit"
+      ? { pose: "sitting", spotId: "fire-benches", slot: 11, x: -1.1, z: 15.1, yaw: 0.3 }
+      : { pose: "standing", spotId: null, slot: null, x: -1.1, z: 16.1, yaw: 0.3 });
+  });
+  const seated = await api.setBeachRest("my-ticket", "sit", "fire-benches");
+  const standing = await api.setBeachRest("my-ticket", "stand", "fire-benches");
+  assert.deepEqual(calls.map(call => call.body), [
+    { ticket: "my-ticket", action: "sit", spotId: "fire-benches" },
+    { ticket: "my-ticket", action: "stand" },
+  ]);
+  assert.ok(calls.every(call => call.url === "/api/beach/rest" && call.signal instanceof AbortSignal));
+  assert.equal(seated.pose, "sitting");
+  assert.equal(seated.slot, 11, "seat assignment comes from the authoritative server response");
+  assert.equal(standing.pose, "standing");
+});
+
+test("bench confirmations reject invalid slots, mismatched spots and incompatible poses", async () => {
+  const valid = { pose: "sitting", spotId: "fire-benches", slot: 0, x: 0, z: 15.1, yaw: Math.PI };
+  for (const invalid of [
+    null, { ...valid, slot: -1 }, { ...valid, slot: 12 }, { ...valid, slot: 1.5 },
+    { ...valid, spotId: "starlight" }, { ...valid, spotId: "hut-pine" },
+    { ...valid, pose: "lying" }, { ...valid, pose: "standing", spotId: null, slot: null },
+    { ...valid, x: "0" }, { ...valid, yaw: null },
+  ]) {
+    await assert.rejects(setup(async () => response(invalid)).setBeachRest("ticket", "sit", "fire-benches"), /쉴 자리의 상태/);
+  }
+  await assert.rejects(setup(async () => response(valid)).setBeachRest("ticket", "lie", "starlight"), /쉴 자리의 상태/);
+  await assert.rejects(setup(async () => response(valid)).setBeachRest("ticket", "stand"), /쉴 자리의 상태/);
+});
+
+test("a lost bench response recovers the confirmed seat from the next tick without replaying sit", async () => {
+  const calls = [];
+  const seat = { pose: "sitting", spotId: "fire-benches", slot: 4, x: 2.6, z: 13.2, yaw: 1.1 };
+  const api = setup(async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    if (url === "/api/beach/rest") throw new TypeError("response lost after seat assignment");
+    return response({ selfRest: seat, players: [], events: [], count: 1 });
+  });
+  await assert.rejects(api.setBeachRest("ticket", "sit", "fire-benches"));
+  const recovered = await api.tickBeach({ ticket: "ticket", x: 2.7, z: 14, yaw: 0, moving: false });
+  assert.equal(recovered.selfRest.pose, "sitting");
+  assert.equal(recovered.selfRest.slot, 4);
+  assert.equal(calls.filter(call => call.url === "/api/beach/rest").length, 1);
+  await assert.rejects(setup(async () => response({ selfRest: { ...seat, slot: 12 } })).tickBeach({ ticket: "ticket", x: 0, z: 0, yaw: 0, moving: false }), /쉴 자리의 상태/);
+});
+
+test("occupied benches and expired tickets remain recoverable errors rather than local sitting", async () => {
+  const full = setup(async () => response({ error: "가까운 벤치 자리가 찼어요." }, 409));
+  await assert.rejects(full.setBeachRest("ticket", "sit", "fire-benches"), error => error instanceof full.BeachUnavailable && error.status === 409);
+  const expired = setup(async () => response({}, 410));
+  await assert.rejects(expired.setBeachRest("ticket", "sit", "fire-benches"), error => error instanceof expired.BeachGone);
+});
+
 test("timed-out rest requests give retryable guidance and ticks also carry a timeout signal", async () => {
   const timeout = new Error("network timeout");
   timeout.name = "TimeoutError";

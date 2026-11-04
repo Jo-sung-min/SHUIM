@@ -45,12 +45,19 @@ public class BeachRoom {
     public static final int REST_SLOTS = 8;
     public static final double REST_X = 7, REST_Z = 7, REST_FEET_RADIUS = 2.65, REST_REACH = 5.5;
     public static final int BED_SLOTS = 3;
-    private record RestSpot(String id, double x, double z, int capacity, boolean bed) {}
+    public static final String BENCH_SPOT = "fire-benches";
+    public static final int BENCH_SLOTS = 12;
+    public static final double BENCH_REACH = 2.25;
+    private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
+        boolean bench() { return BENCH_SPOT.equals(id); }
+    }
+    private record BenchSeat(double x, double z, double yaw) {}
     private static final Map<String, RestSpot> REST_SPOTS = Map.of(
         REST_SPOT, new RestSpot(REST_SPOT, REST_X, REST_Z, REST_SLOTS, false),
         "hut-pine", new RestSpot("hut-pine", -13, 23, BED_SLOTS, true),
         "hut-wave", new RestSpot("hut-wave", 0, 25, BED_SLOTS, true),
-        "hut-sunset", new RestSpot("hut-sunset", 13, 23, BED_SLOTS, true));
+        "hut-sunset", new RestSpot("hut-sunset", 13, 23, BED_SLOTS, true),
+        BENCH_SPOT, new RestSpot(BENCH_SPOT, 0, 12, BENCH_SLOTS, false));
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
@@ -72,7 +79,7 @@ public class BeachRoom {
         static PlayerView of(Presence p) {
             synchronized (p) {
                 return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving,
-                    p.restSlot == null ? "standing" : "lying", p.restSpot, p.restSlot);
+                    restPose(p), p.restSpot, p.restSlot);
             }
         }
     }
@@ -82,10 +89,41 @@ public class BeachRoom {
     public record RestPresence(String pose, String spotId, Integer slot, double x, double z, double yaw) {
         static RestPresence of(Presence p) {
             synchronized (p) {
-                return new RestPresence(p.restSlot == null ? "standing" : "lying", p.restSpot,
+                return new RestPresence(restPose(p), p.restSpot,
                     p.restSlot, p.x, p.z, p.yaw);
             }
         }
+    }
+
+    private static String restPose(Presence p) {
+        return p.restSlot == null ? "standing" : BENCH_SPOT.equals(p.restSpot) ? "sitting" : "lying";
+    }
+
+    private static BenchSeat benchSeat(int slot) {
+        double angle = Math.PI / 6 + (slot / 2) * Math.PI / 3;
+        double offset = slot % 2 == 0 ? -.5 : .5;
+        return new BenchSeat(Math.sin(angle) * 4 + Math.cos(angle) * offset,
+            12 + Math.cos(angle) * 4 - Math.sin(angle) * offset, angle);
+    }
+
+    /** A full nearby bench must not send the visitor to a different, distant bench. */
+    private static int nearestBenchSlot(Presence me, boolean[] used) {
+        boolean nearby = false;
+        int closest = -1;
+        double closestDistance = Double.POSITIVE_INFINITY;
+        for (int slot = 0; slot < BENCH_SLOTS; slot++) {
+            BenchSeat seat = benchSeat(slot);
+            double distance = Math.hypot(me.x - seat.x(), me.z - seat.z());
+            if (distance > BENCH_REACH) continue;
+            nearby = true;
+            if (!used[slot] && distance < closestDistance) {
+                closest = slot;
+                closestDistance = distance;
+            }
+        }
+        if (!nearby) throw ApiException.badRequest("모닥불 벤치 가까이에서 앉아 주세요.");
+        if (closest < 0) throw new ApiException(409, "가까운 벤치가 모두 차 있어요. 다른 벤치로 다가가 주세요.");
+        return closest;
     }
 
     /** 이번 방문에서 받은 위로·안아주기 수 */
@@ -258,9 +296,11 @@ public class BeachRoom {
         sweep(now);
         Presence me = ticket == null ? null : byTicket.get(ticket);
         if (me == null || me.bot()) throw ApiException.gone(BeachController.GONE);
-        if (!"lie".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("눕기나 일어나기를 골라 주세요.");
+        if (!"lie".equals(action) && !"sit".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("앉기, 눕기, 일어나기 중에서 골라 주세요.");
         RestSpot spot = REST_SPOTS.get(spotId == null ? REST_SPOT : spotId);
         if (spot == null) throw ApiException.badRequest("쉴 자리를 다시 골라 주세요.");
+        if (!"stand".equals(action) && "sit".equals(action) != spot.bench())
+            throw ApiException.badRequest("벤치에서는 앉기를, 침구와 별빛 자리에서는 눕기를 골라 주세요.");
         synchronized (me) {
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
@@ -279,7 +319,7 @@ public class BeachRoom {
                 me.lastSeen = now;
                 return RestPresence.of(me); // Lost responses can be retried without taking another slot.
             }
-            if (Math.hypot(me.x - spot.x(), me.z - spot.z()) > REST_REACH) {
+            if (!spot.bench() && Math.hypot(me.x - spot.x(), me.z - spot.z()) > REST_REACH) {
                 throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
             boolean[] used = new boolean[spot.capacity()];
@@ -287,16 +327,23 @@ public class BeachRoom {
                 Integer slot = other.restSlot;
                 if (slot != null && spot.id().equals(other.restSpot) && live(other, now)) used[slot] = true;
             }
-            int slot = 0;
-            while (slot < spot.capacity() && used[slot]) slot++;
+            int slot = spot.bench() ? nearestBenchSlot(me, used) : 0;
+            if (!spot.bench()) while (slot < spot.capacity() && used[slot]) slot++;
             if (slot == spot.capacity()) throw new ApiException(409, spot.bed() ? "이 오두막의 침구가 모두 사용 중이에요. 다른 오두막을 골라 주세요." : "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
             me.standingX = me.x;
             me.standingZ = me.z;
             me.standingYaw = me.yaw;
-            double theta = spot.bed() ? Math.PI : slot * Math.PI * 2 / REST_SLOTS;
-            me.x = spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
-            me.z = spot.bed() ? spot.z() - 0.1 : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
-            me.yaw = theta;
+            if (spot.bench()) {
+                BenchSeat seat = benchSeat(slot);
+                me.x = seat.x();
+                me.z = seat.z();
+                me.yaw = seat.yaw();
+            } else {
+                double theta = spot.bed() ? Math.PI : slot * Math.PI * 2 / REST_SLOTS;
+                me.x = spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
+                me.z = spot.bed() ? spot.z() - 0.1 : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
+                me.yaw = theta;
+            }
             me.restSpot = spot.id();
             me.restSlot = slot;
             me.moving = false;

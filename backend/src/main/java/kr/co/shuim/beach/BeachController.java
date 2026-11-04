@@ -80,6 +80,7 @@ public class BeachController {
         out.put("capacity", BeachRoom.CAPACITY);
         out.put("restEnabled", true);
         out.put("bedEnabled", true);
+        out.put("benchEnabled", true);
         out.put("careCapabilities", new BeachRoom.CareCapabilities(true, auth.isAdmin(me)));
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
@@ -130,7 +131,7 @@ public class BeachController {
         return capabilities == null ? r : r.withCareCapabilities(capabilities, denied);
     }
 
-    /** POST /api/beach/rest { ticket, action: "lie" | "stand", spotId?: "starlight" | "hut-pine" | "hut-wave" | "hut-sunset" } */
+    /** POST /api/beach/rest: lie on starlight/hut spots, sit on fire-benches, or stand. Ticket scopes the visit. */
     @PostMapping("/api/beach/rest")
     public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);

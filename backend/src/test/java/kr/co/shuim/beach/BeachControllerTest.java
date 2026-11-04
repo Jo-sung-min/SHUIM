@@ -58,9 +58,10 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled", "bedEnabled", "careCapabilities"), out.keySet());
+        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled", "bedEnabled", "benchEnabled", "careCapabilities"), out.keySet());
         assertEquals(true, out.get("restEnabled"));
         assertEquals(true, out.get("bedEnabled"));
+        assertEquals(true, out.get("benchEnabled"));
         assertEquals(new BeachRoom.CareCapabilities(true, false), out.get("careCapabilities"));
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
@@ -173,6 +174,38 @@ class BeachControllerTest {
         mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
             .content("{\"ticket\":\"missing\",\"action\":\"lie\"}"))
             .andExpect(status().isGone());
+    }
+
+    @Test
+    void benchEndpointReturnsSittingAndTicksKeepTheSeatUntilStanding() throws Exception {
+        activeMember("circle-a");
+        String ticket = (String) enter("circle-a").get("ticket");
+        beach.tick(ticket, 4, 11.6, .5, false, null, null);
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"action\":\"sit\",\"spotId\":\"fire-benches\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("sitting"))
+            .andExpect(jsonPath("$.spotId").value("fire-benches")).andExpect(jsonPath("$.slot").value(3))
+            .andExpect(jsonPath("$.x").value(4)).andExpect(jsonPath("$.z").value(11.5));
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"x\":20,\"z\":20,\"moving\":true}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.selfRest.pose").value("sitting"))
+            .andExpect(jsonPath("$.selfRest.slot").value(3)).andExpect(jsonPath("$.selfRest.z").value(11.5));
+        var observer = beach.enter("circle-a", "observer", "구경", Set.of());
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + observer.ticket() + "\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.players[0].pose").value("sitting"))
+            .andExpect(jsonPath("$.players[0].spotId").value("fire-benches")).andExpect(jsonPath("$.players[0].slot").value(3));
+        for (String invalid : new String[]{"{\"action\":\"sit\"}", "{\"action\":\"sit\",\"spotId\":\"hut-wave\"}",
+            "{\"action\":\"lie\",\"spotId\":\"fire-benches\"}"}) {
+            mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + ticket + "\"," + invalid.substring(1)))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"action\":\"stand\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("standing"))
+            .andExpect(jsonPath("$.x").value(4)).andExpect(jsonPath("$.z").value(11.6));
     }
 
     @Test

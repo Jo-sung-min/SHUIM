@@ -9,8 +9,10 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
-  const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
+  let source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
     .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+  // Execute the real drag handler without constructing the WebGL renderer.
+  if (file.endsWith("/engine.ts")) source = source.replace(/\bonPointerMove\s*=\s*\(([^)]*)\)\s*=>\s*\{/, "onPointerMove($1) {");
   const context = { ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(",")} };`, context);
   return context.api;
@@ -19,8 +21,9 @@ const geometry = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZIN
 const { STARGAZING, stargazingSlot, stargazingBodyPoint, applyLyingTransform, stargazingApproach, buildStargazingZone } = geometry;
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
 const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "BED_AVATAR_Y", "bedSlot", "claimedBedSlot", "buildShelters"]);
+const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...geometry, ...atlas, ...bedding, CAMPFIRE: { x: 0, z: 12 }, performance,
+  THREE, ...geometry, ...atlas, ...bedding, ...benches, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ width: 0, height: 0, getContext: () => null }) },
 }, ["BeachEngine"]);
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, message ?? `${actual} ≈ ${expected}`);
@@ -69,6 +72,7 @@ function fixture() {
     charTex: new THREE.Texture(), daylight: { tint: [1, 1, 1] }, skin: 0, time: 0, nearFire: false,
     shadowGeo: new THREE.PlaneGeometry(1, 1), shadowMat: new THREE.MeshBasicMaterial(),
     ring: new THREE.Mesh(), ringMat: new THREE.MeshBasicMaterial(),
+    canvas: { getBoundingClientRect: () => ({ left: 0, top: 0 }) }, look: { active: false },
     handlers: { onSelect() {}, onStargazingChange: (state) => states.push(state) },
     deckHeight: () => 0, eyeHeight: 1.55,
   });
@@ -201,8 +205,6 @@ test("every hut bed keeps the face visible above the duvet and the camera below 
       engine.applyRest({ pose: "lying", ...bed });
       assert.equal(engine.viewMode, "third");
       assert.equal(engine.isBedLying, true);
-      engine.setView("first");
-      assert.equal(engine.viewMode, "third", "a covered hut never enters sky-only mode");
       engine.updateSelf(0.016);
       engine.scene.updateMatrixWorld(true); camera.updateMatrixWorld();
       assert.equal(camera.layers.mask, 1);
@@ -221,6 +223,95 @@ test("every hut bed keeps the face visible above the duvet and the camera below 
       assert.ok(duvetRay.intersectObject(engine.scene.getObjectByName("shelters-cushions"), false).length > 0, "the duvet covers the body above the avatar plane");
     }
   }
+});
+
+test("every bed offers a low first-person sea view above its pillow and through the actual open front", () => {
+  for (const shelter of bedding.SHELTERS) for (let slot = 0; slot < 3; slot++) {
+    for (const aspect of [390 / 844, 1920 / 911]) {
+      const { engine, camera } = fixture();
+      camera.aspect = aspect; camera.updateProjectionMatrix();
+      bedding.buildShelters(engine.scene);
+      const bed = bedding.bedSlot(`hut-${shelter.id}`, slot);
+      engine.applyRest({ pose: "lying", ...bed });
+      engine.setView("first"); engine.updateSelf(0.016);
+      engine.scene.updateMatrixWorld(true); camera.updateMatrixWorld();
+      assert.equal(engine.viewMode, "first");
+      assert.equal(engine.selfNode.sprite.visible, false, "first person hides only the local character");
+      assert.equal(camera.layers.mask, 1, "the beach and hut stay visible instead of switching to the sky-only layer");
+      const body = new THREE.Object3D();
+      applyLyingTransform(body, bed); body.updateMatrixWorld();
+      const head = new THREE.Vector3(0, 1.42, 0).applyMatrix4(body.matrixWorld);
+      close(camera.position.x, head.x); close(camera.position.z, head.z);
+      assert.ok(camera.position.y > head.y + 0.1 && camera.position.y < head.y + 0.2, "eyes clear the raised head and pillow");
+      assert.ok(camera.position.y > 1.2 && camera.position.y < 1.5, "lying keeps a low resting eye height below the roof");
+      assert.ok(camera.getWorldDirection(new THREE.Vector3()).z < -0.99, "the initial view faces the sea at negative Z");
+      close(engine.getSelf().yaw, bed.yaw, "camera direction never turns the body away from its assigned bed");
+      const roomMeshes = engine.scene.children.filter(node => node.name.startsWith("shelters-"));
+      for (const yaw of [-0.3, 0, 0.3]) for (const pitch of [-0.08, -0.035, 0.18]) {
+        engine.self.yaw = yaw; engine.self.pitch = pitch;
+        engine.updateSelf(0.016); camera.updateMatrixWorld();
+        const direction = camera.getWorldDirection(new THREE.Vector3());
+        const distanceToOpening = (shelter.z - shelter.depth / 2 - 0.15 - camera.position.z) / direction.z;
+        const sightline = new THREE.Raycaster(camera.position, direction, 0.05, distanceToOpening);
+        assert.equal(sightline.intersectObjects(roomMeshes, false).length, 0,
+          `${shelter.id}/${slot}: bed view clears quilt, curtains and rafters at yaw ${yaw}, pitch ${pitch}`);
+      }
+    }
+  }
+});
+
+test("bed dragging uses sea-view limits, duplicate claims preserve the view, and standing restores the prior pitch", () => {
+  const { engine, camera } = fixture();
+  const drag = (dx, dy) => {
+    engine.look = { active: true, id: 1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
+    engine.onPointerMove({ pointerId: 1, pointerType: "touch", clientX: dx, clientY: dy });
+  };
+  const bed = bedding.bedSlot("hut-wave", 1);
+  engine.applyRest({ pose: "lying", ...bed });
+  engine.toggleView();
+  assert.equal(engine.viewMode, "first");
+  close(engine.self.yaw, 0);
+  assert.ok(Math.abs(engine.self.pitch) < 0.1, "bed view does not inherit the upward star-view angle");
+  drag(10000, 10000);
+  close(engine.self.yaw, -0.3); close(engine.self.pitch, -0.08);
+  drag(-10000, -10000);
+  close(engine.self.yaw, 0.3); close(engine.self.pitch, 0.18);
+  engine.applyRest({ pose: "lying", ...bed });
+  close(engine.self.yaw, 0.3); close(engine.self.pitch, 0.18);
+  engine.updateSelf(0.016); camera.updateMatrixWorld();
+  assert.ok(camera.getWorldDirection(new THREE.Vector3()).z < -0.9, "dragged view remains through the sea-facing opening");
+  engine.toggleView(); engine.updateSelf(0.016);
+  assert.equal(engine.viewMode, "third");
+  assert.equal(engine.selfNode.sprite.visible, true);
+  assert.ok(camera.position.y < 3.1 && camera.position.z < 23, "third person returns to the established front-of-bed framing");
+  engine.toggleView();
+  close(engine.self.yaw, 0);
+  assert.ok(Math.abs(engine.self.pitch) < 0.1);
+  engine.applyRest(standing); engine.updateSelf(0.016);
+  assert.equal(engine.isLying, false);
+  close(engine.self.x, standing.x); close(engine.self.z, standing.z);
+  close(engine.self.yaw, standing.yaw); close(engine.self.pitch, 0.07);
+  close(camera.position.y, 1.55, "standing restores ordinary eye height");
+});
+
+test("star-view dragging retains its sky-only first-person and overhead third-person limits", () => {
+  const { engine, camera } = fixture();
+  const drag = dy => {
+    engine.look = { active: true, id: 1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
+    engine.onPointerMove({ pointerId: 1, pointerType: "touch", clientX: 0, clientY: dy });
+  };
+  engine.applyRest(rest(2)); engine.setView("first");
+  close(engine.self.pitch, 1.5);
+  drag(10000); close(engine.self.pitch, 1.4);
+  drag(-10000); close(engine.self.pitch, 1.56);
+  engine.updateSelf(0.016);
+  assert.equal(camera.layers.mask, 2);
+  engine.setView("third");
+  drag(10000); close(engine.self.pitch, 0.88);
+  drag(-10000); close(engine.self.pitch, 1.5);
+  engine.updateSelf(0.016);
+  assert.equal(camera.layers.mask, 1);
+  assert.equal(engine.selfNode.sprite.visible, true);
 });
 
 test("bed occupancy is per hut, excludes star mats, and local/remote occupants use the same raised pose", () => {

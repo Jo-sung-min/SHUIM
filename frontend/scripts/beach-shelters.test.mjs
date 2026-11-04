@@ -20,10 +20,11 @@ const shelters = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBo
 const { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS } = shelters;
 const { findClearApproach, resolveWalls } = await loadModule("../lib/beach/navigation.ts", {}, ["findClearApproach", "resolveWalls"]);
 const { buildNightLights } = await loadModule("../lib/beach/night-lights.ts", { THREE }, ["buildNightLights"]);
-const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, ...shelters, buildNightLights }, ["Cove", "CAMPFIRE"]);
+const benches = await loadModule("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot", "buildFireBenches"]);
+const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, ...shelters, ...benches, buildNightLights }, ["Cove", "CAMPFIRE"]);
 const stargazing = await loadModule("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot"]);
 const { BeachEngine, PLACEMENT } = await loadModule("../lib/beach/engine.ts", {
-  THREE, ...shelters, ...stargazing, findClearApproach, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },
+  THREE, ...shelters, ...stargazing, ...benches, findClearApproach, resolveWalls, CAMPFIRE, CHAR_ANIM: { idle: { from: 0, length: 4 }, walk: { from: 4, length: 6 } },
 }, ["BeachEngine", "PLACEMENT"]);
 const backendSource = await readFile(new URL("../../backend/src/main/java/kr/co/shuim/beach/BeachRoom.java", import.meta.url), "utf8");
 const boundValue = (name) => Number(backendSource.match(new RegExp(`\\b${name} = (-?\\d+(?:\\.\\d+)?)`))?.[1]);

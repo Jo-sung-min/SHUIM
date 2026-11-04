@@ -18,7 +18,8 @@ async function loadModule(file, dependencies, exports) {
 
 const { buildShelters } = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["buildShelters"]);
 const { buildNightLights } = await loadModule("../lib/beach/night-lights.ts", { THREE }, ["buildNightLights"]);
-const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, buildShelters, buildNightLights }, ["Cove", "CAMPFIRE"]);
+const { CAMPFIRE_BENCHES, buildFireBenches } = await loadModule("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["CAMPFIRE_BENCHES", "buildFireBenches"]);
+const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, buildShelters, buildNightLights, buildFireBenches }, ["Cove", "CAMPFIRE"]);
 const { daylightAt } = await loadModule("../lib/beach/daylight.ts", {}, ["daylightAt"]);
 const scene = new THREE.Scene(), obstacles = [];
 const cove = new Cove(scene, obstacles);
@@ -63,15 +64,18 @@ test("restored cliffs use the original pale rock surface without added crest veg
   assert.doesNotMatch(shader.fragmentShader, /moss/i, "green moss does not replace the restored stone surface");
 });
 
-test("scenery changes add no new player obstacles and preserve the campfire seats", () => {
+test("campfire benches replace decorative logs while other scenery keeps its existing obstacles", () => {
   assert.equal(CAMPFIRE.x, 0);
   assert.equal(CAMPFIRE.z, 12);
-  assert.equal(obstacles.length, 28, "only the existing boulders, seats, and light posts collide");
-  for (const [x, z, angle] of [[-4.4, 12, 0], [4.4, 12, 0], [-3.4, 16.2, -0.7], [3.4, 16.2, 0.7]]) {
-    for (const offset of [-1.3, -0.45, 0.45, 1.3]) {
-      assert.ok(obstacles.some(o => Math.abs(o.x - x - Math.sin(angle) * offset) < 1e-8
-        && Math.abs(o.z - z - Math.cos(angle) * offset) < 1e-8 && o.r === 0.31));
-    }
+  assert.equal(obstacles.length, 48, "eight boulders, 36 bench circles and four light posts collide");
+  const expectedBenches = [];
+  buildFireBenches(new THREE.Scene(), expectedBenches);
+  for (const expected of expectedBenches) {
+    assert.equal(obstacles.filter(o => o.x === expected.x && o.z === expected.z && o.r === expected.r).length, 1,
+      "cove adds each shared bench collider exactly once");
+  }
+  for (const bench of CAMPFIRE_BENCHES) {
+    assert.ok(obstacles.some(o => Math.hypot(o.x - bench.x, o.z - bench.z) < o.r), "each visible bench remains solid");
   }
 });
 

@@ -21,12 +21,13 @@ export interface EnterResponse {
   fire: FireState;
   restEnabled?: boolean;
   bedEnabled?: boolean;
+  benchEnabled?: boolean;
   careCapabilities?: CareCapabilities;
 }
 
 /** A shared rest slot is assigned by the server, never claimed locally. */
 export interface RestPresence {
-  pose: "standing" | "lying";
+  pose: "standing" | "lying" | "sitting";
   spotId: string | null;
   slot: number | null;
   x: number;
@@ -177,6 +178,7 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
 
 export async function tickBeach(body: TickRequest): Promise<TickResponse> {
   const response = await post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
+  if (response.selfRest != null && !validRestPresence(response.selfRest)) throw new Error("쉴 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   // Movement-only ticks do not refresh privileges. A confirmed action response does.
   return response.careCapabilities == null ? response : { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
 }
@@ -189,19 +191,29 @@ export async function addFirePowder(ticket: string, requestId: string, color: Po
   return state;
 }
 
-export async function setBeachRest(ticket: string, action: "lie" | "stand", spotId = "starlight"): Promise<RestPresence> {
+function validRestPresence(value: unknown): value is RestPresence {
+  if (!value || typeof value !== "object") return false;
+  const state = value as RestPresence;
+  if (![state.x, state.z, state.yaw].every(Number.isFinite)) return false;
+  if (state.pose === "standing") return state.spotId === null && state.slot === null;
+  if (!Number.isInteger(state.slot) || state.slot! < 0) return false;
+  if (state.pose === "sitting") return state.spotId === "fire-benches" && state.slot! < 12;
+  return state.pose === "lying" && (state.spotId === "starlight" ? state.slot! < 8
+    : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3);
+}
+
+export async function setBeachRest(ticket: string, action: "lie" | "sit" | "stand", spotId = "starlight"): Promise<RestPresence> {
   let state: RestPresence;
   try {
-    state = await post<RestPresence>("/api/beach/rest", { ticket, action, ...(action === "lie" ? { spotId } : {}) }, { signal: AbortSignal.timeout(8000) });
+    state = await post<RestPresence>("/api/beach/rest", { ticket, action, ...(action !== "stand" ? { spotId } : {}) }, { signal: AbortSignal.timeout(8000) });
   } catch (cause) {
     if (cause instanceof Error && (cause.name === "AbortError" || cause.name === "TimeoutError")) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
     throw cause;
   }
-  const validPose = state && (state.pose === "standing"
-    ? state.spotId === null && state.slot === null
-    : state.pose === "lying" && Number.isInteger(state.slot) && state.slot! >= 0 && (
-      state.spotId === "starlight" ? state.slot! < 8 : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3));
-  if (!validPose || ![state.x, state.z, state.yaw].every(Number.isFinite)) throw new Error("쉴 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  if (!validRestPresence(state) || (action === "stand" ? state.pose !== "standing"
+    : state.spotId !== spotId || state.pose !== (action === "sit" ? "sitting" : "lying"))) {
+    throw new Error("쉴 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  }
   return state;
 }
 

@@ -1,5 +1,9 @@
 /* Clear glass reveals the scenery; label contrast follows the scene's deep night. */
 .root {
+  --beach-pad-size: 118px;
+  --beach-pad-left: max(18px, env(safe-area-inset-left));
+  --beach-pad-bottom: calc(88px + env(safe-area-inset-bottom));
+  --beach-hud-left: max(14px, env(safe-area-inset-left));
   --beach-glass: rgba(255,255,255,.2);
   --beach-ink: #34433e;
   --beach-muted: #68756f;
@@ -59,6 +63,7 @@
 .place p { margin:0; font-size:12px; line-height:1.6; color:#fff5e2d9; }
 .bottomHud { position:absolute; left:50%; bottom:calc(14px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(calc(100% - 88px),400px); display:flex; flex-direction:column; align-items:center; gap:9px; pointer-events:none; z-index:4; }
 .dock { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:2px; width:100%; padding:4px; border-radius:22px; pointer-events:auto; }
+.dock[data-lying="true"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .dockButton { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:56px; min-width:0; padding:5px 3px; border:0; border-radius:16px; background:transparent; color:inherit; font:inherit; font-size:11px; font-weight:600; white-space:nowrap; cursor:pointer; transition:background .16s,transform .13s; }
 .dockButton > svg { width:22px; height:22px; flex:none; }
 .dockButton[aria-expanded="true"], .dockButton[aria-pressed="true"] { background:#dcebdE26; }
@@ -127,4 +132,24 @@
 @media(max-width:600px) { .bottomHud { left:calc(50% - 30px); } }
 @media(max-width:360px) { .dockButton { font-size:10px; gap:5px; }.dockButton > svg { width:20px; height:20px; }.exitButton { font-size:11px; padding:0 10px 0 7px; }.contextButton { gap:7px; padding:9px; }.contextIcon { width:28px; height:28px; }.contextCopy strong { font-size:11px; } }
 @media(max-height:520px) { .top { top:calc(7px + env(safe-area-inset-top)); }.statusBar { top:calc(70px + env(safe-area-inset-top)); }.bottomHud { gap:5px; bottom:calc(7px + env(safe-area-inset-bottom)); }.hideHud, .restoreHud { bottom:calc(12px + env(safe-area-inset-bottom)); }.actionTile, .personChoice { min-height:78px; }.actionTray { max-height:42dvh; overflow-y:auto; touch-action:pan-y; } }
+/* Reserve the left thumb's space even as nearby actions appear or disappear. */
+@media(pointer:coarse) {
+  .bottomHud {
+    left:var(--beach-hud-left); right:max(14px,env(safe-area-inset-right)); width:auto; transform:none;
+    display:grid; grid-template-columns:calc(var(--beach-pad-left) + var(--beach-pad-size) - var(--beach-hud-left)) minmax(0,1fr);
+    column-gap:12px; align-items:end;
+  }
+  .contextActions, .fireContext, .dockNotice, .dockHint { grid-column:2; justify-self:start; width:100%; max-width:340px; min-width:0; }
+  .contextButton { gap:8px; padding:9px; }
+  .contextIcon { width:28px; height:28px; }
+  .contextCopy strong { overflow-wrap:anywhere; }
+  .fireContext { max-width:280px; }
+  .dock, .actionTray { grid-column:1 / -1; width:min(calc(100% - 60px),400px); justify-self:start; }
+  .dockCharacterPanel { right:60px; max-width:calc(100% - 60px); }
+}
+@media(pointer:coarse) and (max-height:520px) {
+  .root { --beach-pad-size:100px; --beach-pad-bottom:calc(81px + env(safe-area-inset-bottom)); }
+  .contextActions { max-height:calc(100dvh - 166px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; }
+  .contextButton { flex-shrink:0; }
+}
 @media(prefers-reduced-motion:reduce) { .actionTray, .characterPanel, .contextButton, .fireContext { animation:none; }.actionTile, .dockButton, .topTool, .exitButton, .hideHud, .restoreHud, .contextButton, .characterChoice, .place { transition:none; }.flash { animation-duration:.8s; } }

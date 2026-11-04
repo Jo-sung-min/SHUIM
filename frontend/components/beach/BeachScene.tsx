@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type ViewMode } from "@/lib/beach/engine";
+import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type ViewMode } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, enterBeach, leaveBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
@@ -60,6 +60,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const characterPickerId = useId();
   const restEnabledRef = useRef(false);
   const bedEnabledRef = useRef(false);
+  const benchEnabledRef = useRef(false);
+  const benchActionRef = useRef<() => void>(() => {});
   const captureBusyRef = useRef(false);
   const cameraTriggerRef = useRef<HTMLButtonElement>(null);
   const photoFocusFrameRef = useRef(0);
@@ -100,10 +102,13 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const [restEnabled, setRestEnabled] = useState(false);
   const [bedEnabled, setBedEnabled] = useState(false);
   const [bed, setBed] = useState<BedState | null>(null);
+  const [benchEnabled, setBenchEnabled] = useState(false);
+  const [bench, setBench] = useState<BenchState>({ near: false, seated: false, occupied: 0, capacity: 12, available: false });
   const [photo, setPhoto] = useState<BeachPhoto | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [stargazing, setStargazing] = useState<StargazingState>({ near: false, lying: false, occupied: 0, capacity: 8 });
   const [skyPhase, setSkyPhase] = useState<SkyPhase | null>(null);
+  const [restActionSpot, setRestActionSpot] = useState<string | null>(null);
   const [woodBusy, setWoodBusy] = useState(false);
   const [powderPhase, setPowderPhase] = useState<WoodPhase | null>(null);
   const [powderOpen, setPowderOpen] = useState(false);
@@ -258,6 +263,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     skyBusyRef.current = null;
     restMutationRef.current = false;
     setSkyPhase(null);
+    setRestActionSpot(null);
     setError(cause.message);
     setPhase("error");
   }, []);
@@ -285,6 +291,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setRestEnabled(restEnabledRef.current);
     bedEnabledRef.current = entered.bedEnabled === true;
     setBedEnabled(bedEnabledRef.current);
+    benchEnabledRef.current = entered.benchEnabled === true;
+    setBenchEnabled(benchEnabledRef.current);
     // A new ticket owns no slot from the previous visit.
     engine.applyRest({ pose: "standing", spotId: null, slot: null, ...entered.spawn });
     applyFire(entered.fire);
@@ -408,6 +416,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     setCapturing(false);
     setPhoto(null);
     setBed(null);
+    setBench({ near: false, seated: false, occupied: 0, capacity: 12, available: false });
+    setRestActionSpot(null);
     fireTimeRef.current = 0;
     fireLogsRef.current = null;
     if (!communityId) {
@@ -438,6 +448,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         setRestEnabled(restEnabledRef.current);
         bedEnabledRef.current = entered.bedEnabled === true;
         setBedEnabled(bedEnabledRef.current);
+        benchEnabledRef.current = entered.benchEnabled === true;
+        setBenchEnabled(benchEnabledRef.current);
         const initialView = savedView();
         setView(initialView);
         engine = new BeachEngine(canvas, {
@@ -456,6 +468,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
             onFireRangeChange: (near) => setNearFire(near),
             onStargazingChange: (state) => setStargazing(state),
             onBedChange: (state) => setBed(state),
+            onBenchChange: (state) => setBench(state),
+            onBenchAction: () => benchActionRef.current(),
           },
         });
         engineRef.current = engine;
@@ -567,16 +581,29 @@ export default function BeachScene({ communityId }: { communityId: string }) {
 
   const toggleStargazing = async (spotId = "starlight") => {
     const engine = engineRef.current;
-    const isBed = spotId !== "starlight";
-    const enabled = () => isBed ? bedEnabledRef.current : restEnabledRef.current;
+    const isBench = spotId === "fire-benches";
+    const isBed = !isBench && spotId !== "starlight";
+    const enabled = () => isBench ? benchEnabledRef.current : isBed ? bedEnabledRef.current : restEnabledRef.current;
     if (!engine || !enabled() || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
-    const destination = isBed ? engine.getBedState() : stargazing;
-    if (!engine.isLying && (!destination || destination.occupied >= destination.capacity)) return;
+    if ((engine.isBenchSeated && !isBench) || (engine.isLying && isBench)) {
+      showToast("다른 자리로 가려면 먼저 일어나 주세요.", { kind: "info" });
+      return;
+    }
+    if (isBench && !engine.isBenchSeated) {
+      const nearby = engine.getBenchState();
+      if (!nearby.near || !nearby.available) {
+        showToast(nearby.near ? "가까운 자리가 찼어요. 다른 벤치 쪽으로 가 주세요." : "모닥불 벤치 가까이에서 앉을 수 있어요.", { kind: "info" });
+        return;
+      }
+    }
+    const destination = isBench ? engine.getBenchState() : isBed ? engine.getBedState() : stargazing;
+    if (!engine.isLying && !engine.isBenchSeated && (!destination || destination.occupied >= destination.capacity)) return;
     const operation = ++skyOperationRef.current;
     const visit = visitGenerationRef.current;
     const actor = meRef.current?.id;
     const current = () => aliveRef.current && !blockedRef.current && skyOperationRef.current === operation && engineRef.current === engine && visitGenerationRef.current === visit;
-    const action = engine.isLying ? "stand" : "lie";
+    const action = engine.isLying || engine.isBenchSeated ? "stand" : isBench ? "sit" : "lie";
+    setRestActionSpot(spotId);
     engine.select(null);
     setCarePrompt(null);
     const changePhase = (next: SkyPhase) => {
@@ -593,7 +620,7 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         if (!current() || walk === "cancelled") return;
         if (walk === "blocked") throw new Error("쉬어갈 자리로 가는 길이 막혔어요. 조금 가까이에서 다시 눌러 주세요.");
       }
-      changePhase(action === "lie" ? "joining" : "standing");
+      changePhase(action === "stand" ? "standing" : "joining");
       // Regular ticks continue during the walk. Reserve the network lane only now,
       // then drain any older tick before syncing position and claiming/releasing a slot.
       restMutationRef.current = true;
@@ -621,7 +648,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         stopWithError(cause);
       } else {
         if (cause instanceof BeachUnavailable && cause.status === 404) {
-          if (isBed) { bedEnabledRef.current = false; setBedEnabled(false); }
+          if (isBench) { benchEnabledRef.current = false; setBenchEnabled(false); }
+          else if (isBed) { bedEnabledRef.current = false; setBedEnabled(false); }
           else { restEnabledRef.current = false; setRestEnabled(false); }
         }
         showToast(cause instanceof Error ? cause.message : "자리를 확인하지 못했어요. 다시 시도해 주세요.", { kind: "info" });
@@ -630,10 +658,11 @@ export default function BeachScene({ communityId }: { communityId: string }) {
       if (skyOperationRef.current === operation) {
         skyBusyRef.current = null;
         restMutationRef.current = false;
-        if (aliveRef.current) { setSkyPhase(null); scheduleTick(0); }
+        if (aliveRef.current) { setSkyPhase(null); setRestActionSpot(null); scheduleTick(0); }
       }
     }
   };
+  benchActionRef.current = () => { void toggleStargazing("fire-benches"); };
 
   /** 모닥불 앞까지 걸어간 뒤, 새 위치를 서버에 올리고(서버가 거리를 확인한다) 장작을 넣는다 */
   const onAddWood = useCallback(async (requestId: string, phase: (p: WoodPhase) => void) => {
@@ -649,8 +678,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
     try {
       await resumeForAction(engine, () => belongsToVisit() && !blockedRef.current);
       if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
-      phase("walking");
-      const walk = await engine.walkToFire();
+      if (!engine.isBenchSeated) phase("walking");
+      const walk = engine.isBenchSeated ? "arrived" : await engine.walkToFire();
       if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
       if (walk === "cancelled") throw new Error("걸음을 멈춰서 장작을 넣지 못했어요. 다시 눌러 주세요.");
       if (walk === "blocked") throw new Error("모닥불까지 가는 길이 막혔어요. 조금 더 가까이 가서 눌러 주세요.");
@@ -702,8 +731,8 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         await new Promise((resolve) => window.setTimeout(resolve, 16));
       }
       if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가 연결을 확인한 뒤 다시 넣어 주세요.");
-      phase("walking");
-      const walk = await engine.walkToFire();
+      if (!engine.isBenchSeated) phase("walking");
+      const walk = engine.isBenchSeated ? "arrived" : await engine.walkToFire();
       if (!belongsToVisit() || blockedRef.current) throw new Error("바닷가를 옮겼어요. 다시 눌러 주세요.");
       if (walk === "cancelled") throw new Error("걸음을 멈췄어요. 준비되면 다시 넣어 주세요.");
       if (walk === "blocked") throw new Error("불 곁으로 가는 길이 막혔어요. 조금 가까이에서 다시 눌러 주세요.");
@@ -760,10 +789,12 @@ export default function BeachScene({ communityId }: { communityId: string }) {
   const returnHref = community ? route(`/c/${community.slug}`) : "/c/home";
   const hideHud = () => { setHudHidden(true); setCharacterPickerOpen(false); setPowderOpen(false); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); haptic(); window.requestAnimationFrame(() => restoreTriggerRef.current?.focus()); };
   const restoreHud = () => { setHudHidden(false); haptic(); window.requestAnimationFrame(() => actionsTriggerRef.current?.focus()); };
-  const viewLabel = activeBed?.lying ? "함께 보기" : stargazing.lying ? view === "third" ? "하늘 보기" : "모여 보기" : view === "third" ? "내 눈으로" : "캐릭터 보기";
-  const restContextVisible = lying || Boolean(skyPhase) || Boolean(activeBed?.near) || stargazing.near;
-  const walking = skyPhase === "walking" || woodBusy || powderPhase === "walking";
-  const contextVisible = restContextVisible || Boolean(rest) || walking;
+  const viewLabel = lying ? view === "third" ? activeBed ? "바다 보기" : "하늘 보기" : activeBed ? "함께 보기" : "모여 보기" : view === "third" ? "내 눈으로" : "캐릭터 보기";
+  const benchPhase = restActionSpot === "fire-benches" ? skyPhase : null;
+  const benchContextVisible = bench.near || bench.seated || Boolean(benchPhase);
+  const restContextVisible = !bench.seated && (lying || (Boolean(skyPhase) && !benchPhase) || Boolean(activeBed?.near) || stargazing.near);
+  const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
+  const contextVisible = restContextVisible || benchContextVisible || Boolean(rest) || walking;
   const fireContextVisible = nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
 
   return (
@@ -785,17 +816,17 @@ export default function BeachScene({ communityId }: { communityId: string }) {
         <p>하얀 모래와 파도 곁에서 쉬어가요.</p>
       </div>}
 
-      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !powderOpen && powderPhase !== "adding" && !lying && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick raised={(contextVisible || fireContextVisible) && !hudHidden} onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
         {lost && <p className={styles.dockNotice} role="status">연결을 다시 이어 보는 중…</p>}
         {!actionsOpen && (skyPhase || woodBusy || powderPhase) && <p className={styles.dockNotice} role="status">잠깐만요, 행동을 마치고 있어요.</p>}
-        {hint && !actionsOpen && !selected && !lost && !lying && <p className={styles.dockHint}>걷고, 둘러보고, 행동을 골라 함께 쉬어요.</p>}
+        {hint && !actionsOpen && !selected && !lost && !lying && !bench.seated && <p className={styles.dockHint}>걷고, 둘러보고, 행동을 골라 함께 쉬어요.</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label="바닷가 행동">
           <div className={styles.trayHeader}>
             <div className={styles.trayHeading}>
               <strong>{carePrompt ? "마음을 건넬 사람을 골라요" : selected ? selected.nick + "님에게" : "무엇을 해볼까요?"}</strong>
-              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : "옆으로 넘겨 더 골라요"}</small>
+              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : bench.seated ? "모닥불 곁에 앉아 쉬는 중" : "옆으로 넘겨 더 골라요"}</small>
             </div>
             {selected && !carePrompt && <button type="button" className={styles.traySmallButton} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }} aria-label="다른 사람 고르기"><IconUsers /></button>}
             <button type="button" className={styles.traySmallButton} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
@@ -811,12 +842,21 @@ export default function BeachScene({ communityId }: { communityId: string }) {
           {gotAny && !carePrompt && <p className={styles.receivedMini}>받은 인사 {received.wave ?? 0} · 위로 {received.comfort} · 포옹 {received.hug}</p>}
         </section>
         {contextVisible && !characterPickerOpen && !powderOpen && <div className={styles.contextActions} aria-label="가까운 자리에서 쉬기">
+          {lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "first"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}>
+            <span className={styles.contextIcon}>{view === "third" ? <IconMoon /> : <IconUsers />}</span>
+            <span className={styles.contextCopy}><strong>{viewLabel}</strong><small>{view === "third" ? activeBed ? "누운 채 바다를 바라봐요" : "편안히 누워 하늘을 바라봐요" : "함께 쉬는 모습을 바라봐요"}</small></span>
+          </button>}
+          {benchContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!bench.seated && (!benchEnabled || !bench.available))} aria-pressed={bench.seated} aria-keyshortcuts="E" onClick={() => void toggleStargazing("fire-benches")}>
+            <span className={styles.contextIcon}><IconSmile /></span>
+            <span className={styles.contextCopy}><strong>{benchPhase === "standing" ? "일어나는 중…" : bench.seated ? "벤치에서 일어나기" : benchPhase === "joining" ? "자리 잡는 중…" : !bench.available ? "가까운 자리가 찼어요" : "모닥불 벤치에 앉기"}</strong><small>{bench.seated ? "모닥불을 바라보며 쉬는 중" : !benchEnabled ? "앉을 자리를 준비하고 있어요" : !bench.available ? "다른 벤치 쪽으로 가 주세요" : "따뜻한 불 곁에서 함께 쉬어요"}</small></span>
+            <span className={styles.contextCount} aria-label={`벤치 12석 중 ${bench.occupied}석 사용 중`}>{bench.occupied}/{bench.capacity}</span>
+          </button>}
           {restContextVisible && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!lying && (!areaEnabled || skyFull))} onClick={() => void toggleStargazing(areaSpot)}>
             <span className={styles.contextIcon}><IconMoon /></span>
             <span className={styles.contextCopy}><strong>{skyPhase === "standing" ? "일어나는 중…" : lying ? "일어나기" : skyPhase === "walking" ? "자리로 가는 중…" : skyPhase === "joining" ? "자리 잡는 중…" : activeBed ? "이불 덮고 눕기" : skyFull ? "모든 자리가 찼어요" : "같이 눕기"}</strong><small>{lying ? activeBed ? "포근한 이불 속에서 쉬는 중" : "함께 하늘을 보는 중" : !areaEnabled ? "쉬어갈 자리를 준비하고 있어요" : activeBed ? activeBed.shelterName : "별빛 자리에서 쉬어가요"}</small></span>
             <span className={styles.contextCount}>{restArea.occupied}/{restArea.capacity}</span>
           </button>}
-          {rest && !lying && !skyPhase && <button type="button" className={styles.contextButton} disabled={woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{rest.seated ? "앉은 자리에서 일어나기" : "앉아서 쉬기"}</strong><small>{rest.shelterName} · 바다를 바라봐요</small></span></button>}
+          {rest && !lying && !bench.seated && !skyPhase && <button type="button" className={styles.contextButton} disabled={woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{rest.seated ? "앉은 자리에서 일어나기" : "앉아서 쉬기"}</strong><small>{rest.shelterName} · 바다를 바라봐요</small></span></button>}
           {walking && <button type="button" className={styles.contextButton + " " + styles.contextCancel} onClick={() => engineRef.current?.cancelAutoWalk()}><span className={styles.contextIcon}><IconClose /></span><span className={styles.contextCopy}><strong>걸음 멈추기</strong><small>천천히 가도 돼요</small></span></button>}
         </div>}
         {characterPickerOpen && <div ref={characterPickerRef} id={characterPickerId} className={styles.characterPanel + " " + styles.dockCharacterPanel}>
@@ -832,10 +872,10 @@ export default function BeachScene({ communityId }: { communityId: string }) {
             powderOpen={powderOpen} onPowderOpenChange={setPowderOpen}
           />}
         </div>
-        <nav className={styles.dock} aria-label="바닷가 조작">
+        <nav className={styles.dock} aria-label="바닷가 조작" data-lying={lying}>
           <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSparkle /><span>행동</span></button>
           <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
-          <button type="button" className={styles.dockButton} disabled={Boolean(activeBed?.lying) || Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={stargazing.lying ? view === "first" : view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}>{stargazing.lying && view === "third" ? <IconMoon /> : <IconUsers />}<span>{stargazing.lying ? view === "third" ? "하늘" : "모여 보기" : "시점"}</span></button>
+          {!lying && <button type="button" className={styles.dockButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
           <button ref={characterTriggerRef} type="button" className={styles.dockButton} aria-label="내 캐릭터 고르기" aria-expanded={characterPickerOpen} aria-controls={characterPickerId} onClick={() => { haptic(); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); setCharacterPickerOpen((open) => !open); }}><IconUser /><span>내 캐릭터</span></button>
         </nav>
       </div>

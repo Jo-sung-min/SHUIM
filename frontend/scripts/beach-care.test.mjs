@@ -17,9 +17,10 @@ async function load(file, dependencies, names) {
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
 const resting = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot", "stargazingBodyPoint"]);
 const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["claimedBedSlot", "bedSlot"]);
+const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const { CareGestures } = await load("../lib/beach/care-effects.ts", { THREE }, ["CareGestures"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...atlas, ...resting, ...bedding, CareGestures, CAMPFIRE: { x: 0, z: 12 },
+  THREE, ...atlas, ...resting, ...bedding, ...benches, CareGestures, CAMPFIRE: { x: 0, z: 12 },
   cancelAnimationFrame() {}, window: { removeEventListener() {} },
 }, ["BeachEngine"]);
 

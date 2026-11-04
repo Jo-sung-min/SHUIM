@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Daylight } from "./daylight";
 import { buildShelters } from "./shelters";
 import { buildNightLights } from "./night-lights";
+import { buildFireBenches } from "./fire-benches";
 
 export const CAMPFIRE = { x: 0, z: 12 };
 type Obstacle = { x: number; z: number; r: number };
@@ -123,7 +124,6 @@ export class Cove {
     woodMap.repeat.set(1, 2);
     woodNormal.repeat.copy(woodMap.repeat);
     const wood = new THREE.MeshStandardMaterial({ map: woodMap, normalMap: woodNormal, normalScale: new THREE.Vector2(0.4, 0.4), color: 0xa3947e, roughness: 0.87 });
-    const woodEnd = new THREE.MeshStandardMaterial({ map: woodMap, color: 0xc0ac8a, roughness: 0.92 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x292b28, roughness: 0.9 });
     const leaf = new THREE.MeshStandardMaterial({ color: 0x737552, side: THREE.DoubleSide, roughness: 1 });
 
@@ -174,25 +174,7 @@ export class Cove {
     }
     scene.add(stones);
 
-    // Low seats flank the fire, leaving the arrival path and view of the sea open.
-    for (const [x, z, angle] of [[-4.4, CAMPFIRE.z, 0], [4.4, CAMPFIRE.z, 0], [-3.4, CAMPFIRE.z + 4.2, -0.7], [3.4, CAMPFIRE.z + 4.2, 0.7]]) {
-      const seat = new THREE.Group();
-      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 3.2, 24, 4), [wood, woodEnd, woodEnd]);
-      log.rotation.x = Math.PI / 2;
-      log.position.y = 0.48;
-      log.castShadow = log.receiveShadow = true;
-      seat.add(log);
-      for (const offset of [-1.1, 1.1]) {
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.3, 0.3), wood);
-        foot.position.set(0, 0.16, offset);
-        foot.castShadow = foot.receiveShadow = true;
-        seat.add(foot);
-      }
-      seat.position.set(x, 0, z);
-      seat.rotation.y = angle;
-      scene.add(seat);
-      for (const offset of [-1.3, -0.45, 0.45, 1.3]) obstacles.push({ x: x + Math.sin(angle) * offset, z: z + Math.cos(angle) * offset, r: 0.31 });
-    }
+    buildFireBenches(scene, obstacles, wood);
 
     // Repeated lights share draws so the scene stays light when the beach is full.
     const lanterns: [number, number][] = [

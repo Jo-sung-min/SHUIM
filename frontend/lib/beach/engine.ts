@@ -12,6 +12,7 @@ import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } fr
 import { type Daylight, daylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, claimedBedSlot, type BedState } from "./shelters";
+import { FIRE_BENCH_SEATS, FIRE_BENCH_REACH, claimedFireBenchSlot } from "./fire-benches";
 import { findClearApproach, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { FirePowderPlayback } from "./fire-powder";
@@ -29,6 +30,7 @@ function claimedRestSlot(state: { pose?: string; spotId?: string | null; slot?: 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
 export interface RestState { shelterName: string; seated: boolean }
+export interface BenchState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean }
 /** 자동으로 걸어간 결과: 도착 · 사용자가 직접 움직여 멈춤 · 길이 막힘 */
 export type AutoWalkResult = "arrived" | "cancelled" | "blocked";
 /** 1인칭(내 눈) · 3인칭(내 캐릭터 뒤 위에서 따라가는 카메라) */
@@ -40,6 +42,8 @@ export interface EngineHandlers {
   onRestChange?: (state: RestState | null) => void;
   onStargazingChange?: (state: StargazingState) => void;
   onBedChange?: (state: BedState | null) => void;
+  onBenchChange?: (state: BenchState) => void;
+  onBenchAction?: () => void;
   onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
@@ -60,6 +64,7 @@ export interface EngineOptions {
 
 const FOLLOW_DISTANCE = 5.4;
 const FOLLOW_DISTANCE_SEATED = 3.6;
+const BED_VIEW = { headDistance: 1.42, eyeOffset: 0.16, yawLimit: 0.3, minPitch: -0.08, maxPitch: 0.18, pitch: -0.035 };
 
 const WALK_SPEED = 3.2;
 const EYE = 1.55;
@@ -85,6 +90,35 @@ function viewFor(yaw: number, x: number, z: number, cam: THREE.Vector3) {
 function charFrame(walking: boolean, t: number) {
   if (walking) return CHAR_ANIM.walk.from + (Math.floor(t * WALK_FPS) % CHAR_ANIM.walk.length);
   return CHAR_ANIM.idle.from + IDLE_SEQUENCE[Math.floor(t * IDLE_FPS) % IDLE_SEQUENCE.length];
+}
+
+function avatarGeometry() {
+  const geometry = new THREE.PlaneGeometry(AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH, AVATAR_HEIGHT, 1, 24);
+  geometry.translate(0, AVATAR_HEIGHT / 2, 0);
+  return geometry;
+}
+
+/** Fold only the legs into a seated silhouette; the head and torso keep their original pixels and proportions. */
+function shapeSeatedAvatar(sprite: THREE.Mesh<THREE.PlaneGeometry>, seat: (typeof FIRE_BENCH_SEATS)[number] | null) {
+  const geometry = sprite.geometry;
+  if (!seat && !geometry.userData.seated) return;
+  const positions = geometry.getAttribute("position"), uv = geometry.getAttribute("uv");
+  const hips = 0.72, knee = 0.35;
+  for (let i = 0; i < positions.count; i++) {
+    let x = (uv.getX(i) - 0.5) * AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH;
+    let y = uv.getY(i) * AVATAR_HEIGHT;
+    if (seat) {
+      const forward = Math.min(1, Math.max(0, (hips - y) / (hips - knee)));
+      x += Math.sin(sprite.rotation.y - seat.yaw) * 0.36 * forward;
+      y = y >= hips ? seat.avatarY + y - hips
+        : y >= knee ? seat.avatarY - 0.03 * forward
+          : 0.06 + y / knee * (seat.avatarY - 0.09);
+    }
+    positions.setXYZ(i, x, y, 0);
+  }
+  geometry.userData.seated = Boolean(seat);
+  positions.needsUpdate = true;
+  geometry.computeBoundingSphere();
 }
 
 /* ---------------- 셰이더 ---------------- */
@@ -306,6 +340,8 @@ export class BeachEngine {
   private skyRest: StargazingSlot | null = null;
   private beforeSkyRest: { pitch: number } | null = null;
   private lastStargazingState = "";
+  private benchSeat: (typeof FIRE_BENCH_SEATS)[number] | null = null;
+  private lastBenchState = "";
 
   private daylight: Daylight;
   private hourOverride: number | null;
@@ -483,8 +519,7 @@ export class BeachEngine {
     tex.needsUpdate = true;
     const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.1, depthWrite: true, toneMapped: false });
     mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
-    const geometry = new THREE.PlaneGeometry(AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH, AVATAR_HEIGHT);
-    geometry.translate(0, AVATAR_HEIGHT / 2, 0);
+    const geometry = avatarGeometry();
     const sprite = new THREE.Mesh(geometry, mat);
     sprite.renderOrder = 3;
     sprite.visible = false;
@@ -504,10 +539,12 @@ export class BeachEngine {
   }
 
   setView(view: ViewMode) {
-    if (this.isBedLying && view === "first") return;
     if (this.disposed || view === this.view) return;
     this.view = view;
-    if (this.skyRest && view === "first") this.self.pitch = 1.50;
+    if (this.isBedLying) {
+      this.self.yaw = view === "first" ? 0 : this.skyRest!.yaw;
+      this.self.pitch = view === "first" ? BED_VIEW.pitch : 1.25;
+    } else if (this.skyRest && view === "first") this.self.pitch = 1.50;
     this.followSnap = true;
     this.handlers.onViewChange?.(view);
   }
@@ -549,14 +586,14 @@ export class BeachEngine {
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
   setMove(x: number, y: number) {
-    if (this.inputPaused || this.skyRest) return;
+    if (this.inputPaused || this.skyRest || this.benchSeat) return;
     this.move.x = Math.max(-1, Math.min(1, x || 0));
     this.move.y = Math.max(-1, Math.min(1, y || 0));
   }
 
   /** 모닥불 앞(돌 둘레 바깥, 장작을 넣을 수 있는 거리 안)까지 알아서 걸어가 불을 바라본다 */
   walkToFire(): Promise<AutoWalkResult> {
-    if (this.disposed || this.skyRest) return Promise.resolve("cancelled");
+    if (this.disposed || this.skyRest || this.benchSeat) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     const stand = this.camera.aspect < 0.75 ? 4.2 : 3.2;
     const target = findClearApproach(this.self, FIRE, stand, this.obstacles, SHELTER_COLLIDERS, this.bounds);
@@ -566,14 +603,14 @@ export class BeachEngine {
 
   /** Approach the shared circle. Claiming a mat still requires the server's response. */
   walkToStargazing(): Promise<AutoWalkResult> {
-    if (this.disposed || this.skyRest) return Promise.resolve("cancelled");
+    if (this.disposed || this.skyRest || this.benchSeat) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     return this.walkTo(stargazingApproach(this.self.x, this.self.z), { x: STARGAZING.x, z: STARGAZING.z });
   }
 
   walkToBed(spotId: string): Promise<AutoWalkResult> {
     const shelter = SHELTERS.find((s) => `hut-${s.id}` === spotId);
-    if (this.disposed || this.skyRest || !shelter) return Promise.resolve("cancelled");
+    if (this.disposed || this.skyRest || this.benchSeat || !shelter) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     return this.walkTo({ x: shelter.x, z: shelter.z - 1.2 }, { x: shelter.x, z: shelter.z + 1 });
   }
@@ -585,7 +622,28 @@ export class BeachEngine {
   }
 
   get isLying() { return Boolean(this.skyRest); }
+  get isBenchSeated() { return Boolean(this.benchSeat); }
   get isBedLying() { return Boolean(this.skyRest && this.skyRest.spotId !== STARGAZING.id); }
+
+  getBenchState(): BenchState {
+    const used = new Set<number>();
+    for (const player of this.players.values()) {
+      const seat = claimedFireBenchSlot(player.data);
+      if (seat) used.add(seat.slot);
+    }
+    if (this.benchSeat) used.add(this.benchSeat.slot);
+    const nearby = FIRE_BENCH_SEATS.filter((seat) => Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= FIRE_BENCH_REACH);
+    return { near: !this.skyRest && nearby.length > 0, seated: Boolean(this.benchSeat), occupied: used.size,
+      capacity: FIRE_BENCH_SEATS.length, available: nearby.some((seat) => !used.has(seat.slot)) };
+  }
+
+  private updateBenchState() {
+    const state = this.getBenchState();
+    const key = `${state.near}:${state.seated}:${state.occupied}:${state.available}`;
+    if (key === this.lastBenchState) return;
+    this.lastBenchState = key;
+    this.handlers.onBenchChange?.(state);
+  }
 
   getBedState(): BedState | null {
     const shelter = this.isBedLying
@@ -614,18 +672,31 @@ export class BeachEngine {
   applyRest(state: RestPresence) {
     if (this.disposed || !state) return;
     const slot = claimedRestSlot(state);
-    if (slot) {
-      if (this.skyRest?.spotId === slot.spotId && this.skyRest.slot === slot.slot) return;
-      if (!this.skyRest) this.beforeSkyRest = { pitch: this.self.pitch };
+    const bench = claimedFireBenchSlot(state);
+    if (bench) {
+      if (this.benchSeat?.slot === bench.slot) return;
+      if (!this.skyRest && !this.benchSeat) this.beforeSkyRest = { pitch: this.self.pitch };
       if (this.restSeat) this.standUp();
+      this.skyRest = null;
+      this.benchSeat = bench;
+      this.self.x = bench.x; this.self.z = bench.z;
+      this.self.yaw = bench.yaw; this.self.pitch = -0.08;
+      this.eyeHeight = 1.3;
+      this.setView("third");
+    } else if (slot) {
+      if (this.skyRest?.spotId === slot.spotId && this.skyRest.slot === slot.slot) return;
+      if (!this.skyRest && !this.benchSeat) this.beforeSkyRest = { pitch: this.self.pitch };
+      if (this.restSeat) this.standUp();
+      this.benchSeat = null;
       this.skyRest = slot;
       this.setView("third");
       this.self.x = slot.x; this.self.z = slot.z;
       this.self.yaw = slot.yaw; this.self.pitch = 1.25;
       this.eyeHeight = (slot.avatarY ?? STARGAZING.avatarY) + 0.16;
-    } else if (state.pose === "standing" && this.skyRest) {
+    } else if (state.pose === "standing" && (this.skyRest || this.benchSeat)) {
       if (![state.x, state.z, state.yaw].every(Number.isFinite)) return;
       this.skyRest = null;
+      this.benchSeat = null;
       this.self.x = state.x; this.self.z = state.z; this.self.yaw = state.yaw;
       this.self.pitch = THREE.MathUtils.clamp(this.beforeSkyRest?.pitch ?? 0.07, -0.55, 0.5);
       this.beforeSkyRest = null;
@@ -640,6 +711,7 @@ export class BeachEngine {
 
   private updateStargazingState() {
     this.updateBedState();
+    this.updateBenchState();
     const slots = new Set<number>();
     for (const player of this.players.values()) {
       const slot = claimedStargazingSlot(player.data);
@@ -817,10 +889,17 @@ export class BeachEngine {
     if (Math.hypot(x - this.look.sx, y - this.look.sy) > 8) this.look.moved = true;
     if (this.look.moved) {
       const k = e.pointerType === "mouse" ? 0.0042 : 0.0072;
-      this.self.yaw -= dx * k;
-      this.self.pitch = this.skyRest
-        ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, this.view === "first" ? 1.40 : 0.88, this.view === "first" ? 1.56 : 1.50)
-        : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
+      if (this.isBedLying) {
+        if (this.view === "first") {
+          this.self.yaw = THREE.MathUtils.clamp(this.self.yaw - dx * k, -BED_VIEW.yawLimit, BED_VIEW.yawLimit);
+          this.self.pitch = THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, BED_VIEW.minPitch, BED_VIEW.maxPitch);
+        }
+      } else {
+        this.self.yaw -= dx * k;
+        this.self.pitch = this.skyRest
+          ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, this.view === "first" ? 1.40 : 0.88, this.view === "first" ? 1.56 : 1.50)
+          : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
+      }
       this.faceGoal = null;
     }
   };
@@ -840,6 +919,12 @@ export class BeachEngine {
     const target = e.target as HTMLElement | null;
     if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if ((k === "e" && (this.benchSeat || this.getBenchState().near)) || (k === "Escape" && this.benchSeat)) {
+      this.keys.delete(k);
+      if (e.type === "keydown" && !e.repeat) this.handlers.onBenchAction?.();
+      e.preventDefault();
+      return;
+    }
     if (k === "Escape" && this.restSeat) {
       if (e.type === "keydown") this.standUp();
       return;
@@ -854,7 +939,7 @@ export class BeachEngine {
       if (e.type === "keydown" && !e.repeat) this.toggleView();
       return;
     }
-    if (this.skyRest) {
+    if (this.skyRest || this.benchSeat) {
       if (k.startsWith("Arrow")) e.preventDefault();
       return;
     }
@@ -920,7 +1005,7 @@ export class BeachEngine {
         this.players.set(p.pid, node);
       }
       node.data = p;
-      const resting = claimedRestSlot(p);
+      const resting = claimedRestSlot(p) ?? claimedFireBenchSlot(p);
       node.target = resting ? { x: resting.x, z: resting.z, yaw: resting.yaw, moving: false } : { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving };
       node.seen = now;
       if (node.labelNick !== p.nick) this.setLabel(node, p.nick);
@@ -942,8 +1027,7 @@ export class BeachEngine {
     const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.1, depthWrite: true, toneMapped: false });
     mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
     // 세로축만 돌아 늘 카메라를 보는 종이 인형. 어느 쪽에서 보느냐에 따라 앞·뒤·옆 그림을 바꿔 끼운다 (viewFor)
-    const geometry = new THREE.PlaneGeometry(AVATAR_HEIGHT * CHAR_ATLAS.cellW / CHAR_ATLAS.cellH, AVATAR_HEIGHT);
-    geometry.translate(0, AVATAR_HEIGHT / 2, 0);
+    const geometry = avatarGeometry();
     const sprite = new THREE.Mesh(geometry, mat);
     sprite.rotation.y = Math.atan2(this.camera.position.x - p.x, this.camera.position.z - p.z);
     sprite.position.set(p.x, 0, p.z);
@@ -1026,15 +1110,17 @@ export class BeachEngine {
     const node = pid === null ? null : this.players.get(pid);
     if (pid !== null && !node) return null;
     const resting = node ? claimedRestSlot(node.data) : this.skyRest;
+    const seated = node ? claimedFireBenchSlot(node.data) : this.benchSeat;
     if (pid === null && this.view === "first") {
       const direction = this.camera.getWorldDirection(new THREE.Vector3());
-      return { position: this.camera.position.clone().addScaledVector(direction, 1.65).add(new THREE.Vector3(0, -0.24, 0)), close: true, resting: Boolean(resting) };
+      return { position: this.camera.position.clone().addScaledVector(direction, 1.65).add(new THREE.Vector3(0, -0.24, 0)), close: true, resting: Boolean(resting || seated) };
     }
     if (resting) {
       const point = stargazingBodyPoint(resting, 0.92);
       return { position: new THREE.Vector3(point.x, (resting.avatarY ?? STARGAZING.avatarY) + 0.24 + Math.sin(resting.incline ?? 0) * 0.92, point.z), close: false, resting: true };
     }
     const position = node?.cur ?? this.self;
+    if (seated) return { position: new THREE.Vector3(seated.x, 0.95, seated.z), close: false, resting: true };
     return { position: new THREE.Vector3(position.x, this.deckHeight(position.x, position.z) + 1.03, position.z), close: false, resting: false };
   }
 
@@ -1049,7 +1135,7 @@ export class BeachEngine {
       const sender = fromPid === undefined ? toPid : fromPid;
       this.careGestures?.play("wave", sender);
       const source = sender === null ? null : this.players.get(sender);
-      if (source && !claimedRestSlot(source.data)) source.bounce = Math.max(source.bounce, 0.18);
+      if (source && !claimedRestSlot(source.data) && !claimedFireBenchSlot(source.data)) source.bounce = Math.max(source.bounce, 0.18);
       if (target) for (let i = 0; i < 3; i++) {
         this.spawnFx("sparkle", target.position, new THREE.Vector3((i - 1) * 0.15, 0.35, 0), 1, target.close ? 0.08 : 0.13, i * 0.10, 0xffedb5);
       }
@@ -1058,7 +1144,7 @@ export class BeachEngine {
     if (!target) return;
     const at = target.position;
     const node = toPid === null ? null : this.players.get(toPid);
-    if (node && !claimedRestSlot(node.data)) node.bounce = kind === "hug" ? 0.25 : 0.5;
+    if (node && !claimedRestSlot(node.data) && !claimedFireBenchSlot(node.data)) node.bounce = kind === "hug" ? 0.25 : 0.5;
     const k = target.close ? 0.6 : 1;
     if (kind === "hug") {
       this.careGestures?.play("hug", toPid);
@@ -1110,7 +1196,7 @@ export class BeachEngine {
 
   /* ---------------- 프레임 ---------------- */
   getSelf(): SelfState {
-    return { x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.self.yaw, moving: this.skyRest ? false : this.self.moving };
+    return { x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.benchSeat?.yaw ?? this.self.yaw, moving: this.skyRest || this.benchSeat ? false : this.self.moving };
   }
 
   private facing() {
@@ -1195,6 +1281,20 @@ export class BeachEngine {
       if (this.nearFire) { this.nearFire = false; this.handlers.onFireRangeChange?.(false); }
       return;
     }
+    if (this.benchSeat) {
+      this.self.x = this.benchSeat.x; this.self.z = this.benchSeat.z; this.self.moving = false;
+      this.eyeHeight = 1.3;
+      if (this.view === "third") this.placeBenchCamera(dt);
+      else {
+        this.camera.position.set(this.self.x, this.eyeHeight, this.self.z);
+        this.camera.rotation.set(this.self.pitch, this.self.yaw, 0, "YXZ");
+      }
+      this.sky.position.copy(this.camera.position);
+      this.updateSelfAvatar(dt);
+      this.updateStargazingState();
+      if (!this.nearFire) { this.nearFire = true; this.handlers.onFireRangeChange?.(true); }
+      return;
+    }
     const k = this.keys;
     let mx = this.move.x, my = this.move.y; // 조이스틱: 위로 밀면 앞으로
     if (k.has("w") || k.has("ArrowUp")) my += 1;
@@ -1254,6 +1354,16 @@ export class BeachEngine {
     const resting = this.skyRest;
     if (!resting) return;
     if (this.isBedLying) {
+      if (this.view === "first") {
+        // Rest above the raised pillow, looking through the open sea-facing side.
+        const incline = resting.incline ?? 0;
+        const head = stargazingBodyPoint(resting, BED_VIEW.headDistance * Math.cos(incline));
+        const eyeY = (resting.avatarY ?? 0.82) + BED_VIEW.headDistance * Math.sin(incline) + BED_VIEW.eyeOffset;
+        this.camera.position.set(head.x, eyeY, head.z);
+        this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, BED_VIEW.minPitch, BED_VIEW.maxPitch),
+          THREE.MathUtils.clamp(this.self.yaw, -BED_VIEW.yawLimit, BED_VIEW.yawLimit), 0, "YXZ");
+        return;
+      }
       // The open sea-facing front is the only sightline: stay below the roof and in front of the bed.
       const shelter = SHELTERS.find((s) => `hut-${s.id}` === resting.spotId)!;
       const wanted = new THREE.Vector3(shelter.x + (resting.x - shelter.x) * 0.85, 2.85, shelter.z - 2.9);
@@ -1278,6 +1388,18 @@ export class BeachEngine {
     else this.followCam.lerp(wanted, Math.min(1, dt * 10));
     this.camera.position.copy(this.followCam);
     this.camera.lookAt(STARGAZING.x, 0.05, STARGAZING.z);
+  }
+
+  /** Keep both the seated character and the fire in view, including narrow phone screens. */
+  private placeBenchCamera(dt: number) {
+    const direction = this.facing();
+    const reach = FOLLOW_DISTANCE_SEATED;
+    const wanted = new THREE.Vector3(this.self.x - direction.x * reach,
+      2.5 - this.self.pitch * 1.4, this.self.z - direction.z * reach);
+    if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
+    else this.followCam.lerp(wanted, Math.min(1, dt * 10));
+    this.camera.position.copy(this.followCam);
+    this.camera.lookAt(this.self.x + direction.x * 1.4, 1.0, this.self.z + direction.z * 1.4);
   }
 
   /** Follow the standing character, shortening the orbit near shelter walls. */
@@ -1315,6 +1437,16 @@ export class BeachEngine {
     n.sprite.visible = shown;
     n.shadow.visible = shown;
     if (!shown) return;
+    if (this.benchSeat) {
+      const seat = this.benchSeat, cam = this.camera.position;
+      n.sprite.position.set(seat.x, 0, seat.z);
+      n.sprite.rotation.set(0, Math.atan2(cam.x - seat.x, cam.z - seat.z), 0, "YXZ");
+      shapeSeatedAvatar(n.sprite, seat);
+      n.shadow.position.set(seat.x, 0.015, seat.z);
+      this.setFrameOn(n.tex, viewFor(seat.yaw, seat.x, seat.z, cam), CHAR_ANIM.idle.from, this.skin);
+      return;
+    }
+    shapeSeatedAvatar(n.sprite, null);
     if (this.skyRest) {
       applyLyingTransform(n.sprite, this.skyRest);
       n.shadow.visible = false;
@@ -1360,7 +1492,7 @@ export class BeachEngine {
 
   /** A reachable bench offers a sea-facing seat; walking or the same action gets up. */
   toggleRest() {
-    if (this.disposed || this.skyRest) return;
+    if (this.disposed || this.skyRest || this.benchSeat) return;
     if (this.restSeat) { this.standUp(); return; }
     const seat = this.nearbySeat();
     if (!seat) return;
@@ -1403,25 +1535,29 @@ export class BeachEngine {
     let selectedNode: PlayerNode | null = null;
     for (const [pid, p] of this.players) {
       const resting = claimedRestSlot(p.data);
+      const seated = claimedFireBenchSlot(p.data);
+      const fixed = resting ?? seated;
       const far = Math.hypot(p.target.x - p.cur.x, p.target.z - p.cur.z);
-      if (resting) { p.cur.x = resting.x; p.cur.z = resting.z; p.cur.yaw = resting.yaw; }
+      if (fixed) { p.cur.x = fixed.x; p.cur.z = fixed.z; p.cur.yaw = fixed.yaw; }
       else if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
       else { p.cur.x += (p.target.x - p.cur.x) * smooth; p.cur.z += (p.target.z - p.cur.z) * smooth; }
-      const walking = !resting && (p.target.moving || far > 0.12);
+      const walking = !fixed && (p.target.moving || far > 0.12);
       p.animT += dt;
       const frame = charFrame(walking, p.animT);
       const turn = p.target.yaw - p.cur.yaw;
-      p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
+      if (!fixed) p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
+      if (!seated) shapeSeatedAvatar(p.sprite, null);
       if (resting) {
         applyLyingTransform(p.sprite, resting);
         this.setFrame(p, CHAR_VIEW.front, CHAR_ANIM.idle.from, p.data.skin);
       } else {
         p.sprite.rotation.set(0, Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z), 0, "YXZ");
+        if (seated) shapeSeatedAvatar(p.sprite, seated);
         this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
       }
       const dl = Math.hypot(p.cur.x - cam.x, p.cur.z - cam.z);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
-      const hop = p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
+      const hop = !fixed && p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
       if (!resting) p.sprite.position.set(p.cur.x, deck + hop, p.cur.z);
       p.shadow.visible = !resting;
@@ -1433,7 +1569,7 @@ export class BeachEngine {
           p.label.scale.set(1.5, 0.375, 1);
           p.label.visible = pid === this.selected && dl > 2.5 && dl < 20;
         } else {
-          p.label.position.set(p.cur.x, deck + AVATAR_HEIGHT + 0.14 + hop, p.cur.z);
+          p.label.position.set(p.cur.x, deck + AVATAR_HEIGHT + 0.14 + hop - (seated ? 0.2 : 0), p.cur.z);
           p.label.scale.set(2.2, 0.55, 1);
           p.label.visible = dl > 2.5 && dl < 24;
         }

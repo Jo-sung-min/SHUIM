@@ -1,10 +1,10 @@
 /* 바닷가 걷기 조이스틱. 손가락 기기에서만 보이고, 하단 바 위 왼쪽 엄지 자리에 둔다 */
 .base {
   position: absolute;
-  left: max(18px, env(safe-area-inset-left));
-  bottom: calc(88px + env(safe-area-inset-bottom));
-  width: 118px;
-  height: 118px;
+  left: var(--beach-pad-left);
+  bottom: var(--beach-pad-bottom);
+  width: var(--beach-pad-size);
+  height: var(--beach-pad-size);
   display: none;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.8);
@@ -19,7 +19,6 @@
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .base.active { background: rgba(255, 255, 255, 0.24); border-color: #fff; }
-.base.raised { bottom: calc(260px + env(safe-area-inset-bottom)); }
 .arrow {
   position: absolute;
   width: 7px;
@@ -45,4 +44,3 @@
 }
 .base.active .knob { transition: none; }
 @media (pointer: coarse) { .base { display: block; } }
-@media (max-height: 520px) { .base.raised { bottom: calc(205px + env(safe-area-inset-bottom)); width: 100px; height: 100px; } }
