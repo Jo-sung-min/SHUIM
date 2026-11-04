@@ -45,6 +45,12 @@
       "contentType": "model/gltf-binary"
     },
     {
+      "key": "beach/models/tripo-female-onsen-mobile-v2.glb",
+      "bytes": 649780,
+      "sha256": "b6b307e1dbc69ccf9c3fbebc6a4adb3fe1a427b654d549d17e4a9a528bcc2754",
+      "contentType": "model/gltf-binary"
+    },
+    {
       "key": "beach/models/tripo-female-rigged-mobile-v1.glb",
       "bytes": 1749864,
       "sha256": "da21ab458dbce1dc6171ac0b7228ea150fd82c2fe08851b0765774825aa5fe9d",
@@ -70,6 +76,12 @@
     },
     {
       "key": "beach/models/tripo-male-onsen-mobile-v1.glb",
+      "bytes": 729856,
+      "sha256": "f07fd84da6f6181e9f5aad447ded8f3dfe0c60018c0c55ffe97e9044db416ec6",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-male-onsen-mobile-v2.glb",
       "bytes": 729856,
       "sha256": "f07fd84da6f6181e9f5aad447ded8f3dfe0c60018c0c55ffe97e9044db416ec6",
       "contentType": "model/gltf-binary"

@@ -8,7 +8,7 @@ import { assetsFor } from "./assets-fixture.mjs";
 
 const CDN = "https://cdn.sorow.co.kr";
 test("public media defaults to the verified CDN and supports an optional replacement origin", () => {
-  const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v1.glb", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png"];
+  const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v2.glb", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png"];
   for (const path of paths) {
     assert.equal(assetsFor().assetUrl(path), `${CDN}${path}`);
     assert.equal(assetsFor(` ${CDN}/// `).assetUrl(path), `${CDN}${path}`);
@@ -105,7 +105,7 @@ test("actual Three.js loading entry points request CDN textures and models with 
     "/beach/real/rock.jpg", "/beach/real/shelter-wood-v2.webp", "/beach/real/fabric-normal-v2.webp",
     "/beach/real/wood-normal.jpg", "/beach/real/wood.jpg", "/beach/real/sky-lantern-v2.png", "/beach/fx/firework-spark-v1.webp",
     "/beach/models/tripo-male-rigged-mobile-v3.glb", "/beach/models/tripo-female-rigged-mobile-v2.glb",
-    "/beach/models/tripo-male-onsen-mobile-v1.glb", "/beach/models/tripo-female-onsen-mobile-v1.glb",
+    "/beach/models/tripo-male-onsen-mobile-v2.glb", "/beach/models/tripo-female-onsen-mobile-v2.glb",
     "/beach/models/tripo-firewood-mobile-v2.glb", "/beach/real/white-sand-v1.webp", "/beach/chars-v2.png", "/beach/props.png",
   ];
   assert.deepEqual(new Set(requests), new Set(expected.map(path => CDN + path)));

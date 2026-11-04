@@ -30,6 +30,69 @@ function fixture({ mobile = false, dom = true, height = 844 } = {}) {
     load(index = 0) { requests[index].onLoad(requests[index].texture); } };
 }
 
+// Evaluate the production shader's scalar expressions, rather than a separate approximation.
+function shimmerFunctions(vertexShader) {
+  const names = ["fireworkTwinkle", "fireworkSparkFade", "fireworkLetterShimmer"];
+  const declarations = names.map(name => {
+    const match = vertexShader.match(new RegExp(`float ${name}\\(([^)]*)\\)\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `the particle shader uses ${name}`);
+    return `function ${name}(${match[1].replace(/\bfloat\s+/g, "")}) { ${match[2].replace(/\bfloat\s+/g, "let ")} }`;
+  }).join("\n");
+  const context = { sin: Math.sin, pow: Math.pow, sqrt: Math.sqrt, max: Math.max,
+    mix: (a, b, t) => a * (1 - t) + b * t,
+    step: (edge, x) => x < edge ? 0 : 1,
+    smoothstep: (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); },
+  };
+  vm.runInNewContext(`${declarations}\nglobalThis.api = { ${names.join(", ")} };`, context);
+  return context.api;
+}
+
+test("burst sparks twinkle at separate seeded phases and tempos instead of flashing the whole blossom", () => {
+  const { fireworks, scene } = fixture({ mobile: true, dom: false });
+  fireworks.apply([event()], 100_000);
+  const object = scene.children[0], detail = object.geometry.getAttribute("detail"), timing = object.geometry.getAttribute("timing");
+  const { fireworkTwinkle } = shimmerFunctions(object.material.vertexShader);
+  const phases = [];
+  for (let i = 0; i < detail.count; i++) if ((timing.getW(i) === 0 || timing.getW(i) === 2) && detail.getX(i) > .8) phases.push(detail.getY(i));
+  assert.ok(phases.length > 500);
+  for (const age of [.18, .6, 1.4, 2.6, 3.4]) {
+    const values = phases.map(phase => fireworkTwinkle(age, phase));
+    assert.ok(values.every(value => Number.isFinite(value) && value >= 0 && value <= 1));
+    assert.ok(values.filter(value => value > .8).length > values.length * .025, "some individual stars visibly catch the light");
+    assert.ok(values.filter(value => value > .8).length < values.length * .35, "bright peaks never synchronize into a full-screen flash");
+    assert.ok(values.filter(value => value < .08).length > values.length * .3, "quiet particles separate the bright glints");
+  }
+  const peakFrames = phases.slice(0, 40).map(phase => {
+    const values = Array.from({ length: 120 }, (_, frame) => fireworkTwinkle(frame / 60, phase));
+    assert.ok(Math.max(...values) - Math.min(...values) > .9, "each spark visibly changes over time");
+    return values.indexOf(Math.max(...values));
+  });
+  assert.ok(new Set(peakFrames).size > 20, "particle timing is varied, not a single shared pulse");
+  assert.equal(scene.children.length, 1);
+  fireworks.dispose();
+});
+
+test("late glitter stays visible while glyph strokes remain steady and all sparks expire on time", () => {
+  const { fireworks, scene } = fixture({ mobile: true, dom: false });
+  fireworks.apply([{ ...event(), variant: "songi" }], 100_000);
+  const { fireworkSparkFade, fireworkLetterShimmer } = shimmerFunctions(scene.children[0].material.vertexShader);
+  const phases = Array.from({ length: 256 }, (_, index) => index * Math.PI * 2 / 256);
+  const late = phases.map(phase => fireworkSparkFade(4.2, 4.8, phase));
+  assert.ok(Math.max(...late) > .15, "the falling willow leaves a few distinct last sparkles");
+  assert.ok(Math.max(...late) < .3 && Math.min(...late) < .1, "the tail becomes quiet instead of staying fully lit");
+  for (const phase of phases) {
+    assert.equal(fireworkSparkFade(-.001, 4.8, phase), 0);
+    assert.equal(fireworkSparkFade(4.8, 4.8, phase), 0);
+    assert.equal(fireworkSparkFade(12, 4.8, phase), 0);
+    for (const age of [.2, .8, 2, 4, 6]) {
+      const brightness = fireworkLetterShimmer(age, phase);
+      assert.ok(brightness >= .86 && brightness <= 1, "Hangul strokes shimmer gently without blinking out");
+    }
+  }
+  assert.equal(scene.children[0].geometry.getAttribute("position").count, 3939, "glitter reuses the existing mobile particles");
+  fireworks.dispose();
+});
+
 test("seeded trajectories are deterministic and mobile uses fewer finite particles at the same burst centers", () => {
   const { fireworkGeometry } = fixture({ dom: false });
   const geometry = fireworkGeometry(1785), copy = fireworkGeometry(1785), different = fireworkGeometry(1786);

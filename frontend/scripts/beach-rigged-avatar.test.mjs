@@ -11,7 +11,7 @@ import { assets } from "./assets-fixture.mjs";
 import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 
 const bytes = await readAssetBytes("/beach/models/tripo-male-rigged-mobile-v3.glb");
-const modelFiles = { male: "tripo-male-rigged-mobile-v3.glb", female: "tripo-female-rigged-mobile-v2.glb", "male-onsen": "tripo-male-onsen-mobile-v1.glb", "female-onsen": "tripo-female-onsen-mobile-v1.glb" };
+const modelFiles = { male: "tripo-male-rigged-mobile-v3.glb", female: "tripo-female-rigged-mobile-v2.glb", "male-onsen": "tripo-male-onsen-mobile-v2.glb", "female-onsen": "tripo-female-onsen-mobile-v2.glb" };
 const typed = await readFile(new URL("../lib/beach/rigged-avatar.ts", import.meta.url), "utf8");
 const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
@@ -328,7 +328,7 @@ for (const kind of ["male-onsen", "female-onsen"]) test(`${kind} recovers from a
 });
 
 test("female onsen hair stays with the head during a hug instead of following hand and finger bones", async () => {
-  const metadata = JSON.parse(await readFile(new URL("../public/beach/models/tripo-female-onsen-mobile-v1.json", import.meta.url), "utf8"));
+  const metadata = JSON.parse(await readFile(new URL("../public/beach/models/tripo-female-onsen-mobile-v2.json", import.meta.url), "utf8"));
   const repaired = metadata.hairRepair.vertexIndices;
   assert.equal(repaired.length, 4380);
   const gltf = await model("female-onsen"), api = runtime(() => Promise.resolve(gltf), "female-onsen"), pool = new api.BeachAvatarModels("female-onsen");

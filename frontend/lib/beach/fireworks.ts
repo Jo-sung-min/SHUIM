@@ -93,6 +93,25 @@ export function fireworkGeometry(seed: number, mobile = false, variant: Firework
 
 function hueFromBurst(burst: number, seed: number) { return PALETTE[(burst + seed % PALETTE.length) % PALETTE.length]; }
 
+// A seeded phase also changes each spark's tempo, so a blossom shimmers instead of flashing as one.
+const TWINKLE_GLSL = `
+float fireworkTwinkle(float age, float phase) {
+  float rate = 8.0 + 2.4 * sin(phase * 3.7);
+  float wave = 0.5 + 0.5 * sin(age * rate + phase);
+  return pow(wave, 6.0);
+}
+float fireworkSparkFade(float age, float life, float phase) {
+  float envelope = step(0.0, age) * (1.0 - smoothstep(life * 0.38, life, age));
+  float linger = smoothstep(life * 0.45, life * 0.8, age) * 0.36;
+  envelope = mix(envelope, sqrt(envelope), linger);
+  float shimmer = 0.42 + 0.58 * fireworkTwinkle(max(0.0, age), phase);
+  return envelope * mix(1.0, shimmer, smoothstep(0.04, 0.35, age));
+}
+float fireworkLetterShimmer(float age, float phase) {
+  return 0.86 + 0.14 * fireworkTwinkle(age, phase);
+}
+`;
+
 type Show = { event: FireworkEvent; object: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> };
 export class BeachFireworks {
   private shows = new Map<string, Show>();
@@ -146,11 +165,13 @@ export class BeachFireworks {
           attribute vec3 velocity; attribute vec3 sparkColor; attribute vec4 timing; attribute vec3 detail;
           uniform float uAge; uniform float uViewport; uniform float uTextScale; uniform float uPointScale;
           uniform vec3 uTextRight; uniform vec3 uTextUp; uniform vec3 uTextCenter;
-          varying vec3 vColor; varying float vAlpha; varying float vAngle; varying float vMode; varying float vProgress;
+          varying vec3 vColor; varying float vAlpha; varying float vAngle; varying float vMode; varying float vProgress; varying float vTwinkle;
+          ${TWINKLE_GLSL}
           void main() {
             float age = uAge - timing.x - timing.y;
             vec3 p = position;
             float fade = 0.0;
+            float sparkle = 0.0;
             if (timing.w > 3.5 && timing.w < 4.5) {
               p = uTextCenter;
               float t = max(0.0, age), settle = smoothstep(0.0, 0.95, t);
@@ -160,7 +181,8 @@ export class BeachFireworks {
               offset.y -= disperse * disperse * 1.8;
               p += (uTextRight * offset.x + uTextUp * offset.y) * uTextScale;
               fade = smoothstep(0.08, 0.55, t) * (1.0 - smoothstep(4.55, timing.z, t));
-              fade *= 0.86 + 0.14 * sin(t * 8.0 + detail.y);
+              fade *= fireworkLetterShimmer(t, detail.y);
+              sparkle = fireworkTwinkle(t, detail.y) * 0.28;
             } else if (timing.w > 0.5 && timing.w < 1.5) {
               float flight = age + timing.z;
               float t = clamp(flight / timing.z, 0.0, 1.0);
@@ -172,32 +194,39 @@ export class BeachFireworks {
               p += velocity * travel;
               p.y -= (timing.w > 1.5 && timing.w < 2.5 ? 1.1 : 0.74) * t * t;
               fade = step(0.0, age) * (1.0 - smoothstep(timing.z * 0.38, timing.z, age));
-              float twinkle = 0.78 + 0.22 * pow(0.5 + 0.5 * sin(t * 12.0 + detail.y), 3.0);
-              fade *= mix(1.0, twinkle, smoothstep(0.4, 1.8, t));
+              if (timing.w < 0.5 || (timing.w > 1.5 && timing.w < 2.5)) {
+                fade = fireworkSparkFade(age, timing.z, detail.y);
+                sparkle = fireworkTwinkle(t, detail.y) * smoothstep(0.02, 0.18, t);
+              }
             }
-            vColor = sparkColor; vAlpha = fade * detail.z; vAngle = detail.y;
+            vColor = mix(sparkColor, vec3(1.0, 0.96, 0.88), sparkle * 0.22);
+            vAlpha = fade * detail.z; vAngle = detail.y; vTwinkle = sparkle;
             vMode = timing.w; vProgress = clamp(age / timing.z, 0.0, 1.0);
             vec4 view = modelViewMatrix * vec4(p, 1.0);
             gl_Position = projectionMatrix * view;
-            float worldSize = detail.x * (timing.w > 3.5 && timing.w < 4.5 ? uTextScale : 1.0);
+            float worldSize = detail.x * (timing.w > 3.5 && timing.w < 4.5 ? uTextScale : 1.0) * (1.0 + sparkle * 0.14);
             gl_PointSize = clamp(worldSize * projectionMatrix[1][1] * uViewport / max(1.0, -view.z), 1.6 * uPointScale, 96.0 * uPointScale);
             if (vAlpha < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
           }`,
         fragmentShader: `
           uniform sampler2D uSpark; uniform float uImage;
-          varying vec3 vColor; varying float vAlpha; varying float vAngle; varying float vMode; varying float vProgress;
+          varying vec3 vColor; varying float vAlpha; varying float vAngle; varying float vMode; varying float vProgress; varying float vTwinkle;
           void main() {
             vec2 p = gl_PointCoord - 0.5;
             float radius = length(p) * 2.0;
             float glow = exp(-radius * radius * 4.4) * (1.0 - smoothstep(0.65, 1.0, radius));
             if (vMode > 4.5) glow = exp(-pow((radius - mix(0.12, 0.82, vProgress)) * 13.0, 2.0)) * (1.0 - smoothstep(0.9, 1.0, radius));
             vec2 uv = mat2(cos(vAngle), -sin(vAngle), sin(vAngle), cos(vAngle)) * p + 0.5;
+            vec2 starPoint = uv - 0.5;
+            float starRays = exp(-min(abs(starPoint.x), abs(starPoint.y)) * 70.0)
+              * pow(max(0.0, 1.0 - radius), 1.7);
+            glow += starRays * vTwinkle * 0.35;
             vec4 sprite = texture2D(uSpark, clamp(uv, 0.0, 1.0));
             float imageGlow = sprite.a * dot(sprite.rgb, vec3(0.299,0.587,0.114));
             float useImage = (vMode > 3.5) ? 0.0 : uImage;
             float alpha = mix(glow, max(glow * 0.85, imageGlow * 1.45), useImage) * vAlpha;
             if (alpha < 0.003) discard;
-            gl_FragColor = vec4(vColor * 2.2 + vec3(0.55) * pow(glow, 3.0), alpha);
+            gl_FragColor = vec4(vColor * 2.2 + vec3(0.55 + vTwinkle * 0.9) * pow(glow, 3.0), alpha);
             #include <colorspace_fragment>
           }`,
         transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, toneMapped: false,

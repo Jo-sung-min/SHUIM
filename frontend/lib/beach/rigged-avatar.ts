@@ -6,8 +6,8 @@ import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
 export const MALE_AVATAR_MODEL_URL = "/beach/models/tripo-male-rigged-mobile-v3.glb";
 export const FEMALE_AVATAR_MODEL_URL = "/beach/models/tripo-female-rigged-mobile-v2.glb";
-export const MALE_ONSEN_AVATAR_MODEL_URL = "/beach/models/tripo-male-onsen-mobile-v1.glb";
-export const FEMALE_ONSEN_AVATAR_MODEL_URL = "/beach/models/tripo-female-onsen-mobile-v1.glb";
+export const MALE_ONSEN_AVATAR_MODEL_URL = "/beach/models/tripo-male-onsen-mobile-v2.glb";
+export const FEMALE_ONSEN_AVATAR_MODEL_URL = "/beach/models/tripo-female-onsen-mobile-v2.glb";
 export type AvatarKind = "male" | "female" | "male-onsen" | "female-onsen";
 const AVATAR_MODEL_URLS: Record<AvatarKind, string> = {
   male: MALE_AVATAR_MODEL_URL, female: FEMALE_AVATAR_MODEL_URL,
