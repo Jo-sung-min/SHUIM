@@ -77,8 +77,10 @@ export interface EngineOptions {
 const FOLLOW_DISTANCE = 5.4;
 const FOLLOW_DISTANCE_SEATED = 3.6;
 const BED_VIEW = { headDistance: 1.42, eyeOffset: 0.16, yawLimit: 0.3, minPitch: -0.08, maxPitch: 0.18, pitch: 0 };
-// Keep every first-person screen ray above the horizon, with room to look around below the zenith.
-const SKY_VIEW = { pitch: 1.50, minPitch: 0.75, maxPitch: 1.56, thirdMinPitch: 0.75, thirdMaxPitch: 1.50 };
+// Preserve the original upward framing and overview. Head motion is relative to the lying eyes,
+// so a sideways drag looks across the sky instead of spinning around the world vertical axis.
+const SKY_VIEW = { pitch: 1.50, minPitch: 1.40, maxPitch: 1.56, thirdMinPitch: 0.88, thirdMaxPitch: 1.50,
+  headYawLimit: Math.PI / 3, headPitchLimit: Math.PI / 4 };
 
 /** Spend extra pixels only when the camera renders the sky layer, with no terrain or shadows. */
 export function beachRenderSettings(width: number, height: number, deviceRatio: number, mobile: boolean, quality: "high" | "low", skyOnly: boolean) {
@@ -340,6 +342,7 @@ export class BeachEngine {
   private lastBedState = "";
   private eyeHeight = EYE;
   private skyRest: StargazingSlot | null = null;
+  private skyLook: { yaw: number; pitch: number } | null = null;
   private beforeSkyRest: { pitch: number } | null = null;
   private lastStargazingState = "";
   private benchSeat: (typeof FIRE_BENCH_SEATS)[number] | null = null;
@@ -566,13 +569,18 @@ export class BeachEngine {
     const wantsRobe = baseKind !== null && radius <= (wearingRobe ? 7.65 : 7.05)
       && (hotSpringFloorHeight(x, z) ?? -Infinity) >= HOT_SPRING.floorY - 0.01;
     const robePool = female ? this.femaleOnsenAvatarModels : this.onsenAvatarModels;
-    if (wantsRobe && robePool && !(female ? this.femaleOnsenAvatarRequested : this.onsenAvatarRequested)) {
+    if (wantsRobe && robePool?.canLoad && !(female ? this.femaleOnsenAvatarRequested : this.onsenAvatarRequested)) {
       if (female) this.femaleOnsenAvatarRequested = true;
       else this.onsenAvatarRequested = true;
       void robePool.load().then(() => {
         if (this.disposed) return;
-        if (female) this.femaleOnsenAvatarReady = true;
-        else this.onsenAvatarReady = true;
+        if (female) {
+          this.femaleOnsenAvatarReady = robePool.ready;
+          this.femaleOnsenAvatarRequested = robePool.ready;
+        } else {
+          this.onsenAvatarReady = robePool.ready;
+          this.onsenAvatarRequested = robePool.ready;
+        }
       });
     }
     const kind = wantsRobe && (female ? this.femaleOnsenAvatarReady : this.onsenAvatarReady) ? robeKind : baseKind;
@@ -610,7 +618,10 @@ export class BeachEngine {
     if (this.isBedLying) {
       this.self.yaw = view === "first" ? 0 : this.skyRest!.yaw;
       this.self.pitch = view === "first" ? BED_VIEW.pitch : 1.25;
-    } else if (this.skyRest && view === "first") this.self.pitch = SKY_VIEW.pitch;
+    } else if (this.skyRest && view === "first") {
+      this.self.pitch = SKY_VIEW.pitch;
+      this.skyLook = { yaw: 0, pitch: 0 };
+    }
     this.followSnap = true;
     this.handlers.onViewChange?.(view);
   }
@@ -789,6 +800,7 @@ export class BeachEngine {
       if (!this.skyRest && !this.fixedSeat) this.beforeSkyRest = { pitch: this.self.pitch };
       if (this.restSeat) this.standUp();
       this.skyRest = null;
+      this.skyLook = null;
       this.benchSeat = bench;
       this.onsenSeat = onsen;
       this.self.x = seat.x; this.self.z = seat.z;
@@ -803,6 +815,7 @@ export class BeachEngine {
       this.benchSeat = null;
       this.onsenSeat = null;
       this.skyRest = slot;
+      this.skyLook = { yaw: 0, pitch: 0 };
       this.setView("third");
       this.self.x = slot.x; this.self.z = slot.z;
       this.self.yaw = slot.yaw; this.self.pitch = 1.25;
@@ -811,6 +824,7 @@ export class BeachEngine {
     } else if (state.pose === "standing" && (this.skyRest || this.fixedSeat)) {
       if (![state.x, state.z, state.yaw].every(Number.isFinite)) return;
       this.skyRest = null;
+      this.skyLook = null;
       this.benchSeat = null;
       this.onsenSeat = null;
       this.self.x = state.x; this.self.z = state.z; this.self.yaw = state.yaw;
@@ -1015,12 +1029,14 @@ export class BeachEngine {
           this.self.yaw = THREE.MathUtils.clamp(this.self.yaw - dx * k, -BED_VIEW.yawLimit, BED_VIEW.yawLimit);
           this.self.pitch = THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, BED_VIEW.minPitch, BED_VIEW.maxPitch);
         }
+      } else if (this.skyRest && this.view === "first") {
+        const head = this.skyLook ??= { yaw: 0, pitch: 0 };
+        this.skyLook = this.limitSkyLook(head.yaw - dx * k, head.pitch - dy * k * 0.75);
       } else {
         if (this.view === "third") this.orbitYaw -= dx * k;
         else this.self.yaw -= dx * k;
         this.self.pitch = this.skyRest
-          ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, this.view === "first" ? SKY_VIEW.minPitch : SKY_VIEW.thirdMinPitch,
-            this.view === "first" ? SKY_VIEW.maxPitch : SKY_VIEW.thirdMaxPitch)
+          ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch)
           : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
       }
       if (this.view === "first") this.faceGoal = null;
@@ -1371,6 +1387,9 @@ export class BeachEngine {
     this.camera.aspect = w / h;
     this.camera.fov = this.cameraFov();
     this.camera.updateProjectionMatrix();
+    if (this.skyRest && !this.isBedLying && this.view === "first" && this.skyLook) {
+      this.skyLook = this.limitSkyLook(this.skyLook.yaw, this.skyLook.pitch);
+    }
   }
 
   private syncSkyResolution() {
@@ -1509,6 +1528,36 @@ export class BeachEngine {
     if (near !== this.nearFire) { this.nearFire = near; this.handlers.onFireRangeChange?.(near); }
   }
 
+  private limitSkyLook(yaw: number, pitch: number) {
+    yaw = THREE.MathUtils.clamp(yaw, -SKY_VIEW.headYawLimit, SKY_VIEW.headYawLimit);
+    pitch = THREE.MathUtils.clamp(pitch, -SKY_VIEW.headPitchLimit, SKY_VIEW.headPitchLimit);
+    const base = THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.minPitch, SKY_VIEW.maxPitch);
+    const s = Math.sin(base), c = Math.cos(base), vertical = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const horizontal = vertical * this.camera.aspect;
+    const fitsSky = (amount: number) => {
+      const x = pitch * amount, y = yaw * amount;
+      const forwardY = c * Math.sin(x) + s * Math.cos(y) * Math.cos(x);
+      const upY = c * Math.cos(x) - s * Math.cos(y) * Math.sin(x);
+      const rightY = s * Math.sin(y);
+      // Keep even the lowest screen corner above the horizon at the existing lens/aspect.
+      return forwardY - vertical * Math.abs(upY) - horizontal * Math.abs(rightY) >= 0.015;
+    };
+    let low = 0, high = 1;
+    if (fitsSky(1)) return { yaw, pitch };
+    for (let i = 0; i < 12; i++) {
+      const mid = (low + high) / 2;
+      if (fitsSky(mid)) low = mid; else high = mid;
+    }
+    return { yaw: yaw * low, pitch: pitch * low };
+  }
+
+  private orientSkyCamera() {
+    this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.minPitch, SKY_VIEW.maxPitch), this.self.yaw, 0, "YXZ");
+    // Rebuild from the stable rest orientation every frame: no accumulated roll, zoom or body turn.
+    this.camera.rotateY(this.skyLook?.yaw ?? 0);
+    this.camera.rotateX(this.skyLook?.pitch ?? 0);
+  }
+
   /** Lying eyes look at the sky; the alternate camera keeps all eight mats in view. */
   private placeStargazingCamera(dt: number) {
     const resting = this.floatingPose(this.skyRest);
@@ -1518,7 +1567,7 @@ export class BeachEngine {
       if (this.view === "first") {
         const head = stargazingBodyPoint(resting, 1.42);
         this.camera.position.set(head.x, surface + 0.16, head.z);
-        this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.minPitch, SKY_VIEW.maxPitch), this.self.yaw, 0, "YXZ");
+        this.orientSkyCamera();
         return;
       }
       const focus = stargazingBodyPoint(resting, 0.9);
@@ -1557,7 +1606,7 @@ export class BeachEngine {
     if (this.view === "first") {
       const head = stargazingBodyPoint(resting, 1.42);
       this.camera.position.set(head.x, STARGAZING.avatarY + 0.16, head.z);
-      this.camera.rotation.set(THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.minPitch, SKY_VIEW.maxPitch), this.self.yaw, 0, "YXZ");
+      this.orientSkyCamera();
       return;
     }
     const elevation = THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch);

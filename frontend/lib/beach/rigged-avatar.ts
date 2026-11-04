@@ -139,12 +139,21 @@ export class BeachAvatarModels {
   private clips: THREE.AnimationClip[] = [];
   private actors = new Set<BeachAvatar>();
   private disposed = false;
+  private retryAfter = 0;
 
   constructor(kind: AvatarKind = "male") { this.kind = kind; }
 
+  get ready(): boolean { return !this.disposed && this.template !== null; }
+
+  /** A failed mobile download can recover in the same visit without retrying every frame. */
+  get canLoad(): boolean {
+    return !this.disposed && !this.template && !this.pending && Date.now() >= this.retryAfter;
+  }
+
   load(): Promise<void> {
-    if (this.disposed) return Promise.resolve();
+    if (this.disposed || this.template) return Promise.resolve();
     if (this.pending) return this.pending;
+    if (!this.canLoad) return Promise.resolve();
     const url = AVATAR_MODEL_URLS[this.kind];
     this.pending = assetLoader(new GLTFLoader()).setMeshoptDecoder(MeshoptDecoder).loadAsync(assetUrl(url)).then(gltf => {
       if (this.disposed) { disposeTemplate(gltf.scene); return; }
@@ -180,6 +189,9 @@ export class BeachAvatarModels {
       this.clips = gltf.animations;
     }).catch(() => {
       // Keep the existing sprite usable when the model cannot be downloaded/decoded.
+    }).finally(() => {
+      this.pending = null;
+      if (!this.disposed && !this.template) this.retryAfter = Date.now() + 5000;
     });
     return this.pending;
   }

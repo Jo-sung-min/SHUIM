@@ -369,7 +369,8 @@ for (const [gender, skin, poolField, robeField] of [
   let complete, loads = 0, ready = false;
   Object.assign(engine, { skin, view: "third", skyRest: null, benchSeat: null, restSeat: null,
     self: { x: 6.5, z: 33.5, yaw: 0, moving: false }, [poolField]: male.pool,
-    [robeField]: { load: () => { loads++; return new Promise(resolve => { complete = () => { ready = true; resolve(); }; }); }, create: () => ready ? robe.pool.create() : null } });
+    [robeField]: { get canLoad() { return !ready; }, get ready() { return ready; },
+      load: () => { loads++; return new Promise(resolve => { complete = () => { ready = true; resolve(); }; }); }, create: () => ready ? robe.pool.create() : null } });
   engine.selfNode = engine.createSelfAvatar();
   engine.updateSelfAvatar(0.1);
   const dressed = engine.selfNode.avatar;
@@ -414,7 +415,7 @@ test("an unavailable robe cannot remove the working male model and a late downlo
   const { engine } = fixture();
   const male = modelPool("male");
   let resolveLoad;
-  Object.assign(engine, { avatarModels: male.pool, onsenAvatarModels: { create: () => null, load: () => new Promise(resolve => { resolveLoad = resolve; }) } });
+  Object.assign(engine, { avatarModels: male.pool, onsenAvatarModels: { canLoad: true, ready: false, create: () => null, load: () => new Promise(resolve => { resolveLoad = resolve; }) } });
   const node = { avatar: null };
   const dressed = engine.syncAvatar(node, 0, 0, 20);
   engine.syncAvatar(node, 0, 0, 45);
@@ -426,6 +427,38 @@ test("an unavailable robe cannot remove the working male model and a late downlo
   assert.equal(node.avatar, dressed); assert.equal(dressed.disposed, 0);
   const newlyArrived = { avatar: null };
   assert.equal(engine.syncAvatar(newlyArrived, 0, 0, 45).kind, "male", "a late base model can still replace the sprite after a robe failure");
+});
+
+for (const [gender, skin, baseField, robeField, readyField, requestedField] of [
+  ["male", 0, "avatarModels", "onsenAvatarModels", "onsenAvatarReady", "onsenAvatarRequested"],
+  ["female", 3, "femaleAvatarModels", "femaleOnsenAvatarModels", "femaleOnsenAvatarReady", "femaleOnsenAvatarRequested"],
+]) test(`${gender} keeps its everyday outfit through a transient failure and automatically changes after a retry`, async () => {
+  const { engine } = fixture(), base = modelPool(gender), robe = modelPool(`${gender}-onsen`);
+  let complete, ready = false, canLoad = true, loads = 0;
+  Object.assign(engine, { [baseField]: base.pool, [robeField]: {
+    get canLoad() { return canLoad; }, get ready() { return ready; },
+    create: () => ready ? robe.pool.create() : null,
+    load() { loads++; canLoad = false; return new Promise(resolve => { complete = success => { ready = success; resolve(); }; }); },
+  } });
+  const local = { avatar: null }, remote = { avatar: null };
+  engine.syncAvatar(local, skin, 0, 20); engine.syncAvatar(remote, skin, 0, 20);
+  const everyday = local.avatar;
+  engine.syncAvatar(local, skin, 0, 45); engine.syncAvatar(remote, skin, 0, 45);
+  assert.equal(loads, 1, "local and remote users share one in-flight download per gender");
+  complete(false); await Promise.resolve();
+  assert.equal(engine[readyField], false); assert.equal(engine[requestedField], false);
+  for (let frame = 0; frame < 100; frame++) engine.syncAvatar(local, skin, 0, 45);
+  assert.equal(loads, 1, "pool backoff prevents a retry storm");
+  assert.equal(local.avatar, everyday); assert.equal(everyday.disposed, 0);
+  canLoad = true; // The actual pool permits another request after its five-second backoff.
+  engine.syncAvatar(local, skin, 0, 45); engine.syncAvatar(remote, skin, 0, 45);
+  assert.equal(loads, 2);
+  complete(true); await Promise.resolve();
+  engine.syncAvatar(local, skin, 0, 45); engine.syncAvatar(remote, skin, 0, 45);
+  assert.equal(engine[readyField], true); assert.equal(local.avatar.kind, `${gender}-onsen`);
+  assert.equal(remote.avatar.kind, `${gender}-onsen`); assert.equal(everyday.disposed, 1);
+  engine.syncAvatar(local, skin, 0, 20);
+  assert.equal(local.avatar.kind, gender, "leaving still restores the matching everyday character");
 });
 
 test("remote 3D avatars receive bed and bench claims without an active walking animation", () => {

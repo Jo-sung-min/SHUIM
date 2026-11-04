@@ -29,6 +29,7 @@ const navigation = await load("../lib/beach/navigation.ts", {}, ["findClearAppro
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...geometry, ...atlas, ...bedding, ...benches, ...navigation, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ width: 0, height: 0, getContext: () => null }) },
+  window: { innerWidth: 390, innerHeight: 844, devicePixelRatio: 3 },
 }, ["BeachEngine"]);
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, message ?? `${actual} ≈ ${expected}`);
 const rest = (slot) => ({ pose: "lying", ...stargazingSlot(slot) });
@@ -169,7 +170,7 @@ test("confirmed lying blocks movement, preserves dragged sky view across ticks, 
 });
 
 test("overhead view fits the complete circle at phone and narrow desktop aspect ratios", () => {
-  for (const aspect of [320 / 844, 390 / 844, 1920 / 911]) for (const pitch of [.75, 1.25, 1.50]) for (const yaw of [0, Math.PI / 2]) {
+  for (const aspect of [320 / 844, 390 / 844, 1920 / 911]) for (const pitch of [.88, 1.25, 1.50]) for (const yaw of [0, Math.PI / 2]) {
     const { engine, camera } = fixture();
     camera.aspect = aspect; camera.updateProjectionMatrix();
     engine.applyRest(rest(0)); engine.setView("third");
@@ -305,47 +306,79 @@ test("bed dragging uses sea-view limits, duplicate claims preserve the view, and
   close(camera.position.y, 1.55, "standing restores ordinary eye height");
 });
 
-test("mouse and touch can freely explore a wider sky from mats and floating spots without turning the body or flipping", () => {
+test("lying head turns explore new sky in all directions while preserving the original lens, framing and body", () => {
   for (const claim of [rest(2), { pose: "lying", spotId: "onsen-float", slot: 1 }]) {
-    for (const pointerType of ["mouse", "touch"]) for (const mobile of [false, true]) {
+    for (const pointerType of ["mouse", "touch"]) for (const mobile of [false, true]) for (const aspect of [390 / 844, 16 / 9]) {
       const { engine, camera } = fixture();
       engine.mobile = mobile;
+      camera.aspect = aspect;
       const drag = (dx, dy) => {
         engine.look = { active: true, id: 1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
         engine.onPointerMove({ pointerId: 1, pointerType, clientX: dx, clientY: dy });
       };
       engine.applyRest(claim); engine.setView("first");
-      const body = engine.getSelf();
-      close(engine.self.pitch, 1.5, "the default still looks almost straight up");
-      const initialYaw = engine.self.yaw;
-      drag(Math.PI / (pointerType === "mouse" ? .0042 : .0072), 10000);
-      close(engine.self.pitch, .75); close(engine.self.yaw, initialYaw - Math.PI);
       engine.updateSelf(0.016); camera.updateMatrixWorld();
-      close(camera.rotation.x, .75);
-      assert.equal(camera.layers.mask, 2);
-      for (const x of [-1, 1]) for (const y of [-1, 1]) {
-        const ray = new THREE.Vector3(x, y, .5).unproject(camera).sub(camera.position).normalize();
-        assert.ok(ray.y > 0, "the wider first-person view still contains sky at every screen corner");
+      const body = engine.getSelf();
+      const baseline = new THREE.Quaternion().setFromEuler(new THREE.Euler(1.5, engine.self.yaw, 0, "YXZ"));
+      const projection = camera.projectionMatrix.clone(), position = camera.position.clone();
+      const forward = camera.getWorldDirection(new THREE.Vector3());
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      close(camera.fov, mobile ? 82 : 78);
+      close(camera.quaternion.angleTo(baseline), 0, "the untouched view exactly matches the old sky framing");
+      for (const [dx, dy] of [[10000, 0], [-10000, 0], [0, 10000], [0, -10000], [10000, 10000], [-10000, -10000]]) {
+        engine.skyLook = { yaw: 0, pitch: 0 };
+        drag(dx, dy); engine.updateSelf(0.016); camera.updateMatrixWorld();
+        const direction = camera.getWorldDirection(new THREE.Vector3());
+        assert.ok(direction.angleTo(forward) > .35, "dragging turns the actual sightline by at least 20 degrees, not just the sky image");
+        const localDirection = direction.clone().applyQuaternion(baseline.clone().invert());
+        if (dx) assert.equal(Math.sign(localDirection.x), Math.sign(dx), "horizontal dragging looks toward that side of the original frame");
+        if (dy) assert.equal(Math.sign(localDirection.y), -Math.sign(dy), "vertical dragging reaches both sides of the original upward view");
+        assert.ok(new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).dot(up) > .65, "the view never rolls upside down");
+        assert.ok(camera.projectionMatrix.equals(projection), "head movement never widens or zooms the lens");
+        close(camera.position.distanceTo(position), 0, "the camera stays at the resting eyes");
+        assert.equal(camera.layers.mask, 2);
+        for (const x of [-1, 1]) for (const y of [-1, 1]) {
+          const ray = new THREE.Vector3(x, y, .5).unproject(camera).sub(camera.position).normalize();
+          assert.ok(ray.y > 0, "all screen corners stay in the sky even on a wide desktop");
+        }
+        assert.deepEqual(engine.getSelf(), body);
+        const orientation = camera.quaternion.clone();
+        engine.applyRest(claim);
+        for (let i = 0; i < 30; i++) engine.updateSelf(1 / 60);
+        close(camera.quaternion.angleTo(orientation), 0, "ticks and held frames cannot accumulate roll or reset the head angle");
       }
-      assert.deepEqual(engine.getSelf(), body, "looking around never changes the shared resting position or body yaw");
-      const yaw = engine.self.yaw;
-      engine.applyRest(claim);
-      close(engine.self.pitch, .75); close(engine.self.yaw, yaw, "duplicate server claims preserve the chosen view");
-      drag(0, -10000); close(engine.self.pitch, 1.56);
-      engine.updateSelf(0.016);
-      assert.ok(camera.rotation.x < Math.PI / 2, "the camera cannot turn upside down at the zenith");
-      close(camera.rotation.z, 0);
       engine.setView("third");
-      drag(0, 10000); close(engine.self.pitch, .75);
+      drag(0, 10000); close(engine.self.pitch, .88, "third-person orbit returns to its original limit");
       engine.updateSelf(0.016);
       assert.equal(camera.layers.mask, 1); assert.equal(engine.selfNode.sprite.visible, true);
       assert.ok(camera.position.y > (engine.skyRest.avatarY ?? 0) + 1);
       assert.ok(camera.getWorldDirection(new THREE.Vector3()).y < 0);
       drag(0, -10000); close(engine.self.pitch, 1.5);
       assert.deepEqual(engine.getSelf(), body);
+      engine.setView("first"); engine.updateSelf(0.016);
+      close(camera.quaternion.angleTo(baseline), 0, "returning to sky view restores the familiar starting frame");
       engine.applyRest(standing);
+      assert.equal(engine.skyLook, null);
       close(engine.self.pitch, .07); close(engine.self.yaw, standing.yaw);
     }
+  }
+});
+
+test("rotating a phone to landscape preserves the lens and keeps a sideways head turn inside the sky", () => {
+  const { engine, camera } = fixture();
+  engine.mobile = true;
+  Object.assign(engine.canvas, { clientWidth: 390, clientHeight: 844 });
+  engine.renderer = { setDrawingBufferSize() {} };
+  engine.applyRest(rest(0)); engine.setView("first"); engine.resize();
+  engine.look = { active: true, id: 1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
+  engine.onPointerMove({ pointerId: 1, pointerType: "touch", clientX: 10000, clientY: 0 });
+  const portraitYaw = Math.abs(engine.skyLook.yaw);
+  Object.assign(engine.canvas, { clientWidth: 844, clientHeight: 390 });
+  engine.resize(); engine.updateSelf(.016); camera.updateMatrixWorld();
+  close(camera.fov, 82);
+  assert.ok(Math.abs(engine.skyLook.yaw) < portraitYaw, "a wider viewport adjusts head bounds, not camera zoom");
+  for (const x of [-1, 1]) for (const y of [-1, 1]) {
+    assert.ok(new THREE.Vector3(x, y, .5).unproject(camera).sub(camera.position).y > 0);
   }
 });
 

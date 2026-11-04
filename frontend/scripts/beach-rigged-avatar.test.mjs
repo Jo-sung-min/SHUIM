@@ -26,13 +26,13 @@ async function model(kind = "male") {
   return loader.parseAsync(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), "");
 }
 
-function runtime(load, kind = "male") {
+function runtime(load, kind = "male", clock = Date.now) {
   let requests = 0;
   class Loader {
     setMeshoptDecoder(decoder) { assert.equal(decoder, MeshoptDecoder); return this; }
     loadAsync(url) { assert.equal(url, assets.assetUrl(`/beach/models/${modelFiles[kind]}`)); requests++; return load(); }
   }
-  const context = { THREE, GLTFLoader: Loader, MeshoptDecoder, cloneSkeleton, ...assets };
+  const context = { THREE, GLTFLoader: Loader, MeshoptDecoder, cloneSkeleton, Date: { now: clock }, ...assets };
   vm.runInNewContext(`${source}\nglobalThis.api = { BeachAvatarModels, BeachAvatar };`, context);
   return { ...context.api, requests: () => requests };
 }
@@ -304,6 +304,27 @@ test("failed loading keeps the sprite fallback available, and late loads are dis
   resolve(gltf); await loading;
   assert.equal(pool.create(), null);
   assert.equal(releases, 1, "a model completing after navigation releases its buffers");
+});
+
+for (const kind of ["male-onsen", "female-onsen"]) test(`${kind} recovers from a failed CDN request in the same visit with bounded retries`, async () => {
+  let now = 100_000, attempts = 0;
+  const gltf = await model(kind);
+  const api = runtime(() => ++attempts === 1 ? Promise.reject(new Error("temporary network failure")) : Promise.resolve(gltf), kind, () => now);
+  const pool = new api.BeachAvatarModels(kind);
+  assert.equal(pool.canLoad, true); assert.equal(pool.ready, false);
+  await Promise.all([pool.load(), pool.load()]);
+  assert.equal(attempts, 1); assert.equal(pool.ready, false); assert.equal(pool.create(), null);
+  assert.equal(pool.canLoad, false, "a failed response is not marked ready");
+  for (let frame = 0; frame < 100; frame++) { now += 10; await pool.load(); }
+  assert.equal(attempts, 1, "remaining in the onsen cannot create a request on every frame");
+  now = 104_999; assert.equal(pool.canLoad, false);
+  now = 105_000; assert.equal(pool.canLoad, true);
+  await Promise.all([pool.load(), pool.load()]);
+  assert.equal(attempts, 2); assert.equal(pool.ready, true); assert.equal(pool.canLoad, false);
+  assert.equal(pool.create().kind, kind, "the same pool produces the robe without re-entering the room");
+  await pool.load(); assert.equal(attempts, 2, "success keeps the shared model cached");
+  pool.dispose(); now += 10_000; await pool.load();
+  assert.equal(pool.ready, false); assert.equal(pool.canLoad, false); assert.equal(attempts, 2);
 });
 
 test("female onsen hair stays with the head during a hug instead of following hand and finger bones", async () => {

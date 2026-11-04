@@ -39,7 +39,7 @@ const claim = (slot, pose) => ({ ...slot, pose });
 const standing = { pose: "standing", spotId: null, slot: null, x: 0, z: 45, yaw: 0.3 };
 
 function pool(kind) {
-  return { create() {
+  return { ready: true, canLoad: true, create() {
     const root = new THREE.Group();
     return { kind, root, states: [], update(dt, state) { this.states.push({ dt, ...state }); root.visible = state.visible; }, dispose() { root.removeFromParent(); } };
   }, dispose() {} };
