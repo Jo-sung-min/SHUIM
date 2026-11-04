@@ -108,12 +108,38 @@ public class BeachService {
 
     public BeachFireService.FireView fire(String communityId) { return fire.snapshot(communityId); }
 
+    public BeachRoom.Lighting lighting(String communityId) {
+        RoomBinding binding = rooms.get(communityId);
+        return binding == null ? BeachRoom.AUTO_LIGHTING : binding.room().lighting();
+    }
+
+    public BeachRoom.FireworksState fireworks(String communityId) {
+        RoomBinding binding = rooms.get(communityId);
+        return binding == null ? new BeachRoom.FireworksState(java.util.List.of(), 0, clock.getAsLong()) : binding.room().fireworks();
+    }
+
+    /** Only the owned visit selects a room; the authenticated controller authorizes launches. */
+    public BeachRoom.FireworkLaunch launchFireworks(String ticket, String userId, String requestId) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().launchFireworks(ticket, userId, requestId);
+    }
+
+    /** The ticket chooses the room; a client cannot supply a different community ID. */
+    public BeachRoom.Lighting setLighting(String ticket, String userId, String mode) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().setLighting(mode);
+    }
+
     /** The authenticated user must own an active ticket; a ticket cannot choose another community. */
     public Visit requireVisit(String ticket, String userId) {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
         BeachRoom.Presence presence = binding == null ? null : binding.room().presence(ticket);
         if (presence == null) throw ApiException.gone(BeachController.GONE);
-        if (!presence.userId().equals(userId)) throw ApiException.forbidden("내 방문에서만 모닥불을 이용할 수 있어요.");
+        if (!presence.userId().equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
         return new Visit(binding.communityId(), presence);
     }
 

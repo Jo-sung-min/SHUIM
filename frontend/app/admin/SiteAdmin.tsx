@@ -5,6 +5,7 @@ import { Hero, LoadError, SkeletonScreen } from "@/components/ui";
 import { toastSuccess } from "@/lib/toast";
 import { SITE, SiteSettings, faviconHref, normalizeSite, ogHref } from "@/lib/site";
 import { imageToDataUrl } from "@/lib/siteImage";
+import { assetUrl } from "@/lib/assets";
 
 const TITLE_MAX = 60;
 const DESC_MAX = 160;
@@ -121,7 +122,7 @@ export default function SiteAdmin() {
         <div className="row" style={{ gap: 14, alignItems: "center" }}>
           <span style={{ width: 56, height: 56, borderRadius: 14, overflow: "hidden", background: "var(--surface-2)", border: "1px solid var(--border)", display: "grid", placeItems: "center", flexShrink: 0 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={images.favicon?.dataUrl ?? faviconHref(site)} alt="소로우 아이콘 미리보기" width={40} height={40} style={{ width: 40, height: 40, objectFit: "contain" }} />
+            <img src={assetUrl(images.favicon?.dataUrl ?? faviconHref(site))} alt="소로우 아이콘 미리보기" width={40} height={40} style={{ width: 40, height: 40, objectFit: "contain" }} />
           </span>
           <span className="grow">
             <b style={{ fontSize: 14.5 }}>{images.favicon ? "새 아이콘 미리보기" : site.faviconAt ? "직접 선택한 아이콘" : "기본 소로우 아이콘"}</b>

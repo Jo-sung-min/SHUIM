@@ -163,15 +163,9 @@ npm run dev
 
 브라우저가 파일을 서버로 보내지 않고, 서버(`backend/.../upload/S3Service.java`)가 발급한 **프리사인 PUT URL** 로 S3 에 직접 올린다. 올리기 전에 브라우저에서 긴 변 1600px·WebP 로 줄인다(`frontend/lib/upload.ts`). 글에는 CDN 주소가 저장되고, 글을 지우면 S3 객체도 지운다.
 
-1. `backend/.env` 에 `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, (선택) `S3_PREFIX`, `CDN_BASE_URL`
-2. **버킷 CORS** (브라우저 PUT 에 필수):
-   ```json
-   [{ "AllowedOrigins": ["http://localhost:3000", "https://<배포 도메인>"],
-      "AllowedMethods": ["PUT"], "AllowedHeaders": ["Content-Type", "Cache-Control"], "MaxAgeSeconds": 3000 }]
-   ```
-3. **IAM 정책**: `s3:PutObject`, `s3:DeleteObject` on `arn:aws:s3:::<bucket>/feed/*`
-4. **CloudFront**: 원본 = S3(OAC), 버킷 퍼블릭 차단 유지, 배포 도메인을 `CDN_BASE_URL` 에. 업로드에 `Cache-Control: public, max-age=31536000, immutable`
-5. 확인: `GET /api/upload/presign` → `{ configured: true }`
+현재 저장소는 `S3_BUCKET=sorow-aws-s3`, `AWS_REGION=ap-northeast-2`, `S3_PREFIX=upload`, `CDN_BASE_URL=https://cdn.sorow.co.kr`이다. 백엔드는 IAM 역할 기본 체인 또는 명시적 `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY`를 사용하며, 임시 키에는 `AWS_SESSION_TOKEN`도 필요하다.
+
+백엔드의 쓰기·삭제 권한은 `arn:aws:s3:::sorow-aws-s3/upload/*`에 부여한다. 브라우저 PUT을 위한 S3 CORS와 CloudFront OAC 읽기 권한은 별도로 설정한다. 사용자 사진 캐시는 `public, max-age=300`이며 공용 버전 에셋의 장기 캐시와 구분한다. 환경변수와 실제 사진 업로드 확인 절차는 [백엔드 S3 설정 안내](backend/S3_SETUP.md)를 따른다.
 
 ## 구조
 

@@ -92,6 +92,28 @@ class BeachRoomTest {
     }
 
     @Test
+    void allFourCharactersKeepDistinctSkinIdsAcrossEntryChangesAndReconnect() {
+        BeachRoom room = room();
+        Presence observer = room.enter("observer", "관찰자", Set.of(), "female");
+        String[] choices = { "male", "female", "pixel-male", "female-3d" };
+        for (int skin = 0; skin < choices.length; skin++) {
+            Presence actor = room.enter("actor", "캐릭터", Set.of(), choices[skin]);
+            assertEquals(skin, actor.skin());
+            assertEquals(skin, at(room, observer, 0, 10).players().get(0).skin());
+            at(room, actor, 1, 10);
+            assertEquals(skin, actor.skin(), "omitting a character preserves its exact style");
+            int changed = (skin + 1) % choices.length;
+            room.tick(actor.ticket(), 1, 10, 0, false, null, null, choices[changed]);
+            assertEquals(changed, at(room, observer, 0, 10).players().get(0).skin());
+            room.leave(actor.ticket());
+            Presence reconnected = room.enter("actor", "캐릭터", Set.of(), choices[changed]);
+            assertEquals(changed, reconnected.skin());
+            assertEquals(1, observer.skin(), "another account's preference is unchanged");
+            room.leave(reconnected.ticket());
+        }
+    }
+
+    @Test
     void invalidCharacterCannotEnterOrChangeExistingPresence() {
         BeachRoom room = room();
         assertEquals(400, assertThrows(ApiException.class, () -> room.enter("u-a", "가", Set.of(), "other")).status());

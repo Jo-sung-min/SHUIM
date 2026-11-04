@@ -6,6 +6,7 @@ import type { ProfilePage } from "@/lib/social";
 import { shoutCatById } from "@/lib/community";
 import type { ShoutCat } from "@/lib/community-core";
 import { stripHighlights } from "@/lib/highlight";
+import { assetCssUrl } from "@/lib/assets";
 import { Empty, fmtRelative } from "./ui";
 import { ShoutCatIcon } from "./CategoryIcon";
 import { IconBookmark, IconBubble, IconFilm, IconFlame, IconMessage } from "./Icons";
@@ -32,7 +33,7 @@ export default function ProfileTabs({ data }: { data: ProfilePage }) {
     ) : (
       <div className="profile-grid">
         {items.map((f) => (
-          <Link key={f.id} href={`/feed?post=${f.id}`} className={`profile-cell bg-${f.bg} ${f.image ? "has-img" : ""}`} style={f.image ? { backgroundImage: `url(${f.image})` } : undefined}>
+          <Link key={f.id} href={`/feed?post=${f.id}`} className={`profile-cell bg-${f.bg} ${f.image ? "has-img" : ""}`} style={f.image ? { backgroundImage: assetCssUrl(f.image) } : undefined}>
             <span className="t">{f.title ?? stripHighlights(f.text).split("\n")[0]}</span>
             <span className="c"><IconFlame /> {f.cheers}</span>
           </Link>

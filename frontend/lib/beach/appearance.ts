@@ -1,17 +1,25 @@
-/** Rows in the approved base-character atlas. Clothing can be layered onto either base later. */
-export type BeachCharacter = "male" | "female";
+/** New selections use only the 3D characters; old saved choices migrate by gender. */
+export type BeachCharacter = "male" | "female-3d";
 
 export const BEACH_CHARACTERS = [
-  { id: "male", label: "남자", skin: 0 },
-  { id: "female", label: "여자", skin: 1 },
+  { id: "male", label: "남자", skin: 0, preview: "/beach/male-avatar.webp" },
+  { id: "female-3d", label: "여자", skin: 3, preview: "/beach/female-avatar.webp" },
 ] as const;
 
+function currentCharacter(value: unknown): BeachCharacter | null {
+  if (value === "male" || value === "pixel-male") return "male";
+  if (value === "female-3d" || value === "female") return "female-3d";
+  return null;
+}
+
 export function characterFromSkin(skin: number): BeachCharacter {
-  return Number.isFinite(skin) && ((Math.trunc(skin) % 2) + 2) % 2 === 1 ? "female" : "male";
+  if (!Number.isFinite(skin)) return "male";
+  const row = Math.trunc(skin);
+  return ((row % 2) + 2) % 2 === 1 ? "female-3d" : "male";
 }
 
 export function characterSkin(character: BeachCharacter): number {
-  return character === "female" ? 1 : 0;
+  return currentCharacter(character) === "female-3d" ? 3 : 0;
 }
 
 /** A reconnect can belong to a different account after another tab changes the session. */
@@ -20,8 +28,11 @@ export function characterAfterEntry(
   previous: { id: string; character: BeachCharacter } | null,
   preference: BeachCharacter | null,
 ): BeachCharacter {
-  if (previous?.id === me.id) return previous.character;
-  return preference ?? characterFromSkin(me.skin);
+  if (previous?.id === me.id) {
+    const selected = currentCharacter(previous.character);
+    if (selected) return selected;
+  }
+  return currentCharacter(preference) ?? characterFromSkin(me.skin);
 }
 
 function preferenceKey(userId: string): string {
@@ -33,12 +44,18 @@ export function savedCharacter(userId: string): BeachCharacter | null {
   if (!userId) return null;
   try {
     const value = window.localStorage.getItem(preferenceKey(userId));
-    return value === "male" || value === "female" ? value : null;
+    const selected = currentCharacter(value);
+    if (selected && selected !== value) {
+      // A read-only/private storage policy must not prevent the in-memory migration.
+      try { window.localStorage.setItem(preferenceKey(userId), selected); } catch { /* Use it for this visit. */ }
+    }
+    return selected;
   } catch { return null; }
 }
 
 export function saveCharacter(userId: string, character: BeachCharacter): void {
-  if (!userId) return;
-  try { window.localStorage.setItem(preferenceKey(userId), character); }
+  const selected = currentCharacter(character);
+  if (!userId || !selected) return;
+  try { window.localStorage.setItem(preferenceKey(userId), selected); }
   catch { /* Keep the current visit usable when storage is unavailable. */ }
 }

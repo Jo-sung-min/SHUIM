@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import type { CSSProperties } from "react";
 import "./globals.css";
 import TabBar from "@/components/TabBar";
 import AppRuntime from "@/components/AppRuntime";
@@ -12,6 +13,7 @@ import InlineScript from "@/components/InlineScript";
 import AitRuntime from "@/components/AitRuntime";
 import { IS_AIT } from "@/lib/ait";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
+import { publicAssetStyles } from "@/lib/assets";
 
 /**
  * 사이트 전체 메타 태그. 제목·설명·파비콘·공유 이미지는 관리자가 /admin › 사이트 에서 바꾼 값(/api/site)을 쓰고,
@@ -110,7 +112,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
-      <body>
+      <body style={publicAssetStyles as CSSProperties}>
         <AitRuntime />
         <Splash />
         <AppRuntime />

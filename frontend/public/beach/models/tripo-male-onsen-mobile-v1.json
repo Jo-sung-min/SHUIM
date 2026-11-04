@@ -1,0 +1,115 @@
+{
+  "asset": "tripo-male-onsen-mobile-v1.glb",
+  "source": "온천복.glb",
+  "sourceBytes": 8579424,
+  "bytes": 729856,
+  "sourceSHA256": "aeb6ebb26dcb8c31dc491631851ff7e710096efbdd1cf1fd795a6f37305f7010",
+  "sha256": "f07fd84da6f6181e9f5aad447ded8f3dfe0c60018c0c55ffe97e9044db416ec6",
+  "reductionPercent": 91.49294871077592,
+  "triangles": 7969,
+  "vertices": 10435,
+  "skinJoints": 44,
+  "nodes": 69,
+  "animations": [
+    {
+      "name": "walk.retargeted",
+      "duration": 2.375,
+      "frames": 144,
+      "channels": 21
+    }
+  ],
+  "retarget": {
+    "source": "tripo-male-rigged-mobile-v3.glb",
+    "sourceSHA256": "9a9cde30dcc3abdb18b1b71991fa531cbbfe9e43ffa44468f930d4bdfa430c12",
+    "method": "Bind-relative world rotation deltas converted into each native target parent; only vertical hip bob, target translations/scales and every hand/finger rest transform preserved.",
+    "bones": [
+      "Hips",
+      "Spine",
+      "Spine1",
+      "Spine2",
+      "Neck",
+      "Head",
+      "LeftShoulder",
+      "LeftArm",
+      "LeftForeArm",
+      "LeftUpLeg",
+      "LeftLeg",
+      "LeftFoot",
+      "LeftToeBase",
+      "RightShoulder",
+      "RightArm",
+      "RightForeArm",
+      "RightUpLeg",
+      "RightLeg",
+      "RightFoot",
+      "RightToeBase"
+    ],
+    "legScale": 0.8593458476525424,
+    "handsAndFingersAnimated": false,
+    "maximumAnimatedBounds": {
+      "minY": -0.03684737418776871,
+      "maxY": 0.9847477965812732,
+      "maxWidth": 0.584008297473043,
+      "maxDepth": 0.5217875535818407
+    }
+  },
+  "textures": [
+    {
+      "name": "chibi_character_3d_model_basecolor.jpg",
+      "format": "image/webp",
+      "size": [
+        1024,
+        1024
+      ],
+      "bytes": 322402
+    },
+    {
+      "name": "chibi_character_3d_model_rm.png",
+      "format": "image/webp",
+      "size": [
+        256,
+        256
+      ],
+      "bytes": 21204
+    },
+    {
+      "name": "chibi_character_3d_model_normal.jpg",
+      "format": "image/webp",
+      "size": [
+        256,
+        256
+      ],
+      "bytes": 31030
+    }
+  ],
+  "optimization": {
+    "geometrySimplified": false,
+    "geometryQuantized": false,
+    "geometryWelded": false,
+    "allVertexAndSkinAttributesBitExact": true,
+    "bindMatricesAndNodeTransformsBitExact": true,
+    "allTrianglesAndWindingPreserved": true,
+    "compression": "Lossless EXT_meshopt_compression",
+    "baseColor": "1024px WebP quality92",
+    "normalAndMaterial": "256px WebP quality90"
+  },
+  "validation": {
+    "meshoptDecoded": true,
+    "bindBoundsUnchanged": true,
+    "originalFileUnmodified": true,
+    "allVerticesFiniteAcrossWalk": true,
+    "handRestTransformsUnchanged": true
+  },
+  "bounds": {
+    "min": [
+      -0.2918547957224732,
+      -0.000030629969238451625,
+      -0.26129146836117517
+    ],
+    "max": [
+      0.29194646343335884,
+      0.9780577875241641,
+      0.2612610178571298
+    ]
+  }
+}

@@ -4,6 +4,7 @@ import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
+import { assets } from "./assets-fixture.mjs";
 
 const typed = await readFile(new URL("../lib/beach/lanterns.ts", import.meta.url), "utf8");
 const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=class\b)/g, "");
@@ -16,7 +17,7 @@ function setup() {
       return texture;
     }
   }
-  const context = { THREE: { ...THREE, TextureLoader } };
+  const context = { THREE: { ...THREE, TextureLoader }, ...assets };
   vm.runInNewContext(`${source}\nglobalThis.createLanterns = (scene, count) => new SkyLanterns(scene, count);`, context);
   const scene = new THREE.Scene();
   const lanterns = context.createLanterns(scene, 22);

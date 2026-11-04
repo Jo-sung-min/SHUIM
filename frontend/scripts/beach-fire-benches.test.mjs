@@ -4,12 +4,13 @@ import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
+import { assets } from "./assets-fixture.mjs";
 
 async function loadModule(file, dependencies, exports) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
   const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
     .replace(/\bexport\s+(?=function\b|const\b)/g, "");
-  const context = { ...dependencies };
+  const context = { ...assets, ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${exports.join(", ")} };`, context);
   return context.api;
 }

@@ -58,11 +58,13 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled", "bedEnabled", "benchEnabled", "careCapabilities"), out.keySet());
+        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled", "bedEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "fireworksControl", "fireworks", "fireworksCooldownUntil"), out.keySet());
         assertEquals(true, out.get("restEnabled"));
         assertEquals(true, out.get("bedEnabled"));
         assertEquals(true, out.get("benchEnabled"));
         assertEquals(new BeachRoom.CareCapabilities(true, false), out.get("careCapabilities"));
+        assertEquals(false, out.get("lightingControl"));
+        assertEquals(BeachRoom.AUTO_LIGHTING, out.get("lighting"));
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
         assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
@@ -74,7 +76,7 @@ class BeachControllerTest {
         @SuppressWarnings("unchecked") Map<String, Object> spawn = (Map<String, Object>) out.get("spawn");
         assertEquals(Set.of("x", "z", "yaw"), spawn.keySet());
         assertTrue((double) spawn.get("z") >= 2.8 && (double) spawn.get("z") <= 4);
-        assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -1.0, "maxZ", 31.0), out.get("bounds"));
+        assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -1.0, "maxZ", 55.0), out.get("bounds"));
         assertEquals(1, out.get("count"));
         assertEquals(Map.of("communityId", "circle-a", "count", 1, "capacity", 100), controller.count("circle-a", request));
         BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
@@ -117,6 +119,12 @@ class BeachControllerTest {
         mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
             .content("{\"communityId\":\"circle-a\",\"character\":\"male\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.me.skin").value(0));
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"communityId\":\"circle-a\",\"character\":\"pixel-male\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.me.skin").value(2));
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"communityId\":\"circle-a\",\"character\":\"female-3d\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.me.skin").value(3));
         var existing = beach.enter("circle-a", "u-existing", "기존", Set.of(), "female");
         int before = beach.count("circle-a");
         for (String invalid : List.of("\"other\"", "\"\"", "7", "true", "{}", "[]")) {
@@ -133,6 +141,14 @@ class BeachControllerTest {
             .content("{\"ticket\":\"" + existing.ticket() + "\",\"character\":\"male\"}"))
             .andExpect(status().isOk());
         assertEquals(0, existing.skin());
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + existing.ticket() + "\",\"character\":\"pixel-male\"}"))
+            .andExpect(status().isOk());
+        assertEquals(2, existing.skin());
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + existing.ticket() + "\",\"character\":\"female-3d\"}"))
+            .andExpect(status().isOk());
+        assertEquals(3, existing.skin());
         mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
             .content("{\"ticket\":\"expired\",\"character\":\"female\"}"))
             .andExpect(status().isGone());

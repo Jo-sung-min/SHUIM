@@ -7,12 +7,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
   const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
     .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
-  const context = { ...dependencies };
+  const context = { ...hotSpring, ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(",")} };`, context);
   return context.api;
 }
@@ -23,7 +24,8 @@ const { cellW: CELL_W, cellH: CELL_H } = CHAR_ATLAS;
 const CHINS = [40, 38];
 const frameColumn = (node) => Math.round(node.tex.offset.x * CHAR_ATLAS.cols);
 const stargazing = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot", "applyLyingTransform", "stargazingBodyPoint"]);
-const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "BED_CAPACITY", "claimedBedSlot"]);
+const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
+const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "BED_CAPACITY", "claimedBedSlot"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...atlas, ...stargazing, ...bedding, ...benches, CAMPFIRE: { x: 0, z: 12 }, performance,
@@ -84,7 +86,7 @@ function fixture(yaw = 0) {
     handlers: { onSelect: (value) => selected.push(value) },
     deckHeight: () => 0,
   });
-  const node = engine.createPlayer({ pid: "player", nick: "파도", x: 0, z: 0, yaw, moving: false, skin: 4 });
+  const node = engine.createPlayer({ pid: "player", nick: "파도", x: 0, z: 0, yaw, moving: false, skin: 0 });
   engine.players.set("player", node);
   return { engine, node, camera, scene, selected };
 }
@@ -235,4 +237,286 @@ test("removing an avatar disposes its new geometry, material, atlas clone and na
   engine.removePlayer(node);
   assert.deepEqual(disposed.sort(), ["geometry", "labelMaterial", "labelTexture", "material", "texture"]);
   assert.ok(!scene.children.includes(node.sprite) && !scene.children.includes(node.shadow) && !scene.children.includes(node.label));
+});
+
+function modelPool(kind = "male") {
+  const instances = [];
+  const pool = {
+    create() {
+      const root = new THREE.Group(), nested = new THREE.Group();
+      // The nested, offset mesh is deliberately outside the atlas plane and the
+      // forgiving 28px screen target, so selection must hit the actual model.
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.8, 0.3), new THREE.MeshBasicMaterial());
+      mesh.position.set(0.85, 0.9, 0); nested.add(mesh); root.add(nested);
+      const instance = {
+        root, mesh, kind, states: [], disposed: 0,
+        update(dt, state) {
+          this.states.push({ dt, ...state });
+          root.position.set(state.x, state.y ?? 0, state.z);
+          root.visible = state.visible;
+        },
+        dispose() { this.disposed++; root.removeFromParent(); mesh.geometry.dispose(); mesh.material.dispose(); },
+      };
+      instances.push(instance);
+      return instance;
+    },
+  };
+  return { pool, instances };
+}
+
+test("a loaded male model is selected through nested geometry instead of the hidden sprite", () => {
+  const { engine, node, camera, scene, selected } = fixture();
+  const { pool, instances } = modelPool(); engine.avatarModels = pool;
+  engine.updatePlayers(0.1); scene.updateMatrixWorld(true);
+  const avatar = instances[0], point = avatar.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+  const x = (point.x + 1) / 2 * 800, y = (1 - point.y) / 2 * 600;
+  assert.ok(Math.abs(x - 400) > 28, "the test must not pass through the forgiving fallback target");
+  assert.equal(node.sprite.visible, false);
+  assert.equal(avatar.root.visible, true);
+  engine.tapAt(x, y);
+  assert.equal(selected.at(-1), node.data);
+  assert.equal(engine.ring.visible, true);
+  engine.removePlayer(node);
+  assert.equal(avatar.disposed, 1);
+  assert.equal(avatar.root.parent, null);
+});
+
+test("remote male/female changes release only that model and can create a fresh male instance", () => {
+  const { engine, node, scene } = fixture();
+  const { pool, instances } = modelPool(); engine.avatarModels = pool;
+  engine.updatePlayers(0.1); const male = node.avatar;
+  engine.setPlayers([{ ...node.data, skin: 1 }]); engine.updatePlayers(0.1);
+  assert.equal(engine.players.get(node.data.pid), node, "the network player and selection identity are retained");
+  assert.equal(male.disposed, 1); assert.equal(male.root.parent, null);
+  assert.equal(node.avatar, null); assert.equal(node.sprite.visible, true);
+  assert.equal(node.tex.offset.y, 0, "the female artwork is selected");
+  engine.updatePlayers(0.1); assert.equal(male.disposed, 1, "female updates do not repeatedly dispose old models");
+  engine.setPlayers([{ ...node.data, skin: 0 }]); engine.updatePlayers(0.1);
+  assert.equal(instances.length, 2); assert.notEqual(node.avatar, male);
+  assert.equal(node.avatar.root.parent, scene); assert.equal(node.sprite.visible, false);
+});
+
+test("a model that is not ready keeps a visible atlas avatar until it becomes available", () => {
+  const { engine, node } = fixture();
+  const { pool } = modelPool(); let ready = false;
+  engine.avatarModels = { create: () => ready ? pool.create() : null };
+  engine.updatePlayers(0.1);
+  assert.equal(node.avatar, null); assert.equal(node.sprite.visible, true);
+  ready = true; engine.updatePlayers(0.1);
+  assert.ok(node.avatar); assert.equal(node.sprite.visible, false);
+});
+
+test("all four appearances switch independently while keeping the remote player identity", () => {
+  const { engine, node, scene } = fixture();
+  const male = modelPool("male"), female = modelPool("female");
+  engine.avatarModels = male.pool; engine.femaleAvatarModels = female.pool;
+  engine.updatePlayers(0.1);
+  const firstMale = node.avatar;
+  engine.setPlayers([{ ...node.data, skin: 3 }]); engine.updatePlayers(0.1);
+  assert.equal(node.avatar.kind, "female");
+  assert.equal(firstMale.disposed, 1);
+  assert.equal(node.avatar.root.parent, scene);
+  const firstFemale = node.avatar;
+  engine.updatePlayers(0.1);
+  assert.equal(node.avatar, firstFemale, "a stable selection retains its mixer and skeleton");
+  for (const skin of [2, 1]) {
+    engine.setPlayers([{ ...node.data, skin }]); engine.updatePlayers(0.1);
+    assert.equal(node.avatar, null);
+    assert.equal(node.sprite.visible, true);
+    assert.equal(node.tex.offset.y, skin === 2 ? 0.5 : 0);
+  }
+  assert.equal(firstFemale.disposed, 1);
+  assert.equal(engine.players.get(node.data.pid), node);
+  engine.setSkin(2); assert.equal(engine.skin, 2);
+  engine.setSkin(3); assert.equal(engine.skin, 3);
+  engine.setSkin(4); assert.equal(engine.skin, 3, "unknown IDs cannot silently select another character");
+  engine.removePlayer(node);
+});
+
+test("the local 3D avatar hides in first person and receives the authoritative rest poses", () => {
+  const { engine } = fixture();
+  const { pool, instances } = modelPool(); engine.avatarModels = pool;
+  Object.assign(engine, { skin: 0, view: "third", skyRest: null, benchSeat: null, restSeat: null,
+    self: { x: 2, z: 4, yaw: 0.4, moving: true }, deckHeight: () => 0.18 });
+  engine.selfNode = engine.createSelfAvatar();
+  engine.updateSelfAvatar(0.1);
+  const avatar = instances[0];
+  assert.equal(avatar.states.at(-1).moving, true);
+  assert.equal(avatar.states.at(-1).y, 0.18);
+  assert.equal(avatar.root.visible, true); assert.equal(engine.selfNode.sprite.visible, false);
+  engine.view = "first"; engine.updateSelfAvatar(0.1);
+  assert.equal(avatar.root.visible, false); assert.equal(engine.selfNode.shadow.visible, false);
+  engine.view = "third";
+  const lying = stargazing.claimedStargazingSlot({ pose: "lying", spotId: "starlight", slot: 2 });
+  engine.skyRest = lying; engine.self.moving = false; engine.updateSelfAvatar(0.1);
+  assert.equal(avatar.states.at(-1).lying, lying);
+  assert.equal(engine.selfNode.shadow.visible, false);
+  engine.skyRest = null; engine.benchSeat = benches.FIRE_BENCH_SEATS[3]; engine.updateSelfAvatar(0.1);
+  assert.equal(avatar.states.at(-1).seated, engine.benchSeat);
+  assert.equal(avatar.states.at(-1).lying, null);
+  engine.benchSeat = null;
+  engine.restSeat = { x: 0, z: 24.7, yaw: 0, shelterId: "wave" }; engine.updateSelfAvatar(0.1);
+  assert.ok(Math.abs(avatar.states.at(-1).seated.avatarY - 0.7) < 1e-10, "hut seat includes the deck height");
+});
+
+for (const [gender, skin, poolField, robeField] of [
+  ["male", 0, "avatarModels", "onsenAvatarModels"],
+  ["female", 3, "femaleAvatarModels", "femaleOnsenAvatarModels"],
+]) test(`the ${gender} robe loads only on arrival, retains the dressed avatar while loading, and changes back on exit`, async () => {
+  const { engine } = fixture();
+  const male = modelPool(gender), robe = modelPool(`${gender}-onsen`);
+  let complete, loads = 0, ready = false;
+  Object.assign(engine, { skin, view: "third", skyRest: null, benchSeat: null, restSeat: null,
+    self: { x: 6.5, z: 33.5, yaw: 0, moving: false }, [poolField]: male.pool,
+    [robeField]: { load: () => { loads++; return new Promise(resolve => { complete = () => { ready = true; resolve(); }; }); }, create: () => ready ? robe.pool.create() : null } });
+  engine.selfNode = engine.createSelfAvatar();
+  engine.updateSelfAvatar(0.1);
+  const dressed = engine.selfNode.avatar;
+  assert.equal(loads, 0, "ordinary beach and tunnel use do not download a robe");
+  Object.assign(engine.self, { x: 6, z: 45, moving: true });
+  engine.updateSelfAvatar(0.1); engine.updateSelfAvatar(0.1);
+  assert.equal(loads, 1);
+  assert.equal(engine.selfNode.avatar, dressed, "the character remains visible while the optional outfit loads");
+  complete(); await Promise.resolve();
+  engine.updateSelfAvatar(0.1);
+  const clothed = engine.selfNode.avatar;
+  assert.equal(clothed.kind, `${gender}-onsen`); assert.equal(dressed.disposed, 1);
+  assert.equal(clothed.states.at(-1).moving, true);
+  engine.view = "first"; engine.updateSelfAvatar(0.1);
+  assert.equal(clothed.root.visible, false, "the outfit respects first-person visibility");
+  engine.self.x = 7.25; engine.updateSelfAvatar(0.1);
+  assert.equal(engine.selfNode.avatar, clothed, "small movements around the threshold cannot flicker between clothes");
+  engine.self.x = 8.7; engine.updateSelfAvatar(0.1);
+  assert.equal(engine.selfNode.avatar.kind, gender); assert.equal(clothed.disposed, 1);
+  assert.equal(loads, 1);
+});
+
+test("remote male and female outfits follow their shared positions and restore the correct gender on exit", () => {
+  const { engine, node } = fixture();
+  const male = modelPool("male"), robe = modelPool("male-onsen"), female = modelPool("female"), femaleRobe = modelPool("female-onsen");
+  Object.assign(engine, { avatarModels: male.pool, femaleAvatarModels: female.pool,
+    onsenAvatarModels: robe.pool, onsenAvatarReady: true, onsenAvatarRequested: true,
+    femaleOnsenAvatarModels: femaleRobe.pool, femaleOnsenAvatarReady: true, femaleOnsenAvatarRequested: true });
+  engine.setPlayers([{ ...node.data, skin: 0, x: 0, z: 45, pose: "standing", moving: false }]);
+  engine.updatePlayers(1);
+  const clothed = node.avatar;
+  assert.equal(clothed.kind, "male-onsen");
+  engine.setPlayers([{ ...node.data, skin: 3, x: 0, z: 45 }]); engine.updatePlayers(0.1);
+  assert.equal(node.avatar.kind, "female-onsen"); assert.equal(clothed.disposed, 1);
+  engine.setPlayers([{ ...node.data, skin: 3, x: 0, z: 20 }]); engine.updatePlayers(1);
+  assert.equal(node.avatar.kind, "female");
+  engine.setPlayers([{ ...node.data, skin: 0, x: 0, z: 20 }]); engine.updatePlayers(1);
+  assert.equal(node.avatar.kind, "male");
+});
+
+test("an unavailable robe cannot remove the working male model and a late download cannot revive a closed room", async () => {
+  const { engine } = fixture();
+  const male = modelPool("male");
+  let resolveLoad;
+  Object.assign(engine, { avatarModels: male.pool, onsenAvatarModels: { create: () => null, load: () => new Promise(resolve => { resolveLoad = resolve; }) } });
+  const node = { avatar: null };
+  const dressed = engine.syncAvatar(node, 0, 0, 20);
+  engine.syncAvatar(node, 0, 0, 45);
+  assert.equal(node.avatar, dressed);
+  engine.disposed = true; resolveLoad(); await Promise.resolve();
+  assert.ok(!engine.onsenAvatarReady);
+  engine.disposed = false; engine.onsenAvatarReady = true;
+  engine.syncAvatar(node, 0, 0, 45);
+  assert.equal(node.avatar, dressed); assert.equal(dressed.disposed, 0);
+  const newlyArrived = { avatar: null };
+  assert.equal(engine.syncAvatar(newlyArrived, 0, 0, 45).kind, "male", "a late base model can still replace the sprite after a robe failure");
+});
+
+test("remote 3D avatars receive bed and bench claims without an active walking animation", () => {
+  const { engine, node } = fixture();
+  const { pool } = modelPool(); engine.avatarModels = pool;
+  engine.setPlayers([{ ...node.data, skin: 0, pose: "lying", spotId: "hut-wave", slot: 0, moving: true }]);
+  engine.updatePlayers(0.1);
+  const bedState = node.avatar.states.at(-1);
+  assert.equal(bedState.moving, false); assert.equal(bedState.lying.spotId, "hut-wave");
+  assert.equal(bedState.lying.avatarY, 0.82); assert.equal(bedState.lying.incline, 0.25);
+  engine.setPlayers([{ ...node.data, pose: "sitting", spotId: "fire-benches", slot: 4 }]);
+  engine.updatePlayers(0.1);
+  const benchState = node.avatar.states.at(-1);
+  assert.equal(benchState.lying, null); assert.equal(benchState.moving, false);
+  assert.equal(benchState.seated, benches.FIRE_BENCH_SEATS[4]);
+  assert.equal(benchState.x, benchState.seated.x); assert.equal(benchState.z, benchState.seated.z);
+});
+
+test("a seated pixel avatar gains depth on the first lying frame without changing another actor", async () => {
+  let row = 0;
+  const context = {
+    clearRect() {},
+    drawImage(_image, _x, y) { row = y / CELL_H; },
+    getImageData() {
+      const data = new Uint8ClampedArray(CELL_W * CELL_H * 4);
+      for (let y = 0; y < CELL_H; y++) for (let x = 0; x < CELL_W; x++) data.set(pixel(0, row, x, y), (y * CELL_W + x) * 4);
+      return { width: CELL_W, height: CELL_H, data };
+    },
+  };
+  const { PixelAvatarDepth } = await load("../lib/beach/pixel-avatar-depth.ts", {
+    THREE, ...atlas, document: { createElement: () => ({ getContext: () => context }) },
+  }, ["PixelAvatarDepth"]);
+  const { engine, node } = fixture();
+  engine.charTex.image = { width, height };
+  engine.pixelDepth = new PixelAvatarDepth(engine.charTex, 1.8);
+  Object.assign(engine, { skin: 1, view: "third", skyRest: null, restSeat: null,
+    benchSeat: benches.FIRE_BENCH_SEATS[0], self: { x: 2, z: 4, yaw: 0, moving: false } });
+  engine.selfNode = engine.createSelfAvatar();
+  const sprite = engine.selfNode.sprite;
+  assert.notEqual(sprite.geometry, node.sprite.geometry, "each actor owns its deformable front plane");
+  engine.updateSelfAvatar(0.1);
+  assert.equal(sprite.geometry.userData.seated, true);
+  engine.benchSeat = null;
+  engine.skyRest = stargazing.claimedStargazingSlot({ pose: "lying", spotId: "starlight", slot: 0 });
+  engine.updateSelfAvatar(0.1);
+  assert.equal(sprite.geometry.userData.seated, false);
+  const side = sprite.getObjectByName("lying-pixel-depth");
+  assert.ok(side?.visible);
+  for (let i = 0; i < sprite.geometry.attributes.position.count; i++) {
+    assert.ok(Math.abs(sprite.geometry.attributes.position.getZ(i) - side.geometry.boundingBox.max.z) < 1e-7,
+      "unfolding the seated sprite happens before its raised front meets the bevel");
+  }
+  assert.equal(node.sprite.geometry.attributes.position.getZ(0), 0, "the standing actor remains flat");
+  assert.equal(side.material.map, engine.selfNode.tex);
+  assert.equal(engine.selfNode.tex.offset.x, 0);
+  assert.equal(engine.selfNode.tex.offset.y, 0, "both surfaces sample the female front idle frame");
+  engine.skyRest = null; engine.updateSelfAvatar(0.1);
+  assert.equal(side.visible, false);
+  assert.equal(sprite.geometry.attributes.position.getZ(0), 0);
+  engine.pixelDepth.dispose();
+  engine.removePlayer(node);
+  sprite.geometry.dispose(); engine.selfNode.mat.dispose(); engine.selfNode.tex.dispose();
+});
+
+test("atlas downloads finishing after the room closes release textures without rebuilding actors", async () => {
+  const pending = [];
+  let depthPools = 0, selfNodes = 0;
+  class TextureLoader {
+    loadAsync() { return new Promise((resolve) => pending.push(resolve)); }
+  }
+  const { BeachEngine: DelayedEngine } = await load("../lib/beach/engine.ts", {
+    THREE: { ...THREE, TextureLoader }, ...atlas, CAMPFIRE: { x: 0, z: 12 },
+    PixelAvatarDepth: class { constructor() { depthPools++; } },
+  }, ["BeachEngine"]);
+  const engine = Object.assign(Object.create(DelayedEngine.prototype), {
+    disposed: false, scene: new THREE.Scene(),
+    createSelfAvatar() { selfNodes++; return {}; },
+  });
+  const loading = engine.loadAtlases();
+  assert.equal(pending.length, 2);
+  const chars = new THREE.Texture(), props = new THREE.Texture();
+  let charsReleased = 0, propsReleased = 0;
+  chars.addEventListener("dispose", () => charsReleased++);
+  props.addEventListener("dispose", () => propsReleased++);
+  engine.disposed = true; // The scene was already disposed while both requests were in flight.
+  pending[0](chars); pending[1](props);
+  await loading;
+  assert.equal(charsReleased, 1);
+  assert.equal(propsReleased, 1);
+  assert.equal(depthPools, 0);
+  assert.equal(selfNodes, 0);
+  assert.equal(engine.scene.children.length, 0);
+  assert.equal(engine.charTex, undefined);
+  assert.equal(engine.propTex, undefined);
 });

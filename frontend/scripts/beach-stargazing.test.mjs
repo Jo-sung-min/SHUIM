@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -13,17 +14,19 @@ async function load(file, dependencies, names) {
     .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
   // Execute the real drag handler without constructing the WebGL renderer.
   if (file.endsWith("/engine.ts")) source = source.replace(/\bonPointerMove\s*=\s*\(([^)]*)\)\s*=>\s*\{/, "onPointerMove($1) {");
-  const context = { ...dependencies };
+  const context = { ...hotSpring, ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(",")} };`, context);
   return context.api;
 }
 const geometry = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "stargazingSlot", "claimedStargazingSlot", "stargazingBodyPoint", "applyLyingTransform", "stargazingApproach", "stargazingCameraDistance", "buildStargazingZone"]);
 const { STARGAZING, stargazingSlot, stargazingBodyPoint, applyLyingTransform, stargazingApproach, buildStargazingZone } = geometry;
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
-const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "BED_AVATAR_Y", "bedSlot", "claimedBedSlot", "buildShelters"]);
+const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
+const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "BED_AVATAR_Y", "bedSlot", "claimedBedSlot", "buildShelters"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
+const navigation = await load("../lib/beach/navigation.ts", {}, ["findClearApproach", "findWalkingPath", "resolveWalls"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...geometry, ...atlas, ...bedding, ...benches, CAMPFIRE: { x: 0, z: 12 }, performance,
+  THREE, ...geometry, ...atlas, ...bedding, ...benches, ...navigation, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ width: 0, height: 0, getContext: () => null }) },
 }, ["BeachEngine"]);
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-6, message ?? `${actual} ≈ ${expected}`);
@@ -220,7 +223,7 @@ test("every hut bed keeps the face visible above the duvet and the camera below 
       }
       const chest = new THREE.Vector3(0, .7, 0).applyMatrix4(engine.selfNode.sprite.matrixWorld);
       const duvetRay = new THREE.Raycaster(chest.clone().add(new THREE.Vector3(0, .5, 0)), new THREE.Vector3(0, -1, 0), 0, .5);
-      assert.ok(duvetRay.intersectObject(engine.scene.getObjectByName("shelters-cushions"), false).length > 0, "the duvet covers the body above the avatar plane");
+      assert.ok(duvetRay.intersectObject(engine.scene.getObjectByName("shelters-duvets"), false).length > 0, "the soft duvet covers the body above the avatar plane");
     }
   }
 });
@@ -247,7 +250,13 @@ test("every bed offers a low first-person sea view above its pillow and through 
       assert.ok(camera.getWorldDirection(new THREE.Vector3()).z < -0.99, "the initial view faces the sea at negative Z");
       close(engine.getSelf().yaw, bed.yaw, "camera direction never turns the body away from its assigned bed");
       const roomMeshes = engine.scene.children.filter(node => node.name.startsWith("shelters-"));
-      for (const yaw of [-0.3, 0, 0.3]) for (const pitch of [-0.08, -0.035, 0.18]) {
+      // Solid window frames are intentional. Each bed has a clear default view,
+      // plus a line through the center doorway and its nearest picture window.
+      const openingZ = shelter.z - shelter.depth / 2 - 0.15;
+      const targets = slot === 1 ? [shelter.x] : [bed.x, shelter.x, shelter.x + Math.sign(bed.x - shelter.x) * 3.3];
+      for (const targetX of targets) {
+        const yaw = Math.atan2(camera.position.x - targetX, camera.position.z - openingZ), pitch = 0;
+        assert.ok(Math.abs(yaw) <= 0.3, "the opening is within the bed's comfortable turning range");
         engine.self.yaw = yaw; engine.self.pitch = pitch;
         engine.updateSelf(0.016); camera.updateMatrixWorld();
         const direction = camera.getWorldDirection(new THREE.Vector3());
@@ -283,7 +292,7 @@ test("bed dragging uses sea-view limits, duplicate claims preserve the view, and
   engine.toggleView(); engine.updateSelf(0.016);
   assert.equal(engine.viewMode, "third");
   assert.equal(engine.selfNode.sprite.visible, true);
-  assert.ok(camera.position.y < 3.1 && camera.position.z < 23, "third person returns to the established front-of-bed framing");
+  assert.ok(camera.position.y < 3.1 && camera.position.z < bed.z - 3, "third person returns to the front of the deeper bedroom");
   engine.toggleView();
   close(engine.self.yaw, 0);
   assert.ok(Math.abs(engine.self.pitch) < 0.1);

@@ -1,0 +1,122 @@
+{
+  "sourceFilename": "girl_rig_fixed.glb",
+  "sourceBytes": 10469652,
+  "sourceSHA256": "79da43d39a512a4bbb9eeee735f8f9853d6021b17ed730a7161fa102dc699b6d",
+  "asset": "tripo-female-rigged-mobile-v1.glb",
+  "bytes": 1749864,
+  "triangles": 10419,
+  "vertices": 21603,
+  "bones": 78,
+  "animations": [
+    {
+      "name": "walk.retargeted",
+      "duration": 2.375,
+      "channels": 21,
+      "frames": 144
+    }
+  ],
+  "retarget": {
+    "sourceFilename": "male-walk-hands-fixed.glb",
+    "sourceSHA256": "d6fb50bcdb4757abfe3d5aa09a8b360316ea7bbfcea303d5cb30214ef0593a34",
+    "method": "Source bind-relative world rotation delta applied to target bind orientation, then converted through animated target parent. All native target bone lengths, local translations and scales preserved. In-place vertical bob only on BoneRoot.",
+    "boneMap": {
+      "Hip": "Hips",
+      "Waist": "Spine",
+      "Spine01": "Spine1",
+      "Spine02": "Spine2",
+      "NeckTwist01": "Neck",
+      "Head": "Head",
+      "L_Clavicle": "LeftShoulder",
+      "L_Upperarm": "LeftArm",
+      "L_Forearm": "LeftForeArm",
+      "L_Thigh": "LeftUpLeg",
+      "L_Calf": "LeftLeg",
+      "L_Foot": "LeftFoot",
+      "L_ToeBase": "LeftToeBase",
+      "R_Clavicle": "RightShoulder",
+      "R_Upperarm": "RightArm",
+      "R_Forearm": "RightForeArm",
+      "R_Thigh": "RightUpLeg",
+      "R_Calf": "RightLeg",
+      "R_Foot": "RightFoot",
+      "R_ToeBase": "RightToeBase"
+    },
+    "legScale": 1.1564770106064626,
+    "handsAndFingersAnimated": false,
+    "maximumAnimatedBounds": {
+      "minY": -0.03094356414005417,
+      "maxY": 0.9782966998261109,
+      "maxWidth": 0.6597279124327787,
+      "maxDepth": 0.5461590626553733
+    }
+  },
+  "textures": [
+    {
+      "name": "chibi_girl_3d_model_basecolor.jpg",
+      "format": "image/webp",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "chibi_girl_3d_model_rm.png",
+      "format": "image/webp",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "chibi_girl_3d_model_normal.jpg",
+      "format": "image/webp",
+      "size": [
+        512,
+        512
+      ]
+    }
+  ],
+  "optimization": {
+    "geometrySimplified": false,
+    "geometryWelded": false,
+    "geometryQuantized": false,
+    "allVertexAndSkinAttributesBitExact": true,
+    "allTrianglesAndWindingPreserved": true,
+    "compression": "EXT_meshopt_compression lossless buffer encoding",
+    "baseColor": "1024px WebP quality92",
+    "normalAndMaterial": "512px near-lossless WebP quality95"
+  },
+  "validation": {
+    "meshoptDecoded": true,
+    "bindBoundsUnchanged": true,
+    "originalFileUnmodified": true,
+    "sampledFrames": 33,
+    "allVerticesFinite": true,
+    "frozenHandAndFingerBones": 32,
+    "handSurfaceAreaRatio": {
+      "left": {
+        "min": 0.9999999437173497,
+        "max": 1.0000000517395553,
+        "triangles": 90
+      },
+      "right": {
+        "min": 0.9999998092806094,
+        "max": 1.0000001499958182,
+        "triangles": 22
+      }
+    },
+    "gpuPreviewVerified": true
+  },
+  "bounds": {
+    "min": [
+      -0.32434633015875514,
+      -2.498458867572495e-8,
+      -0.2669399428661175
+    ],
+    "max": [
+      0.32434625906150577,
+      0.9778226950833803,
+      0.2669397920249264
+    ]
+  }
+}

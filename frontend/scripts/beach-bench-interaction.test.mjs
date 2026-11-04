@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -12,7 +13,7 @@ async function load(file, dependencies, names) {
     .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
   // Keep the actual key-handler body; expose its binding without constructing WebGL.
   if (file.endsWith("/engine.ts")) source = source.replace(/\bonKey\s*=\s*\(([^)]*)\)\s*=>\s*\{/, "onKey($1) {");
-  const context = { ...dependencies };
+  const context = { ...hotSpring, ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(",")} };`, context);
   return context.api;
 }
@@ -22,7 +23,8 @@ const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGe
   ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot", "buildFireBenches"]);
 const resting = await load("../lib/beach/stargazing.ts", { THREE },
   ["STARGAZING", "claimedStargazingSlot", "applyLyingTransform", "stargazingBodyPoint", "stargazingApproach", "stargazingCameraDistance"]);
-const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry },
+const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
+const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles },
   ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "claimedBedSlot"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["findClearApproach", "resolveWalls"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
@@ -90,11 +92,11 @@ test("a valid claim fixes position and body direction while duplicate ticks pres
   assert.equal(engine.isLying, false);
   assert.deepEqual(views, ["third"]);
   close(engine.self.x, seat.x); close(engine.self.z, seat.z); close(engine.self.yaw, seat.yaw);
-  engine.self.yaw += 0.7; engine.self.pitch = 0.2;
+  engine.orbitYaw += 0.7; engine.self.pitch = 0.2;
   engine.updateSelf(0.1);
-  const yaw = engine.self.yaw, beforeCamera = camera.position.clone(), rotation = camera.quaternion.clone();
+  const yaw = engine.orbitYaw, beforeCamera = camera.position.clone(), rotation = camera.quaternion.clone();
   engine.applyRest(claim(3)); engine.updateSelf(0.1);
-  close(engine.self.yaw, yaw); close(engine.self.pitch, 0.2);
+  close(engine.orbitYaw, yaw); close(engine.self.yaw, seat.yaw); close(engine.self.pitch, 0.2);
   assert.ok(beforeCamera.distanceTo(camera.position) < 1e-6 && rotation.angleTo(camera.quaternion) < 1e-6);
   close(engine.getSelf().yaw, seat.yaw, "camera dragging never changes the body's server yaw");
   assert.equal(engine.getSelf().moving, false);

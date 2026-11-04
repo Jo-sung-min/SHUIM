@@ -9,9 +9,102 @@ const source = stripTypeScriptTypes(typed).replace(/\bexport\s+(?=(?:async\s+)?f
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 function setup(fetch) {
   const context = { fetch, Error, AbortSignal };
-  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, setBeachRest, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, setBeachRest, setBeachLighting, launchBeachFireworks, readFireworkEvent, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
   return context.api;
 }
+
+const fireworksEvent = { id: "c5b26760-2e99-4c83-94d6-5a25794c2f17", seed: 9157, startedAt: 1_000_000, durationMs: 12_000 };
+const fireworksState = { fireworks: [fireworksEvent], serverTime: 1_001_000, fireworksCooldownUntil: 1_015_000 };
+
+test("fireworks and onsen controls require their own explicit server capabilities", async () => {
+  for (const grant of [undefined, null, false, "true", 1]) {
+    const entered = await setup(async () => response({ ...fireworksState, fireworksControl: grant, onsenEnabled: grant,
+      lightingControl: true, careCapabilities: { hug: true } })).enterBeach("room");
+    assert.equal(entered.fireworksControl, false);
+    assert.equal(entered.onsenEnabled, false);
+    assert.equal(entered.fireworks.length, 1, "regular visitors still watch a shared event");
+  }
+  const unsupported = await setup(async () => response({ fireworksControl: true })).enterBeach("old-room");
+  assert.equal(unsupported.fireworksControl, false, "a legacy response cannot grant an unsupported action");
+  assert.equal(unsupported.fireworks.length, 0);
+  const entered = await setup(async () => response({ ...fireworksState, fireworksControl: true, onsenEnabled: true })).enterBeach("room");
+  assert.equal(entered.fireworksControl, true); assert.equal(entered.onsenEnabled, true);
+});
+
+test("fireworks launch sends only the owned ticket and stable retry UUID and accepts the confirmed event", async () => {
+  const calls = [], result = { event: fireworksEvent, serverTime: 1_001_000, cooldownUntil: 1_015_000 };
+  const api = setup(async (url, options) => { calls.push({ url, options }); return response(result); });
+  const requestId = "fcf05151-67de-4974-bdb1-67e64d8549db";
+  const first = await api.launchBeachFireworks("admin-visit", requestId);
+  const retried = await api.launchBeachFireworks("admin-visit", requestId);
+  assert.deepEqual(JSON.parse(JSON.stringify(first)), result);
+  assert.equal(first.event.id, retried.event.id);
+  for (const call of calls) {
+    assert.equal(call.url, "/api/beach/fireworks");
+    assert.deepEqual(JSON.parse(call.options.body), { ticket: "admin-visit", requestId });
+    assert.equal(call.options.credentials, "same-origin");
+    assert.ok(call.options.signal instanceof AbortSignal);
+  }
+  const oldRetry = await setup(async () => response({ ...result, serverTime: 1_030_000 })).launchBeachFireworks("admin-visit", requestId);
+  assert.equal(oldRetry.event.startedAt, fireworksEvent.startedAt, "an expired retry is acknowledged without inventing a fresh start time");
+});
+
+test("fireworks snapshots deduplicate repeated IDs, order events and discard expired animations", async () => {
+  const api = setup(async () => response({ ...fireworksState, fireworks: [fireworksEvent, fireworksEvent] }));
+  const tick = await api.tickBeach({ ticket: "observer" });
+  assert.equal(tick.fireworks.length, 1);
+  const expired = await setup(async () => response({ ...fireworksState, serverTime: 1_012_000 })).tickBeach({ ticket: "observer" });
+  assert.equal(expired.fireworks.length, 0);
+  assert.equal(expired.fireworksCooldownUntil, 1_015_000);
+  const earlier = { ...fireworksEvent, id: "3684c17d-35de-437d-a728-6324d996d09e", startedAt: 999_500 };
+  const ordered = await setup(async () => response({ ...fireworksState, fireworks: [fireworksEvent, earlier] })).tickBeach({ ticket: "observer" });
+  assert.equal(ordered.fireworks[0].id, earlier.id);
+});
+
+test("malformed fireworks cannot allocate unbounded effects or introduce untrusted event fields", async () => {
+  for (const invalid of [null, {}, { ...fireworksEvent, id: "not-an-id" }, { ...fireworksEvent, seed: 0 },
+    { ...fireworksEvent, seed: 1.5 }, { ...fireworksEvent, seed: 2147483647 }, { ...fireworksEvent, durationMs: 999999 },
+    { ...fireworksEvent, startedAt: -1 }, { ...fireworksEvent, startedAt: 1_010_000 }, { ...fireworksEvent, admin: true }]) {
+    await assert.rejects(setup(async () => response({ ...fireworksState, fireworks: [invalid] })).tickBeach({ ticket: "observer" }));
+    await assert.rejects(setup(async () => response({ event: invalid, serverTime: 1_001_000, cooldownUntil: 1_015_000 })).launchBeachFireworks("admin", "retry"));
+  }
+  for (const value of [{ ...fireworksState, fireworks: [fireworksEvent, fireworksEvent, fireworksEvent] },
+    { ...fireworksState, serverTime: null }, { ...fireworksState, fireworksCooldownUntil: 1_000_000 },
+    { ...fireworksState, fireworksCooldownUntil: 1_100_000 }, { ...fireworksState, fireworks: [fireworksEvent, { ...fireworksEvent, seed: 2 }] }]) {
+    await assert.rejects(setup(async () => response(value)).enterBeach("room"));
+  }
+  await assert.rejects(setup(async () => response({ event: fireworksEvent, serverTime: 1_001_000, cooldownUntil: 1_015_000, fireworksControl: true }))
+    .launchBeachFireworks("admin", "retry"));
+});
+
+test("fireworks authorization, expired visits and cooldown errors never fabricate a launch", async () => {
+  for (const status of [401, 403]) {
+    const api = setup(async () => response({ error: "관리자만 시작할 수 있어요." }, status));
+    await assert.rejects(api.launchBeachFireworks("member", "retry"), error => error instanceof api.BeachUnavailable && error.status === status);
+  }
+  const gone = setup(async () => response({}, 410));
+  await assert.rejects(gone.launchBeachFireworks("expired", "retry"), error => error instanceof gone.BeachGone);
+  const cooldown = setup(async () => response({ error: "잠시 기다려 주세요." }, 429));
+  await assert.rejects(cooldown.launchBeachFireworks("admin", "retry"), error => error instanceof cooldown.BeachCooldown);
+});
+
+test("onsen claims accept only the six shared seats or three floating places at their real coordinates", async () => {
+  for (const spotId of ["onsen-benches", "onsen-float"]) {
+    const sitting = spotId === "onsen-benches";
+    for (let slot = 0; slot < (sitting ? 6 : 3); slot++) {
+      const angle = (15 + slot * 30) * Math.PI / 180;
+      const state = { spotId, slot, pose: sitting ? "sitting" : "lying", x: sitting ? Math.cos(angle) * 3.55 : (slot - 1) * 2.4,
+        z: sitting ? 45 + Math.sin(angle) * 3.55 : 43.3, yaw: 0 };
+      const api = setup(async () => response(state));
+      assert.equal((await api.setBeachRest("member", sitting ? "sit" : "lie", spotId)).slot, slot);
+      assert.equal((await setup(async () => response({ selfRest: state })).tickBeach({ ticket: "member" })).selfRest.slot, slot);
+      for (const bad of [{ ...state, x: 20 }, { ...state, z: 12 }, { ...state, yaw: 1 },
+        { ...state, slot: sitting ? 6 : 3 }, { ...state, pose: sitting ? "lying" : "sitting" }]) {
+        await assert.rejects(setup(async () => response(bad)).setBeachRest("member", sitting ? "sit" : "lie", spotId));
+      }
+    }
+  }
+});
 
 test("entry and occupancy requests carry the selected community", async () => {
   const calls = [];
@@ -64,6 +157,57 @@ test("entry capabilities fail closed for legacy or malformed permissions and cha
   const api = setup(async () => response({ careCapabilities: grants.shift() }));
   assert.equal((await api.enterBeach("ours")).careCapabilities.hug, true);
   assert.equal((await api.enterBeach("ours")).careCapabilities.hug, false, "a new member entry cannot retain the previous admin's capability");
+});
+
+test("room time controls require both an explicit server grant and a valid shared clock", async () => {
+  const lighting = { mode: "night", hour: 20, version: 4 };
+  for (const grant of [undefined, null, "admin", 1, false]) {
+    const entered = await setup(async () => response({ lighting, lightingControl: grant, careCapabilities: { hug: true } })).enterBeach("ours");
+    assert.equal(entered.lightingControl, false, "another permission cannot grant clock control");
+  }
+  for (const invalid of [undefined, null, { mode: "night", hour: 23, version: 4 }, { mode: "auto", hour: 12, version: 0 },
+    { mode: "__proto__", hour: null, version: 0 }, { mode: "day", hour: 12, version: -1 }]) {
+    const entered = await setup(async () => response({ lighting: invalid, lightingControl: true })).enterBeach("ours");
+    assert.equal(entered.lightingControl, false);
+    assert.equal(entered.lighting, null);
+  }
+  const entered = await setup(async () => response({ lighting, lightingControl: true })).enterBeach("ours");
+  assert.equal(entered.lightingControl, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(entered.lighting)), lighting);
+});
+
+test("clock changes send the owned visit ticket and accept only confirmed matching presets", async () => {
+  const calls = [];
+  const hours = { auto: null, day: 12, sunset: 18, night: 20 };
+  const api = setup(async (url, options) => {
+    const body = JSON.parse(options.body); calls.push({ url, options, body });
+    return response({ mode: body.mode, hour: hours[body.mode], version: calls.length });
+  });
+  for (const [mode, hour] of Object.entries(hours)) {
+    const value = await api.setBeachLighting("admin-visit", mode);
+    assert.equal(value.mode, mode); assert.equal(value.hour, hour);
+  }
+  for (const call of calls) {
+    assert.equal(call.url, "/api/beach/lighting");
+    assert.equal(call.body.ticket, "admin-visit");
+    assert.equal(call.options.credentials, "same-origin");
+    assert.ok(call.options.signal instanceof AbortSignal);
+    assert.deepEqual(Object.keys(call.body).sort(), ["mode", "ticket"], "no client role or room claim is trusted");
+  }
+  for (const value of [{ mode: "day", hour: 12, version: 1 }, { mode: "night", hour: 20, version: 1.5 }, { mode: "night", hour: 7, version: 1 }, {}]) {
+    await assert.rejects(setup(async () => response(value)).setBeachLighting("admin-visit", "night"));
+  }
+});
+
+test("everyone receives a valid shared clock while denied clock actions remain ordinary errors", async () => {
+  const value = { mode: "sunset", hour: 18, version: 8 };
+  const tick = await setup(async () => response({ lighting: value })).tickBeach({ ticket: "member-visit", x: 0, z: 8, yaw: 0, moving: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(tick.lighting)), value);
+  await assert.rejects(setup(async () => response({ lighting: { ...value, hour: 17 } })).tickBeach({ ticket: "member-visit" }));
+  const denied = setup(async () => response({ error: "관리자만 바닷가 시간을 바꿀 수 있어요." }, 403));
+  await assert.rejects(denied.setBeachLighting("member-visit", "night"), error => error instanceof denied.BeachUnavailable && error.status === 403);
+  const gone = setup(async () => response({}, 410));
+  await assert.rejects(gone.setBeachLighting("expired", "day"), error => error instanceof gone.BeachGone);
 });
 
 test("wave targets the selected person and revoked hug stays a non-terminal tick result", async () => {

@@ -8,8 +8,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
@@ -26,7 +28,7 @@ import java.util.function.LongSupplier;
  */
 public class BeachRoom {
     /** 세계 경계 (m). 물가는 z = 0, 바다는 z 가 음수 쪽. 들어오는 위치는 전부 이 안으로 자른다 */
-    public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -1, MAX_Z = 31;
+    public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -1, MAX_Z = 55;
     /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
     public static final int CAPACITY = 100;
     /** 이만큼 tick 이 없으면 나간 것 */
@@ -45,19 +47,28 @@ public class BeachRoom {
     public static final int REST_SLOTS = 8;
     public static final double REST_X = 7, REST_Z = 7, REST_FEET_RADIUS = 2.65, REST_REACH = 5.5;
     public static final int BED_SLOTS = 3;
+    /** Beds sit deeper inside the enlarged shelters; matches the frontend bed-slot anchor. */
+    public static final double BED_FEET_OFFSET_Z = 1.5;
     public static final String BENCH_SPOT = "fire-benches";
     public static final int BENCH_SLOTS = 12;
     public static final double BENCH_REACH = 2.25;
+    public static final String ONSEN_BENCH_SPOT = "onsen-benches", ONSEN_FLOAT_SPOT = "onsen-float";
+    public static final int ONSEN_BENCH_SLOTS = 6, ONSEN_FLOAT_SLOTS = 3;
+    public static final double ONSEN_X = 0, ONSEN_Z = 45, ONSEN_REACH = 2.2, ONSEN_BENCH_RADIUS = 3.55;
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean bench() { return BENCH_SPOT.equals(id); }
+        boolean onsen() { return ONSEN_BENCH_SPOT.equals(id) || ONSEN_FLOAT_SPOT.equals(id); }
+        boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id); }
     }
     private record BenchSeat(double x, double z, double yaw) {}
     private static final Map<String, RestSpot> REST_SPOTS = Map.of(
         REST_SPOT, new RestSpot(REST_SPOT, REST_X, REST_Z, REST_SLOTS, false),
-        "hut-pine", new RestSpot("hut-pine", -13, 23, BED_SLOTS, true),
-        "hut-wave", new RestSpot("hut-wave", 0, 25, BED_SLOTS, true),
-        "hut-sunset", new RestSpot("hut-sunset", 13, 23, BED_SLOTS, true),
-        BENCH_SPOT, new RestSpot(BENCH_SPOT, 0, 12, BENCH_SLOTS, false));
+        "hut-pine", new RestSpot("hut-pine", -13, 24.8, BED_SLOTS, true),
+        "hut-wave", new RestSpot("hut-wave", 0, 26.8, BED_SLOTS, true),
+        "hut-sunset", new RestSpot("hut-sunset", 13, 24.8, BED_SLOTS, true),
+        BENCH_SPOT, new RestSpot(BENCH_SPOT, 0, 12, BENCH_SLOTS, false),
+        ONSEN_BENCH_SPOT, new RestSpot(ONSEN_BENCH_SPOT, ONSEN_X, ONSEN_Z, ONSEN_BENCH_SLOTS, false),
+        ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false));
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
@@ -96,7 +107,7 @@ public class BeachRoom {
     }
 
     private static String restPose(Presence p) {
-        return p.restSlot == null ? "standing" : BENCH_SPOT.equals(p.restSpot) ? "sitting" : "lying";
+        return p.restSlot == null ? "standing" : BENCH_SPOT.equals(p.restSpot) || ONSEN_BENCH_SPOT.equals(p.restSpot) ? "sitting" : "lying";
     }
 
     private static BenchSeat benchSeat(int slot) {
@@ -104,6 +115,28 @@ public class BeachRoom {
         double offset = slot % 2 == 0 ? -.5 : .5;
         return new BenchSeat(Math.sin(angle) * 4 + Math.cos(angle) * offset,
             12 + Math.cos(angle) * 4 - Math.sin(angle) * offset, angle);
+    }
+
+    private static BenchSeat onsenSlot(RestSpot spot, int slot) {
+        if (ONSEN_FLOAT_SPOT.equals(spot.id())) return new BenchSeat((slot - 1) * 2.4, 43.3, 0);
+        double angle = Math.toRadians(15 + slot * 30);
+        return new BenchSeat(Math.cos(angle) * ONSEN_BENCH_RADIUS, ONSEN_Z + Math.sin(angle) * ONSEN_BENCH_RADIUS, 0);
+    }
+
+    private static int nearestOnsenSlot(Presence me, RestSpot spot, boolean[] used) {
+        boolean nearby = false;
+        int closest = -1;
+        double closestDistance = Double.POSITIVE_INFINITY;
+        for (int slot = 0; slot < spot.capacity(); slot++) {
+            BenchSeat place = onsenSlot(spot, slot);
+            double distance = Math.hypot(me.x - place.x(), me.z - place.z());
+            if (distance > ONSEN_REACH + 1e-9) continue;
+            nearby = true;
+            if (!used[slot] && distance < closestDistance) { closest = slot; closestDistance = distance; }
+        }
+        if (!nearby) throw ApiException.badRequest("온천의 쉴 자리 가까이에서 이용해 주세요.");
+        if (closest < 0) throw new ApiException(409, "가까운 자리가 모두 차 있어요. 다른 자리로 다가가 주세요.");
+        return closest;
     }
 
     /** A full nearby bench must not send the visitor to a different, distant bench. */
@@ -131,27 +164,103 @@ public class BeachRoom {
         public Received(int comfort, int hug) { this(comfort, hug, 0); }
     }
     public record CareCapabilities(boolean wave, boolean hug) {}
+    /** Room-wide, in-memory lighting. Null hour resumes the real time of day. */
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record Lighting(String mode, Integer hour, long version) {}
+    public static final Lighting AUTO_LIGHTING = new Lighting("auto", null, 0);
+    private volatile Lighting lighting = AUTO_LIGHTING;
+
+    public Lighting lighting() { return lighting; }
+
+    public static final int FIREWORK_DURATION_MS = 12_000;
+    public static final long FIREWORK_COOLDOWN_MS = 15_000;
+    private static final long FIREWORK_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000L;
+    public record FireworkEvent(String id, int seed, long startedAt, int durationMs) {}
+    public record FireworksState(List<FireworkEvent> events, long cooldownUntil, long serverTime) {}
+    public record FireworkLaunch(FireworkEvent event, long serverTime, long cooldownUntil) {}
+    private final LinkedHashMap<UUID, FireworkEvent> fireworkRequests = new LinkedHashMap<>();
+    private FireworkEvent activeFirework;
+    private long fireworksCooldownUntil;
+
+    public synchronized FireworksState fireworks() {
+        long now = clock.getAsLong();
+        boolean active = activeFirework != null && now >= activeFirework.startedAt()
+            && now - activeFirework.startedAt() < activeFirework.durationMs();
+        return new FireworksState(active ? List.of(activeFirework) : List.of(), fireworksCooldownUntil, now);
+    }
+
+    /** Session role and membership are checked by the controller; the room lock rechecks ticket ownership. */
+    synchronized FireworkLaunch launchFireworks(String ticket, String userId, String requestId) {
+        long now = clock.getAsLong();
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        UUID key;
+        try {
+            if (requestId == null || requestId.length() != 36) throw new IllegalArgumentException();
+            key = UUID.fromString(requestId);
+            if (!key.toString().equalsIgnoreCase(requestId)) throw new IllegalArgumentException();
+        } catch (IllegalArgumentException e) {
+            throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
+        }
+        // Keep retry identities beyond the animation lifetime without growing indefinitely.
+        // At one launch per 15 seconds this holds at most 5,761 entries per room.
+        var previous = fireworkRequests.entrySet().iterator();
+        while (previous.hasNext()) {
+            if (now - previous.next().getValue().startedAt() < FIREWORK_REQUEST_TTL_MS) break;
+            previous.remove();
+        }
+        FireworkEvent retried = fireworkRequests.get(key);
+        if (retried != null) return new FireworkLaunch(retried, now, fireworksCooldownUntil);
+        if (now < fireworksCooldownUntil) throw new ApiException(429, "불꽃놀이가 끝난 뒤 잠시 기다려 주세요.");
+        FireworkEvent event = new FireworkEvent(UUID.randomUUID().toString(), ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE), now, FIREWORK_DURATION_MS);
+        activeFirework = event;
+        fireworksCooldownUntil = now + FIREWORK_COOLDOWN_MS;
+        fireworkRequests.put(key, event);
+        return new FireworkLaunch(event, now, fireworksCooldownUntil);
+    }
+
+    /** Called only after the controller verifies the current administrator and owned visit. */
+    synchronized Lighting setLighting(String mode) {
+        if (mode == null) throw ApiException.badRequest("낮, 노을, 밤, 자동 중에서 골라 주세요.");
+        Integer hour = switch (mode) {
+            case "auto" -> null;
+            case "day" -> 12;
+            case "sunset" -> 18;
+            case "night" -> 20;
+            default -> throw ApiException.badRequest("낮, 노을, 밤, 자동 중에서 골라 주세요.");
+        };
+        // Repeated clicks/retries preserve the version; every actual change advances it.
+        if (!mode.equals(lighting.mode())) lighting = new Lighting(mode, hour, lighting.version() + 1);
+        return lighting;
+    }
 
     /** tick 응답. care 는 위로를 보내지 않았으면 null ("sent" | "cooldown" | "gone") */
     public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                              BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
-                             @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities) {
+                             @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities, Lighting lighting,
+                             List<FireworkEvent> fireworks, long fireworksCooldownUntil) {
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                          BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
+                          CareCapabilities careCapabilities, Lighting lighting) {
+            this(players, events, count, received, care, fire, serverTime, selfRest, careCapabilities, lighting, List.of(), 0);
+        }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care) {
-            this(players, events, count, received, care, null, 0, null, null);
+            this(players, events, count, received, care, null, 0, null, null, AUTO_LIGHTING);
         }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime) {
-            this(players, events, count, received, care, fire, serverTime, null, null);
+            this(players, events, count, received, care, fire, serverTime, null, null, AUTO_LIGHTING);
         }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest) {
-            this(players, events, count, received, care, fire, serverTime, selfRest, null);
+            this(players, events, count, received, care, fire, serverTime, selfRest, null, AUTO_LIGHTING);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, value.serverTime(), selfRest, careCapabilities);
+            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil);
         }
         public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
-            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities);
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil);
         }
     }
 
@@ -215,7 +324,7 @@ public class BeachRoom {
         boolean sees(Presence other) { return !excluded.contains(other.userId); }
     }
 
-    /** 선택이 없는 기존 방문도 남자 0 · 여자 1 중 같은 기본 모습으로 입장한다. */
+    /** 선택이 없는 기존 방문은 3D 남자 0 · 픽셀 여자 1 중 같은 기본 모습으로 입장한다. */
     public static int skinOf(String userId) { return Math.floorMod(userId.hashCode(), 2); }
 
     static Integer selectedSkin(String character) {
@@ -223,6 +332,8 @@ public class BeachRoom {
         return switch (character) {
             case "male" -> 0;
             case "female" -> 1;
+            case "pixel-male" -> 2;
+            case "female-3d" -> 3;
             default -> throw ApiException.badRequest("캐릭터를 다시 골라 주세요.");
         };
     }
@@ -299,8 +410,8 @@ public class BeachRoom {
         if (!"lie".equals(action) && !"sit".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("앉기, 눕기, 일어나기 중에서 골라 주세요.");
         RestSpot spot = REST_SPOTS.get(spotId == null ? REST_SPOT : spotId);
         if (spot == null) throw ApiException.badRequest("쉴 자리를 다시 골라 주세요.");
-        if (!"stand".equals(action) && "sit".equals(action) != spot.bench())
-            throw ApiException.badRequest("벤치에서는 앉기를, 침구와 별빛 자리에서는 눕기를 골라 주세요.");
+        if (!"stand".equals(action) && "sit".equals(action) != spot.sitting())
+            throw ApiException.badRequest("앉거나 누울 수 있는 자리를 다시 골라 주세요.");
         synchronized (me) {
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
@@ -319,7 +430,8 @@ public class BeachRoom {
                 me.lastSeen = now;
                 return RestPresence.of(me); // Lost responses can be retried without taking another slot.
             }
-            if (!spot.bench() && Math.hypot(me.x - spot.x(), me.z - spot.z()) > REST_REACH) {
+            double reachZ = spot.z() + (spot.bed() ? BED_FEET_OFFSET_Z : 0);
+            if (!spot.bench() && !spot.onsen() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
                 throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
             boolean[] used = new boolean[spot.capacity()];
@@ -327,21 +439,28 @@ public class BeachRoom {
                 Integer slot = other.restSlot;
                 if (slot != null && spot.id().equals(other.restSpot) && live(other, now)) used[slot] = true;
             }
-            int slot = spot.bench() ? nearestBenchSlot(me, used) : 0;
-            if (!spot.bench()) while (slot < spot.capacity() && used[slot]) slot++;
+            int slot = spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used) : 0;
+            if (!spot.bench() && !spot.onsen()) while (slot < spot.capacity() && used[slot]) slot++;
             if (slot == spot.capacity()) throw new ApiException(409, spot.bed() ? "이 오두막의 침구가 모두 사용 중이에요. 다른 오두막을 골라 주세요." : "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
             me.standingX = me.x;
             me.standingZ = me.z;
             me.standingYaw = me.yaw;
-            if (spot.bench()) {
-                BenchSeat seat = benchSeat(slot);
+            if (spot.onsen()) {
+                // Keep the saved return point inside the water, clear of the rim and rear seat slabs.
+                double radius = Math.hypot(me.x - ONSEN_X, me.z - ONSEN_Z);
+                double scale = radius > 2.7 ? 2.7 / radius : 1;
+                me.standingX = ONSEN_X + (me.x - ONSEN_X) * scale;
+                me.standingZ = ONSEN_Z + (me.z - ONSEN_Z) * scale;
+            }
+            if (spot.bench() || spot.onsen()) {
+                BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : benchSeat(slot);
                 me.x = seat.x();
                 me.z = seat.z();
                 me.yaw = seat.yaw();
             } else {
                 double theta = spot.bed() ? Math.PI : slot * Math.PI * 2 / REST_SLOTS;
                 me.x = spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
-                me.z = spot.bed() ? spot.z() - 0.1 : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
+                me.z = spot.bed() ? spot.z() + BED_FEET_OFFSET_Z : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
                 me.yaw = theta;
             }
             me.restSpot = spot.id();
@@ -408,8 +527,9 @@ public class BeachRoom {
             .toList();
         List<CareEvent> events = new ArrayList<>();
         for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
+        FireworksState fireworks = fireworks();
         return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
-            care, null, now, RestPresence.of(me));
+            care, null, fireworks.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil());
     }
 
     /** "sent" | "cooldown" | "gone". 종류가 이상하면 400 */

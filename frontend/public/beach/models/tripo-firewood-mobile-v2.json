@@ -1,0 +1,93 @@
+{
+  "source": "User-provided Tripo firewood model",
+  "sourceFilename": "campfire 3d model.glb",
+  "sourceSHA256": "07f781c39606971b59fa0e58d4bf20e75a769aaa7a3aa164ea51f2a44d89ac33",
+  "sourceBytes": 70292668,
+  "sourceMesh": {
+    "meshes": 1,
+    "primitives": 1,
+    "vertices": 977299,
+    "triangles": 1884523
+  },
+  "sourceBounds": {
+    "min": [
+      -0.4376678466796875,
+      0,
+      -0.4933929443359375
+    ],
+    "max": [
+      0.4376678466796875,
+      0.20726773142814636,
+      0.4933929443359375
+    ]
+  },
+  "asset": "tripo-firewood-mobile-v2.glb",
+  "bytes": 951164,
+  "mesh": {
+    "meshes": 1,
+    "primitives": 1,
+    "vertices": 20176,
+    "triangles": 28264
+  },
+  "decodedBounds": {
+    "min": [
+      -0.437696697605203,
+      0.0006412486666111245,
+      -0.4929351806640625
+    ],
+    "max": [
+      0.437635662448953,
+      0.20696980551544147,
+      0.4925994873046875
+    ]
+  },
+  "requiredExtensions": [
+    "EXT_meshopt_compression",
+    "EXT_texture_webp",
+    "KHR_mesh_quantization"
+  ],
+  "textures": [
+    {
+      "name": "campfire_3d_model_basecolor.jpg",
+      "format": "image/webp",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "campfire_3d_model_rm.jpg",
+      "format": "image/webp",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "campfire_3d_model_normal.png",
+      "format": "image/webp",
+      "size": [
+        512,
+        512
+      ]
+    }
+  ],
+  "optimization": {
+    "simplifyRatio": 0.015,
+    "errorLimit": 0.003,
+    "positionBits": 14,
+    "texcoordBits": 12,
+    "compression": "EXT_meshopt_compression (high)",
+    "baseColor": "1024px WebP quality 90",
+    "normalAndMaterial": "512px near-lossless WebP quality 95",
+    "originalFileUnmodified": true
+  },
+  "validation": {
+    "meshoptDecoded": true,
+    "finiteAttributes": true,
+    "validIndices": true,
+    "normalsMinLength": 0.9939989819250078,
+    "normalsMaxLength": 1.0051945189027056,
+    "maxBoundsAxisError": 0.00079345703125
+  }
+}

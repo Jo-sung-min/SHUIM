@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { assetLoader, assetUrl } from "../assets";
 
 export interface FireBench {
   id: string;
@@ -59,7 +60,7 @@ export function claimedFireBenchSlot(state: { pose?: string; spotId?: string | n
 
 function woodTexture(name: string, color = false) {
   const texture = typeof document === "undefined" ? new THREE.Texture()
-    : new THREE.TextureLoader().load(`/beach/real/${name}.jpg`);
+    : assetLoader(new THREE.TextureLoader()).load(assetUrl(`/beach/real/${name}.jpg`));
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.anisotropy = 4;
   if (color) texture.colorSpace = THREE.SRGBColorSpace;

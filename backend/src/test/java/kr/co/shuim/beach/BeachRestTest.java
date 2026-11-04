@@ -159,7 +159,7 @@ class BeachRestTest {
     @Test
     void eachHutHasThreeIndependentBedsWithSharedPosesAndTheCircleIsUnchanged() {
         String[] spots = {"hut-pine", "hut-wave", "hut-sunset"};
-        double[] xs = {-13, 0, 13}, zs = {23, 25, 23};
+        double[] xs = {-13, 0, 13}, zs = {24.8, 26.8, 24.8};
         for (int h = 0; h < 3; h++) {
             final String spot = spots[h];
             for (int i = 0; i < 3; i++) {
@@ -169,7 +169,7 @@ class BeachRestTest {
                 assertEquals(i, rest.slot());
                 assertEquals(spot, rest.spotId());
                 assertEquals(xs[h] + (i - 1) * 1.9, rest.x(), 1e-10);
-                assertEquals(zs[h] - .1, rest.z(), 1e-10);
+                assertEquals(zs[h] + 1.5, rest.z(), 1e-10);
                 assertEquals(Math.PI, rest.yaw(), 1e-10);
                 assertEquals(rest, room.rest(p.ticket(), "lie", spot));
                 assertEquals(rest, room.tick(p.ticket(), -20, 0, 0, true, null, null).selfRest());
@@ -236,5 +236,30 @@ class BeachRestTest {
             assertEquals(Set.of(0, 1, 2), used);
             assertEquals(9, full);
         }
+    }
+
+    @Test
+    void deeperBedsUseTheirActualFeetForReachAndStandingRestoresTheRearInteriorPosition() {
+        var p = visitor("deep-bed");
+        double bedZ = 28.3;
+        room.tick(p.ticket(), 0, bedZ - BeachRoom.REST_REACH - .001, 0, false, null, null);
+        assertEquals(400, assertThrows(ApiException.class, () -> room.rest(p.ticket(), "lie", "hut-wave")).status());
+        room.tick(p.ticket(), 0, bedZ - BeachRoom.REST_REACH, 0, false, null, null);
+        assertEquals(bedZ, room.rest(p.ticket(), "lie", "hut-wave").z(), 1e-10);
+        room.rest(p.ticket(), "stand", null);
+        room.tick(p.ticket(), 0, 31.9, .4, false, null, null);
+        assertEquals(31.9, p.z(), 1e-10, "the expanded interior is no longer clamped at the old back boundary");
+        assertEquals(bedZ, room.rest(p.ticket(), "lie", "hut-wave").z(), 1e-10);
+        var standing = room.rest(p.ticket(), "stand", null);
+        assertEquals(31.9, standing.z(), 1e-10);
+        assertEquals(.4, standing.yaw(), 1e-10);
+    }
+
+    @Test
+    void theHiddenSpaRemainsInsideTheSharedMovementBounds() {
+        var p = visitor("spa-guest");
+        assertEquals(44, room.tick(p.ticket(), 0, 44, 0, true, null, null).selfRest().z());
+        assertEquals(52.2, room.tick(p.ticket(), 0, 52.2, 0, true, null, null).selfRest().z());
+        assertEquals(55, room.tick(p.ticket(), 0, 60, 0, true, null, null).selfRest().z());
     }
 }

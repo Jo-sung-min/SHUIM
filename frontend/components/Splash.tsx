@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { SITE } from "@/lib/site";
+import { assetUrl } from "@/lib/assets";
 import InlineScript from "./InlineScript";
 
 /**
@@ -21,7 +22,7 @@ const PLACEHOLDER =
   "data:image/webp;base64,UklGRvYAAABXRUJQVlA4IOoAAABwBgCdASoSACAAPu1iqU2ppaOiMAgBMB2JQBWGbOZ8/XtbUgPWvGPb6uzBlxqGcl/MZ25gjT7pCsxR7cAA4VrTWVEDArlLSX//odMXhS3mn7EiKEchKBmsPywXl8/VuT3sXs6h+2jPVrRCq/7A/BKxcjccM5+4Cs623+qQI/3yJctR+18yZcSLaxKtRXjYAL4ySdtheU6pRlko5wxplmi0AaCk93PEWcN4MRZ7gstB0VBj0xDegPCI9HmsCDndsEiu72Rab4eGbxNAgr1lLgdHQD5TVRyLsNRr/F+38qJs8npF6Wdx/dvqAAA=";
 
 /** body 맨 앞의 img 라 브라우저가 HTML 을 읽자마자 받기 시작한다 (따로 preload 하지 않음: 건너뛸 때 경고가 남) */
-const SPLASH_SRC = "/splash.webp";
+const SPLASH_SRC = assetUrl("/splash.webp");
 
 /**
  * 1초 기다림 + 0.9초 옅어짐 (globals.css 의 .splash[data-state="play"] 와 같은 값).

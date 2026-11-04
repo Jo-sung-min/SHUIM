@@ -1,0 +1,55 @@
+{
+  "asset": "tripo-male-rigged-mobile-v3.glb",
+  "source": "tripo-male-rigged-mobile-v2.glb",
+  "kind": "male",
+  "sourceBytes": 1509936,
+  "bytes": 881272,
+  "reductionPercent": 41.63514215172034,
+  "sourceSHA256": "d40c5293988d5ed1ff721eacdee2603d49824402cd21700fc235dab196b6955e",
+  "sha256": "9a9cde30dcc3abdb18b1b71991fa531cbbfe9e43ffa44468f930d4bdfa430c12",
+  "triangles": 19420,
+  "vertices": 19107,
+  "textures": [
+    {
+      "name": "tripo_node_9c58ce80-7cec-46f9-b829-658e2702e8e5_Normal_Bake",
+      "size": [
+        256,
+        256
+      ],
+      "bytes": 28154
+    },
+    {
+      "name": "tripo_node_9c58ce80-7cec-46f9-b829-658e2702e8e5_BaseColor",
+      "size": [
+        1024,
+        1024
+      ],
+      "bytes": 297676
+    },
+    {
+      "name": "anime_chibi_figure_3d_model_metallic-anime_chibi_figure_3d_model_roughness",
+      "size": [
+        256,
+        256
+      ],
+      "bytes": 17968
+    }
+  ],
+  "optimization": {
+    "baseColor": "Original 1024px WebP unchanged",
+    "normalAndMaterial": "256px WebP quality90",
+    "normals": "12-bit precision in signed16 storage",
+    "uv": "16-bit precision",
+    "positionsAndSkinAndAnimations": "bit-exact",
+    "simplified": false
+  },
+  "validation": {
+    "positionsSkinBindAndAnimationIdentical": true,
+    "baseColorIdentical": true,
+    "triangleCountAndWindingIdentical": true,
+    "maxAttributeError": {
+      "normal": 0.00027139479106885744,
+      "uv": 0.00000762946956572863
+    }
+  }
+}

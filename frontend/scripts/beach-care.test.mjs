@@ -5,18 +5,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 async function load(file, dependencies, names) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
   const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
     .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
-  const context = { ...dependencies };
+  const context = { ...hotSpring, ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(",")} };`, context);
   return context.api;
 }
 const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW", "CHAR_ANIM"]);
 const resting = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "claimedStargazingSlot", "stargazingBodyPoint"]);
-const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["claimedBedSlot", "bedSlot"]);
+const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
+const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["claimedBedSlot", "bedSlot"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const { CareGestures } = await load("../lib/beach/care-effects.ts", { THREE }, ["CareGestures"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
@@ -132,4 +134,33 @@ test("effect materials expire once, shared geometry survives until disposal, and
   assert.equal(scene.children.length, 0);
   engine.playCare("wave", null, null);
   assert.equal(scene.children.length, 0, "a disposed engine cannot create late effects");
+});
+
+function gestureAvatar() {
+  return { calls: [], playGesture(kind, target) { this.calls.push({ kind, x: target?.x, z: target?.z }); } };
+}
+
+test("confirmed care events animate the 3D sender and face the recipient, including local self", () => {
+  const { engine, addPlayer } = fixture();
+  const source = addPlayer("sender", 5, 2), target = addPlayer("recipient", -4, 3);
+  source.avatar = gestureAvatar(); target.avatar = gestureAvatar();
+  engine.selfNode = { avatar: gestureAvatar() };
+  assert.equal(source.avatar.calls.length, 0, "avatar creation alone does not trigger a social action");
+  engine.playCare("wave", "recipient", "sender");
+  assert.deepEqual(source.avatar.calls, [{ kind: "wave", x: -4, z: 3 }]);
+  assert.equal(target.avatar.calls.length, 0, "the recipient must not wave instead of the sender");
+  engine.playCare("hug", "recipient", null);
+  assert.deepEqual(engine.selfNode.avatar.calls, [{ kind: "hug", x: -4, z: 3 }]);
+  assert.equal(target.avatar.calls.length, 0, "receiving a hug does not initiate another hug");
+  engine.playCare("hug", null, "sender");
+  assert.deepEqual(source.avatar.calls.at(-1), { kind: "hug", x: 0, z: 3 });
+});
+
+test("a vanished hug recipient or disposed engine cannot trigger a 3D social pose", () => {
+  const { engine, addPlayer } = fixture();
+  const source = addPlayer("sender", 5, 2); source.avatar = gestureAvatar();
+  engine.playCare("hug", "missing-recipient", "sender");
+  assert.equal(source.avatar.calls.length, 0);
+  engine.disposed = true; engine.playCare("wave", null, "sender");
+  assert.equal(source.avatar.calls.length, 0);
 });

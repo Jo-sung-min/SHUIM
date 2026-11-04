@@ -69,6 +69,7 @@ app:
     prefix: ${S3_PREFIX:feed}
     access-key-id: ${AWS_ACCESS_KEY_ID:}
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+    session-token: ${AWS_SESSION_TOKEN:}
     cdn-base-url: ${CDN_BASE_URL:}
   ai:
     base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}

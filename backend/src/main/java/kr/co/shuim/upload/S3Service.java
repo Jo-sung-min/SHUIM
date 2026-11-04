@@ -1,14 +1,21 @@
 package kr.co.shuim.upload;
 
+import jakarta.annotation.PreDestroy;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.config.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.utils.SdkAutoCloseable;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -39,41 +46,62 @@ public class S3Service {
     private final String prefix;
     private final String accessKeyId;
     private final String secretAccessKey;
+    private final String sessionToken;
     private final String cdn;
     private final JdbcClient jdbc;
     private S3Client client;
     private S3Presigner presigner;
+    private AwsCredentialsProvider credentials;
 
+    @Autowired
     public S3Service(@Value("${app.s3.region:ap-northeast-2}") String region,
                      @Value("${app.s3.bucket:}") String bucket,
                      @Value("${app.s3.prefix:feed}") String prefix,
                      @Value("${app.s3.access-key-id:}") String accessKeyId,
                      @Value("${app.s3.secret-access-key:}") String secretAccessKey,
+                     @Value("${app.s3.session-token:}") String sessionToken,
                      @Value("${app.s3.cdn-base-url:}") String cdn, JdbcClient jdbc) {
-        this.region = region;
-        this.bucket = bucket;
-        this.prefix = prefix.replaceAll("^/+|/+$", "");
-        this.accessKeyId = accessKeyId;
-        this.secretAccessKey = secretAccessKey;
-        this.cdn = cdn.replaceAll("/+$", "");
+        this.region = region.strip();
+        this.bucket = bucket.strip();
+        this.prefix = prefix.strip().replaceAll("^/+|/+$", "");
+        this.accessKeyId = accessKeyId.strip();
+        this.secretAccessKey = secretAccessKey.strip();
+        this.sessionToken = sessionToken.strip();
+        this.cdn = cdn.strip().replaceAll("/+$", "");
         this.jdbc = jdbc;
     }
 
-    public boolean configured() {
-        return !region.isBlank() && !bucket.isBlank() && !accessKeyId.isBlank() && !secretAccessKey.isBlank();
+    public S3Service(String region, String bucket, String prefix, String accessKeyId, String secretAccessKey, String cdn, JdbcClient jdbc) {
+        this(region, bucket, prefix, accessKeyId, secretAccessKey, "", cdn, jdbc);
     }
 
-    private StaticCredentialsProvider creds() {
-        return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKeyId, secretAccessKey));
+    public boolean configured() {
+        boolean explicitCredentials = !accessKeyId.isBlank() || !secretAccessKey.isBlank() || !sessionToken.isBlank();
+        return !region.isBlank() && !bucket.isBlank()
+            && (!explicitCredentials || (!accessKeyId.isBlank() && !secretAccessKey.isBlank()));
+    }
+
+    /** Empty keys use the runtime IAM role/profile chain; temporary explicit keys keep their session token. */
+    synchronized AwsCredentialsProvider credentialsProvider() {
+        if (credentials == null) {
+            if (accessKeyId.isBlank() && secretAccessKey.isBlank() && sessionToken.isBlank()) {
+                credentials = DefaultCredentialsProvider.builder().build();
+            } else {
+                credentials = StaticCredentialsProvider.create(sessionToken.isBlank()
+                    ? AwsBasicCredentials.create(accessKeyId, secretAccessKey)
+                    : AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken));
+            }
+        }
+        return credentials;
     }
 
     private synchronized S3Client client() {
-        if (client == null) client = S3Client.builder().region(Region.of(region)).credentialsProvider(creds()).build();
+        if (client == null) client = S3Client.builder().region(Region.of(region)).credentialsProvider(credentialsProvider()).build();
         return client;
     }
 
     private synchronized S3Presigner presigner() {
-        if (presigner == null) presigner = S3Presigner.builder().region(Region.of(region)).credentialsProvider(creds()).build();
+        if (presigner == null) presigner = S3Presigner.builder().region(Region.of(region)).credentialsProvider(credentialsProvider()).build();
         return presigner;
     }
 
@@ -113,7 +141,13 @@ public class S3Service {
         String key = prefix + "/" + day + "/" + userId + "-" + Ids.randomHex(8) + "." + ext;
         String cacheControl = "public, max-age=300";
         PutObjectRequest put = PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).contentLength(size).cacheControl(cacheControl).build();
-        PresignedPutObjectRequest p = presigner().presignPutObject(PutObjectPresignRequest.builder().signatureDuration(PRESIGN_TTL).putObjectRequest(put).build());
+        PresignedPutObjectRequest p;
+        try {
+            p = presigner().presignPutObject(PutObjectPresignRequest.builder().signatureDuration(PRESIGN_TTL).putObjectRequest(put).build());
+        } catch (SdkClientException e) {
+            // Credential-chain diagnostics can contain infrastructure details; keep them out of the response.
+            throw ApiException.unavailable("지금은 사진을 첨부할 수 없어요. 잠시 후 다시 시도해 주세요.");
+        }
         jdbc.sql("INSERT INTO uploaded_objects (object_key, user_id) VALUES (?, ?)").param(key).param(userId).update();
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Content-Type", contentType);
@@ -136,5 +170,13 @@ public class S3Service {
     public void deleteObject(String key) {
         if (!configured()) throw ApiException.unavailable("사진을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
         client().deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+    }
+
+    @PreDestroy
+    public synchronized void close() {
+        if (client != null) { client.close(); client = null; }
+        if (presigner != null) { presigner.close(); presigner = null; }
+        if (credentials instanceof SdkAutoCloseable owned) owned.close();
+        credentials = null;
     }
 }

@@ -5,18 +5,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 async function loadModule(file, dependencies, exports) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
   const source = stripTypeScriptTypes(typed)
     .replace(/^import\s+[^\n]+\n/gm, "")
     .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
-  const context = { ...dependencies };
+  const context = { ...hotSpring, ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${exports.join(", ")} };`, context);
   return context.api;
 }
 
-const { buildShelters } = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry }, ["buildShelters"]);
+const textiles = await loadModule("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
+const { buildShelters } = await loadModule("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["buildShelters"]);
 const { buildNightLights } = await loadModule("../lib/beach/night-lights.ts", { THREE }, ["buildNightLights"]);
 const { CAMPFIRE_BENCHES, buildFireBenches } = await loadModule("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["CAMPFIRE_BENCHES", "buildFireBenches"]);
 const { Cove, CAMPFIRE } = await loadModule("../lib/beach/cove.ts", { THREE, buildShelters, buildNightLights, buildFireBenches }, ["Cove", "CAMPFIRE"]);
@@ -44,10 +46,34 @@ test("the original stone walls enclose both sides without entering the playable 
   ridge.geometry.computeBoundingBox();
   const { min, max } = ridge.geometry.boundingBox;
   assert.ok(min.x > -40 && min.x < -39 && max.x > 39 && max.x < 40);
-  assert.ok(min.z > -17 && min.z < -16 && max.z > 51 && max.z < 52);
+  assert.ok(min.z > -17 && min.z < -16 && max.z > 65 && max.z < 71, "the rear ridge stays beyond the elevated spring while the sea-facing ends stay fixed");
   assert.ok(max.y > 43 && max.y < 45, "the original tall stone silhouette is preserved");
   assert.equal(ridge.castShadow, true);
   assert.equal(ridge.receiveShadow, true);
+});
+
+test("the elevated spring keeps open sea-facing sky with a tall continuous rear ridge", () => {
+  const ridge = scene.getObjectByName("cove-original-ridge");
+  scene.updateMatrixWorld(true);
+  for (const x of [-2, 0, 2]) for (const side of [-0.25, 0, 0.25]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, hotSpring.HOT_SPRING.floorY + 1.55, 45), new THREE.Vector3(side, 0.7, -1).normalize(), 0.1, 100);
+    assert.equal(ray.intersectObject(ridge, false).length, 0, "a resting visitor can see stars without tilting straight up");
+  }
+  const rear = new THREE.Raycaster(new THREE.Vector3(0, 38, 45), new THREE.Vector3(0, 0, 1), 0.1, 50);
+  assert.ok(rear.intersectObject(ridge, false).length, "the rear wall rises to the surrounding high cliff silhouette");
+});
+
+test("ferns hide just the outside cave entrance without adding a collision obstacle or texture download", () => {
+  const ferns = scene.getObjectByName("onsen-walkthrough-entrance-ferns");
+  assert.ok(ferns?.isInstancedMesh && ferns.count <= 75);
+  assert.equal(ferns.material.map, null);
+  assert.equal(ferns.material.side, THREE.DoubleSide);
+  const bounds = new THREE.Box3().setFromObject(ferns), entry = hotSpring.HOT_SPRING_PATH[0];
+  assert.ok(bounds.max.y >= 1.8, "the foliage covers the dark entrance at eye level");
+  assert.ok(bounds.min.x > entry.x - 2.5 && bounds.max.x < entry.x + 2.5);
+  const mouthZ = entry.z - 0.85;
+  assert.ok(bounds.min.z > mouthZ - 2.5 && bounds.max.z < mouthZ + 2.5, "greenery stays around the entrance rather than filling the tunnel");
+  assert.ok(!obstacles.some(o => Math.hypot(o.x - entry.x, o.z - entry.z) < o.r + 0.4));
 });
 
 test("restored cliffs use the original pale rock surface without added crest vegetation", () => {
@@ -64,10 +90,11 @@ test("restored cliffs use the original pale rock surface without added crest veg
   assert.doesNotMatch(shader.fragmentShader, /moss/i, "green moss does not replace the restored stone surface");
 });
 
-test("campfire benches replace decorative logs while other scenery keeps its existing obstacles", () => {
+test("campfire benches and boulders stay solid while overhead lanterns need no support-pole obstacles", () => {
   assert.equal(CAMPFIRE.x, 0);
   assert.equal(CAMPFIRE.z, 12);
-  assert.equal(obstacles.length, 48, "eight boulders, 36 bench circles and four light posts collide");
+  assert.equal(obstacles.length, 44, "eight boulders and 36 bench circles remain after removing all four light posts");
+  assert.equal(obstacles.some(obstacle => obstacle.r === 0.12), false, "removed poles cannot leave invisible collision points");
   const expectedBenches = [];
   buildFireBenches(new THREE.Scene(), expectedBenches);
   for (const expected of expectedBenches) {
@@ -79,8 +106,51 @@ test("campfire benches replace decorative logs while other scenery keeps its exi
   }
 });
 
-test("after 22:00 the beach has a dim moonlit fill instead of globally bright white sand", () => {
+test("floating paper lanterns frame the fire in tall layers without poles, cables or extra real lights", () => {
+  const paper = scene.getObjectByName("campfire-floating-paper-lanterns");
+  assert.ok(paper?.isInstancedMesh && paper.count >= 30 && paper.count <= 40, "dozens of paper volumes share one draw");
+  const position = new THREE.Vector3(), scale = new THREE.Vector3(), rotation = new THREE.Quaternion(), matrix = new THREE.Matrix4();
+  const redAccents = paper.geometry.getAttribute("lanternRed");
+  const halos = scene.getObjectByName("coastal-lantern-halos");
+  const haloTints = halos.geometry.getAttribute("lanternTint");
+  const haloOffset = halos.count - paper.count;
+  const redLayers = new Set();
+  let redCount = 0;
+  let minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let index = 0; index < paper.count; index++) {
+    paper.getMatrixAt(index, matrix);
+    matrix.decompose(position, rotation, scale);
+    assert.ok(position.y - scale.y * 0.5 > 7.5, "every lantern clears heads, full flames and the shelter roofs");
+    assert.ok(scale.y > scale.x, "lanterns keep a vertical paper silhouette");
+    if (position.y < 12) assert.ok(Math.hypot(position.x - 7, position.z - 7) > 4.5, "the nearest layer leaves the sky-viewing circle open overhead");
+    minY = Math.min(minY, position.y); maxY = Math.max(maxY, position.y);
+    minZ = Math.min(minZ, position.z); maxZ = Math.max(maxZ, position.z);
+    if (redAccents.getX(index) > 0.5) {
+      redCount++;
+      redLayers.add(position.z > 5 ? "near" : position.z > -12 ? "middle" : "far");
+      assert.ok(haloTints.getX(index + haloOffset) > haloTints.getY(index + haloOffset) * 3, "red paper receives its own warm red halo");
+    } else {
+      assert.ok(haloTints.getY(index + haloOffset) > haloTints.getX(index + haloOffset) * 0.4, "the majority keep golden amber halos");
+    }
+  }
+  assert.ok(redCount >= paper.count * 0.25 && redCount <= paper.count * 0.4, "red lanterns accent the golden canopy without dominating it");
+  assert.equal(redLayers.size, 3, "red lanterns are placed at near, middle and far distances");
+  assert.ok(maxY - minY > 10 && maxZ - minZ > 25, "varied height and distance give the lights depth rather than a single flat row");
+  assert.equal(scene.children.some(node => node.isLine), false, "no suspended cable cuts across the view");
+  assert.equal(paper.castShadow, false);
+  assert.equal(paper.material.depthWrite, false);
   cove.applyDaylight(daylightAt(0));
+  assert.equal(paper.visible, true);
+  assert.equal(paper.material.uniforms.uNight.value, 1);
+  cove.update(17);
+  assert.equal(paper.material.uniforms.uTime.value, 17, "existing scene time drives a gentle shared drift");
+  assert.equal(scene.getObjectByName("coastal-lantern-halos").material.uniforms.uTime.value, 17, "paper and its halo sway together");
+  cove.applyDaylight(daylightAt(12));
+  assert.equal(paper.visible, false, "daylight restores an unobstructed blue sky");
+});
+
+test("from 20:00 the beach has a dim moonlit fill instead of globally bright white sand", () => {
+  cove.applyDaylight(daylightAt(20));
   const fill = scene.children.find(o => o.isHemisphereLight);
   const sun = scene.children.find(o => o.isDirectionalLight);
   assert.ok(fill.intensity >= .08 && fill.intensity <= .2, "deep night keeps only a small readable sky fill");
@@ -90,18 +160,18 @@ test("after 22:00 the beach has a dim moonlit fill instead of globally bright wh
   cove.applyDaylight(daylightAt(12));
   assert.ok(fill.intensity >= 1.5 && fill.intensity > nightFill * 8, "bright daytime lighting is preserved");
   assert.ok(sun.intensity >= 1.5 && sun.intensity > nightSun * 12);
-  const evening = daylightAt(21.5), midnight = daylightAt(0);
+  const evening = daylightAt(19.5), midnight = daylightAt(20);
   assert.ok(Math.max(...midnight.sandTint) < Math.min(...evening.sandTint) * .65);
   assert.ok(Math.max(...midnight.fog) < .15, "a bright fog curtain cannot wash out the dark beach");
   assert.ok(Math.max(...midnight.seaDeep) < .12);
 });
 
-test("deep night eases in before 22:00, stays dark across midnight, and eases out through dawn", () => {
-  for (const hour of [22, 23, 0, 1, 4.5, 24, -1, 48]) assert.equal(daylightAt(hour).deepNight, 1);
-  for (const hour of [5.5, 8.5, 12, 16, 18, 21.5]) assert.equal(daylightAt(hour).deepNight, 0);
+test("deep night eases in before 20:00, stays dark across midnight, and eases out through dawn", () => {
+  for (const hour of [20, 20.5, 21, 22, 23, 0, 1, 4.5, 24, -1, 48]) assert.equal(daylightAt(hour).deepNight, 1);
+  for (const hour of [5.5, 8.5, 12, 16, 18, 19, 19.5]) assert.equal(daylightAt(hour).deepNight, 0);
   let previous = 0;
   for (let minute = 0; minute <= 30; minute++) {
-    const depth = daylightAt(21.5 + minute / 60).deepNight;
+    const depth = daylightAt(19.5 + minute / 60).deepNight;
     assert.ok(depth >= previous && depth <= 1, "evening transition darkens monotonically");
     previous = depth;
   }
@@ -114,7 +184,7 @@ test("deep night eases in before 22:00, stays dark across midnight, and eases ou
   }
   assert.equal(previous, 0);
   const channels = ["deepNight", "skyTop", "skyHorizon", "cloud", "fog", "seaDeep", "seaShallow", "foam", "sandTint", "tint", "specular", "sun", "moon"];
-  for (const boundary of [21.5, 22, 24, 4.5, 5.5]) {
+  for (const boundary of [19.5, 20, 24, 4.5, 5.5]) {
     const before = daylightAt(boundary - 1e-5), after = daylightAt(boundary + 1e-5);
     for (const channel of channels) {
       const a = Array.isArray(before[channel]) ? before[channel] : [before[channel]];
@@ -152,7 +222,15 @@ test("warm nighttime lamps stay local, use a fixed mobile light budget, and dim 
   const hutLights = pointLights.filter(light => light.name.startsWith("shelter-light-"));
   assert.equal(pathLights.length, 4);
   assert.equal(hutLights.length, 3, "the real hut lights are included in the performance budget");
-  assert.ok(pointLights.length <= 8, "glowing decorations do not each create another point light");
+  const springLights = pointLights.filter(light => light.name.startsWith("onsen-"));
+  assert.equal(springLights.length, 2, "the stairway and large pool each share one local light");
+  assert.ok(pointLights.length <= 10, "glowing decorations do not each create another point light");
+  for (const light of springLights) {
+    assert.equal(light.castShadow, false);
+    const tunnel = light.name === "onsen-tunnel-warm-light";
+    assert.ok(light.distance > 0 && light.distance <= (tunnel ? 28 : 16), "one light covers the longer climb without increasing the light count");
+    assert.ok(light.intensity > 0 && light.intensity <= (tunnel ? 12 : 10));
+  }
   const nightIntensity = new Map();
   for (const light of [...pathLights, ...hutLights]) {
     assert.equal(light.castShadow, false, "local lamps never allocate shadow-map passes");
@@ -174,7 +252,7 @@ test("warm nighttime lamps stay local, use a fixed mobile light budget, and dim 
   }
   let before = 0;
   scene.traverse(() => before++);
-  for (let sample = 0; sample < 120; sample++) cove.applyDaylight(daylightAt(21.5 + sample / 240));
+  for (let sample = 0; sample < 120; sample++) cove.applyDaylight(daylightAt(19.5 + sample / 240));
   let after = 0;
   scene.traverse(() => after++);
   assert.equal(after, before, "time transitions reuse the same lights and glow meshes");

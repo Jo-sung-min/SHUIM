@@ -1,0 +1,98 @@
+{
+  "source": "User-provided Tripo male character",
+  "sourceFilename": "남자캐릭터.glb",
+  "sourceSHA256": "ef64648e789f7f58a2a0edbc2236bcaba9443177c2d9e21d374da367633758e6",
+  "sourceBytes": 61123476,
+  "sourceMesh": {
+    "meshes": 1,
+    "primitives": 1,
+    "vertices": 992274,
+    "triangles": 1916653,
+    "skins": 0,
+    "animations": []
+  },
+  "sourceBounds": {
+    "min": [
+      -0.2955780029296875,
+      0,
+      -0.251739501953125
+    ],
+    "max": [
+      0.2955780029296875,
+      0.979736328125,
+      0.251739501953125
+    ]
+  },
+  "asset": "tripo-male-mobile-v1.glb",
+  "bytes": 619596,
+  "mesh": {
+    "meshes": 1,
+    "primitives": 1,
+    "vertices": 20126,
+    "triangles": 28746,
+    "skins": 0,
+    "animations": []
+  },
+  "decodedBounds": {
+    "min": [
+      -0.29539870575516497,
+      0.000091552734375,
+      -0.2514344183756237
+    ],
+    "max": [
+      0.29555129364578997,
+      0.979736328125,
+      0.2516175238443737
+    ]
+  },
+  "requiredExtensions": [
+    "EXT_meshopt_compression",
+    "EXT_texture_webp",
+    "KHR_mesh_quantization"
+  ],
+  "textures": [
+    {
+      "name": "anime_chibi_figure_3d_model_basecolor.jpg",
+      "format": "image/webp",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "anime_chibi_figure_3d_model_rm.jpg",
+      "format": "image/webp",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "anime_chibi_figure_3d_model_normal.png",
+      "format": "image/webp",
+      "size": [
+        512,
+        512
+      ]
+    }
+  ],
+  "optimization": {
+    "simplifyRatio": 0.015,
+    "errorLimit": 0.003,
+    "positionBits": 14,
+    "texcoordBits": 12,
+    "compression": "EXT_meshopt_compression (high)",
+    "baseColor": "1024px WebP quality 92",
+    "normalAndMaterial": "512px near-lossless WebP quality 95",
+    "originalFileUnmodified": true
+  },
+  "validation": {
+    "meshoptDecoded": true,
+    "finiteAttributes": true,
+    "validIndices": true,
+    "skinsAndAnimationsPreserved": true,
+    "normalsMinLength": 0.9939989819250078,
+    "normalsMaxLength": 1.0051945189027056,
+    "maxBoundsAxisError": 0.0003050835775013083
+  }
+}

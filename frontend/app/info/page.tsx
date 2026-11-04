@@ -4,6 +4,7 @@ import { IconChevronL, IconChevronR, IconMessage, IconNote, IconShield, IconSpar
 import styles from "@/components/ServiceInfo.module.css";
 import { LEGAL } from "@/lib/legal";
 import { SITE } from "@/lib/site";
+import { assetUrl } from "@/lib/assets";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default function InfoPage() {
         <div className={styles.brand}>
           {/* The local brand mark is decorative; the adjacent text supplies its name. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/favicon.svg" width="54" height="54" alt="" />
+          <img src={assetUrl("/favicon.svg")} width="54" height="54" alt="" />
           <div><strong>소로우</strong><small>{SITE.tagline}</small></div>
         </div>
         <h2>이용에 필요한 안내를<br />한곳에 모았어요.</h2>

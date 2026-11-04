@@ -1,8 +1,11 @@
 import * as THREE from "three";
+import { assetLoader, assetUrl } from "../assets";
 import type { Daylight } from "./daylight";
 import { buildShelters } from "./shelters";
 import { buildNightLights } from "./night-lights";
 import { buildFireBenches } from "./fire-benches";
+import { buildHotSpring, HOT_SPRING_PATH } from "./hot-spring";
+import { buildHotSpringLandscape } from "./hot-spring-landscape";
 
 export const CAMPFIRE = { x: 0, z: 12 };
 type Obstacle = { x: number; z: number; r: number };
@@ -18,7 +21,7 @@ function surfaceTexture(name: string, color = false) {
   // Geometry-only checks run without a DOM; textures are loaded by the live client.
   const texture = typeof document === "undefined"
     ? new THREE.Texture()
-    : new THREE.TextureLoader().load(`/beach/real/${name}.jpg`);
+    : assetLoader(new THREE.TextureLoader()).load(assetUrl(`/beach/real/${name}.jpg`));
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.anisotropy = 4;
   if (color) texture.colorSpace = THREE.SRGBColorSpace;
@@ -77,6 +80,62 @@ function rockMaterial(originalWall = false) {
   return material;
 }
 
+/** Dense fern fronds conceal only the cave mouth; foliage has no movement collider. */
+function buildHiddenEntrance(scene: THREE.Scene) {
+  const positions: number[] = [], colors: number[] = [], indices: number[] = [];
+  for (let row = 0; row < 13; row++) {
+    const t = (row + 1) / 14, stemY = t, stemZ = t * t * 0.75;
+    const width = Math.sin(t * Math.PI) * 0.32 + 0.025;
+    for (const side of [-1, 1]) {
+      const offset = positions.length / 3;
+      positions.push(0, stemY, stemZ, side * width * 0.5, stemY + 0.02, stemZ - 0.045,
+        side * width, stemY + 0.10, stemZ + 0.09, side * width * 0.5, stemY + 0.10, stemZ + 0.055,
+        side * width * 0.46, stemY + 0.055, stemZ + 0.035);
+      for (let vertex = 0; vertex < 5; vertex++) {
+        const light = vertex === 4 ? 1.13 : 0.82 + t * 0.18;
+        colors.push(0.31 * light, 0.48 * light, 0.19 * light);
+      }
+      indices.push(offset, offset + 1, offset + 4, offset + 1, offset + 2, offset + 4,
+        offset + 2, offset + 3, offset + 4, offset + 3, offset, offset + 4);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.95 });
+  const entrance = HOT_SPRING_PATH[0];
+  const mouthZ = entrance.z - 0.85;
+  const roots = [[-0.4, -0.8], [-0.3, 0.75], [0.05, -0.95], [0.15, 0.9], [-0.55, -0.25], [-0.5, 0.3]];
+  const ferns = new THREE.InstancedMesh(geometry, material, roots.length * 9 + 12);
+  ferns.name = "onsen-walkthrough-entrance-ferns";
+  const transform = new THREE.Object3D(), tint = new THREE.Color();
+  for (const [plant, [x, z]] of roots.entries()) for (let frond = 0; frond < 9; frond++) {
+    const index = plant * 9 + frond;
+    transform.position.set(entrance.x + x, entrance.y + 0.02, mouthZ - 0.3 + z);
+    transform.rotation.set(0.05 + (frond % 3) * 0.10, frond * 2.399 + plant * 1.7, Math.sin(index * 1.2) * 0.20);
+    const height = 1.6 + Math.sin(index * 2.7) * 0.38;
+    transform.scale.set(1.3, height, 1.05);
+    transform.updateMatrix();
+    ferns.setMatrixAt(index, transform.matrix);
+    tint.setRGB(0.85 + (plant % 3) * 0.07, 0.88 + (frond % 3) * 0.04, 0.82);
+    ferns.setColorAt(index, tint);
+  }
+  for (let vine = 0; vine < 12; vine++) {
+    transform.position.set(entrance.x - 0.67 + vine * 0.122, 2.51, mouthZ - 0.11);
+    transform.rotation.set(0.1, vine * 1.7, Math.PI + Math.sin(vine) * 0.12, "YXZ");
+    transform.scale.set(1.05, 0.85 + (vine % 3) * 0.13, 0.65);
+    transform.updateMatrix();
+    const index = roots.length * 9 + vine;
+    ferns.setMatrixAt(index, transform.matrix);
+    ferns.setColorAt(index, tint.setRGB(0.78, 0.87, 0.75));
+  }
+  ferns.computeBoundingSphere();
+  ferns.receiveShadow = true;
+  scene.add(ferns);
+}
+
 /** A sheltered, walkable cove. Geometry and materials are owned/disposed by the beach scene. */
 export class Cove {
   private ambient = new THREE.HemisphereLight(0xf2f5f6, 0xd7d4c7, 2);
@@ -97,6 +156,7 @@ export class Cove {
   private neutralSky = new THREE.Color(0xf4f7fa);
   private nightLights: ReturnType<typeof buildNightLights>;
   private shelterLights: THREE.PointLight[] = [];
+  private hotSpring: ReturnType<typeof buildHotSpring>;
   private lastUpdateTime: number | null = null;
 
   constructor(scene: THREE.Scene, obstacles: Obstacle[]) {
@@ -124,6 +184,9 @@ export class Cove {
     woodMap.repeat.set(1, 2);
     woodNormal.repeat.copy(woodMap.repeat);
     const wood = new THREE.MeshStandardMaterial({ map: woodMap, normalMap: woodNormal, normalScale: new THREE.Vector2(0.4, 0.4), color: 0xa3947e, roughness: 0.87 });
+    this.hotSpring = buildHotSpring(scene, { stone: rock, wood });
+    buildHotSpringLandscape(scene, rock);
+    buildHiddenEntrance(scene);
     const dark = new THREE.MeshStandardMaterial({ color: 0x292b28, roughness: 0.9 });
     const leaf = new THREE.MeshStandardMaterial({ color: 0x737552, side: THREE.DoubleSide, roughness: 1 });
 
@@ -156,10 +219,20 @@ export class Cove {
       obstacles.push({ x, z, r: r * 0.8 });
     });
 
-    // Rounded ring of stones and a charcoal bed, kept below the animated flame.
-    const ash = new THREE.Mesh(new THREE.CircleGeometry(1.15, 48), dark);
+    // The exposed pit uses the existing photographed soil rather than a flat brown disk.
+    const soilMap = surfaceTexture("sand", true);
+    const soilNormal = surfaceTexture("sand-normal");
+    soilMap.repeat.set(1.8, 1.8);
+    soilNormal.repeat.copy(soilMap.repeat);
+    const soil = new THREE.MeshStandardMaterial({
+      map: soilMap, normalMap: soilNormal, normalScale: new THREE.Vector2(0.35, 0.35),
+      color: 0xffffff, roughness: 1, metalness: 0,
+    });
+    const ash = new THREE.Mesh(new THREE.CircleGeometry(1.15, 48), soil);
+    ash.name = "campfire-soil";
     ash.rotation.x = -Math.PI / 2;
     ash.position.set(0, 0.025, CAMPFIRE.z);
+    ash.receiveShadow = true;
     scene.add(ash);
     const stones = new THREE.InstancedMesh(boulderGeometry, rock, 15);
     stones.castShadow = stones.receiveShadow = true;
@@ -192,33 +265,21 @@ export class Cove {
     });
     scene.add(bases, glasses, caps);
 
-    const wire = new THREE.LineBasicMaterial({ color: 0x4b4638 });
-    const festoonBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 10, 8), this.bulbs, 50);
-    const festoonPositions: THREE.Vector3[] = [];
-    let bulbIndex = 0;
-    // Keep the shared sky-viewing circle open overhead; string lights frame the fire instead.
-    for (const [z, halfSpan] of [[12.5, 14.8], [17.8, 20]]) {
-      for (const x of [-halfSpan, halfSpan]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 5.2, 12), wood);
-        post.position.set(x, 2.6, z);
-        post.castShadow = post.receiveShadow = true;
-        scene.add(post);
-        obstacles.push({ x, z, r: 0.12 });
-      }
-      const points: THREE.Vector3[] = [];
-      for (let i = 0; i <= 52; i++) {
-        const t = i / 52;
-        points.push(new THREE.Vector3(-halfSpan + t * halfSpan * 2, 5.12 - Math.sin(t * Math.PI) * 1.05, z));
-      }
-      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), wire));
-      for (let i = 1; i <= 25; i++) {
-        const point = points[i * 2];
-        festoonBulbs.setMatrixAt(bulbIndex++, lightPlacement.makeTranslation(point.x, point.y - 0.08, point.z));
-        festoonPositions.push(new THREE.Vector3(point.x, point.y - 0.08, point.z));
+    // Pole-free paper lanterns rise in staggered layers from the fire toward the sea.
+    // The nearest layer starts above the hut ridges; no cables cut across the sky.
+    const floatingLanterns: THREE.Vector3[] = [];
+    for (let layer = 0; layer < 3; layer++) {
+      const count = 10 + layer * 2, halfSpan = 13.5 + layer * 5.7;
+      for (let i = 0; i < count; i++) {
+        const x = -halfSpan + i * halfSpan * 2 / (count - 1) + Math.sin(i * 2.17 + layer) * 0.7;
+        const y = 8.4 + layer * 4.1 + (0.5 + Math.sin(i * 1.73 + layer * 1.4) * 0.5) * 3.1;
+        let z = 10 - layer * 14 + Math.sin(i * 1.37 + layer * 0.8) * (2.2 + layer * 1.2);
+        // Keep the overhead centre of the shared sky-viewing mats open.
+        if (layer === 0 && Math.hypot(x - 7, z - 7) < 4.6) z = 12.8;
+        floatingLanterns.push(new THREE.Vector3(x, y, z));
       }
     }
-    scene.add(festoonBulbs);
-    this.nightLights = buildNightLights(scene, lanterns, festoonPositions);
+    this.nightLights = buildNightLights(scene, lanterns, floatingLanterns);
 
     // Thin curved dune-grass blades stay along the outer edge of the walkable sand.
     const grassGeometry = new THREE.PlaneGeometry(0.035, 0.6, 1, 4);
@@ -250,8 +311,9 @@ export class Cove {
     const path = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-31, 30, -16), new THREE.Vector3(-32, 36, -1),
       new THREE.Vector3(-32, 44, 19), new THREE.Vector3(-29, 40, 35),
-      new THREE.Vector3(-15, 36, 43), new THREE.Vector3(0, 39, 44),
-      new THREE.Vector3(15, 40, 43), new THREE.Vector3(29, 44, 35),
+      // The rear ridge meets the original high side walls; the bath opens toward the sea.
+      new THREE.Vector3(-15, 40, 58), new THREE.Vector3(0, 42, 62),
+      new THREE.Vector3(15, 40, 58), new THREE.Vector3(29, 44, 35),
       new THREE.Vector3(32, 42, 19), new THREE.Vector3(32, 35, -1),
       new THREE.Vector3(31, 30, -16),
     ], false, "catmullrom", 0.35);
@@ -307,7 +369,7 @@ export class Cove {
 
   applyDaylight(d: Daylight) {
     this.night = d.fire;
-    // After 22:00, moonlight only sketches silhouettes. Warmth belongs to nearby lamps.
+    // After 20:00, moonlight only sketches silhouettes. Warmth belongs to nearby lamps.
     const deep = d.deepNight;
     const fill = 1.1 + (1 - d.stars) * 0.45 + Math.max(0, d.sun[1]) * 0.7;
     this.ambient.intensity = THREE.MathUtils.lerp(fill, 0.12, deep);
@@ -320,6 +382,7 @@ export class Cove {
     const light = d.sun[1] > 0 ? d.sun : d.moon;
     this.sun.position.set(light[0] * 80, Math.max(24, light[1] * 80), light[2] * 80);
     this.nightLights.applyDaylight(d.fire);
+    this.hotSpring.applyDaylight(d.fire);
     for (const lamp of this.shelterLights) lamp.intensity = 1.5 + d.fire * 7.5;
   }
 
@@ -342,7 +405,9 @@ export class Cove {
     this.fireTargetColor.copy(color);
   }
 
-  update(time: number) {
+  update(time: number, camera?: THREE.Camera) {
+    this.nightLights.update?.(time);
+    this.hotSpring.update(time, camera);
     const dt = this.lastUpdateTime === null ? 1 / 60 : THREE.MathUtils.clamp(time - this.lastUpdateTime, 0, 0.1);
     this.lastUpdateTime = time;
     const blend = 1 - Math.exp(-dt * 4);

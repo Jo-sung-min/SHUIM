@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { assetLoader, assetUrl } from "../assets";
 
 /** A few paper lanterns above the horizon; small distant lights leave the sea unobstructed. */
 const TEXTURE_URL = "/beach/real/sky-lantern-v2.png";
@@ -192,7 +193,7 @@ export class SkyLanterns {
     scene.add(this.glow, this.near, this.far);
     this.setVisible(false);
 
-    this.texture = new THREE.TextureLoader().load(TEXTURE_URL, (texture) => {
+    this.texture = assetLoader(new THREE.TextureLoader()).load(assetUrl(TEXTURE_URL), (texture) => {
       if (this.disposed) {
         this.releaseTexture(texture);
         return;

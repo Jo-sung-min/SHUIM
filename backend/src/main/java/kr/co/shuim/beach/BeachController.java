@@ -39,7 +39,7 @@ public class BeachController {
 
     /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
     public record Care(String to, String kind) {}
-    /** character 는 남녀 기본 캐릭터를 바꿀 때 선택하며, 생략하면 현재 모습 유지 */
+    /** character 는 3D·픽셀 남녀 캐릭터를 바꿀 때 선택하며, 생략하면 현재 모습 유지 */
     public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
         public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care) {
             this(ticket, x, z, yaw, moving, care, null);
@@ -52,6 +52,8 @@ public class BeachController {
     public record WoodBody(String ticket, String requestId) {}
     public record PowderBody(String ticket, String requestId, String color) {}
     public record RestBody(String ticket, String action, String spotId) {}
+    public record LightingBody(String ticket, String mode) {}
+    public record FireworksBody(String ticket, String requestId) {}
 
     private CircleService.Circle requireMember(String communityId, DbUser me) {
         if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
@@ -64,7 +66,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/enter { communityId, character?: "male" | "female" } → { ticket, communityId, community: { id, slug, name }, capacity, me, spawn, bounds, count }
+     * POST /api/beach/enter { communityId, character?: "male" | "female" | "pixel-male" | "female-3d" } → { ticket, communityId, community: { id, slug, name }, capacity, me, spawn, bounds, count }
      * 이 소로우의 승인된 멤버만 들어갈 수 있다. 정원 초과는 409.
      */
     @PostMapping("/api/beach/enter")
@@ -81,7 +83,14 @@ public class BeachController {
         out.put("restEnabled", true);
         out.put("bedEnabled", true);
         out.put("benchEnabled", true);
+        out.put("onsenEnabled", true);
         out.put("careCapabilities", new BeachRoom.CareCapabilities(true, auth.isAdmin(me)));
+        out.put("lightingControl", auth.isAdmin(me));
+        out.put("lighting", beach.lighting(circle.id()));
+        out.put("fireworksControl", auth.isAdmin(me));
+        BeachRoom.FireworksState fireworks = beach.fireworks(circle.id());
+        out.put("fireworks", fireworks.events());
+        out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", BeachRoom.MIN_Z, "maxZ", BeachRoom.MAX_Z));
@@ -93,7 +102,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind }, character?: "male" | "female" }
+     * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind }, character?: "male" | "female" | "pixel-male" | "female-3d" }
      *   → { players: [{ pid, id, nick, skin, x, z, yaw, moving }], events: [{ kind, fromPid, fromId, fromNick, toPid, toId, toNick, at }],
      *       count, received: { comfort, hug, wave }, care?: "sent" | "cooldown" | "gone" | "forbidden", careCapabilities?: { wave, hug } }
      * 방문 티켓으로 위치를 갱신하고 영속 모닥불 상태를 함께 내려준다. 만료 티켓은 410.
@@ -136,6 +145,28 @@ public class BeachController {
     public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
         return beach.rest(body.ticket(), body.action(), body.spotId());
+    }
+
+    /** POST /api/beach/lighting { ticket, mode: auto|day|sunset|night }. Shared by this visit's room. */
+    @PostMapping("/api/beach/lighting")
+    public BeachRoom.Lighting lighting(@RequestBody(required = false) LightingBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
+        if (body == null) throw ApiException.badRequest("바닷가 시간 설정을 다시 골라 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 바닷가 시간을 바꿀 수 있어요.");
+        return beach.setLighting(body.ticket(), me.id(), body.mode());
+    }
+
+    /** POST /api/beach/fireworks { ticket, requestId: UUID }. A room-wide, retry-safe administrator action. */
+    @PostMapping("/api/beach/fireworks")
+    public BeachRoom.FireworkLaunch fireworks(@RequestBody(required = false) FireworksBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
+        if (body == null) throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 불꽃놀이를 시작할 수 있어요.");
+        return beach.launchFireworks(body.ticket(), me.id(), body.requestId());
     }
 
     /** POST /api/beach/leave { ticket } → { ok: true } (모르는 티켓이어도 ok) */

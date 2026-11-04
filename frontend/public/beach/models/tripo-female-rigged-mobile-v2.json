@@ -1,0 +1,55 @@
+{
+  "asset": "tripo-female-rigged-mobile-v2.glb",
+  "source": "tripo-female-rigged-mobile-v1.glb",
+  "kind": "female",
+  "sourceBytes": 1749864,
+  "bytes": 1095232,
+  "reductionPercent": 37.41045018355712,
+  "sourceSHA256": "da21ab458dbce1dc6171ac0b7228ea150fd82c2fe08851b0765774825aa5fe9d",
+  "sha256": "8e9018b2ef2d5ea73527d038095772a370234850fc64ed41458e895e329d4f5b",
+  "triangles": 10419,
+  "vertices": 21603,
+  "textures": [
+    {
+      "name": "chibi_girl_3d_model_basecolor.jpg",
+      "size": [
+        1024,
+        1024
+      ],
+      "bytes": 258422
+    },
+    {
+      "name": "chibi_girl_3d_model_rm.png",
+      "size": [
+        256,
+        256
+      ],
+      "bytes": 15802
+    },
+    {
+      "name": "chibi_girl_3d_model_normal.jpg",
+      "size": [
+        256,
+        256
+      ],
+      "bytes": 27706
+    }
+  ],
+  "optimization": {
+    "baseColor": "Original 1024px WebP unchanged",
+    "normalAndMaterial": "256px WebP quality90",
+    "normals": "12-bit precision in signed16 storage",
+    "uv": "16-bit precision",
+    "positionsAndSkinAndAnimations": "bit-exact",
+    "simplified": false
+  },
+  "validation": {
+    "positionsSkinBindAndAnimationIdentical": true,
+    "baseColorIdentical": true,
+    "triangleCountAndWindingIdentical": true,
+    "maxAttributeError": {
+      "normal": 0.00027011230255524765,
+      "uv": 0.000007629421930194225
+    }
+  }
+}

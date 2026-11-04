@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { assetLoader, assetUrl } from "../assets";
 
 /** Quarter-split wood: two cleaved faces meet above a small, irregular bark arc. */
 function splitWoodGeometry() {
@@ -54,7 +55,7 @@ function splitWoodGeometry() {
 /** A compact pile owned entirely by the scene graph; count remains server-controlled. */
 export function buildFirewood(scene: THREE.Scene, x: number, z: number): THREE.InstancedMesh {
   const wood = typeof document === "undefined" ? new THREE.Texture()
-    : new THREE.TextureLoader().load("/beach/real/wood.jpg");
+    : assetLoader(new THREE.TextureLoader()).load(assetUrl("/beach/real/wood.jpg"));
   wood.colorSpace = THREE.SRGBColorSpace;
   wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
   wood.anisotropy = 4;

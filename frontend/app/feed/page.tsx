@@ -1,6 +1,7 @@
 "use client";
 
 import TitleChip from "@/components/TitleChip";
+import { assetUrl } from "@/lib/assets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CommunityStore,
@@ -352,7 +353,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
             <article key={i} className={`slide ${p.image ? "has-img " + styles.photoSlide : ""}`} aria-label={`${i + 1}번째 콘텐츠`}>
               {p.image && <div className={styles.photoFrame}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.image} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
+                <img src={assetUrl(p.image)} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
               </div>}
               <div className="slide-body">
                 {(p.title || (p.image && post.title)) && <div className="reel-title">{p.title || post.title}</div>}

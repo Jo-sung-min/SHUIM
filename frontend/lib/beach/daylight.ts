@@ -37,7 +37,7 @@ export interface Daylight {
   fire: number;
   /** 밤하늘 풍등이 떠 있는 정도 0~1 (저녁에 하나둘 올라 밤에 가득, 아침·낮엔 0) */
   lanterns: number;
-  /** 21:30~22:00에 깊어져 04:30까지 이어지고 새벽에 사라지는 심야 강도 */
+  /** 19:30~20:00에 깊어져 04:30까지 이어지고 새벽에 사라지는 심야 강도 */
   deepNight: number;
 }
 
@@ -80,18 +80,25 @@ const AFTERNOON: Key = {
   sandTint: [1, 0.98, 0.93], tint: [1, 0.97, 0.92], fog: c("#ead9c2"), stars: 0, sunGlow: 0.6, specular: 1,
 };
 const SUNSET: Key = {
-  skyTop: c("#4a4f92"), skyHorizon: c("#ff9a5a"), sunColor: c("#ffd8a0"), cloud: c("#ffb088"), cloudAmount: 0.5,
-  seaDeep: c("#27477a"), seaShallow: c("#7a7f9c"), foam: c("#ffe6d0"),
-  sandTint: [1, 0.9, 0.82], tint: [1, 0.88, 0.79], fog: c("#e4b696"), stars: 0.05, sunGlow: 1, specular: 1.1,
+  // Rose reaches the upper sky as well as the horizon; reflected salt water shares this palette.
+  skyTop: c("#b85891"), skyHorizon: c("#ff8c9f"), sunColor: c("#ffd2b3"), cloud: c("#ffc2d6"), cloudAmount: 0.62,
+  seaDeep: c("#714964"), seaShallow: c("#cf8ba4"), foam: c("#ffe0e2"),
+  sandTint: [1, 0.86, 0.87], tint: [1, 0.88, 0.9], fog: c("#df9ca8"), stars: 0.02, sunGlow: 1, specular: 1.05,
+};
+const AFTERGLOW: Key = {
+  skyTop: c("#815181"), skyHorizon: c("#e979a1"), sunColor: c("#ffc1ae"), cloud: c("#ec9cbd"), cloudAmount: 0.6,
+  seaDeep: c("#4e3b63"), seaShallow: c("#9d749b"), foam: c("#ead1e0"),
+  sandTint: [0.94, 0.82, 0.89], tint: [0.94, 0.83, 0.91], fog: c("#b486a6"), stars: 0.14, sunGlow: 0.8, specular: 0.95,
 };
 const DUSK: Key = {
-  skyTop: c("#1c2552"), skyHorizon: c("#c85a62"), sunColor: c("#ffb080"), cloud: c("#4a3a62"), cloudAmount: 0.45,
-  seaDeep: c("#132a4e"), seaShallow: c("#2e4b70"), foam: c("#c9b4c4"),
-  sandTint: [0.82, 0.78, 0.84], tint: [0.83, 0.78, 0.85], fog: c("#6f6b82"), stars: 0.5, sunGlow: 0.5, specular: 0.8,
+  skyTop: c("#30234f"), skyHorizon: c("#aa6388"), sunColor: c("#ffc1a8"), cloud: c("#655071"), cloudAmount: 0.45,
+  seaDeep: c("#22263f"), seaShallow: c("#53496c"), foam: c("#c9b4c4"),
+  sandTint: [0.82, 0.78, 0.84], tint: [0.83, 0.78, 0.85], fog: c("#74677f"), stars: 0.55, sunGlow: 0.35, specular: 0.8,
 };
 
 const KEYS: [number, Key][] = [
-  [0, NIGHT], [4.5, NIGHT], [5.5, DAWN], [6.5, SUNRISE], [8.5, MORNING], [12, DAY], [16, AFTERNOON], [17.8, SUNSET], [19, DUSK], [20.3, NIGHT], [24, NIGHT],
+  [0, NIGHT], [4.5, NIGHT], [5.5, DAWN], [6.5, SUNRISE], [8.5, MORNING], [12, DAY], [16, AFTERNOON],
+  [17.5, AFTERNOON], [18, SUNSET], [19, AFTERGLOW], [19.5, DUSK], [20, NIGHT], [24, NIGHT],
 ];
 
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -119,7 +126,7 @@ export function labelOf(hour: number): string {
   if (hour < 15) return "낮";
   if (hour < 17.5) return "오후";
   if (hour < 19) return "노을";
-  if (hour < 21) return "저녁";
+  if (hour < 20) return "저녁";
   return "밤";
 }
 
@@ -137,8 +144,8 @@ export function daylightAt(hourIn: number): Daylight {
   const fire = hour >= 17.3 ? smooth((hour - 17.3) / 1) : hour <= 7 ? 1 - smooth((hour - 6) / 1) : 0;
   const stars = k("stars");
   const lanterns = Math.max(0, Math.min(1, (stars - 0.25) / 0.6));
-  // Evening keeps its existing color. Deep night arrives gently and meets dawn without a seam.
-  const deepNight = hour >= 21.5 ? smooth((hour - 21.5) / 0.5) : hour <= 4.5 ? 1 : 1 - smooth(hour - 4.5);
+  // Keep the 18:00 rose sunset, then let stars and local lanterns lead by 20:00.
+  const deepNight = hour >= 19.5 ? smooth((hour - 19.5) / 0.5) : hour <= 4.5 ? 1 : 1 - smooth(hour - 4.5);
   return {
     hour,
     label: labelOf(hour),

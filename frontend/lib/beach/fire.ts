@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildFirewood } from "./firewood";
+import { TripoCampfireModel } from "./campfire-model";
 import type { PowderSample } from "./fire-powder";
 import type { PowderColor } from "./net";
 
@@ -47,6 +48,7 @@ export class CoastalFire {
   private flames: THREE.InstancedMesh;
   private logs: THREE.InstancedMesh;
   private coalMaterial: THREE.MeshStandardMaterial;
+  private model: TripoCampfireModel | null = null;
   private material: THREE.ShaderMaterial;
   private powderParticles: THREE.Points;
   private powderMaterial: THREE.ShaderMaterial;
@@ -364,11 +366,18 @@ export class CoastalFire {
     this.powderParticles.renderOrder = 7;
     this.powderParticles.visible = false;
     scene.add(this.powderParticles);
+    if (typeof window !== "undefined") this.model = new TripoCampfireModel(scene, x, z, [this.logs, coals, coalBed]);
   }
+
+  whenReady() { return this.model?.ready ?? Promise.resolve(); }
+
+  /** Scene-owned fallback meshes are released by the beach engine's scene traversal. */
+  dispose() { this.model?.dispose(); this.model = null; }
 
   setState(logs: number, color: string) {
     const count = Number.isFinite(logs) ? Math.round(THREE.MathUtils.clamp(logs, 0, 12)) : 3;
     this.logs.count = count;
+    this.model?.setFuel(count);
     // 장작이 0 이어도 불씨는 남는다 (불멍 상태). 장작 수에 따라 그 위로 커진다
     this.fuelProfile = fireFuelProfile(count);
     this.targetPower = this.fuelProfile.power;
@@ -442,5 +451,6 @@ export class CoastalFire {
     this.lightTint.copy(uniforms.uMid.value).lerp(uniforms.uCore.value, 0.12);
     // Charcoal keeps its natural amber warmth even when a colored powder is burning above it.
     this.coalMaterial.emissiveIntensity = 0.56 + Math.min(1, uniforms.uPower.value) * 0.24;
+    this.model?.update(dt, uniforms.uEmberGlow.value, uniforms.uPower.value);
   }
 }

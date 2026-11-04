@@ -22,7 +22,63 @@ export interface EnterResponse {
   restEnabled?: boolean;
   bedEnabled?: boolean;
   benchEnabled?: boolean;
+  onsenEnabled?: boolean;
   careCapabilities?: CareCapabilities;
+  lighting?: RoomLighting | null;
+  lightingControl?: boolean;
+  fireworksControl?: boolean;
+  fireworks?: FireworkEvent[];
+  fireworksCooldownUntil?: number;
+  serverTime?: number;
+}
+
+export interface FireworkEvent { id: string; seed: number; startedAt: number; durationMs: number }
+export interface FireworkLaunch { event: FireworkEvent; serverTime: number; cooldownUntil: number }
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isTime = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+/** Only a bounded server event can allocate fireworks particles. */
+export function readFireworkEvent(value: unknown): FireworkEvent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const event = value as FireworkEvent;
+  if (Object.keys(event).length !== 4 || !Object.keys(event).every(key => ["id", "seed", "startedAt", "durationMs"].includes(key))
+    || typeof event.id !== "string" || !UUID_PATTERN.test(event.id)
+    || !Number.isSafeInteger(event.seed) || event.seed < 1 || event.seed >= 2_147_483_647
+    || !isTime(event.startedAt) || event.startedAt > Number.MAX_SAFE_INTEGER - 15_000 || event.durationMs !== 12_000) return null;
+  return { id: event.id.toLowerCase(), seed: event.seed, startedAt: event.startedAt, durationMs: event.durationMs };
+}
+
+function readFireworksState(response: { fireworks?: unknown; fireworksCooldownUntil?: unknown; serverTime?: unknown }) {
+  if (response.fireworks === undefined && response.fireworksCooldownUntil === undefined) return { fireworks: [], fireworksCooldownUntil: 0, supported: false };
+  if (!Array.isArray(response.fireworks) || response.fireworks.length > 2 || !isTime(response.serverTime)
+    || !isTime(response.fireworksCooldownUntil) || response.fireworksCooldownUntil > response.serverTime + 15_000) {
+    throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  }
+  const unique = new Map<string, FireworkEvent>();
+  for (const value of response.fireworks) {
+    const event = readFireworkEvent(value);
+    if (!event || event.startedAt > response.serverTime || response.fireworksCooldownUntil < event.startedAt + 15_000) {
+      throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
+    const previous = unique.get(event.id);
+    if (previous && (previous.seed !== event.seed || previous.startedAt !== event.startedAt)) throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    if (response.serverTime < event.startedAt + event.durationMs) unique.set(event.id, event);
+  }
+  return { fireworks: Array.from(unique.values()).sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id)),
+    fireworksCooldownUntil: response.fireworksCooldownUntil, supported: true };
+}
+
+export type RoomLightingMode = "auto" | "day" | "sunset" | "night";
+export interface RoomLighting { mode: RoomLightingMode; hour: number | null; version: number }
+
+/** Only the server's supported time presets can replace a room's clock. */
+export function readRoomLighting(value: unknown): RoomLighting | null {
+  if (!value || typeof value !== "object") return null;
+  const state = value as RoomLighting;
+  const hours: Record<RoomLightingMode, number | null> = { auto: null, day: 12, sunset: 18, night: 20 };
+  if (!Object.prototype.hasOwnProperty.call(hours, state.mode) || state.hour !== hours[state.mode]
+    || !Number.isSafeInteger(state.version) || state.version < 0) return null;
+  return { mode: state.mode, hour: state.hour, version: state.version };
 }
 
 /** A shared rest slot is assigned by the server, never claimed locally. */
@@ -116,6 +172,10 @@ export interface TickResponse {
   careCapabilities?: CareCapabilities | null;
   fire: FireState;
   selfRest?: RestPresence;
+  lighting?: RoomLighting | null;
+  fireworks?: FireworkEvent[];
+  fireworksCooldownUntil?: number;
+  serverTime?: number;
 }
 
 export interface BeachCount {
@@ -173,14 +233,44 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
 
 export async function enterBeach(communityId: string, character?: BeachCharacter): Promise<EnterResponse> {
   const response = await post<EnterResponse>("/api/beach/enter", { communityId, character }, { signal: AbortSignal.timeout(8000) });
-  return { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
+  const lighting = readRoomLighting(response.lighting);
+  const fireworks = readFireworksState(response);
+  return { ...response, careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
+    lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: response.onsenEnabled === true,
+    fireworksControl: response.fireworksControl === true && fireworks.supported,
+    fireworks: fireworks.fireworks, fireworksCooldownUntil: fireworks.fireworksCooldownUntil };
 }
 
 export async function tickBeach(body: TickRequest): Promise<TickResponse> {
   const response = await post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
   if (response.selfRest != null && !validRestPresence(response.selfRest)) throw new Error("쉴 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  if (response.lighting != null) {
+    const lighting = readRoomLighting(response.lighting);
+    if (!lighting) throw new Error("방의 시간을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    response.lighting = lighting;
+  }
+  const fireworks = readFireworksState(response);
+  response.fireworks = fireworks.fireworks;
+  response.fireworksCooldownUntil = fireworks.fireworksCooldownUntil;
   // Movement-only ticks do not refresh privileges. A confirmed action response does.
   return response.careCapabilities == null ? response : { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
+}
+export async function setBeachLighting(ticket: string, mode: RoomLightingMode): Promise<RoomLighting> {
+  const response = await post<unknown>("/api/beach/lighting", { ticket, mode }, { signal: AbortSignal.timeout(8000) });
+  const lighting = readRoomLighting(response);
+  if (!lighting || lighting.mode !== mode) throw new Error("방의 시간을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  return lighting;
+}
+export async function launchBeachFireworks(ticket: string, requestId: string): Promise<FireworkLaunch> {
+  const response = await post<FireworkLaunch>("/api/beach/fireworks", { ticket, requestId }, { signal: AbortSignal.timeout(8000) });
+  const event = readFireworkEvent(response?.event);
+  if (!response || Object.keys(response).length !== 3 || !Object.keys(response).every(key => ["event", "serverTime", "cooldownUntil"].includes(key))
+    || !event || !isTime(response.serverTime) || !isTime(response.cooldownUntil)
+    || event.startedAt > response.serverTime || response.cooldownUntil < event.startedAt + 15_000
+    || response.cooldownUntil > response.serverTime + 15_000) {
+    throw new Error("불꽃놀이 시작을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  }
+  return { event, serverTime: response.serverTime, cooldownUntil: response.cooldownUntil };
 }
 export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId }, { signal: AbortSignal.timeout(8000) });
 export async function addFirePowder(ticket: string, requestId: string, color: PowderColor): Promise<FireState> {
@@ -197,6 +287,14 @@ function validRestPresence(value: unknown): value is RestPresence {
   if (![state.x, state.z, state.yaw].every(Number.isFinite)) return false;
   if (state.pose === "standing") return state.spotId === null && state.slot === null;
   if (!Number.isInteger(state.slot) || state.slot! < 0) return false;
+  if (state.spotId === "onsen-benches" || state.spotId === "onsen-float") {
+    const sitting = state.spotId === "onsen-benches";
+    if (state.pose !== (sitting ? "sitting" : "lying") || state.slot! >= (sitting ? 6 : 3)) return false;
+    const angle = (15 + state.slot! * 30) * Math.PI / 180;
+    const x = sitting ? Math.cos(angle) * 3.55 : (state.slot! - 1) * 2.4;
+    const z = sitting ? 45 + Math.sin(angle) * 3.55 : 43.3;
+    return Math.abs(state.x - x) <= 0.02 && Math.abs(state.z - z) <= 0.02 && Math.abs(state.yaw) < 1e-6;
+  }
   if (state.pose === "sitting") return state.spotId === "fire-benches" && state.slot! < 12;
   return state.pose === "lying" && (state.spotId === "starlight" ? state.slot! < 8
     : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3);
