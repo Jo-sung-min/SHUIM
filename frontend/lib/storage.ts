@@ -82,6 +82,7 @@ export interface BriefingData {
 
 export interface Briefing {
   date: string;
+  contextVersion?: number;
   generatedAt: number;
   source: "ai" | "local";
   crisis: boolean;
@@ -98,13 +99,25 @@ export interface MomentData {
   closing: string;
 }
 
+export interface MomentQuote {
+  id: string;
+  text: string;
+  author: string;
+  source: string;
+  sourceUrl: string;
+  theme: string;
+  kind: "paraphrase" | "translation";
+}
+
 export interface Moment {
   date: string;
+  contextVersion?: number;
   mode: MomentMode;
   generatedAt: number;
   source: "ai" | "local";
   crisis: boolean;
   data: MomentData;
+  quote?: MomentQuote;
 }
 
 /* ---------- 메모로 나를 점검하기 ---------- */
@@ -119,6 +132,7 @@ export interface ReviewData {
 
 export interface Review {
   date: string;
+  contextVersion?: number;
   generatedAt: number;
   source: "ai" | "local";
   crisis: boolean;

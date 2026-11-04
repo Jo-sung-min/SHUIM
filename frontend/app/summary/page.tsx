@@ -5,8 +5,9 @@ import SafetyReport from "@/components/SafetyReport";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CATEGORIES, Category, CategoryId, allCategories, orderCategories } from "@/lib/categories";
-import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal, syncRecords } from "@/lib/storage";
-import { lastNDays } from "@/lib/accel";
+import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal, sessionUserId, syncRecords, todayKey } from "@/lib/storage";
+import { summaryEntries } from "@/lib/today-context";
+import { useCurrentDay } from "@/lib/use-current-day";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar } from "@/components/ui";
 import { IconChevronL, IconSparkle } from "@/components/Icons";
@@ -15,30 +16,41 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 type Sel = CategoryId | "all";
 
 interface Result {
+  date: string;
+  category: Sel;
+  days: number;
   summary: string;
   source: "ai" | "local";
   crisis: boolean;
 }
 
 export default function SummaryPage() {
+  const [today, refreshToday] = useCurrentDay();
   const [journal, setJournal] = useState<Journal>({});
   const [cats, setCats] = useState<Category[]>(CATEGORIES);
   const [sel, setSel] = useState<Sel>("all");
   const [range, setRange] = useState<7 | 14 | 30>(7);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const [storedResult, setResult] = useState<Result | null>(null);
+  const result = storedResult?.date === today && storedResult.category === sel && storedResult.days === range ? storedResult : null;
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  const lifecycle = useRef(0);
+  const selection = useRef({ sel, range });
+  selection.current = { sel, range };
+  useEffect(() => () => { lifecycle.current++; }, []);
 
   useEffect(() => {
+    let active = true;
     syncRecords().then(() => {
+      if (!active || todayKey() !== today) return;
       setJournal(loadJournal());
       setCats(orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()));
     });
-  }, []);
+    return () => { active = false; };
+  }, [today]);
 
-  const dates = lastNDays(range);
-  const entries = dates.filter((d) => journal[d]).map((d) => ({ date: d, record: journal[d] }));
+  const entries = summaryEntries(journal, today, range);
 
   const run = async () => {
     if (running.current) return;
@@ -46,20 +58,38 @@ export default function SummaryPage() {
     setLoading(true);
     setError(null);
     setResult(null);
+    const epoch = lifecycle.current;
+    let requestDate = todayKey();
+    let requestUser = sessionUserId();
+    const isCurrent = () => lifecycle.current === epoch && todayKey() === requestDate && sessionUserId() === requestUser
+      && selection.current.sel === sel && selection.current.range === range;
     try {
       if (!(await requestAiProcessing())) return;
+      if (lifecycle.current !== epoch || selection.current.sel !== sel || selection.current.range !== range) return;
+      requestDate = refreshToday();
+      requestUser = sessionUserId();
+      const currentJournal = loadJournal();
+      const currentEntries = summaryEntries(currentJournal, requestDate, range);
+      setJournal(currentJournal);
+      if (currentEntries.length === 0) return;
       const res = await fetch("/api/summarize", {
         method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries, category: sel, days: range, categories: cats }),
+        body: JSON.stringify({ date: requestDate, entries: currentEntries, category: sel, days: range,
+          categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()) }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
-      setResult(await res.json());
+      const json = await res.json();
+      if (isCurrent()) setResult({ ...json, date: requestDate, category: sel, days: range });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "정리하지 못했어요");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "정리하지 못했어요");
     } finally {
-      running.current = false;
-      setLoading(false);
+      if (lifecycle.current === epoch) {
+        running.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -111,6 +141,7 @@ export default function SummaryPage() {
           <section className="card" style={{ marginTop: 12 }}>
             <div style={{ marginBottom: 10 }}>
               <span className={`badge ${result.source === "ai" ? "" : "gray"}`}>{result.source === "ai" ? "AI 정리" : "기록 정리"}</span>
+              <span className="tiny muted" style={{ marginLeft: 8 }}>{result.date} 기준</span>
             </div>
             <div className="summary-body">{result.summary}</div>
             <SafetyReport kind="ai" context={result.summary} />

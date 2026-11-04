@@ -192,6 +192,12 @@
 .aiNote :global(.badge) { flex: none; font-size: 11px; padding: 3px 8px; letter-spacing: .02em; }
 .aiNote > span { flex: 1; min-width: 0; }
 .aiNote a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.momentQuote { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.momentQuote summary { width: fit-content; cursor: pointer; color: var(--text-2); font-weight: 600; }
+.momentQuote p { margin: 12px 0 8px; font-size: 14px; color: var(--text); }
+.momentQuote span, .momentQuote small { display: block; }
+.momentQuote a { display: inline-block; margin-top: 6px; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+.momentRefresh { display: flex; justify-content: flex-end; margin-top: 14px; }
 .pending { display: grid; gap: 12px; padding-top: 12px; }
 .pending :global(.skeleton) { height: 96px; border-radius: 20px; }
 @media (max-width: 360px) {

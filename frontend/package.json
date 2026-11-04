@@ -16,6 +16,8 @@
     "test:availability": "node --test scripts/service-availability.test.mjs",
     "test:media": "node --test scripts/photo-edit.test.mjs scripts/upload.test.mjs",
     "test:quotes": "node --test scripts/daily-quote.test.mjs",
+    "test:admin-quotes": "node --test scripts/admin-quotes.test.mjs",
+    "test:today": "node --test scripts/today-context.test.mjs",
     "check:release": "node scripts/check-release.mjs"
   },
   "dependencies": {

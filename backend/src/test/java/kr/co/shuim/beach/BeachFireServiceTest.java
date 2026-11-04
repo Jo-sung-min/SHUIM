@@ -37,6 +37,52 @@ class BeachFireServiceTest {
     }
 
     @Test
+    void aSingleAddedLogLastsExactlyOneMinute() {
+        service.snapshot("a");
+        clock.addAndGet(180_000);
+        assertEquals(0, service.snapshot("a").logs());
+
+        long addedAt = clock.get();
+        var added = service.addWood("a", "u", key());
+        assertEquals(1, added.logs());
+        assertEquals(addedAt + 60_000, added.nextLogBurnAt());
+
+        clock.set(addedAt + 59_999);
+        var almostBurned = service.snapshot("a");
+        assertEquals(1, almostBurned.logs());
+        assertTrue(almostBurned.intensity() > 0);
+
+        clock.set(addedAt + 60_000);
+        var burned = new BeachFireService(repository, clock::get).snapshot("a");
+        assertEquals(0, burned.logs());
+        assertEquals(0, burned.intensity());
+        assertNull(burned.nextLogBurnAt());
+    }
+
+    @Test
+    void addingWoodPreservesTheCurrentMinuteAndAbsenceDoesNotPauseBurning() {
+        long start = clock.get();
+        service.snapshot("a");
+        clock.addAndGet(45_000);
+        var added = service.addWood("a", "u", key());
+        assertEquals(4, added.logs());
+        assertEquals(start + 60_000, added.nextLogBurnAt(), "adding a log must not reset the current log's timer");
+
+        clock.set(start + 60_000);
+        var afterOneMinute = service.snapshot("a");
+        assertEquals(3, afterOneMinute.logs());
+        assertEquals(start + 120_000, afterOneMinute.nextLogBurnAt());
+
+        clock.set(start + 180_000);
+        var reconnected = new BeachFireService(repository, clock::get).snapshot("a");
+        assertEquals(1, reconnected.logs(), "elapsed minutes count even with no intervening snapshots");
+        assertEquals(start + 240_000, reconnected.nextLogBurnAt());
+
+        clock.set(start + 240_000);
+        assertEquals(0, service.snapshot("a").logs());
+    }
+
+    @Test
     void woodRetryIsIdempotentAcrossRestartAndCooldownAppliesAcrossTabs() {
         String request = key();
         assertEquals(4, service.addWood("a", "u", request).logs());

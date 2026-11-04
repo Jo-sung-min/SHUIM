@@ -7,15 +7,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Briefing,
-  Goal,
-  Journal,
-  LogBook,
-  Memo,
   Moment,
   MomentMode,
   Review,
-  ScheduleItem,
-  addDays,
   loadBriefing,
   loadCategoryOrder,
   loadCustomCategories,
@@ -46,16 +40,14 @@ import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
 import Highlighted from "@/components/Highlighted";
 import { stripHighlights } from "@/lib/highlight";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
+import { AI_CONTEXT_VERSION, buildTodayContext, currentAiResult, type TodayRecords } from "@/lib/today-context";
+import { useCurrentDay } from "@/lib/use-current-day";
 import styles from "./account-screens.module.css";
 
 const TONE_CLASS: Record<CareTone, string> = { briefing: styles.toneBriefing, praise: styles.tonePraise, love: styles.toneLove, review: styles.toneReview, mint: styles.toneMint, plum: styles.tonePlum };
 
-interface Data {
-  journal: Journal;
-  log: LogBook;
-  memos: Memo[];
-  goals: Goal[];
-  schedule: ScheduleItem[];
+function readTodayRecords(): TodayRecords {
+  return { journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() };
 }
 
 type Mode = "briefing" | MomentMode | "review";
@@ -79,43 +71,22 @@ const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   love: { label: "사랑받기", heading: "오늘의 사랑" },
 };
 
-/** API로 보낼 재료: 최근 기록, 오늘 한 일, 메모, 목표, 일정 */
-function buildPayload(data: Data, today: string) {
-  const recentKeys = Object.keys(data.journal)
-    .filter((k) => k < today && k >= addDays(today, -7))
-    .sort();
-  return {
-    date: today,
-    categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()),
-    prompts: loadPrompts(),
-    today: data.journal[today] ?? {},
-    todayDid: data.log[today]?.did ?? [],
-    recent: recentKeys.map((k) => ({ date: k, record: data.journal[k], did: data.log[k]?.did ?? [] })),
-    memos: [...data.memos]
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)
-      .slice(0, 20)
-      .map((m) => ({ cat: m.cat, text: m.text, pinned: m.pinned })),
-    goals: data.goals
-      .filter((g) => !g.doneAt)
-      .map((g) => ({ title: g.title, cat: g.cat, why: g.why, due: g.due, steps: g.steps.map((s) => ({ text: s.text, done: s.done })) })),
-    schedule: data.schedule
-      .filter((s) => s.date >= today && s.date <= addDays(today, 3))
-      .sort((a, b) => (a.date + (a.time ?? "99")).localeCompare(b.date + (b.time ?? "99")))
-      .map((s) => ({ date: s.date, time: s.time, title: s.title, cat: s.cat, done: s.done })),
-  };
-}
-
 export default function HomePage() {
-  const [today, setToday] = useState(todayKey);
-  const [data, setData] = useState<Data | null>(null);
-  const [briefing, setBriefing] = useState<Briefing | null>(null);
-  const [moments, setMoments] = useState<Partial<Record<MomentMode, Moment>>>({});
+  const [today, refreshToday] = useCurrentDay();
+  const [data, setData] = useState<TodayRecords | null>(null);
+  const [storedBriefing, setBriefing] = useState<Briefing | null>(null);
+  const [storedMoments, setMoments] = useState<Partial<Record<MomentMode, Moment>>>({});
   const [open, setOpen] = useState<MomentMode | null>(null);
-  const [review, setReview] = useState<Review | null>(null);
+  const [storedReview, setReview] = useState<Review | null>(null);
+  const briefing = currentAiResult(storedBriefing, today);
+  const moments = { praise: currentAiResult(storedMoments.praise, today), love: currentAiResult(storedMoments.love, today) };
+  const review = currentAiResult(storedReview, today);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [loading, setLoading] = useState<Mode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const lifecycle = useRef(0);
+  useEffect(() => () => { lifecycle.current++; }, []);
   const router = useRouter();
   // 나를 위한 시간: 추가한 칸과 오늘 했는지 (이 기기, 계정별)
   const [careExtras, setCareExtras] = useState<string[]>([]);
@@ -128,39 +99,17 @@ export default function HomePage() {
     setCareDone(Object.fromEntries(ids.map((id) => [id, careDoneToday(id, today)])));
   }, [today]);
 
-  // Refresh the record day too when the app stays open overnight or resumes.
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = () => {
-      const now = new Date();
-      setToday(todayKey(now));
-      clearTimeout(timer);
-      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      timer = setTimeout(refresh, midnight.getTime() - now.getTime() + 50);
-    };
-    const onVisibility = () => { if (!document.hidden) refresh(); };
-    refresh();
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, []);
-
-  const reload = useCallback(() => {
-    setBriefing((current) => current?.date === today ? current : null);
-    setMoments((current) => ({ praise: current.praise?.date === today ? current.praise : undefined, love: current.love?.date === today ? current.love : undefined }));
-    setReview((current) => current?.date === today ? current : null);
+    let active = true;
+    setError(null);
     const apply = () => {
-      setData({ journal: loadJournal(), log: loadLog(), memos: loadMemos(), goals: loadGoals(), schedule: loadSchedule() });
-      const b = loadBriefing();
-      setBriefing(b && b.date === today ? b : null);
+      // A previous day's sync may finish after the midnight reload.
+      if (!active || todayKey() !== today) return;
+      setData(readTodayRecords());
+      setBriefing(currentAiResult(loadBriefing(), today));
       const m = loadMoments();
-      setMoments({ praise: m.praise?.date === today ? m.praise : undefined, love: m.love?.date === today ? m.love : undefined });
-      const r = loadReview();
-      setReview(r && r.date === today ? r : null);
+      setMoments({ praise: currentAiResult(m.praise, today) ?? undefined, love: currentAiResult(m.love, today) ?? undefined });
+      setReview(currentAiResult(loadReview(), today));
       setReviewOpen(false);
       setOpen(null);
       refreshCare();
@@ -175,9 +124,8 @@ export default function HomePage() {
       .catch(() => null) // 세션 키만 맞춘다 (계정 표시는 하단 탭 "나"에서)
       .then(() => syncRecords())
       .then((pulled) => { if (!guest || pulled) apply(); });
+    return () => { active = false; };
   }, [today, refreshCare]);
-
-  useEffect(reload, [reload]);
   useScrollMemory(data !== null);
 
   const empty = useMemo(
@@ -190,24 +138,30 @@ export default function HomePage() {
     inFlight.current = true;
     setLoading(mode);
     setError(null);
+    const epoch = lifecycle.current;
+    let requestDay = todayKey();
+    let requestUser = sessionUserId();
+    const isCurrent = () => lifecycle.current === epoch && todayKey() === requestDay && sessionUserId() === requestUser;
     try {
       if (!(await requestAiProcessing())) return;
-      const payload = buildPayload(data, today);
-      const allMemos =
-        mode === "review"
-          ? [...data.memos]
-              .sort((a, b) => a.createdAt - b.createdAt)
-              .map((m) => ({ date: todayKey(new Date(m.createdAt)), cat: m.cat, text: m.text, pinned: m.pinned }))
-          : undefined;
+      if (lifecycle.current !== epoch) return;
+      // Consent may stay open across midnight; read the day and records at send time.
+      requestDay = refreshToday();
+      requestUser = sessionUserId();
+      const records = readTodayRecords();
+      setData(records);
       const res = await fetch("/api/today", {
         method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, ...payload, allMemos }),
+        body: JSON.stringify({ mode, ...buildTodayContext(records, requestDay, mode === "review"),
+          categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()), prompts: loadPrompts() }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
       const json = await res.json();
-      if (todayKey() !== today) return;
-      const base = { date: today, generatedAt: Date.now(), source: json.source, crisis: json.crisis };
+      if (!isCurrent()) return;
+      const base = { date: requestDay, contextVersion: AI_CONTEXT_VERSION, generatedAt: Date.now(), source: json.source, crisis: json.crisis };
       if (mode === "briefing") {
         const b: Briefing = { ...base, data: json.briefing };
         saveBriefing(b);
@@ -219,22 +173,25 @@ export default function HomePage() {
         setReviewOpen(true);
         setOpen(null);
       } else {
-        const m: Moment = { ...base, mode, data: json.moment };
+        const m: Moment = { ...base, mode, data: json.moment, quote: json.quote };
         saveMoment(m);
         setMoments((cur) => ({ ...cur, [mode]: m }));
         setOpen(mode);
         setReviewOpen(false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "정리하지 못했어요");
+      if (isCurrent()) setError(e instanceof Error ? e.message : "정리하지 못했어요");
     } finally {
-      inFlight.current = false;
-      setLoading(null);
+      if (lifecycle.current === epoch) {
+        inFlight.current = false;
+        setLoading(null);
+      }
     }
   };
 
   const press = (mode: Mode) => {
     if (loading) return;
+    if (todayKey() !== today) { void call(mode); return; }
     if (mode === "briefing") {
       if (!briefing) call("briefing");
     } else if (mode === "review") {
@@ -406,6 +363,18 @@ export default function HomePage() {
             </ul>
             {/* 마지막 한마디는 문장 자체가 위로라 통째로 형광펜. AI 가 일부만 ==표시== 해도 중간에서 끊기지 않게 표시를 떼고 문장 전체를 칠한다 */}
             {openMoment.data.closing && <p className="closing"><mark className="hl">{stripHighlights(openMoment.data.closing)}</mark></p>}
+            {openMoment.quote && (
+              <details className={styles.momentQuote}>
+                <summary>함께 읽은 문장</summary>
+                <p>{openMoment.quote.text}</p>
+                <span>{openMoment.quote.author} · {openMoment.quote.source}</span>
+                <small>{openMoment.quote.kind === "paraphrase" ? "사상을 풀어 쓴 문장" : "원문을 옮긴 문장"}</small>
+                {/^https?:\/\//i.test(openMoment.quote.sourceUrl) && <a href={openMoment.quote.sourceUrl} target="_blank" rel="noopener noreferrer">원문 보기</a>}
+              </details>
+            )}
+            <div className={styles.momentRefresh}>
+              <button type="button" className="btn ghost sm" onClick={() => void call(open)}>{MOMENTS[open].heading} 다시 받기</button>
+            </div>
           </section>
         )}
 

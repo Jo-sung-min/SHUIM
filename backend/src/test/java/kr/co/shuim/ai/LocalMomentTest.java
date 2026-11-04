@@ -8,66 +8,72 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** AI 키가 없을 때의 칭찬받기·사랑받기: 반말, 넉넉한 칭찬, 조건 없는 사랑(조언·숙제 없음) */
+/** Local fallback keeps today's facts separate from historical context. */
 class LocalMomentTest {
-    private static Request req(String mode, List<RecentDay> recent, List<String> todayDid) {
-        return new Request(mode, null, "2026-10-26", Map.of(), todayDid, recent, List.of(), List.of(), List.of(), List.of(), Map.of()).normalized();
+    private static Request req(String mode, Map<String, Entry> today, List<RecentDay> recent, List<String> todayDid) {
+        return new Request(mode, null, "2026-11-04", today, todayDid, recent, List.of(), List.of(), List.of(), List.of(), Map.of()).normalized();
     }
 
     private static final List<RecentDay> RECENT = List.of(
-        new RecentDay("2026-10-24", Map.of("mind", new Entry(-3, null, "불안함")), List.of("산책")),
-        new RecentDay("2026-10-25", Map.of("mind", new Entry(0, null, "조금 괜찮아짐")), List.of("일찍 잠"))
+        new RecentDay("2026-10-24", Map.of("mind", new Entry(-3, null, "오래전 불안했던 일")), List.of("오래전 산책")),
+        new RecentDay("2026-10-25", Map.of("mind", new Entry(-1, null, "지난날의 걱정")), List.of("예전에 일찍 잠"))
     );
 
-    private static long sentences(String s) {
-        return s.chars().filter(ch -> ch == '.').count();
-    }
-
-    @Test
-    void praiseGoesComfortThenEmpathyThenPraise() {
-        Moment m = TodayService.localPraise(req("praise", RECENT, List.of("운동")));
-        assertEquals(3, m.lines().size(), "딱 3문단: " + m.lines());
-        for (String l : m.lines()) {
-            assertTrue(sentences(l) >= 3, "문단마다 길게(3문장 이상): " + l);
-            assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
-            assertFalse(l.contains("최고") || l.contains("대단한 거야") || l.contains("박수"), "억지로 띄우지 않기: " + l);
+    private static void assertThreeWarmParagraphs(Moment m) {
+        assertEquals(3, m.lines().size());
+        for (String line : m.lines()) {
+            assertTrue(line.chars().filter(ch -> ch == '.').count() >= 3, line);
+            assertFalse(line.endsWith("요."), line);
+            assertFalse(line.contains("해 봐") || line.contains("해보는"), line);
         }
-        assertTrue(m.lines().get(0).contains("불안함") && m.lines().get(0).contains("괜찮아"), "① 힘든 날을 짚으며 위로: " + m.lines().get(0));
-        assertTrue(m.lines().get(1).contains("올라온 날"), "② 다시 올라온 날을 알아주는 공감: " + m.lines().get(1));
-        assertTrue(m.lines().get(2).contains("운동"), "③ 해낸 행동을 칭찬: " + m.lines().get(2));
         assertFalse(m.closing().contains("=="));
     }
 
     @Test
-    void praiseStillHasThreeThemesWithNoRecords() {
-        Moment m = TodayService.localPraise(req("praise", List.of(), List.of()));
-        assertEquals(3, m.lines().size());
-        assertTrue(m.lines().get(0).contains("손대기 힘들 만큼 지쳐"), "기록이 없으면 부족이 아니라 지침으로 읽는다: " + m.lines().get(0));
-        for (String l : m.lines()) assertFalse(l.contains("기록이 많지") || l.contains("기록이 적"), "기록이 부족하다는 말 금지: " + l);
-        assertTrue(m.lines().get(2).contains("칭찬받기를 눌렀다는"));
+    void praiseFocusesOnTodaysActionWithoutMixingPreviousActions() {
+        Moment m = TodayService.localPraise(req("praise", Map.of(), RECENT, List.of("오늘 운동")));
+        assertThreeWarmParagraphs(m);
+        assertTrue(m.lines().get(0).contains("오늘 운동"));
+        assertTrue(m.lines().get(2).contains("오늘 운동"));
+        assertFalse(m.toString().contains("오래전 산책") || m.toString().contains("예전에 일찍 잠"));
+        assertFalse(m.toString().contains("오래전 불안했던 일"));
     }
 
     @Test
-    void loveGoesEmpathyThenComfortThenLove() {
-        Moment m = TodayService.localLove(req("love", RECENT, List.of()));
-        assertEquals(3, m.lines().size(), "딱 3문단: " + m.lines());
+    void loveStartsWithTodayAndDatesRelatedHistory() {
+        Moment m = TodayService.localLove(req("love", Map.of("mind", new Entry(3, null, "오늘은 마음이 편안해")), RECENT, List.of("책 읽기")));
+        assertThreeWarmParagraphs(m);
         assertTrue(m.title().contains("자격"));
-        for (String l : m.lines()) {
-            assertTrue(sentences(l) >= 3, "문단마다 길게(3문장 이상): " + l);
-            assertFalse(l.contains("해봐") || l.contains("해 봐") || l.contains("해보는"), "조언 금지: " + l);
-            assertFalse(l.endsWith("요."), "반말이어야 해: " + l);
-        }
-        assertTrue(m.lines().get(0).contains("불안함") && m.lines().get(0).contains("힘들었겠구나"), "① 기록 속 마음 메모를 짚으며 공감: " + m.lines().get(0));
-        assertTrue(m.lines().get(1).contains("자책하지 않아도"), "② 위로: " + m.lines().get(1));
-        assertTrue(m.lines().get(2).contains("사랑받을 자격"), "③ 조건 없는 사랑: " + m.lines().get(2));
+        assertTrue(m.lines().get(0).contains("오늘은 마음이 편안해"));
+        assertTrue(m.lines().get(0).contains("책 읽기"));
+        assertFalse(m.lines().get(0).contains("걱정") || m.lines().get(0).contains("불안"));
+        assertTrue(m.lines().get(1).contains("2026-10-25"));
+        assertTrue(m.lines().get(1).contains("지난날의 걱정"));
+        assertTrue(m.lines().get(2).contains("사랑받을 자격"));
     }
 
     @Test
-    void loveStillHasThreeParagraphsWithNoRecords() {
-        Moment m = TodayService.localLove(req("love", List.of(), List.of()));
-        assertEquals(3, m.lines().size());
-        assertTrue(m.lines().get(0).contains("손대기 힘들 만큼 지쳤구나"), "기록이 없으면 부족이 아니라 지침으로 읽는다: " + m.lines().get(0));
-        for (String l : m.lines()) assertFalse(l.contains("기록이 많지") || l.contains("기록이 적"), "기록이 부족하다는 말 금지: " + l);
-        assertTrue(m.lines().get(1).contains("네 잘못이 아니야"));
+    void noTodayEvidenceDoesNotInferExhaustionOrReusePastEvents() {
+        for (String mode : List.of("praise", "love")) {
+            for (List<RecentDay> history : List.of(RECENT, List.<RecentDay>of())) {
+                Request b = req(mode, Map.of(), history, List.of());
+                Moment m = mode.equals("love") ? TodayService.localLove(b) : TodayService.localPraise(b);
+                assertThreeWarmParagraphs(m);
+                assertFalse(m.toString().contains("지쳤구나") || m.toString().contains("손대기 힘들"));
+                assertFalse(m.toString().contains("오래전") || m.toString().contains("지난날의 걱정"));
+                assertFalse(m.toString().contains("기록이 적") || m.toString().contains("기록이 많지"));
+            }
+        }
+    }
+
+    @Test
+    void localLoveUsesTodaysMemoEvenWhenNoDailyScoreExists() {
+        Request b = new Request("love", null, "2026-11-04", Map.of(), List.of(), RECENT,
+            List.of(new MemoIn("mind", "오늘 메모 속 이야기", false, "2026-11-04"),
+                new MemoIn("mind", "옛날 고정 메모", true, "2026-10-01")),
+            List.of(), List.of(), List.of(), Map.of()).normalized();
+        Moment m = TodayService.localLove(b);
+        assertTrue(m.lines().get(0).contains("오늘 메모 속 이야기"));
+        assertFalse(m.toString().contains("옛날 고정 메모"));
     }
 }

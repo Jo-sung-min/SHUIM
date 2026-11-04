@@ -1,0 +1,26 @@
+.tabs :global(.segmented) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tabs :global(.segmented button) { min-width: 0; padding-inline: 3px; font-size: 12px; min-height: 44px; }
+.toolbar { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin: 16px 0 12px; }
+.filters { display: grid; gap: 12px; margin-bottom: 16px; }
+.filterRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.filterRow > *, .form > * { min-width: 0; }
+.quoteCard { display: grid; gap: 12px; overflow-wrap: anywhere; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pending { color: var(--tone-praise); background: color-mix(in srgb, var(--tone-praise) 10%, var(--surface)); }
+.quotation { margin: 0; color: var(--text); font-size: 17px; line-height: 1.7; white-space: pre-wrap; }
+.attribution { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 13px; line-height: 1.6; }
+.attribution dt { color: var(--text-2); }
+.attribution dd { margin: 0; }
+.sourceLink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.review { padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.usage { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.55; cursor: pointer; }
+.usage input { margin-top: 1px; }
+.cardFooter { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.form { display: grid; gap: 16px; }
+.form fieldset { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.form small { font-size: 12px; color: var(--text-2); font-weight: 400; }
+.notice { margin: 0; padding: 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; line-height: 1.6; }
+.success { color: var(--tone-mint); }
+.empty { padding: 24px 16px; text-align: center; color: var(--text-2); font-size: 14px; line-height: 1.6; }
+@media (min-width: 400px) { .tabs :global(.segmented button) { font-size: 13px; } }
+@media (max-width: 360px) { .tabs :global(.segmented button) { font-size: 11px; padding-inline: 2px; } }

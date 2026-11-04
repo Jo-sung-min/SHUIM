@@ -6,8 +6,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Comparator;
+import java.time.LocalDate;
 
-/** /api/today 요청·응답 모양 (frontend/app/page.tsx 의 buildPayload 와 lib/storage.ts 의 타입) */
+/** /api/today 요청·응답 모양 (frontend/lib/today-context.ts 와 lib/storage.ts 의 타입) */
 public final class TodayDtos {
     private TodayDtos() {}
 
@@ -15,7 +17,9 @@ public final class TodayDtos {
 
     public record RecentDay(String date, Map<String, Entry> record, List<String> did) {}
 
-    public record MemoIn(String cat, String text, Boolean pinned) {}
+    public record MemoIn(String cat, String text, Boolean pinned, String date) {
+        public MemoIn(String cat, String text, Boolean pinned) { this(cat, text, pinned, null); }
+    }
 
     public record GoalStep(String text, Boolean done) {}
 
@@ -31,21 +35,35 @@ public final class TodayDtos {
 
         /** 비어 있는 값은 기본값으로, 목록은 서버가 감당할 길이로 자른다 */
         public Request normalized() {
-            List<RecentDay> r = recent == null ? List.of() : recent.stream().filter(x -> x != null && x.date() != null)
+            if (date != null && !validDate(date)) throw kr.co.shuim.config.ApiException.badRequest("기준 날짜를 다시 확인해 주세요");
+            String day = date == null ? kr.co.shuim.common.Dates.todayKey() : date;
+            List<RecentDay> r = recent == null ? List.of() : recent.stream().filter(x -> x != null && validDate(x.date()) && x.date().compareTo(day) < 0)
+                .sorted(Comparator.comparing(RecentDay::date))
                 .map(x -> new RecentDay(x.date(), x.record() == null ? Map.of() : clean(x.record()), x.did() == null ? List.of() : x.did())).toList();
             if (r.size() > 7) r = r.subList(r.size() - 7, r.size());
-            List<MemoIn> m = memos == null ? List.of() : memos.stream().filter(x -> x != null && x.text() != null).toList();
+            List<MemoIn> m = memos == null ? List.of() : memos.stream().filter(x -> x != null && x.text() != null)
+                .filter(x -> !validDate(x.date()) || x.date().compareTo(day) <= 0)
+                .map(x -> new MemoIn(x.cat(), x.text(), x.pinned(), validDate(x.date()) ? x.date() : null))
+                .sorted(Comparator.comparing((MemoIn x) -> !day.equals(x.date())))
+                .toList();
             if (m.size() > 20) m = m.subList(0, 20);
             List<GoalIn> g = goals == null ? List.of() : goals.stream().filter(x -> x != null && x.title() != null)
                 .map(x -> new GoalIn(x.title(), x.cat(), x.why() == null ? "" : x.why(), x.due(), x.steps() == null ? List.of() : x.steps().stream().filter(s -> s != null && s.text() != null).toList())).toList();
             if (g.size() > 8) g = g.subList(0, 8);
             List<ScheduleIn> s = schedule == null ? List.of() : schedule.stream().filter(x -> x != null && x.title() != null).toList();
             if (s.size() > 20) s = s.subList(0, 20);
-            List<DatedMemo> all = allMemos == null ? List.of() : allMemos.stream().filter(x -> x != null && x.text() != null && x.date() != null).toList();
+            List<DatedMemo> all = allMemos == null ? List.of() : allMemos.stream().filter(x -> x != null && x.text() != null && validDate(x.date()) && x.date().compareTo(day) <= 0)
+                .sorted(Comparator.comparing(DatedMemo::date)).toList();
             if (all.size() > 300) all = all.subList(all.size() - 300, all.size());
             String md = "praise".equals(mode) || "love".equals(mode) || "review".equals(mode) ? mode : "briefing";
-            return new Request(md, Categories.of(categories), date == null ? kr.co.shuim.common.Dates.todayKey() : date,
+            return new Request(md, Categories.of(categories), day,
                 today == null ? Map.of() : clean(today), todayDid == null ? List.of() : todayDid, r, m, g, s, all, prompts == null ? Map.of() : prompts);
+        }
+
+        private static boolean validDate(String value) {
+            if (value == null || !value.matches("\\d{4}-\\d{2}-\\d{2}")) return false;
+            try { return LocalDate.parse(value).toString().equals(value); }
+            catch (java.time.DateTimeException e) { return false; }
         }
 
         private static Map<String, Entry> clean(Map<String, Entry> in) {

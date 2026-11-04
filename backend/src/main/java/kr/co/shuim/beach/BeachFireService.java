@@ -14,7 +14,7 @@ import java.util.function.LongSupplier;
 @Service
 public class BeachFireService {
     public static final int MAX_LOGS = 12, INITIAL_LOGS = 3;
-    public static final long LOG_BURN_MS = 10 * 60_000L, WOOD_COOLDOWN_MS = 3_000L, COLOR_DURATION_MS = 24 * 60 * 60_000L;
+    public static final long LOG_BURN_MS = 60_000L, WOOD_COOLDOWN_MS = 3_000L, COLOR_DURATION_MS = 24 * 60 * 60_000L;
     public static final double FIRE_X = 0, FIRE_Z = 12, WOOD_RADIUS = 5;
     public static final Set<String> PAID_COLORS = Set.of("rose", "aurora", "ocean", "violet");
 

@@ -169,6 +169,8 @@ class BeachPowderTest {
             () -> effects.add("overflow", "one", UUID.randomUUID(), "rose", base)).status());
         clock.addAndGet(BeachFirePowder.RETRY_MS + 1);
         assertNull(effects.snapshot("room-0", base).powder());
-        assertNotNull(effects.add("overflow", "one", UUID.randomUUID(), "rose", base).powder());
+        // The original logs have burned out while retry records expired; test the
+        // reclaimed request slot with fresh fuel rather than the stale snapshot.
+        assertNotNull(effects.add("overflow", "one", UUID.randomUUID(), "rose", fire.snapshot("overflow")).powder());
     }
 }
