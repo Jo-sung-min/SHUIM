@@ -15,6 +15,12 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleService;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.config.ApiException;
+import org.springframework.core.io.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,14 +44,21 @@ public class BeachController {
     private final BlockService blocks;
     private final BeachService beach;
     private final CircleService circles;
+    private final RoomMusicRecordings recordings;
     // Privacy is immutable after creation. All live visits are admitted here; restart clears both indexes.
     private final Set<String> privateCommunities = ConcurrentHashMap.newKeySet();
 
     public BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles) {
+        this(auth, blocks, beach, circles, null);
+    }
+
+    @Autowired
+    BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles, RoomMusicRecordings recordings) {
         this.auth = auth;
         this.blocks = blocks;
         this.beach = beach;
         this.circles = circles;
+        this.recordings = recordings;
     }
 
     /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
@@ -85,6 +98,8 @@ public class BeachController {
     public record PowderBody(String ticket, String requestId, String color) {}
     public record RestBody(String ticket, String action, String spotId) {}
     public record LightingBody(String ticket, String mode) {}
+    public record MusicBody(String ticket, String action, String trackId,
+                            @JsonDeserialize(using = SequenceDeserializer.class) Long expectedVersion) {}
     public record MomentBody(
         @JsonDeserialize(using = MomentTextDeserializer.class) String ticket,
         @JsonDeserialize(using = MomentTextDeserializer.class) String requestId,
@@ -166,6 +181,7 @@ public class BeachController {
         out.put("careCapabilities", new BeachRoom.CareCapabilities(true, auth.isAdmin(me)));
         out.put("lightingControl", auth.isAdmin(me));
         out.put("lighting", beach.lighting(circle.id(), map.id()));
+        out.put("musicControl", auth.isAdmin(me));
         out.put("fireworksControl", auth.isAdmin(me));
         BeachRoom.FireworksState fireworks = beach.fireworks(circle.id(), map.id());
         out.put("fireworks", fireworks.events());
@@ -180,7 +196,10 @@ public class BeachController {
         out.put("count", beach.count(circle.id(), map.id()));
         BeachFireService.FireView fire = beach.fire(circle.id(), map.id());
         out.put("fire", fire);
-        out.put("serverTime", fire.serverTime());
+        BeachRoom.MusicState playback = beach.music(circle.id(), map.id());
+        out.put("music", playback.music());
+        out.put("serverTime", playback.serverTime());
+        if (map == BeachMap.BAMBOO) out.put("festival", p.festivalAt(fire.serverTime()));
         return out;
     }
 
@@ -245,6 +264,35 @@ public class BeachController {
         return beach.setLighting(body.ticket(), me.id(), body.mode());
     }
 
+    @PostMapping("/api/beach/music")
+    public BeachRoom.MusicState music(@RequestBody(required = false) MusicBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
+        if (body == null) throw ApiException.badRequest("재생할 음악을 확인해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 방의 음악을 재생하거나 정지할 수 있어요.");
+        return beach.changeMusic(body.ticket(), me.id(), body.action(), body.trackId(), body.expectedVersion());
+    }
+
+    @GetMapping("/api/beach/music/audio")
+    public ResponseEntity<Resource> musicAudio(@RequestParam(required = false) String communityId,
+                                               @RequestParam(required = false) String mapId,
+                                               @RequestParam(required = false) String trackId,
+                                               HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("음악을 들으려면 공간에 다시 들어와 주세요."));
+        CircleService.Circle circle = requireMember(communityId, me);
+        if (mapId == null) throw ApiException.badRequest("이용할 지도를 다시 골라 주세요.");
+        beach.requireMusicListener(circle.id(), mapId, me.id());
+        RoomMusicTrack selected = RoomMusicTrack.from(trackId);
+        // Spring handles byte ranges and conditional GET/HEAD after the same visit check.
+        var response = ResponseEntity.ok().contentType(MediaType.valueOf("audio/mp4"))
+            .cacheControl(CacheControl.noCache().cachePrivate())
+            .varyBy(HttpHeaders.COOKIE, HttpHeaders.AUTHORIZATION)
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes").eTag(selected.id);
+        if ("HEAD".equals(req.getMethod())) return response.contentLength(selected.bytes).build();
+        return response.body(recordings.resource(selected));
+    }
+
     /** POST /api/beach/fireworks { ticket, requestId: UUID, variant? }. A room-wide, retry-safe administrator action. */
     @PostMapping("/api/beach/fireworks")
     public BeachRoom.FireworkLaunch fireworks(@RequestBody(required = false) FireworksBody body, HttpServletRequest req) {
@@ -265,6 +313,16 @@ public class BeachController {
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireMember(visit.communityId(), me);
         return beach.launchUyuniMoment(body.ticket(), me.id(), body.requestId(), body.kind(), body.letter(), body.color(), body.wish(), blocks.excludedIds(me.id()));
+    }
+
+    public record FestivalBody(String ticket, java.util.UUID requestId, String choice) {}
+
+    @PostMapping("/api/beach/festival")
+    public BeachRoom.FestivalChange festival(@RequestBody FestivalBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("대나무숲에 다시 들어와 주세요."));
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        return beach.changeFestival(body.ticket(), me.id(), body.requestId(), body.choice());
     }
 
     /** POST /api/beach/leave { ticket } → { ok: true } (모르는 티켓이어도 ok) */

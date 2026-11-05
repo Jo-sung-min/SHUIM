@@ -63,6 +63,12 @@
       "contentType": "image/webp"
     },
     {
+      "key": "beach/fx/uyuni-calm-night-v1.mp3",
+      "bytes": 4321383,
+      "sha256": "806ce5cd50e1ee244b681104e11b0dba2ec597c01fa41ccaef6d4a5b95fcb38c",
+      "contentType": "audio/mpeg"
+    },
+    {
       "key": "beach/male-avatar.webp",
       "bytes": 12314,
       "sha256": "fa124388aa3968952ff8b197c6fb386a61786e664d20c0ac6b331d1d486613c5",

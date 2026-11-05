@@ -162,18 +162,22 @@ public class BeachRoom {
     /** 다른 사람에게 보여 주는 모습. id 는 유저 id (위로를 보낼 때 쓴다), pid 는 이번 방문의 공개 id */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
-                             String pose, String spotId, Integer slot, long updatedAt) {
+                             String pose, String spotId, Integer slot, long updatedAt,
+                             @JsonInclude(JsonInclude.Include.NON_NULL) FestivalState festival) {
         public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
                           String pose, String spotId, Integer slot) {
-            this(pid, id, nick, skin, x, z, yaw, moving, pose, spotId, slot, 0);
+            this(pid, id, nick, skin, x, z, yaw, moving, pose, spotId, slot, 0, null);
         }
         public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving) {
             this(pid, id, nick, skin, x, z, yaw, moving, "standing", null, null);
         }
         static PlayerView of(Presence p) {
+            return of(p, System.currentTimeMillis());
+        }
+        static PlayerView of(Presence p, long now) {
             synchronized (p) {
                 return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving,
-                    restPose(p), p.restSpot, p.restSlot, p.updatedAt);
+                    restPose(p), p.restSpot, p.restSlot, p.updatedAt, p.festival == null ? null : p.festivalAt(now));
             }
         }
     }
@@ -248,6 +252,36 @@ public class BeachRoom {
         public Received(int comfort, int hug) { this(comfort, hug, 0); }
     }
     public record CareCapabilities(boolean wave, boolean hug) {}
+
+    public record PropellerFlight(UUID id, double x, double z, double yaw, long startedAt, int durationMs) {}
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record FestivalState(String held, PropellerFlight flight, Integer balloonHue) {}
+    public record FestivalChange(FestivalState festival, long serverTime) {}
+
+    synchronized FestivalChange changeFestival(String ticket, String userId, UUID requestId, String choice) {
+        long now = clock.getAsLong();
+        Presence actor = ticket == null ? null : byTicket.get(ticket);
+        if (actor == null || !live(actor, now) || actor.bot()) throw ApiException.gone(BeachController.GONE);
+        if (!actor.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        if (map != BeachMap.BAMBOO || requestId == null || choice == null
+            || !Set.of("balloon", "fan", "propeller", "put-away").contains(choice))
+            throw ApiException.badRequest("대나무숲의 축제 소품을 다시 골라 주세요.");
+        synchronized (actor) {
+            if (actor.suspended) throw ApiException.gone(BeachController.GONE);
+            FestivalState current = actor.festivalAt(now);
+            if (requestId.equals(actor.festivalRequest))
+                return new FestivalChange(current, now);
+            PropellerFlight flight = current.flight();
+            if ("propeller".equals(choice)) {
+                if (flight != null) throw new ApiException(429, "프로펠러가 내려오면 다시 날릴 수 있어요.");
+                flight = new PropellerFlight(requestId, actor.x, actor.z, actor.yaw, now, 6000);
+            }
+            Integer hue = "balloon".equals(choice) ? ThreadLocalRandom.current().nextInt(360) : null;
+            actor.festival = new FestivalState("put-away".equals(choice) ? null : choice, flight, hue);
+            actor.festivalRequest = requestId;
+            return new FestivalChange(actor.festival, now);
+        }
+    }
     /** Room-wide, in-memory lighting. Null hour resumes the real time of day. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Lighting(String mode, Integer hour, long version) {}
@@ -256,10 +290,59 @@ public class BeachRoom {
 
     public Lighting lighting() { return lighting; }
 
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record Music(String trackId, String title, int durationMs, boolean playing, Long startedAt, long version) {
+        private static Music playback(RoomMusicTrack track, Long startedAt, long version) {
+            return new Music(track.id, track.title, track.durationMs, startedAt != null, startedAt, version);
+        }
+        private Music stopped() {
+            return new Music(trackId, title, durationMs, false, null, version + 1);
+        }
+    }
+    public record MusicState(Music music, long serverTime) {}
+    static final Music SILENT = Music.playback(RoomMusicTrack.MORNING, null, 0);
+    private Music music = SILENT;
+
+    private Music musicAt(long now) {
+        if (music.playing() && now - music.startedAt() >= music.durationMs())
+            music = music.stopped();
+        return music;
+    }
+
+    synchronized MusicState musicSnapshot() {
+        long now = clock.getAsLong();
+        return new MusicState(musicAt(now), now);
+    }
+
+    synchronized MusicState changeMusic(String ticket, String userId, String action, String trackId, Long expectedVersion) {
+        long now = clock.getAsLong();
+        Presence actor = ticket == null ? null : byTicket.get(ticket);
+        if (actor == null || actor.bot() || actor.suspended || !live(actor, now)) throw ApiException.gone(BeachController.GONE);
+        if (!actor.userId().equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        if (!"play".equals(action) && !"stop".equals(action))
+            throw ApiException.badRequest("음악 재생 또는 정지를 골라 주세요.");
+        if (expectedVersion == null || expectedVersion < 0 || expectedVersion >= MAX_SEQUENCE)
+            throw ApiException.badRequest("음악 상태를 다시 확인해 주세요.");
+
+        RoomMusicTrack selected = RoomMusicTrack.from(trackId);
+        musicAt(now);
+        // A delayed play/stop from before a newer command or the end of a song must not undo it.
+        if (expectedVersion == music.version()) {
+            if ("play".equals(action) && (!music.playing() || !music.trackId().equals(selected.id)))
+                music = Music.playback(selected, now, music.version() + 1);
+            else if ("stop".equals(action) && music.playing()) music = music.stopped();
+        }
+        return new MusicState(music, now);
+    }
+
+    synchronized boolean hasMusicListener(String userId) {
+        long now = clock.getAsLong();
+        return byTicket.values().stream().anyMatch(p -> p.userId().equals(userId) && !p.bot() && !p.suspended && live(p, now));
+    }
+
     public static final int FIREWORK_DURATION_MS = 12_000;
     public static final long FIREWORK_COOLDOWN_MS = 15_000;
     private static final Set<String> FIREWORK_VARIANTS = Set.of("festival", "songi", "love", "bloom", "saturn", "willow", "stardust");
-    private static final Set<String> UYUNI_FIREWORK_VARIANTS = Set.of("bloom", "saturn", "willow", "stardust");
     private static final long FIREWORK_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000L;
     public record FireworkEvent(String id, int seed, long startedAt, int durationMs, String variant) {}
     public record FireworksState(List<FireworkEvent> events, long cooldownUntil, long serverTime) {}
@@ -326,9 +409,6 @@ public class BeachRoom {
         if (!FIREWORK_VARIANTS.contains(selected)) {
             throw ApiException.badRequest("불꽃놀이 종류를 다시 골라 주세요.");
         }
-        if (map != BeachMap.UYUNI && UYUNI_FIREWORK_VARIANTS.contains(selected)) {
-            throw ApiException.badRequest("이 불꽃놀이는 우유니에서 볼 수 있어요.");
-        }
         // Keep retry identities beyond the animation lifetime without growing indefinitely.
         // At one launch per 15 seconds this holds at most 5,761 entries per room.
         var previous = fireworkRequests.entrySet().iterator();
@@ -366,12 +446,12 @@ public class BeachRoom {
                              BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                              @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities, Lighting lighting,
                              List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence,
-                             List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns) {
+                             List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns, Music music) {
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                           CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence) {
             this(players, events, count, received, care, fire, serverTime, selfRest, careCapabilities, lighting, fireworks,
-                fireworksCooldownUntil, sequence, List.of(), BeachUyuniMoments.NO_COOLDOWNS);
+                fireworksCooldownUntil, sequence, List.of(), BeachUyuniMoments.NO_COOLDOWNS, SILENT);
         }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
@@ -395,10 +475,10 @@ public class BeachRoom {
             this(players, events, count, received, care, fire, serverTime, selfRest, null, AUTO_LIGHTING);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns);
+            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music);
         }
         public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
-            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns);
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music);
         }
     }
 
@@ -415,6 +495,16 @@ public class BeachRoom {
         private volatile double x, z, yaw;
         private volatile boolean moving;
         private volatile Integer restSlot;
+        private FestivalState festival;
+        private UUID festivalRequest;
+
+        synchronized FestivalState festivalAt(long now) {
+            if (festival == null) return new FestivalState(null, null, null);
+            PropellerFlight flight = festival.flight();
+            if (flight != null && now >= flight.startedAt() + flight.durationMs())
+                festival = new FestivalState(festival.held(), null, festival.balloonHue());
+            return festival;
+        }
         private volatile String restSpot;
         private double standingX, standingZ, standingYaw;
         private volatile long lastSeen;
@@ -835,7 +925,7 @@ public class BeachRoom {
         // Other ticks update Presence concurrently. Sort immutable coordinates so comparisons stay consistent.
         List<PlayerView> players = byTicket.values().stream()
             .filter(p -> p != me && live(p, now) && me.sees(p) && p.sees(me))
-            .map(PlayerView::of)
+            .map(p -> PlayerView.of(p, now))
             .sorted(Comparator.comparingDouble(p -> {
                 double dx = p.x() - originX, dz = p.z() - originZ;
                 return dx * dx + dz * dz;
@@ -844,9 +934,10 @@ public class BeachRoom {
             .toList();
         FireworksState fireworks = fireworks();
         BeachUyuniMoments.State moments = uyuniMomentsFor(me);
+        MusicState playback = musicSnapshot();
         return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
-            care, null, Math.max(fireworks.serverTime(), moments.serverTime()), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence,
-            moments.events(), moments.cooldowns());
+            care, null, playback.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence,
+            moments.events(), moments.cooldowns(), playback.music());
     }
 
     private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {

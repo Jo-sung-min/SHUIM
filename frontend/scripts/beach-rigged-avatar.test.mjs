@@ -9,6 +9,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { assets } from "./assets-fixture.mjs";
 import { readAssetBytes } from "./asset-bytes-fixture.mjs";
+import { SPARKLER_DRAW_END, SPARKLER_RELEASE_END } from "../lib/beach/sparkler-timing.ts";
 
 const bytes = await readAssetBytes("/beach/models/tripo-male-rigged-mobile-v3.glb");
 const modelFiles = { male: "tripo-male-rigged-mobile-v3.glb", female: "tripo-female-rigged-mobile-v2.glb", "male-onsen": "tripo-male-onsen-mobile-v2.glb", "female-onsen": "tripo-female-onsen-mobile-v2.glb" };
@@ -32,7 +33,7 @@ function runtime(load, kind = "male", clock = Date.now) {
     setMeshoptDecoder(decoder) { assert.equal(decoder, MeshoptDecoder); return this; }
     loadAsync(url) { assert.equal(url, assets.assetUrl(`/beach/models/${modelFiles[kind]}`)); requests++; return load(); }
   }
-  const context = { THREE, GLTFLoader: Loader, MeshoptDecoder, cloneSkeleton, Date: { now: clock }, ...assets };
+  const context = { THREE, GLTFLoader: Loader, MeshoptDecoder, cloneSkeleton, Date: { now: clock }, ...assets, SPARKLER_DRAW_END, SPARKLER_RELEASE_END };
   vm.runInNewContext(`${source}\nglobalThis.api = { BeachAvatarModels, BeachAvatar };`, context);
   return { ...context.api, requests: () => requests };
 }
@@ -116,7 +117,17 @@ for (const kind of ["male", "female"]) test(`${kind} resets hidden sparkler pose
     assert.equal(actor.poseSparkler(target, 2), null);
   }
   actor.update(0, current);
-  for (const age of [0, 5.86, NaN]) assert.equal(actor.poseSparkler(target, age), null);
+  const armAngle = age => {
+    actor.update(0, current);
+    assert.ok(actor.poseSparkler(target, age));
+    return upper.quaternion.angleTo(upperRest);
+  };
+  const fullReach = armAngle(SPARKLER_DRAW_END);
+  assert.ok(fullReach > .05);
+  assert.ok(armAngle(0) < 1e-6);
+  assert.ok(Math.abs(armAngle(.15) - fullReach / 2) < 1e-6, "hand rises smoothly at ignition");
+  assert.ok(Math.abs(armAngle((SPARKLER_DRAW_END + SPARKLER_RELEASE_END) / 2) - fullReach / 2) < 1e-6, "hand lowers after the tip burns out");
+  for (const age of [-.001, SPARKLER_RELEASE_END, NaN]) assert.equal(actor.poseSparkler(target, age), null);
   assert.equal(actor.poseSparkler(new THREE.Vector3(NaN, 0, 0), 2), null);
   pool.dispose();
   assert.equal(actor.poseSparkler(target, 2), null);

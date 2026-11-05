@@ -787,6 +787,9 @@ export class BeachEngine {
   setFireworksMuted(muted: boolean) { this.fireworkAudio?.setMuted(muted); }
   get fieldVolume() { return this.fireworkAudio?.fieldVolume ?? 50; }
   setFieldVolume(percent: number) { this.fireworkAudio?.setFieldVolume(percent); }
+  get uyuniMusicVolume() { return this.fireworkAudio?.uyuniMusicVolume ?? 25; }
+  setUyuniMusicVolume(percent: number) { this.fireworkAudio?.setUyuniMusicVolume(percent); }
+  setRoomMusicPlaying(playing: boolean) { this.fireworkAudio?.setRoomMusicPlaying(playing); }
 
   setOwnFestival(state: BambooFestivalState | undefined, serverTime: number, ownPid?: string) {
     if (!this.bamboo || this.disposed) return;

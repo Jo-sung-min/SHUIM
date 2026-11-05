@@ -147,7 +147,7 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
           <button type="button" className={styles.close} aria-label="닫기" onClick={() => setPanel(null)}><IconClose /></button>
         </header>
         <p id={`${id}-description`} className={styles.description}>{panel === "sparkler"
-          ? "손에 든 스파클러를 움직여요. 튀는 불씨를 따라 빛의 잔상이 천천히 사라져요." : "작은 바람을 적어 하늘에 보내요."}</p>
+          ? "모양을 고르면 캐릭터가 불꽃 막대를 빠르게 휘둘러 그려요. 손끝을 따라 짧은 빛줄기가 남아요." : "작은 바람을 적어 하늘에 보내요."}</p>
         {panel === "sparkler" ? <>
           <div className={styles.letters} role="group" aria-label="불꽃으로 그릴 글자와 모양">
             {LETTERS.map((letter, index) => <button key={letter} type="button" data-initial-focus={index === 0 || undefined}
@@ -158,7 +158,7 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
                     : "m12 3 2.8 5.7 6.3.9-4.5 4.4 1.1 6.2-5.7-3-5.7 3 1.1-6.2-4.5-4.4 6.3-.9L12 3Z"} />
                 </svg> : letter}</button>)}
           </div>
-          <p className={styles.hint}>{remaining.sparkler ? `${remaining.sparkler}초 뒤에 다시 그릴 수 있어요.` : "글자나 모양을 고르면 한 획씩 그리기 시작해요."}</p>
+          {remaining.sparkler > 0 && <p className={styles.hint}>{remaining.sparkler}초 뒤에 다시 그릴 수 있어요.</p>}
         </> : <form onSubmit={event => { event.preventDefault(); void send("lantern"); }}>
           <fieldset className={styles.colors} disabled={locked}>
             <legend>등 색</legend><div className={styles.swatches}>

@@ -172,9 +172,32 @@ public class BeachService {
         return lighting(communityId, null);
     }
 
+    public BeachRoom.FestivalChange changeFestival(String ticket, String userId, java.util.UUID requestId, String choice) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().changeFestival(ticket, userId, requestId, choice);
+    }
+
     public BeachRoom.Lighting lighting(String communityId, String mapId) {
         RoomBinding binding = rooms.get(new RoomKey(communityId, BeachMap.from(mapId)));
         return binding == null ? BeachRoom.AUTO_LIGHTING : binding.room().lighting();
+    }
+
+    BeachRoom.MusicState music(String communityId, String mapId) {
+        RoomBinding binding = rooms.get(new RoomKey(communityId, BeachMap.from(mapId)));
+        return binding == null ? new BeachRoom.MusicState(BeachRoom.SILENT, clock.getAsLong()) : binding.room().musicSnapshot();
+    }
+
+    BeachRoom.MusicState changeMusic(String ticket, String userId, String action, String trackId, Long expectedVersion) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().changeMusic(ticket, userId, action, trackId, expectedVersion);
+    }
+
+    void requireMusicListener(String communityId, String mapId, String userId) {
+        RoomBinding binding = rooms.get(new RoomKey(communityId, BeachMap.from(mapId)));
+        if (binding == null || !binding.room().hasMusicListener(userId))
+            throw ApiException.forbidden("이 공간에 들어온 뒤 음악을 들어 주세요.");
     }
 
     public BeachRoom.FireworksState fireworks(String communityId) {

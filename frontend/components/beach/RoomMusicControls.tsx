@@ -7,17 +7,22 @@ import { changeRoomMusic, readMusicPreferences, RoomMusicPlayer, ROOM_TRACKS, ty
 import styles from "./RoomMusicControls.module.css";
 
 type Props = {
-  ticket: string; communityId: string; mapId: MapId; music: RoomMusicState; serverTime: number;
+  ticket: string; communityId: string; mapId: MapId; music?: RoomMusicState; serverTime: number;
   canControl: boolean; disabled: boolean; onSnapshot: (music: RoomMusicState, serverTime: number) => void;
+  ambient?: { volume: number; onChange: (percent: number) => void };
 };
 
-export default function RoomMusicControls({ ticket, communityId, mapId, music, serverTime, canControl, disabled, onSnapshot }: Props) {
+const IDLE_MUSIC: RoomMusicState = { ...ROOM_TRACKS["morning-v1"], playing: false, startedAt: null, version: 0 };
+
+export default function RoomMusicControls({ ticket, communityId, mapId, music = IDLE_MUSIC, serverTime, canControl, disabled, onSnapshot, ambient }: Props) {
   const player = useRef<RoomMusicPlayer | null>(null), request = useRef<AbortController | null>(null);
   const panel = useId(), box = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(""), [status, setStatus] = useState<ListenerStatus>("idle");
   const [preferences, setPreferences] = useState<MusicPreferences>({ volume: .32, muted: false });
   const [choice, setChoice] = useState<TrackId>(music.trackId);
+  const background = mapId === "uyuni" ? ambient : undefined;
+  const hasBackground = background !== undefined;
 
   useEffect(() => {
     const saved = readMusicPreferences();
@@ -30,7 +35,7 @@ export default function RoomMusicControls({ ticket, communityId, mapId, music, s
     player.current?.setSuspended(disabled);
     player.current?.sync(music, serverTime);
   }, [communityId, mapId, ticket, music, serverTime, disabled]);
-  useEffect(() => { if (!music.playing && !canControl) setOpen(false); }, [music.playing, canControl]);
+  useEffect(() => { if (!music.playing && !canControl && !hasBackground) setOpen(false); }, [music.playing, canControl, hasBackground]);
   useEffect(() => { setChoice(music.trackId); }, [music.trackId]);
   useEffect(() => {
     if (!open) return;
@@ -59,7 +64,7 @@ export default function RoomMusicControls({ ticket, communityId, mapId, music, s
     }
   }
 
-  if (!canControl && !music.playing) return null;
+  if (!canControl && !music.playing && !hasBackground) return null;
   const quiet = preferences.muted || preferences.volume === 0;
   const needsListen = music.playing && !quiet && (status === "listen" || status === "error");
   return <div ref={box} className={styles.control}>
@@ -68,12 +73,25 @@ export default function RoomMusicControls({ ticket, communityId, mapId, music, s
       <IconMusic /><span>음악</span>
     </button>
     {open && <section id={panel} className={styles.panel} aria-label="방 음악 설정">
-      <div className={styles.heading}><span className={styles.cover}><IconMusic /></span><div>
+      {background && <div className={styles.background} data-shared={canControl || music.playing}>
+        <div className={styles.heading}><span className={styles.cover}><IconMusic /></span><div>
+          <small>우유니 배경음</small><strong>잔잔한 밤</strong>
+        </div></div>
+        <div className={styles.backgroundVolume}>
+          <label htmlFor={panel + "-background"}>내 배경음 음량</label>
+          <output htmlFor={panel + "-background"}>{background.volume}%</output>
+          <input id={panel + "-background"} type="range" min="0" max="100" step="1" value={background.volume}
+            aria-valuetext={background.volume === 0 ? "음소거" : background.volume + "%"}
+            onChange={e => background.onChange(Number(e.target.value))} />
+        </div>
+        {music.playing && background.volume > 0 && <p className={styles.notice}>방 음악이 끝나면 배경음이 다시 들려요.</p>}
+      </div>}
+      {(!background || music.playing) && <div className={styles.heading}><span className={styles.cover}><IconMusic /></span><div>
         <small>{disabled ? "다시 연결 중" : music.playing ? "방에서 재생 중" : "방 음악"}</small>
         <strong>{music.title}</strong>
-      </div></div>
+      </div></div>}
       {canControl && <>
-        <fieldset className={styles.tracks} disabled={busy || disabled}><legend>곡 선택</legend>
+        <fieldset className={styles.tracks} disabled={busy || disabled}><legend>{background ? "방 음악 선택" : "곡 선택"}</legend>
           {Object.values(ROOM_TRACKS).map(track => <label key={track.trackId}>
             <input type="radio" name={panel + "-track"} checked={choice === track.trackId} onChange={() => setChoice(track.trackId)} />
             <span>{track.title}</span><small>{track.trackId === "morning-v1" ? "2:43" : "4:16"}</small>

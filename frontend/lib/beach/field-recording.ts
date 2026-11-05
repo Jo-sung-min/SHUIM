@@ -1,8 +1,6 @@
 import { assetUrl } from "../assets";
 
-const LEVEL = 0.43;
-
-/** Stream the long field recording using the room's existing effects context. */
+/** A streaming loop routed through the room's existing audio context, with element-volume fallback. */
 export class FieldRecording {
   private audio: HTMLAudioElement | null = null;
   private gain: GainNode | null = null;
@@ -13,13 +11,14 @@ export class FieldRecording {
   private generation = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private retryMs = 5000;
-  private level = LEVEL;
+  private level: number;
 
   private readonly path: string;
-  constructor(path: string) { this.path = path; }
+  private readonly baseGain: number;
+  constructor(path: string, baseGain = 0.43) { this.path = path; this.baseGain = baseGain; this.level = baseGain; }
 
   setVolume(scale: number) {
-    this.level = LEVEL * scale;
+    this.level = this.baseGain * scale;
     if (this.source && this.gain) this.gain.gain.value = this.level;
     else if (this.audio) this.audio.volume = this.level;
   }

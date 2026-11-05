@@ -3,6 +3,7 @@ import { assetLoader, assetUrl } from "../assets";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
+import { SPARKLER_DRAW_END, SPARKLER_RELEASE_END } from "./sparkler-timing";
 
 export const MALE_AVATAR_MODEL_URL = "/beach/models/tripo-male-rigged-mobile-v3.glb";
 export const FEMALE_AVATAR_MODEL_URL = "/beach/models/tripo-female-rigged-mobile-v2.glb";
@@ -274,6 +275,7 @@ export class BeachAvatar {
     shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), grip: new THREE.Vector3(),
     direction: new THREE.Vector3(), pole: new THREE.Vector3(), end: new THREE.Vector3(),
     lower: new THREE.Vector3(), result: new THREE.Vector3(),
+    upperBefore: new THREE.Quaternion(), lowerBefore: new THREE.Quaternion(),
   };
 
   constructor(template: THREE.Object3D, clips: THREE.AnimationClip[], onDispose: (actor: BeachAvatar) => void = () => {}, kind: AvatarKind = "male", prepared?: AvatarTemplateData) {
@@ -330,7 +332,7 @@ export class BeachAvatar {
   poseSparkler(target: THREE.Vector3, age: number): THREE.Vector3 | null {
     const state = this.lastState, upper = this.bones.get("RightArm"), lower = this.bones.get("RightForeArm"), hand = this.bones.get("RightHand");
     if (this.disposed || !state || state.moving || state.lying || state.seated || !upper || !lower || !hand
-      || ![target.x, target.y, target.z, age].every(Number.isFinite) || age < 0.25 || age > 5.85) return null;
+      || ![target.x, target.y, target.z, age].every(Number.isFinite) || age < 0 || age >= SPARKLER_RELEASE_END) return null;
     if (!state.visible) {
       // A first-person actor is hidden, but its hand still anchors the real rod.
       // Run the ordinary pose at dt=0 so hidden frames cannot accumulate IK.
@@ -362,8 +364,16 @@ export class BeachAvatar {
     s.elbow.copy(s.shoulder).addScaledVector(s.direction, along)
       .addScaledVector(s.pole, Math.sqrt(Math.max(0, upperLength * upperLength - along * along)));
     s.lower.copy(this.sparklerGripOffset).multiply(hand.bone.scale).applyQuaternion(hand.bone.quaternion).add(hand.bone.position);
+    const reachWeight = THREE.MathUtils.smoothstep(age, 0, .30)
+      * (1 - THREE.MathUtils.smoothstep(age, SPARKLER_DRAW_END, SPARKLER_RELEASE_END));
+    s.upperBefore.copy(upper.bone.quaternion);
+    s.lowerBefore.copy(lower.bone.quaternion);
     this.aimWorld(upper, lower.bone.position, this.v1.copy(s.elbow).sub(s.shoulder));
     this.aimWorld(lower, s.lower, this.v1.copy(s.end).sub(s.elbow));
+    if (reachWeight < 1) {
+      upper.bone.quaternion.slerp(s.upperBefore, 1 - reachWeight);
+      lower.bone.quaternion.slerp(s.lowerBefore, 1 - reachWeight);
+    }
     upper.bone.updateWorldMatrix(true, true);
     this.sparklerPosed = true;
     return this.getSparklerGrip(s.result);

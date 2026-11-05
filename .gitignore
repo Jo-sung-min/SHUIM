@@ -23,6 +23,7 @@ frontend/public/**/*.png
 frontend/public/**/*.jpg
 frontend/public/**/*.jpeg
 frontend/public/**/*.webp
+frontend/public/**/*.mp3
 frontend/public/**/*.svg
 frontend/public/**/*.gif
 frontend/public/**/*.avif

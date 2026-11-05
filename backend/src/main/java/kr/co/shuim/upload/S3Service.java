@@ -15,16 +15,23 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.utils.SdkAutoCloseable;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -98,6 +105,31 @@ public class S3Service {
     private synchronized S3Client client() {
         if (client == null) client = S3Client.builder().region(Region.of(region)).credentialsProvider(credentialsProvider()).build();
         return client;
+    }
+
+    /** Load a bounded, KMS-encrypted recording only for the application's own versioned inventory. */
+    public byte[] readPrivateRecording(String key, int size, String sha256) {
+        if (!key.matches("private/room-music/[a-z0-9-]+-v[0-9]+\\.m4a") || size <= 0 || size > 6 * 1024 * 1024)
+            throw new IllegalArgumentException("Invalid room music inventory");
+        String unavailable = "지금은 음악을 불러올 수 없어요. 잠시 후 다시 들어 주세요.";
+        if (!configured()) throw ApiException.unavailable(unavailable);
+        var request = GetObjectRequest.builder().bucket(bucket).key(key).build();
+        try (var stream = client().getObject(request)) {
+            var response = stream.response();
+            if (response.serverSideEncryption() != ServerSideEncryption.AWS_KMS || response.contentLength() != size) {
+                stream.abort();
+                throw new IOException("Unexpected recording metadata");
+            }
+            byte[] data = stream.readNBytes(size + 1);
+            String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+            if (data.length != size || !digest.equals(sha256)) throw new IOException("Unexpected recording content");
+            return data;
+        } catch (IOException | SdkException e) {
+            log.warn("Room recording unavailable for {} ({})", key, e.getClass().getSimpleName());
+            throw ApiException.unavailable(unavailable);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private synchronized S3Presigner presigner() {

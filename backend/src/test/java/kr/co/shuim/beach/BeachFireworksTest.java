@@ -8,6 +8,8 @@ import kr.co.shuim.config.ApiException;
 import kr.co.shuim.config.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -384,13 +386,14 @@ class BeachFireworksTest {
         assertEquals(List.of(lantern.event()), poll(observer).uyuniMoments());
     }
 
-    @Test
-    void newUyuniVariantsRoundTripThroughLaunchTickAndLateEnterWithTheOriginalTimingAndRetryIdentity() throws Exception {
-        var admin = visitor("room", "operator", "uyuni");
-        var observer = visitor("room", "observer", "uyuni");
-        var coast = visitor("room", "observer", "beach");
-        var forest = visitor("room", "observer", "bamboo");
-        var elsewhere = visitor("other", "observer", "uyuni");
+    @ParameterizedTest
+    @ValueSource(strings = {"beach", "uyuni", "bamboo"})
+    void grandVariantsRoundTripThroughLaunchTickAndLateEnterWithTheOriginalTimingAndRetryIdentity(String map) throws Exception {
+        var admin = visitor("room", "operator", map);
+        var observer = visitor("room", "observer", map);
+        var otherMap = visitor("room", "observer", map.equals("beach") ? "uyuni" : "beach");
+        var thirdMap = visitor("room", "observer", map.equals("bamboo") ? "uyuni" : "bamboo");
+        var elsewhere = visitor("other", "observer", map);
         var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
         for (String variant : List.of("bloom", "saturn", "willow", "stardust")) {
             actor(user("operator", "admin", false, null));
@@ -405,10 +408,10 @@ class BeachFireworksTest {
                 .andExpect(jsonPath("$.event.startedAt").value(startedAt))
                 .andExpect(jsonPath("$.serverTime").value(startedAt))
                 .andExpect(jsonPath("$.cooldownUntil").value(startedAt + 15000));
-            var event = beach.fireworks("room", "uyuni").events().getFirst();
-            advance(5_000, admin, observer, coast, forest, elsewhere);
+            var event = beach.fireworks("room", map).events().getFirst();
+            advance(5_000, admin, observer, otherMap, thirdMap, elsewhere);
             var retry = launch(admin, requestId.toUpperCase(), "festival");
-            assertEquals(event, retry.event(), "a changed retry cannot restyle or restart the accepted Uyuni show");
+            assertEquals(event, retry.event(), "a changed retry cannot restyle or restart the accepted show");
             assertEquals(startedAt + 15000, retry.cooldownUntil());
             actor(user("observer", "user", false, null));
             mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
@@ -418,7 +421,7 @@ class BeachFireworksTest {
                 .andExpect(jsonPath("$.fireworks[0].variant").value(variant))
                 .andExpect(jsonPath("$.fireworks[0].startedAt").value(startedAt));
             mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"communityId\":\"room\",\"mapId\":\"uyuni\"}"))
+                .content("{\"communityId\":\"room\",\"mapId\":\"%s\"}".formatted(map)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.fireworksControl").value(false))
                 .andExpect(jsonPath("$.fireworks.length()").value(1))
                 .andExpect(jsonPath("$.fireworks[0].id").value(event.id()))
@@ -426,49 +429,17 @@ class BeachFireworksTest {
                 .andExpect(jsonPath("$.fireworks[0].startedAt").value(startedAt))
                 .andExpect(jsonPath("$.fireworks[0].durationMs").value(12000))
                 .andExpect(jsonPath("$.serverTime").value(startedAt + 5000));
-            for (var other : List.of(coast, forest, elsewhere)) {
+            for (var other : List.of(otherMap, thirdMap, elsewhere)) {
                 assertTrue(poll(other).fireworks().isEmpty());
                 assertEquals(0, poll(other).fireworksCooldownUntil());
             }
-            advance(7_000, admin, observer, coast, forest, elsewhere);
+            advance(7_000, admin, observer, otherMap, thirdMap, elsewhere);
             assertTrue(poll(observer).fireworks().isEmpty());
             actor(user("operator", "admin", false, null));
             assertEquals(event, launch(admin, requestId, variant).event());
             assertTrue(poll(observer).fireworks().isEmpty(), "an expired retry must not replay the show");
             assertEquals(429, assertThrows(ApiException.class, () -> launch(admin, UUID.randomUUID().toString(), variant)).status());
-            advance(3_000, admin, observer, coast, forest, elsewhere);
-        }
-    }
-
-    @Test
-    void newVariantsRejectBeachAndBambooTicketsDespiteForgedMapAndKeepAllOriginalVariantsWorking() throws Exception {
-        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
-        for (String map : List.of("beach", "bamboo")) {
-            var admin = visitor("room", "operator", map);
-            String requestId = UUID.randomUUID().toString();
-            for (String variant : List.of("bloom", "saturn", "willow", "stardust")) {
-                String forged = """
-                    {"ticket":"%s","requestId":"%s","variant":"%s","mapId":"uyuni"}
-                    """.formatted(admin.ticket(), requestId, variant);
-                mvc.perform(post("/api/beach/fireworks").contentType(MediaType.APPLICATION_JSON).content(forged))
-                    .andExpect(status().isBadRequest());
-            }
-            assertTrue(beach.fireworks("room", map).events().isEmpty());
-            assertEquals(0, beach.fireworks("room", map).cooldownUntil());
-            for (String variant : List.of("festival", "songi", "love")) {
-                var accepted = launch(admin, requestId, variant);
-                assertEquals(variant, accepted.event().variant());
-                assertEquals(12_000, accepted.event().durationMs());
-                assertEquals(clock.get() + 15_000, accepted.cooldownUntil());
-                for (String denied : List.of("bloom", "saturn", "willow", "stardust")) {
-                    String originalId = requestId;
-                    assertEquals(400, assertThrows(ApiException.class, () -> launch(admin, originalId, denied)).status(),
-                        "an existing request identity cannot bypass the ticket's map restriction");
-                }
-                assertEquals(List.of(accepted.event()), poll(admin).fireworks());
-                advance(15_000, admin);
-                requestId = UUID.randomUUID().toString();
-            }
+            advance(3_000, admin, observer, otherMap, thirdMap, elsewhere);
         }
     }
 

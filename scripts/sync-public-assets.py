@@ -19,6 +19,7 @@ TYPES = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".svg": "image/svg+xml", ".gif": "image/gif",
     ".avif": "image/avif", ".ico": "image/x-icon", ".glb": "model/gltf-binary",
+    ".mp3": "audio/mpeg",
 }
 CACHE_CONTROL = "public, max-age=86400"
 

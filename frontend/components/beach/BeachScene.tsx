@@ -139,9 +139,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [fireworksBusy, setFireworksBusy] = useState(false);
   const [fireworksMuted, setFireworksMuted] = useState(false);
   const [fieldVolume, setFieldVolume] = useState(50);
+  const [uyuniMusicVolume, setUyuniMusicVolume] = useState(25);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [musicControl, setMusicControl] = useState(false);
   const [musicSnapshot, setMusicSnapshot] = useState<{ music: RoomMusicState; serverTime: number } | null>(null);
+  const musicSnapshotRef = useRef<typeof musicSnapshot>(null);
   const [fireworksDeadline, setFireworksDeadline] = useState(0);
   const [momentsEnabled, setMomentsEnabled] = useState(false);
   const [festival, setFestival] = useState<BambooFestivalState>();
@@ -432,22 +434,19 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   }, [resetFireworks, resetMoments, communityId, mapId]);
 
   const applyMusic = useCallback((value: RoomMusicState | undefined, time?: number, reset = false) => {
-    if (!value || !Number.isSafeInteger(time)) {
-      if (reset) setMusicSnapshot(null);
-      return;
+    let next: typeof musicSnapshotRef.current = null;
+    if (value && typeof time === "number" && Number.isSafeInteger(time)) {
+      const music = readRoomMusic(value);
+      if (music && (music.startedAt === null || music.startedAt <= time)) next = { music, serverTime: time };
     }
-    const music = readRoomMusic(value);
-    if (!music || (music.startedAt !== null && music.startedAt > time!)) {
-      if (reset) setMusicSnapshot(null);
-      return;
-    }
-    const serverTime = time!;
-    setMusicSnapshot(previous => {
-      if (!reset && previous && (music.version < previous.music.version ||
-        (music.version === previous.music.version && serverTime < previous.serverTime + 8000))) return previous;
-      return { music, serverTime };
-    });
-  }, []);
+    if (!next && !reset) return;
+    const previous = musicSnapshotRef.current;
+    if (!reset && previous && next && (next.music.version < previous.music.version ||
+      (next.music.version === previous.music.version && next.serverTime < previous.serverTime + 8000))) return;
+    musicSnapshotRef.current = next;
+    if (mapId === "uyuni") engineRef.current?.setRoomMusicPlaying(next?.music.playing === true);
+    setMusicSnapshot(next);
+  }, [mapId]);
 
   const applyFestival = useCallback((engine: BeachEngine, state: BambooFestivalState | undefined, serverTime: number) => {
     engine.setOwnFestival(state, serverTime, meRef.current?.pid);
@@ -644,7 +643,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     lastTickStartedRef.current = 0;
     remoteMovingRef.current = false;
     setPhase("loading"); setError(""); setCount(null); setCommunity(null);
-    setMusicSnapshot(null); setMusicControl(false);
+    musicSnapshotRef.current = null; setMusicSnapshot(null); setMusicControl(false);
     toyRequestRef.current = null; setToyBusy(false); setFestival(undefined); setGuestbookOpen(false); setNearGuestbook(false); setFlightUntil(0);
     setGuestbookInSight(false);
     setSelected(null); setRest(null); setActionsOpen(false); setCarePrompt(null);
@@ -759,6 +758,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         if (mapId === "bamboo") applyFestival(engine, entered.festival, entered.serverTime ?? Date.now());
         setFireworksMuted(engine.fireworksMuted);
         setFieldVolume(engine.fieldVolume);
+        if (mapId === "uyuni") setUyuniMusicVolume(engine.uyuniMusicVolume);
         engine.restoreVisit(entered.spawn, entered.selfRest,
           entered.resumed === true && saved?.userId === entered.me.id ? saved.camera : undefined);
         rememberVisit(true);
@@ -1306,9 +1306,13 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       <div className={styles.top} hidden={hudHidden}>
         <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
         {phase === "ready" && <div className={styles.adminTools}>
-          {musicSnapshot && ticketRef.current && <RoomMusicControls key={ticketRef.current} ticket={ticketRef.current}
-            communityId={community?.id ?? communityId} mapId={mapId} music={musicSnapshot.music} serverTime={musicSnapshot.serverTime}
-            canControl={musicControl} disabled={lost} onSnapshot={applyMusic} />}
+          {(musicSnapshot || mapId === "uyuni") && ticketRef.current && <RoomMusicControls key={ticketRef.current} ticket={ticketRef.current}
+            communityId={community?.id ?? communityId} mapId={mapId} music={musicSnapshot?.music} serverTime={musicSnapshot?.serverTime ?? 0}
+            canControl={musicSnapshot !== null && musicControl} disabled={lost} onSnapshot={applyMusic}
+            ambient={mapId === "uyuni" ? { volume: uyuniMusicVolume, onChange: volume => {
+              const engine = engineRef.current;
+              if (engine) { engine.setUyuniMusicVolume(volume); setUyuniMusicVolume(engine.uyuniMusicVolume); }
+            } } : undefined} />}
           {fireworksControl && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
             onLaunch={(variant) => void launchFireworks(variant)} />}
           {lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}

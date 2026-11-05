@@ -26,11 +26,12 @@ function twoShells() {
   put("detail", [4, 0, 1, 4, 0, 1], 3);
   return geometry;
 }
-function harness({ muted = false, savedVolume, noWebAudio = false, slowDownload = false, bamboo = false, map = bamboo ? "bamboo" : "uyuni", delayedStream = false, running = true } = {}) {
+function harness({ muted = false, savedVolume, savedMusicVolume, noWebAudio = false, slowDownload = false, bamboo = false, map = bamboo ? "bamboo" : "uyuni", delayedStream = false, running = true } = {}) {
   let localTime = 15_000, release;
   const download = slowDownload ? new Promise(resolve => { release = resolve; }) : Promise.resolve();
   const requests = [], contexts = [], played = [], storage = new Map(muted ? [["sorow:fireworks-muted", "1"]] : []);
   if (savedVolume !== undefined) storage.set(`sorow:${map}-field-volume`, savedVolume);
+  if (savedMusicVolume !== undefined) storage.set("sorow:uyuni-background-volume", savedMusicVolume);
   const streams = [];
   let finishStream;
   const streamGate = delayedStream ? new Promise(resolve => { finishStream = resolve; }) : Promise.resolve();
@@ -77,7 +78,9 @@ function harness({ muted = false, savedVolume, noWebAudio = false, slowDownload 
   const audio = new ctx.api.FireworkAudio(listener, map, running), geometry = twoShells();
   const jump = elapsed => { localTime = 15_000 + elapsed; };
   return { audio, geometry, requests, played, contexts, storage, streams, finishStream, cues: ctx.api.fireworkSoundCues,
-    release: () => release?.(), unlock: (type = "pointerup") => window.dispatchEvent(new Event(type)),
+    release: () => release?.(), unlock: (type = "pointerup", trusted = true) => {
+      const event = new Event(type); Object.defineProperty(event, "isTrusted", { value: trusted }); window.dispatchEvent(event);
+    },
     add(elapsed = 0) { jump(elapsed); audio.addShow(geometry, start, start + elapsed, 1729); },
     update(elapsed) { jump(elapsed); audio.update(start + elapsed); },
     visibility(hidden, elapsed) { jump(elapsed); document.hidden = hidden; document.dispatchEvent(new Event("visibilitychange")); },
@@ -87,7 +90,7 @@ function harness({ muted = false, savedVolume, noWebAudio = false, slowDownload 
 
 test("only a bamboo gesture streams the long loop; hide, mute, return and leave preserve one quiet media element", async () => {
   const ordinary=harness(); ordinary.unlock(); await settle();
-  assert.equal(ordinary.streams.length,0); ordinary.dispose();
+  assert.ok(ordinary.streams.every(stream => !stream.src.includes("crickets"))); ordinary.dispose();
   const h=harness({bamboo:true}); h.visibility(true,0); h.unlock(); h.visibility(false,0);
   assert.equal(h.streams.length,0);
   h.unlock("keydown"); h.unlock(); await settle();
@@ -133,7 +136,7 @@ test("bamboo levels adjust the existing stream and in-flight reports together, i
 
 test("fallback element follows the latest slider level during pending loads, mute and hidden intervals", async () => {
   const h=harness({bamboo:true,noWebAudio:true,delayedStream:true,muted:true});
-  assert.equal(h.audio.fieldVolume,0); h.audio.setFieldVolume(30); h.audio.setFieldVolume(72);
+  assert.equal(h.audio.fieldVolume,0); h.unlock(); h.audio.setFieldVolume(30); h.audio.setFieldVolume(72);
   const stream=h.streams[0]; assert.equal(stream.volume,.43*1.44); assert.equal(stream.plays,1);
   h.audio.setFieldVolume(0); h.finishStream(); await settle(); assert.ok(stream.paused);
   h.visibility(true,100); h.audio.setFieldVolume(65); assert.ok(stream.paused);
@@ -197,6 +200,42 @@ test("pending beach media obey empty fuel, mute, hiding and leaving; other maps 
     assert.ok(other.streams.every(s => !s.src.includes("campfire") && !s.src.includes("shore-waves"))); other.dispose();
   }
 });
+
+test("only a trusted Uyuni visit plays background music, even if fireworks are muted; its volume persists independently", async () => {
+  const h = harness({ map: "uyuni", muted: true });
+  assert.equal(h.audio.uyuniMusicVolume, 25);
+  h.unlock("pointerup", false); h.audio.setRoomMusicPlaying(false); h.audio.setUyuniMusicVolume(25);
+  assert.equal(h.streams.length, 0); assert.equal(h.contexts.length, 0);
+  h.unlock(); await settle();
+  const stream = h.streams[0];
+  assert.ok(stream.src.endsWith("/beach/fx/uyuni-calm-night-v1.mp3")); assert.equal(stream.gain.gain.value,.25);
+  h.audio.setMuted(false); h.audio.setMuted(true); await settle();
+  assert.equal(stream.plays, 1); assert.ok(!stream.paused);
+  h.audio.setUyuniMusicVolume(0); assert.ok(stream.paused); assert.equal(h.storage.get('sorow:uyuni-background-volume'), '0');
+  assert.equal(h.storage.get('sorow:fireworks-muted'),'1'); assert.equal(h.storage.has('sorow:uyuni-field-volume'),false);
+  h.dispose(); assert.equal(stream.src,'');
+  const restored = harness({ map:'uyuni', savedMusicVolume:'0', noWebAudio:true }); restored.unlock(); assert.equal(restored.streams.length,0);
+  restored.audio.setUyuniMusicVolume(64); await settle(); assert.equal(restored.streams[0].volume,.64); restored.dispose();
+  for (const map of ['bamboo','beach']) {
+    const other = harness({map}); other.unlock(); await settle(); const field=other.streams[0];
+    other.audio.setUyuniMusicVolume(0); other.audio.setRoomMusicPlaying(true); other.audio.setRoomMusicPlaying(false);
+    assert.equal(other.streams.length,1); assert.ok(!field.src.includes('uyuni-calm-night') && !field.paused); other.dispose();
+  }
+});
+
+test("room music preempts Uyuni before loading, during a pending play and through tab/scene suspension", async () => {
+  const h=harness({map:'uyuni',delayedStream:true});
+  h.audio.setRoomMusicPlaying(true); h.unlock(); assert.equal(h.streams.length,0,'no download underneath an existing room broadcast');
+  h.audio.setRoomMusicPlaying(false); const stream=h.streams[0];
+  h.audio.setRoomMusicPlaying(true); h.finishStream(); await settle(); assert.ok(stream.paused,'late play completion cannot overlap the broadcast');
+  stream.currentTime=63; h.visibility(true,0); h.audio.setRoomMusicPlaying(false); assert.ok(stream.paused);
+  h.visibility(false,100); await settle(); assert.equal(stream.paused,false); assert.equal(stream.currentTime,63);
+  h.audio.setRoomMusicPlaying(true); h.audio.setSceneRunning(false); h.audio.setUyuniMusicVolume(70); h.audio.setRoomMusicPlaying(false);
+  assert.ok(stream.paused); h.audio.setSceneRunning(true); await settle(); assert.equal(stream.gain.gain.value,.70); assert.ok(!stream.paused);
+  h.audio.setRoomMusicPlaying(true); h.audio.setUyuniMusicVolume(0); h.audio.setRoomMusicPlaying(false); h.unlock();
+  assert.ok(stream.paused); assert.equal(h.streams.length,1); h.dispose(); assert.equal(stream.src,'');
+});
+
 test("bamboo audio stays silent while the scene loads or is stopped and resumes only a previously unlocked visit",async()=>{
   const h=harness({bamboo:true,running:false}); h.unlock(); await settle();
   assert.equal(h.streams.length,0); h.audio.setSceneRunning(true); await settle();

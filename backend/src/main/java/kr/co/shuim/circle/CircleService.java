@@ -167,7 +167,7 @@ public class CircleService {
         throw ApiException.forbidden("소로우지기만 할 수 있어요");
     }
 
-    private Member requireActiveMember(Circle c, DbUser me) {
+    public Member requireActiveMember(Circle c, DbUser me) {
         requireAccess(c, me);
         Member m = member(c.id(), me.id()).orElseThrow(() -> ApiException.forbidden("이 소로우의 멤버만 할 수 있어요"));
         if (!m.active()) throw ApiException.forbidden("멤버 승인을 기다리는 중이에요");

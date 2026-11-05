@@ -10,6 +10,13 @@ const MUTED_KEY = "sorow:fireworks-muted";
 const DEFAULT_FIELD_VOLUME = 50;
 const BOOM_URL = "/beach/fx/firework-boom-v1.mp3";
 const DISTANT_SURF = 0.12;
+const UYUNI_MUSIC_KEY = "sorow:uyuni-background-volume";
+const DEFAULT_UYUNI_MUSIC_VOLUME = 25;
+
+function readPercent(key: string, fallback: number) {
+  const saved = localStorage.getItem(key);
+  return saved != null && /^(?:0|[1-9]\d?|100)$/.test(saved) ? Number(saved) : fallback;
+}
 
 function approachLevel(current: number, target: number, blend: number) {
   return Math.abs(target - current) < .001 ? target : current + (target - current) * blend;
@@ -50,6 +57,9 @@ export class FireworkAudio {
   private listener: Position;
   private readonly recording: FieldRecording | null;
   private readonly crackle: FieldRecording | null;
+  private readonly uyuniMusic: FieldRecording | null;
+  private musicPercent = DEFAULT_UYUNI_MUSIC_VOLUME;
+  private roomMusicPlaying = false;
   private readonly volumeKey: string;
   private backgroundGain: number;
   private fireGain = 0;
@@ -59,6 +69,7 @@ export class FireworkAudio {
   private volume = DEFAULT_FIELD_VOLUME;
   private lastAudibleVolume = DEFAULT_FIELD_VOLUME;
   get fieldVolume() { return this.volume; }
+  get uyuniMusicVolume() { return this.musicPercent; }
 
   constructor(listener: Position, map: MapId = "uyuni", running = true) {
     this.listener = listener;
@@ -68,35 +79,62 @@ export class FireworkAudio {
     this.recording = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-crickets-v1.mp3")
       : map === "beach" ? new FieldRecording("/beach/fx/beach-shore-waves-v1.mp3") : null;
     this.crackle = map === "beach" ? new FieldRecording("/beach/fx/beach-campfire-crackle-v1.mp3") : null;
+    this.uyuniMusic = map === "uyuni" ? new FieldRecording("/beach/fx/uyuni-calm-night-v1.mp3", 1) : null;
     try {
       this.muted = localStorage.getItem(MUTED_KEY) === "1";
       if (this.recording) {
-        const saved = localStorage.getItem(this.volumeKey);
-        this.volume = saved != null && /^(?:0|[1-9]\d?|100)$/.test(saved) ? Number(saved) : this.muted ? 0 : DEFAULT_FIELD_VOLUME;
+        this.volume = readPercent(this.volumeKey, this.muted ? 0 : DEFAULT_FIELD_VOLUME);
         this.muted = this.volume === 0;
         if (!this.muted) this.lastAudibleVolume = this.volume;
       }
+      if (this.uyuniMusic) this.musicPercent = readPercent(UYUNI_MUSIC_KEY, DEFAULT_UYUNI_MUSIC_VOLUME);
     } catch { /* The current visit can still play sound. */ }
     this.recording?.setVolume(this.volume / DEFAULT_FIELD_VOLUME * this.backgroundGain);
     this.crackle?.setVolume(0);
+    this.uyuniMusic?.setVolume(this.musicPercent / 100);
     // A spectator's ordinary tap or key press can also unlock audio on mobile browsers.
-    window.addEventListener("pointerup", this.unlock, true);
-    window.addEventListener("keydown", this.unlock, true);
+    window.addEventListener("pointerup", this.onGesture, true);
+    window.addEventListener("keydown", this.onGesture, true);
     document.addEventListener("visibilitychange", this.onVisibility);
   }
 
-  private unlock = () => {
-    if (this.disposed || this.muted || document.hidden) return;
+  private onGesture = (event: Event) => {
+    if (!event.isTrusted || this.disposed || document.hidden) return;
     this.unlocked = true;
-    if (!this.sceneRunning) return;
+    this.resumeAudio();
+  };
+
+  private resumeAudio() {
+    if (!this.unlocked || this.disposed || document.hidden || !this.sceneRunning) return;
+    const playMusic = this.uyuniMusic && !this.roomMusicPlaying && this.musicPercent > 0;
+    if (this.muted && !playMusic) return;
     const Audio = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (Audio) try {
       this.context ??= new Audio();
       if (this.context.state !== "running") void this.context.resume().catch(() => {});
     } catch { /* Visual fireworks also work when audio is unavailable. */ }
-    this.recording?.resume(this.context);
-    if (this.fireInRange) this.crackle?.resume(this.context);
-  };
+    if (!this.muted) {
+      this.recording?.resume(this.context);
+      if (this.fireInRange) this.crackle?.resume(this.context);
+    }
+    if (playMusic) this.uyuniMusic?.resume(this.context);
+  }
+
+  setUyuniMusicVolume(percent: number) {
+    if (!this.uyuniMusic || this.disposed || !Number.isFinite(percent)) return;
+    this.musicPercent = Math.max(0, Math.min(100, Math.round(percent)));
+    try { localStorage.setItem(UYUNI_MUSIC_KEY, String(this.musicPercent)); } catch { /* Applies for this visit. */ }
+    this.uyuniMusic.setVolume(this.musicPercent / 100);
+    if (this.musicPercent === 0) this.uyuniMusic.pause();
+    else this.resumeAudio();
+  }
+
+  setRoomMusicPlaying(playing: boolean) {
+    if (!this.uyuniMusic || this.disposed || this.roomMusicPlaying === playing) return;
+    this.roomMusicPlaying = playing;
+    if (playing) this.uyuniMusic.pause();
+    else this.resumeAudio();
+  }
 
   /** The beach tide line is near z=-1. The fire and listener use the same XZ world coordinates. */
   updateBeachSound(person: { x: number; z: number }, fire: { x: number; z: number }, logs: number, dt: number) {
@@ -126,10 +164,10 @@ export class FireworkAudio {
     this.sceneRunning = running;
     this.discardPast();
     if (!running) {
-      this.stopVoices(); this.recording?.pause(); this.crackle?.pause();
+      this.stopVoices(); this.recording?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause();
       this.fireInRange = false; this.fireGain = 0; this.crackle?.setVolume(0);
     }
-    else if (this.unlocked && !document.hidden && !this.muted) this.unlock();
+    else this.resumeAudio();
   }
 
   setMuted(muted: boolean) {
@@ -137,7 +175,7 @@ export class FireworkAudio {
     this.muted = muted;
     try { localStorage.setItem(MUTED_KEY, muted ? "1" : "0"); } catch { /* Keep the choice for this visit. */ }
     if (muted) this.stopVoices();
-    else this.unlock();
+    else this.resumeAudio();
     this.discardPast();
   }
 
@@ -153,7 +191,7 @@ export class FireworkAudio {
     else {
       this.lastAudibleVolume = this.volume;
       for (const gain of this.voices.values()) gain.gain.value = .48 * scale;
-      this.unlock();
+      this.resumeAudio();
     }
     this.discardPast();
   }
@@ -165,8 +203,8 @@ export class FireworkAudio {
 
   private onVisibility = () => {
     this.discardPast();
-    if (document.hidden) { this.stopVoices(); this.recording?.pause(); this.crackle?.pause(); }
-    else if (this.recording && this.unlocked && !this.muted) this.unlock();
+    if (document.hidden) { this.stopVoices(); this.recording?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause(); }
+    else this.resumeAudio();
   };
 
   addShow(geometry: BufferGeometry, startedAt: number, serverNow: number, seed: number) {
@@ -231,12 +269,12 @@ export class FireworkAudio {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    window.removeEventListener("pointerup", this.unlock, true);
-    window.removeEventListener("keydown", this.unlock, true);
+    window.removeEventListener("pointerup", this.onGesture, true);
+    window.removeEventListener("keydown", this.onGesture, true);
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.abort.abort();
     this.stopVoices();
-    this.recording?.dispose(); this.crackle?.dispose();
+    this.recording?.dispose(); this.crackle?.dispose(); this.uyuniMusic?.dispose();
     this.cues.length = 0;
     this.boom = null;
     if (this.context) void this.context.close().catch(() => {});

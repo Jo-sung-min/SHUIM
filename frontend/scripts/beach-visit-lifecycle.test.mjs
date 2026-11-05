@@ -12,7 +12,8 @@ const compile = text => ts.transpileModule(text, { compilerOptions: {
 } }).outputText;
 const sources = {};
 for (const [name, path] of Object.entries({ scene: "components/beach/BeachScene.tsx", joystick: "components/beach/Joystick.tsx",
-  continuity: "lib/beach/continuity.ts", net: "lib/beach/net.ts", maps: "lib/beach/maps.ts", appearance: "lib/beach/appearance.ts" })) {
+  continuity: "lib/beach/continuity.ts", net: "lib/beach/net.ts", maps: "lib/beach/maps.ts", appearance: "lib/beach/appearance.ts",
+  roomMusic: "lib/beach/room-music.ts" })) {
   sources[name] = compile(await readFile(new URL(`../${path}`, import.meta.url), "utf8"));
 }
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -80,6 +81,9 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     stop() { this.events.push(["stop"]); this.self.moving = false; }
     dispose() { this.events.push(["dispose"]); }
     setInputPaused() {} setSkin() {} setHourOverride() {} resize() {}
+    uyuniMusicVolume = 25;
+    setUyuniMusicVolume(percent) { this.uyuniMusicVolume = percent; }
+    setRoomMusicPlaying(playing) { this.events.push(["musicPriority", playing]); }
     setFireState(value) { this.events.push(["fire", plain(value)]); }
     applyFireworks() {} select() {} playCare() {}
     applyUyuniMoments(events, serverTime, ownPid) { this.events.push(["moments", plain(events), serverTime, ownPid]); }
@@ -104,11 +108,13 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     const context = { ...env, exports: {}, require }; vm.runInNewContext(sources[name], context); return context.exports;
   }
   const continuity = load("continuity"), net = load("net"), maps = load("maps"), appearance = load("appearance");
+  const roomMusic = load("roomMusic", () => ({ IS_AIT: false }));
   const module = load(component, name => {
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return jsxRuntime;
     if (name === "next/link") return { default: "a" };
     if (name.endsWith("/net")) return net;
+    if (name.endsWith("/room-music")) return roomMusic;
     if (name.endsWith("/continuity")) return continuity;
     if (name.endsWith("/maps")) return maps;
     if (name.endsWith("/appearance")) return appearance;
@@ -161,6 +167,29 @@ const tick = (request, extra = {}) => ({ sequence: request.body.sequence, server
   players: [], count: 1, received: { comfort: 0, hug: 0, wave: 0 }, events: [], fire, ...extra });
 const of = (h, path) => h.requests.filter(request => request.path === `/api/beach/${path}`);
 async function joined(h, payload = entry()) { await h.mount(); of(h, "enter")[0].resolve(payload); await h.flush(); return h.engines[0]; }
+
+test("Uyuni background music follows confirmed playback and retains its listener's volume", async () => {
+  const h = harness();
+  const playing = { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 163029, playing: true, startedAt: h.now, version: 4 };
+  const engine = await joined(h, entry({ music: playing, serverTime: h.now }));
+  const priority = () => engine.events.filter(e => e[0] === "musicPriority").map(e => e[1]);
+  function musicPanel() {
+    let panel;
+    walkElements(h.tree, node => { if (node.props.ambient) panel = node.props; });
+    return panel;
+  }
+  assert.deepEqual(priority(), [true], "a visitor joining during a shared song never starts the background track");
+  assert.equal(musicPanel().canControl, false);
+  musicPanel().ambient.onChange(0); await h.flush();
+  assert.equal(musicPanel().ambient.volume, 0);
+  const stopped = { ...playing, playing: false, startedAt: null };
+  musicPanel().onSnapshot({ ...stopped, version: 3 }, h.now); await h.flush();
+  assert.deepEqual(priority(), [true], "a delayed stop cannot release a newer shared song");
+  musicPanel().onSnapshot({ ...stopped, version: 5 }, h.now + 1); await h.flush();
+  assert.deepEqual(priority(), [true, false]);
+  assert.equal(musicPanel().ambient.volume, 0);
+  await h.unmount();
+});
 
 const moments = (time, events = [], cooldowns = { sparkler: 0, lantern: 0 }) => ({ serverTime: time, uyuniMomentsEnabled: true,
   uyuniMoments: events, uyuniMomentCooldowns: cooldowns });
