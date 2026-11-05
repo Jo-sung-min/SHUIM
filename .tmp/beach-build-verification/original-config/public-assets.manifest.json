@@ -1,0 +1,318 @@
+{
+  "baseUrl": "https://cdn.sorow.co.kr",
+  "bucket": "sorow-aws-s3",
+  "files": [
+    {
+      "key": "apple-icon.png",
+      "bytes": 5500,
+      "sha256": "7cb1c56c26b3b653be59601d12efdb83a3a01b2b9b132472cb369d4eabf89d89",
+      "contentType": "image/png"
+    },
+    {
+      "key": "beach/chars-v2.png",
+      "bytes": 93713,
+      "sha256": "ebcd1d3dff2879be31ac83b1da94634f58117fccfbc52e988b3caf45839bb7c7",
+      "contentType": "image/png"
+    },
+    {
+      "key": "beach/chars.png",
+      "bytes": 93713,
+      "sha256": "ebcd1d3dff2879be31ac83b1da94634f58117fccfbc52e988b3caf45839bb7c7",
+      "contentType": "image/png"
+    },
+    {
+      "key": "beach/female-avatar.webp",
+      "bytes": 13260,
+      "sha256": "d5801c8110e749719f398a78e252ac252f711b255f8970d10a9b477a5a3a855b",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/fx/firework-spark-v1.webp",
+      "bytes": 15150,
+      "sha256": "1e2c3408ddc730e157fd5c16a8f9a7272befe91771e0814c9d1a759229917d26",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/male-avatar.webp",
+      "bytes": 12314,
+      "sha256": "fa124388aa3968952ff8b197c6fb386a61786e664d20c0ac6b331d1d486613c5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/models/tripo-female-onsen-mobile-v1.glb",
+      "bytes": 649780,
+      "sha256": "b6b307e1dbc69ccf9c3fbebc6a4adb3fe1a427b654d549d17e4a9a528bcc2754",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-female-onsen-mobile-v2.glb",
+      "bytes": 649780,
+      "sha256": "b6b307e1dbc69ccf9c3fbebc6a4adb3fe1a427b654d549d17e4a9a528bcc2754",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-female-rigged-mobile-v1.glb",
+      "bytes": 1749864,
+      "sha256": "da21ab458dbce1dc6171ac0b7228ea150fd82c2fe08851b0765774825aa5fe9d",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-female-rigged-mobile-v2.glb",
+      "bytes": 1095232,
+      "sha256": "8e9018b2ef2d5ea73527d038095772a370234850fc64ed41458e895e329d4f5b",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-firewood-mobile-v2.glb",
+      "bytes": 951164,
+      "sha256": "697b4783b6f0b65e2d2fb09ffd5b7bc0ecf6465e329021bd3740d27ecd002c0e",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-male-mobile-v1.glb",
+      "bytes": 619596,
+      "sha256": "703bc9b6ca2ee41e1515f68e5598053a87d48076a28db2b1fa1e17bc5550cb9b",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-male-onsen-mobile-v1.glb",
+      "bytes": 729856,
+      "sha256": "f07fd84da6f6181e9f5aad447ded8f3dfe0c60018c0c55ffe97e9044db416ec6",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-male-onsen-mobile-v2.glb",
+      "bytes": 729856,
+      "sha256": "f07fd84da6f6181e9f5aad447ded8f3dfe0c60018c0c55ffe97e9044db416ec6",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-male-rigged-mobile-v2.glb",
+      "bytes": 1509936,
+      "sha256": "d40c5293988d5ed1ff721eacdee2603d49824402cd21700fc235dab196b6955e",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/models/tripo-male-rigged-mobile-v3.glb",
+      "bytes": 881272,
+      "sha256": "9a9cde30dcc3abdb18b1b71991fa531cbbfe9e43ffa44468f930d4bdfa430c12",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "beach/props.png",
+      "bytes": 3227,
+      "sha256": "90a6093a5cd75caec64418a99f336b7fae2fae6a98058da9a0e8c22f432c9bad",
+      "contentType": "image/png"
+    },
+    {
+      "key": "beach/real/cove-panorama.png",
+      "bytes": 2664924,
+      "sha256": "0c95d2df41d7e8745fc18f31a32771c9bc17836315f576b2f99b27238e21d7c5",
+      "contentType": "image/png"
+    },
+    {
+      "key": "beach/real/fabric-normal-v2.webp",
+      "bytes": 7122,
+      "sha256": "94624e969b39a1a3e988c151f2fdd53a320470405eba9337b7c270de810a9dc1",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/fabric-normal.jpg",
+      "bytes": 678670,
+      "sha256": "9b79709806511b62567fb007ff61009c3b194bb0d0821fbaee3faf1b2bff0318",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/fabric-roughness-v2.webp",
+      "bytes": 69290,
+      "sha256": "acb59aadafca1697ed7114c3c4a4efee475baefe8c66a23d2fa1a76f8caa8ed8",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/fabric-roughness.jpg",
+      "bytes": 865264,
+      "sha256": "89bed18f5c3f03fc7b4c2382446891629716278e521e06e8b7f6c8f02dd22590",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/fabric.jpg",
+      "bytes": 581360,
+      "sha256": "0f1b790e4087223275aaa6fdffdd46a556a26d2af72cd811acf72ba9c21ec1f6",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/paradise-panorama-v1.webp",
+      "bytes": 190382,
+      "sha256": "d8842e56fddd491da685ab9d526599583bc59180a9f1fd9a593cbb0219c5e413",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/rock-normal.jpg",
+      "bytes": 997297,
+      "sha256": "9ab8f503f45331a9ff9c25270a04cde988d2e0e2d1374f8378d915ca5af0d934",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/rock-roughness.jpg",
+      "bytes": 550656,
+      "sha256": "529a099d6043a228576b84c607d89a8a22967842f0bd66a324cb701c718bc2c4",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/rock.jpg",
+      "bytes": 987798,
+      "sha256": "06d39eeb7243e5dd1aa8a5e2f4acb6e62fc3457ceb066bfa73743c977336baa4",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/sand-normal.jpg",
+      "bytes": 884706,
+      "sha256": "1bde5f49ea78f94bcad73592696bf3949711c4ac197133b710c0c8521b6e996b",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/sand-roughness.jpg",
+      "bytes": 291218,
+      "sha256": "5c9ead290a94913cfa2d0452a576ba527b50301fe208f2ffc4861e42a8fea45b",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/sand.jpg",
+      "bytes": 703132,
+      "sha256": "e72144f9d7b81bdb7bbdb34222b53431738dcef79346dd89412d2abd541e4d30",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/shelter-wood-normal-v2.webp",
+      "bytes": 43194,
+      "sha256": "2623c4ed6ce66469a876017f11eed258c2991c7ea0cd053459fa2089da4d9d1f",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/shelter-wood-roughness-v2.webp",
+      "bytes": 68440,
+      "sha256": "552dc12d6e791f16da1773f61235d47dc4066ee6e2e3f43bf7a67bb7f893ad75",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/shelter-wood-v2.webp",
+      "bytes": 183864,
+      "sha256": "513de7a62f9c05e27d1426123934856e28c75631fe9b8db2240f7294b4175cbf",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/sky-lantern-v2.png",
+      "bytes": 332914,
+      "sha256": "60118194d009b12aaafbba9d1af5f9288c24c82167ec10c653af7eb1e03371b7",
+      "contentType": "image/png"
+    },
+    {
+      "key": "beach/real/uyuni-milky-way-v1.webp",
+      "bytes": 443462,
+      "sha256": "71e7d279f5ccc41007f0d93ea4b90cbc988b88e1b9be285d92ca9cedf94fc305",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/white-cotton-v1.webp",
+      "bytes": 237154,
+      "sha256": "0432a3d7c06aa1f214eba729f2b837cd658c5ebeab8142e789e070902d9b69a9",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/white-sand-v1.webp",
+      "bytes": 418684,
+      "sha256": "5bc3fca9d0afee39213fadb6d243641b41496074e67f66394e1fdd428e820f46",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/wood-normal.jpg",
+      "bytes": 223250,
+      "sha256": "8d38f02f121c0e58eaedc19cd668faea21381ae3ff4d5332cd90de75e6683393",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/wood-roughness.jpg",
+      "bytes": 234672,
+      "sha256": "b80c45969d8299ca5f21de969f0269138a5e3e78e51fc911af809683d99c5bc9",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/real/wood.jpg",
+      "bytes": 226049,
+      "sha256": "94833feda44e025a9139f7b5723ea84e4f0258d3b54939a79e1013c133085e29",
+      "contentType": "image/jpeg"
+    },
+    {
+      "key": "beach/sand.png",
+      "bytes": 13561,
+      "sha256": "e04390242ad222ac22c54cec66624039db9c80d17b07bc08184e4e2b04d1bfb2",
+      "contentType": "image/png"
+    },
+    {
+      "key": "favicon.svg",
+      "bytes": 441,
+      "sha256": "c86dc8c997e2661f614027b06ca6190a3f2cbb1fc2945fc6093270e784ddd0d6",
+      "contentType": "image/svg+xml"
+    },
+    {
+      "key": "feed/dawn-stars.svg",
+      "bytes": 1426,
+      "sha256": "c6c7b7e5d11452b514894a334768fe4816035308b9a1ffa5b0d1ee7506642c26",
+      "contentType": "image/svg+xml"
+    },
+    {
+      "key": "feed/moon-wave.svg",
+      "bytes": 1671,
+      "sha256": "01b49f683d9c7751dfb61c353ab69998488395922d427ba2b41271152bdfebd3",
+      "contentType": "image/svg+xml"
+    },
+    {
+      "key": "feed/mountain-fog.svg",
+      "bytes": 1035,
+      "sha256": "f0721894106ebe3e8b599b78846758a62082017c33a56a56a8768c4fffd1053c",
+      "contentType": "image/svg+xml"
+    },
+    {
+      "key": "feed/one-tree.svg",
+      "bytes": 1225,
+      "sha256": "eb8d9a71c6eba416a08d84f1bc0bcf84d3c7be0877fc9d840d0e2376d3784c08",
+      "contentType": "image/svg+xml"
+    },
+    {
+      "key": "feed/rain-window.svg",
+      "bytes": 1772,
+      "sha256": "2681f3f0f88a31031a601e999e226e015d80ffd7520987267680066fd73fd95e",
+      "contentType": "image/svg+xml"
+    },
+    {
+      "key": "icon-192.png",
+      "bytes": 6016,
+      "sha256": "821e01299207e63ea0d2b136e13babca0b158408f91ff3fe64088cbcdde89da2",
+      "contentType": "image/png"
+    },
+    {
+      "key": "icon-512-maskable.png",
+      "bytes": 16367,
+      "sha256": "c449e7017c846dcca755be58b3936b92ed0c993891e0b207f96e92f6fda2a57f",
+      "contentType": "image/png"
+    },
+    {
+      "key": "icon-512.png",
+      "bytes": 22074,
+      "sha256": "f63a7df1ad9f721cc77bf30a4ec051b1f970fab60046e7d04ad0af3acb775172",
+      "contentType": "image/png"
+    },
+    {
+      "key": "sorow-logo.png",
+      "bytes": 28599,
+      "sha256": "f0d3ee70512de3c97644035f77274c8869c8140c287d9e5364f55dc611cd98d2",
+      "contentType": "image/png"
+    },
+    {
+      "key": "splash.webp",
+      "bytes": 188796,
+      "sha256": "fe05071bc74d9969f4c61b8b682e491d302b3d52f166eb444a2706326c3d2b1a",
+      "contentType": "image/webp"
+    }
+  ]
+}

@@ -17,6 +17,25 @@ export default function Joystick({ onMove }: { onMove: (x: number, y: number) =>
   const moveRef = useRef(onMove);
   moveRef.current = onMove;
   useEffect(() => () => moveRef.current(0, 0), []);
+  useEffect(() => {
+    const reset = () => {
+      const pointer = pointerRef.current;
+      pointerRef.current = null;
+      if (pointer !== null) {
+        try { baseRef.current?.releasePointerCapture(pointer); } catch { /* Capture may already be cancelled by the browser. */ }
+      }
+      setActive(false); setKnob({ x: 0, y: 0 }); moveRef.current(0, 0);
+    };
+    const visibility = () => { if (document.hidden) reset(); };
+    window.addEventListener("blur", reset);
+    window.addEventListener("pagehide", reset);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.removeEventListener("blur", reset);
+      window.removeEventListener("pagehide", reset);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, []);
 
   const update = (e: ReactPointerEvent<HTMLDivElement>) => {
     const base = baseRef.current;
@@ -54,6 +73,7 @@ export default function Joystick({ onMove }: { onMove: (x: number, y: number) =>
       onPointerMove={(e) => { if (pointerRef.current === e.pointerId) update(e); }}
       onPointerUp={release}
       onPointerCancel={release}
+      onLostPointerCapture={release}
       onContextMenu={(e) => e.preventDefault()}
     >
       <span className={styles.arrow} data-dir="up" aria-hidden="true" />

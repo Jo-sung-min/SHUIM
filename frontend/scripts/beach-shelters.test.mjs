@@ -41,6 +41,7 @@ obstacles.push(...PLACEMENT.filter((p) => p.r).map(({ x, z, r }) => ({ x, z, r }
 function createWalker(x, z, yaw = Math.PI) {
   const restEvents = [];
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     disposed: false,
     self: { x, z, yaw, moving: false, pitch: 0, bobT: 0 },
     bounds, obstacles, keys: new Set(), move: { x: 0, y: 0 }, auto: null, faceGoal: null, view: "first",

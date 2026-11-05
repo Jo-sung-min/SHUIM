@@ -32,4 +32,17 @@ const fireworksSource = stripTypeScriptTypes(await readFile(new URL("../lib/beac
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const fireworksContext = { THREE, ...assets };
 vm.runInNewContext(`${fireworksSource}\nglobalThis.api = { BeachFireworks };`, fireworksContext);
-export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...assets };
+const hotelSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-hotel-layout.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const hotelContext = {};
+vm.runInNewContext(`${hotelSource}\nglobalThis.api = {
+  UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_DECK, UYUNI_HOTEL_SEATS, UYUNI_HOTEL_COLLIDERS,
+  uyuniHotelForSpot, uyuniHotelBedSlot, claimedUyuniHotelBed, nearbyUyuniHotel,
+  uyuniHotelFloorHeight, uyuniHotelCeilingHeight
+};`, hotelContext);
+const motionSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/remote-motion.ts", import.meta.url), "utf8"))
+  .replace(/\bexport\s+(?=class\b)/g, "");
+const motionContext = {};
+vm.runInNewContext(`${motionSource}\nglobalThis.api = { RemoteMotionBuffer, RemoteSnapshotClock };`, motionContext);
+export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...motionContext.api, ...assets };

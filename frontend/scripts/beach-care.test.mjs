@@ -31,6 +31,7 @@ function fixture(view = "third") {
   camera.position.set(0, 1.55, 5); camera.lookAt(0, 1, 0); camera.updateMatrixWorld();
   const fxTex = Object.fromEntries(["heart", "sparkle", "leaf", "glow", "petal"].map(kind => [kind, new THREE.Texture()]));
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     scene, camera, players: new Map(), fxTex, fx: [], careGestures: null,
     disposed: false, view, self: { x: 0, z: 3, yaw: 0, moving: false }, skyRest: null,
     deckHeight: () => 0.18, selfNode: null, lanterns: null, auto: null,

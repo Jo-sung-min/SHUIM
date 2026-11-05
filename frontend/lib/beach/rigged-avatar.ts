@@ -33,6 +33,15 @@ interface BoneRest {
   animatedScale: THREE.Vector3;
 }
 
+interface AvatarTemplateData {
+  scale: number;
+  x: number;
+  y: number;
+  z: number;
+  backDepth: number;
+  walk: THREE.AnimationClip | null;
+}
+
 /** Tripo's female rig has different names, but the same direct limb chains. */
 function boneName(name: string) {
   const bare = name.replace(/^mixamorig[:_]?/i, "");
@@ -42,6 +51,24 @@ function boneName(name: string) {
   if (!limb) return bare;
   const parts: Record<string, string> = { Clavicle: "Shoulder", Upperarm: "Arm", Forearm: "ForeArm", Hand: "Hand", Thigh: "UpLeg", Calf: "Leg", Foot: "Foot", ToeBase: "ToeBase" };
   return `${limb[1] === "L" ? "Left" : "Right"}${parts[limb[2]]}`;
+}
+
+/** Bounds and animation tracks are immutable for one downloaded model. */
+function prepareAvatarTemplate(root: THREE.Object3D, clips: THREE.AnimationClip[], bounds: THREE.Box3): AvatarTemplateData {
+  const scale = HEIGHT / (bounds.max.y - bounds.min.y), center = bounds.getCenter(new THREE.Vector3());
+  let hips: THREE.Bone | undefined;
+  root.traverse(object => { if (object instanceof THREE.Bone && boneName(object.name) === "Hips") hips = object; });
+  const walk = clips.find(clip => /walk/i.test(clip.name))?.clone() ?? null;
+  // Network movement owns horizontal travel; preserve the original vertical step.
+  if (walk && hips) for (const track of walk.tracks) {
+    if (track.name !== `${hips.name}.position`) continue;
+    for (let i = 0; i < track.values.length; i += 3) {
+      track.values[i] = hips.position.x;
+      track.values[i + 2] = hips.position.z;
+    }
+  }
+  return { scale, x: -center.x * scale, y: -bounds.min.y * scale, z: -center.z * scale,
+    backDepth: (center.z - bounds.min.z) * scale, walk };
 }
 
 /** Paint in bind-space so facial details follow the skin without changing the packed UV atlas. */
@@ -137,6 +164,7 @@ export class BeachAvatarModels {
   private pending: Promise<void> | null = null;
   private template: THREE.Group | null = null;
   private clips: THREE.AnimationClip[] = [];
+  private prepared: AvatarTemplateData | undefined;
   private actors = new Set<BeachAvatar>();
   private disposed = false;
   private retryAfter = 0;
@@ -187,6 +215,7 @@ export class BeachAvatarModels {
       prepareAvatarFace(gltf.scene, this.kind, bounds);
       this.template = gltf.scene;
       this.clips = gltf.animations;
+      this.prepared = prepareAvatarTemplate(gltf.scene, gltf.animations, bounds);
     }).catch(() => {
       // Keep the existing sprite usable when the model cannot be downloaded/decoded.
     }).finally(() => {
@@ -198,7 +227,7 @@ export class BeachAvatarModels {
 
   create(): BeachAvatar | null {
     if (this.disposed || !this.template) return null;
-    const actor = new BeachAvatar(this.template, this.clips, removed => this.actors.delete(removed), this.kind);
+    const actor = new BeachAvatar(this.template, this.clips, removed => this.actors.delete(removed), this.kind, this.prepared);
     this.actors.add(actor);
     return actor;
   }
@@ -210,6 +239,7 @@ export class BeachAvatarModels {
     if (this.template) disposeTemplate(this.template);
     this.template = null;
     this.clips = [];
+    this.prepared = undefined;
   }
 }
 
@@ -238,7 +268,7 @@ export class BeachAvatar {
   private q2 = new THREE.Quaternion();
   private q3 = new THREE.Quaternion();
 
-  constructor(template: THREE.Object3D, clips: THREE.AnimationClip[], onDispose: (actor: BeachAvatar) => void = () => {}, kind: AvatarKind = "male") {
+  constructor(template: THREE.Object3D, clips: THREE.AnimationClip[], onDispose: (actor: BeachAvatar) => void = () => {}, kind: AvatarKind = "male", prepared?: AvatarTemplateData) {
     this.kind = kind;
     this.onDispose = onDispose;
     this.root.name = `beach-${kind}-avatar`;
@@ -246,14 +276,14 @@ export class BeachAvatar {
     this.model = cloneSkeleton(template);
     this.normalized.add(this.model);
     this.root.add(this.normalized);
-    this.root.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(this.model, true);
-    const scale = HEIGHT / (bounds.max.y - bounds.min.y);
-    const center = bounds.getCenter(new THREE.Vector3());
-    this.normalized.scale.setScalar(scale);
-    this.normalized.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+    if (!prepared) {
+      this.root.updateMatrixWorld(true);
+      prepared = prepareAvatarTemplate(this.model, clips, new THREE.Box3().setFromObject(this.model, true));
+    }
+    this.normalized.scale.setScalar(prepared.scale);
+    this.normalized.position.set(prepared.x, prepared.y, prepared.z);
     this.baseY = this.normalized.position.y;
-    this.backDepth = (center.z - bounds.min.z) * scale;
+    this.backDepth = prepared.backDepth;
     this.model.traverse(object => {
       if (!(object instanceof THREE.Bone)) return;
       this.bones.set(boneName(object.name), {
@@ -265,19 +295,8 @@ export class BeachAvatar {
     const hips = this.bones.get("Hips");
     if (hips) this.restHipHeight = hips.bone.getWorldPosition(new THREE.Vector3()).y;
     this.mixer = new THREE.AnimationMixer(this.model);
-    const originalWalk = clips.find(clip => /walk/i.test(clip.name));
-    if (originalWalk) {
-      const clip = originalWalk.clone();
-      // Network/joystick movement owns world travel. Keep the clip's vertical step
-      // bounce, but remove its forward travel so loops cannot snap the actor back.
-      for (const track of clip.tracks) {
-        if (!hips || track.name !== `${hips.bone.name}.position`) continue;
-        for (let i = 0; i < track.values.length; i += 3) {
-          track.values[i] = hips.position.x;
-          track.values[i + 2] = hips.position.z;
-        }
-      }
-      this.walk = this.mixer.clipAction(clip);
+    if (prepared.walk) {
+      this.walk = this.mixer.clipAction(prepared.walk);
       this.walk.setEffectiveWeight(0).setEffectiveTimeScale(2).play();
       this.mixer.update(0);
     }
@@ -292,7 +311,8 @@ export class BeachAvatar {
   private aim(name: string, childName: string, x: number, y: number, z: number, weight = 1) {
     const rest = this.bones.get(name), child = this.bones.get(childName);
     if (!rest || !child || !rest.bone.parent) return;
-    this.root.updateMatrixWorld(true);
+    // These queries update the needed ancestor paths, including limbs posed earlier
+    // in this frame. Updating the entire skeleton here repeats that work per limb.
     this.root.getWorldQuaternion(this.q1);
     rest.bone.parent.getWorldQuaternion(this.q2).invert();
     this.v1.set(x, y, z).normalize().applyQuaternion(this.q1).applyQuaternion(this.q2).normalize();

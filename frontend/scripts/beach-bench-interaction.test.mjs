@@ -46,6 +46,7 @@ function fixture(aspect = 390 / 844) {
   const scene = new THREE.Scene(), obstacles = [{ x: 0, z: 12, r: 1.35 }];
   benches.buildFireBenches(scene, obstacles);
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     disposed: false, inputPaused: false, scene, camera, sky: new THREE.Mesh(), followCam: new THREE.Vector3(), followSnap: true,
     self: { x: seat.x - Math.sin(seat.yaw), z: seat.z - Math.cos(seat.yaw), yaw: 0.2, pitch: 0.07, moving: false, bobT: 0 },
     view: "first", mobile: aspect < 0.75, skyRest: null, beforeSkyRest: null, benchSeat: null,

@@ -79,6 +79,7 @@ function fixture(yaw = 0) {
   camera.updateMatrixWorld();
   const selected = [];
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     scene, camera, charTex: new THREE.Texture(), daylight: { tint: [1, 1, 1] },
     shadowGeo: new THREE.PlaneGeometry(1, 1), shadowMat: new THREE.MeshBasicMaterial(),
     players: new Map(), selected: null, time: 0, self: { x: 0, z: 3 },

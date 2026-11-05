@@ -1,15 +1,20 @@
 "use client";
 
 import type { BeachCharacter } from "./appearance";
+import type { MapId } from "./maps";
 
 /**
  * 바닷가 서버와 주고받기. 각 소로우에 멤버 전용 방(/api/beach, BeachRoom)이 하나씩 있다.
  *  - enter: 세션으로 한 번 인증하고 티켓을 받는다 (여기서만 DB 를 쓴다)
  *  - tick: 내 위치와 받은 행동을 주고받는다. 행동을 보낼 때는 서버가 현재 로그인·권한도 확인한다.
  *  - leave: 나간다 (탭을 닫을 때도 keepalive 로 보낸다)
- * 티켓이 만료되면(10초 넘게 tick 이 없었을 때) 410 이 오고, 화면은 다시 enter 한다.
+ * 10초 이상 소식이 없으면 active 자리를 해제하고, 30분 이내에는 인증된 재입장으로 최근 위치를 복원한다.
  */
 export interface EnterResponse {
+  resumed?: boolean;
+  sequence?: number;
+  selfRest?: RestPresence;
+  mapId: MapId;
   communityId: string;
   community: { id: string; slug: string; name: string };
   capacity: number;
@@ -19,6 +24,7 @@ export interface EnterResponse {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   count: number;
   fire: FireState;
+  fireEnabled?: boolean;
   restEnabled?: boolean;
   bedEnabled?: boolean;
   benchEnabled?: boolean;
@@ -118,6 +124,7 @@ export interface FireState {
 }
 
 export interface RemotePlayer {
+  updatedAt?: number;
   pid: string;
   id: string;
   nick: string;
@@ -157,6 +164,7 @@ export interface CareEvent {
 }
 
 export interface TickRequest {
+  sequence?: number;
   ticket: string;
   x: number;
   z: number;
@@ -167,6 +175,7 @@ export interface TickRequest {
 }
 
 export interface TickResponse {
+  sequence?: number;
   players: RemotePlayer[];
   events: CareEvent[];
   count: number;
@@ -182,6 +191,7 @@ export interface TickResponse {
 }
 
 export interface BeachCount {
+  mapId: MapId;
   communityId: string;
   count: number;
   capacity: number;
@@ -234,18 +244,40 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   return json;
 }
 
-export async function enterBeach(communityId: string, character?: BeachCharacter): Promise<EnterResponse> {
-  const response = await post<EnterResponse>("/api/beach/enter", { communityId, character }, { signal: AbortSignal.timeout(8000) });
+function acceptsMap(actual: unknown, requested: MapId): boolean {
+  return actual === requested || (requested === "beach" && actual === undefined);
+}
+
+function requireMap(mapId: MapId): void {
+  if (mapId !== "beach" && mapId !== "uyuni") throw new BeachUnavailable("다시 쉴 곳을 골라 주세요.", 400);
+}
+
+export async function enterBeach(communityId: string, character?: BeachCharacter, mapId: MapId = "beach",
+  resume?: { ticket: string; sequence: number }, signal?: AbortSignal): Promise<EnterResponse> {
+  requireMap(mapId);
+  const response = await post<EnterResponse>("/api/beach/enter", { communityId, character, ...(mapId === "beach" ? {} : { mapId }),
+    ...(resume ? { resumeTicket: resume.ticket, sequence: resume.sequence } : {}) },
+    { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) });
+  if (!acceptsMap(response.mapId, mapId)) {
+    if (typeof response.ticket === "string" && response.ticket) leaveBeach(response.ticket);
+    throw new BeachUnavailable("선택한 곳의 입장을 확인하지 못했어요. 소로우에서 다시 골라 주세요.", 409);
+  }
   const lighting = readRoomLighting(response.lighting);
+  if (response.selfRest != null && !validRestPresence(response.selfRest)) throw new Error("머물던 자리를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  if (response.sequence !== undefined && (!Number.isSafeInteger(response.sequence) || response.sequence < 0)) throw new Error("방문 순서를 확인하지 못했어요.");
   const fireworks = readFireworksState(response);
-  return { ...response, careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
-    lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: response.onsenEnabled === true,
+  return { ...response, mapId, fireEnabled: mapId === "beach" && (response.fireEnabled === undefined || response.fireEnabled === true),
+    bedEnabled: response.bedEnabled === true, benchEnabled: mapId === "beach" && response.benchEnabled === true,
+    careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
+    lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: mapId === "beach" && response.onsenEnabled === true,
     fireworksControl: response.fireworksControl === true && fireworks.supported,
     fireworks: fireworks.fireworks, fireworksCooldownUntil: fireworks.fireworksCooldownUntil };
 }
 
-export async function tickBeach(body: TickRequest): Promise<TickResponse> {
-  const response = await post<TickResponse>("/api/beach/tick", body, { signal: AbortSignal.timeout(8000) });
+export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promise<TickResponse> {
+  const response = await post<TickResponse>("/api/beach/tick", body,
+    { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) });
+  if (response.sequence !== undefined && (!Number.isSafeInteger(response.sequence) || response.sequence < 0)) throw new Error("방문 순서를 확인하지 못했어요.");
   if (response.selfRest != null && !validRestPresence(response.selfRest)) throw new Error("쉴 자리의 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   if (response.lighting != null) {
     const lighting = readRoomLighting(response.lighting);
@@ -300,6 +332,7 @@ function validRestPresence(value: unknown): value is RestPresence {
     return Math.abs(state.x - x) <= 0.02 && Math.abs(state.z - z) <= 0.02 && Math.abs(state.yaw) < 1e-6;
   }
   if (state.pose === "sitting") return state.spotId === "fire-benches" && state.slot! < 12;
+  if (state.spotId === "hotel-dawn" || state.spotId === "hotel-dusk") return state.pose === "lying" && state.slot! < 2;
   return state.pose === "lying" && (state.spotId === "starlight" ? state.slot! < 8
     : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3);
 }
@@ -319,16 +352,22 @@ export async function setBeachRest(ticket: string, action: "lie" | "sit" | "stan
   return state;
 }
 
-/** 나가기. 화면을 닫는 중에도 끝까지 가도록 keepalive. 실패해도 10초 뒤 서버가 알아서 치운다 */
+/** Save the last position before a mobile browser freezes, without replaying any social action. */
+export function suspendBeach(body: { ticket: string; sequence: number; x: number; z: number; yaw: number }): void {
+  post("/api/beach/suspend", body, { keepalive: true, signal: AbortSignal.timeout(4000) }).catch(() => {});
+}
+
+/** Explicit departure forgets the saved visit; backgrounding uses suspend instead. */
 export function leaveBeach(ticket: string): void {
   post("/api/beach/leave", { ticket }, { keepalive: true }).catch(() => {});
 }
 
 /** 지금 바닷가에 있는 사람 수 (홈 카드용) */
-export async function fetchBeachCount(communityId: string): Promise<BeachCount> {
-  const res = await fetch(`/api/beach/count?communityId=${encodeURIComponent(communityId)}`, { credentials: "same-origin", cache: "no-store" });
+export async function fetchBeachCount(communityId: string, mapId: MapId = "beach"): Promise<BeachCount> {
+  requireMap(mapId);
+  const res = await fetch(`/api/beach/count?communityId=${encodeURIComponent(communityId)}${mapId === "beach" ? "" : `&mapId=${mapId}`}`, { credentials: "same-origin", cache: "no-store" });
   const json = (await res.json()) as BeachCount & { error?: string };
-  if (!res.ok) throw new Error(json.error ?? "바닷가 인원을 확인하지 못했어요.");
-  if (json.communityId !== communityId || !Number.isInteger(json.count) || json.count < 0 || !Number.isInteger(json.capacity) || json.capacity <= 0) throw new Error("바닷가 인원을 확인하지 못했어요.");
-  return json;
+  if (!res.ok) throw new Error(json.error ?? "함께 쉬는 인원을 확인하지 못했어요.");
+  if (!acceptsMap(json.mapId, mapId) || json.communityId !== communityId || !Number.isInteger(json.count) || json.count < 0 || !Number.isInteger(json.capacity) || json.capacity <= 0) throw new Error("함께 쉬는 인원을 확인하지 못했어요.");
+  return { ...json, mapId };
 }

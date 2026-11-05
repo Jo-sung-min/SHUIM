@@ -33,6 +33,12 @@ public class BeachRoom {
     public static final int CAPACITY = 100;
     /** 이만큼 tick 이 없으면 나간 것 */
     public static final long IDLE_MS = 10_000;
+    /** Position bookmarks do not reserve capacity or rest slots, and never survive a server restart. */
+    public static final long RESUME_MS = 30 * 60_000L;
+    /** A lost response after restart must not turn one retry into another visitor. */
+    static final long UNKNOWN_RESUME_RETRY_MS = 30_000;
+    static final int MAX_RESUME_TICKETS = 500;
+    private static final long MAX_SEQUENCE = 9_007_199_254_740_990L;
     /** 게으른 정리는 아무리 자주 와도 이 간격으로만 */
     static final long SWEEP_EVERY_MS = 2_000;
     /** 위로·안아주기 쿨다운: 누구에게든 1초, 같은 사람에게는 3초 */
@@ -49,6 +55,8 @@ public class BeachRoom {
     public static final int BED_SLOTS = 3;
     /** Beds sit deeper inside the enlarged shelters; matches the frontend bed-slot anchor. */
     public static final double BED_FEET_OFFSET_Z = 1.5;
+    public static final String HOTEL_DAWN_SPOT = "hotel-dawn", HOTEL_DUSK_SPOT = "hotel-dusk";
+    public static final int HOTEL_BED_SLOTS = 2;
     public static final String BENCH_SPOT = "fire-benches";
     public static final int BENCH_SLOTS = 12;
     public static final double BENCH_REACH = 2.25;
@@ -56,6 +64,7 @@ public class BeachRoom {
     public static final int ONSEN_BENCH_SLOTS = 6, ONSEN_FLOAT_SLOTS = 3;
     public static final double ONSEN_X = 0, ONSEN_Z = 45, ONSEN_REACH = 2.2, ONSEN_BENCH_RADIUS = 3.55;
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
+        boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
         boolean onsen() { return ONSEN_BENCH_SPOT.equals(id) || ONSEN_FLOAT_SPOT.equals(id); }
         boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id); }
@@ -68,7 +77,9 @@ public class BeachRoom {
         "hut-sunset", new RestSpot("hut-sunset", 13, 24.8, BED_SLOTS, true),
         BENCH_SPOT, new RestSpot(BENCH_SPOT, 0, 12, BENCH_SLOTS, false),
         ONSEN_BENCH_SPOT, new RestSpot(ONSEN_BENCH_SPOT, ONSEN_X, ONSEN_Z, ONSEN_BENCH_SLOTS, false),
-        ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false));
+        ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false),
+        HOTEL_DAWN_SPOT, new RestSpot(HOTEL_DAWN_SPOT, -12, 23, HOTEL_BED_SLOTS, true),
+        HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true));
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
@@ -83,14 +94,18 @@ public class BeachRoom {
     /** 다른 사람에게 보여 주는 모습. id 는 유저 id (위로를 보낼 때 쓴다), pid 는 이번 방문의 공개 id */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
-                             String pose, String spotId, Integer slot) {
+                             String pose, String spotId, Integer slot, long updatedAt) {
+        public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
+                          String pose, String spotId, Integer slot) {
+            this(pid, id, nick, skin, x, z, yaw, moving, pose, spotId, slot, 0);
+        }
         public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving) {
             this(pid, id, nick, skin, x, z, yaw, moving, "standing", null, null);
         }
         static PlayerView of(Presence p) {
             synchronized (p) {
                 return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving,
-                    restPose(p), p.restSpot, p.restSlot);
+                    restPose(p), p.restSpot, p.restSlot, p.updatedAt);
             }
         }
     }
@@ -243,7 +258,12 @@ public class BeachRoom {
     public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                              BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                              @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities, Lighting lighting,
-                             List<FireworkEvent> fireworks, long fireworksCooldownUntil) {
+                             List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence) {
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                          BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
+                          CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil) {
+            this(players, events, count, received, care, fire, serverTime, selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, 0);
+        }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                           CareCapabilities careCapabilities, Lighting lighting) {
@@ -261,10 +281,10 @@ public class BeachRoom {
             this(players, events, count, received, care, fire, serverTime, selfRest, null, AUTO_LIGHTING);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil);
+            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence);
         }
         public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
-            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil);
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence);
         }
     }
 
@@ -273,16 +293,22 @@ public class BeachRoom {
      * excluded 는 서로 차단한 유저 id: 서로 보이지도, 위로를 주고받지도 못한다.
      */
     public static final class Presence {
-        private final String pid, ticket, userId, nick;
+        private final String pid, ticket, userId;
+        private volatile String nick;
         private volatile int skin;
         private final int botIndex; // 0 = 사람, 1..3 = 가짜 방문자
-        private final Set<String> excluded;
+        private volatile Set<String> excluded;
         private volatile double x, z, yaw;
         private volatile boolean moving;
         private volatile Integer restSlot;
         private volatile String restSpot;
         private double standingX, standingZ, standingYaw;
         private volatile long lastSeen;
+        private volatile long updatedAt;
+        private long sequence;
+        private boolean sequenced, suspended;
+        private long lastResumeInput = -2;
+        private ResumeBookmark bookmark;
         private volatile long lastCareAt = NEVER;
         private final Map<String, Long> lastCareTo = new ConcurrentHashMap<>();
         private final ConcurrentLinkedQueue<CareEvent> inbox = new ConcurrentLinkedQueue<>();
@@ -303,6 +329,7 @@ public class BeachRoom {
             this.z = z;
             this.yaw = yaw;
             this.lastSeen = now;
+            this.updatedAt = now;
         }
 
         public String pid() { return pid; }
@@ -317,6 +344,8 @@ public class BeachRoom {
         public double yaw() { return yaw; }
         public boolean moving() { return moving; }
         public long lastSeen() { return lastSeen; }
+        public long updatedAt() { return updatedAt; }
+        public synchronized long sequence() { return sequence; }
         public long lastCareAt() { return lastCareAt; }
         public Map<String, Long> lastCareTo() { return Collections.unmodifiableMap(lastCareTo); }
         public int receivedComfort() { return receivedComfort.get(); }
@@ -343,7 +372,21 @@ public class BeachRoom {
     }
 
     private final LongSupplier clock;
+    private final BeachMap map;
     private final ConcurrentHashMap<String, Presence> byTicket = new ConcurrentHashMap<>();
+    /** Aliases share a bookmark so a lost resume response cannot create a second visitor. */
+    private static final class ResumeBookmark {
+        final String userId;
+        String currentTicket;
+        int skin;
+        double x, z, yaw;
+        long savedAt, sequence;
+        String retryTicket;
+        long retryExpiresAt;
+        ResumeBookmark(String userId) { this.userId = userId; }
+    }
+    private final LinkedHashMap<String, ResumeBookmark> resumeTickets = new LinkedHashMap<>();
+    public record Entry(Presence presence, boolean resumed) {}
     private final List<Presence> bots;
     private final AtomicLong lastSweep;
 
@@ -352,7 +395,12 @@ public class BeachRoom {
      * @param simulate true 면 가짜 방문자 셋을 심어 둔다 (바닷가가 비어 보이지 않게)
      */
     public BeachRoom(LongSupplier clock, boolean simulate) {
+        this(clock, simulate, BeachMap.BEACH);
+    }
+
+    public BeachRoom(LongSupplier clock, boolean simulate, BeachMap map) {
         this.clock = clock;
+        this.map = java.util.Objects.requireNonNull(map);
         long now = clock.getAsLong();
         this.lastSweep = new AtomicLong(now);
         List<Presence> seeded = new ArrayList<>();
@@ -377,25 +425,153 @@ public class BeachRoom {
     }
 
     public synchronized Presence enter(String userId, String nick, Set<String> excluded, String character) {
+        return enter(userId, nick, excluded, character, null, null).presence();
+    }
+
+    public synchronized Entry enter(String userId, String nick, Set<String> excluded, String character,
+                                    String resumeTicket, Long sequence) {
+        validateSequence(sequence);
         Integer selectedSkin = selectedSkin(character);
         long now = clock.getAsLong();
         // 입장 확인과 추가를 같은 잠금 안에서 처리해 동시 입장에도 100명을 넘지 않는다.
         sweep(now);
+        Presence previous = resumeTicket == null ? null : byTicket.get(resumeTicket);
+        ResumeBookmark bookmark = resumeTicket == null ? null : resumeTickets.get(resumeTicket);
+        if (previous == null && bookmark != null) previous = byTicket.get(bookmark.currentTicket);
+        String owner = previous != null ? previous.userId : bookmark == null ? null : bookmark.userId;
+        if (owner != null && !owner.equals(userId)) throw ApiException.forbidden("내 방문으로만 돌아갈 수 있어요.");
+        boolean restoredPosition = bookmark == null || !resumeTicket.equals(bookmark.retryTicket);
+        if (previous != null) {
+            synchronized (previous) {
+                // This covers metadata too: an older membership/block snapshot must never undo a newer one.
+                if (sequence != null && previous.sequenced && sequence < previous.sequence)
+                    return new Entry(previous, restoredPosition);
+                // Membership and block lists were reloaded by the authenticated entry controller.
+                previous.nick = nick == null ? "" : nick;
+                previous.excluded = excluded == null ? Set.of() : Set.copyOf(excluded);
+                Set<String> refreshedExcluded = previous.excluded;
+                previous.inbox.removeIf(event -> refreshedExcluded.contains(event.fromId()) || refreshedExcluded.contains(event.toId()));
+                if (selectedSkin != null) previous.skin = selectedSkin;
+                resumeFence(previous, sequence);
+                previous.suspended = false;
+                previous.moving = false;
+                previous.lastSeen = now;
+                previous.updatedAt = Math.max(previous.updatedAt + 1, now);
+                return new Entry(previous, restoredPosition);
+            }
+        }
         if (byTicket.size() >= CAPACITY) throw new ApiException(409, "바닷가에 100명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
         ThreadLocalRandom r = ThreadLocalRandom.current();
-        double x = r.nextDouble(-1.5, 1.5), z = r.nextDouble(2.8, 4);
+        double x = bookmark == null ? r.nextDouble(-1.5, 1.5) : bookmark.x;
+        double z = bookmark == null ? r.nextDouble(2.8, 4) : bookmark.z;
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick,
-            selectedSkin == null ? skinOf(userId) : selectedSkin, 0,
-            excluded == null ? Set.of() : Set.copyOf(excluded), x, z, Math.atan2(x, z - BeachFireService.FIRE_Z), now);
+            selectedSkin == null ? bookmark == null ? skinOf(userId) : bookmark.skin : selectedSkin, 0,
+            excluded == null ? Set.of() : Set.copyOf(excluded), x, z,
+            bookmark == null ? Math.atan2(x, z - BeachFireService.FIRE_Z) : bookmark.yaw, now);
+        if (bookmark != null) {
+            p.bookmark = bookmark;
+            p.sequence = bookmark.sequence;
+            resumeFence(p, sequence);
+            bookmark.currentTicket = p.ticket;
+        } else if (resumeTicket != null) {
+            // Unknown tokens cannot recover a position, but briefly alias the fresh result for retries.
+            // They remain in the same bounded map, have an authenticated owner, and cannot be used to tick.
+            ResumeBookmark retry = new ResumeBookmark(userId);
+            retry.currentTicket = p.ticket;
+            retry.skin = p.skin;
+            retry.x = p.x;
+            retry.z = p.z;
+            retry.yaw = p.yaw;
+            retry.savedAt = now;
+            retry.retryTicket = resumeTicket;
+            retry.retryExpiresAt = now + UNKNOWN_RESUME_RETRY_MS;
+            p.bookmark = retry;
+            resumeFence(p, sequence);
+            retry.sequence = p.sequence;
+            resumeTickets.put(resumeTicket, retry);
+            trimResumeTickets();
+        }
         byTicket.put(p.ticket, p);
-        return p;
+        return new Entry(p, bookmark != null && restoredPosition);
+    }
+
+    private static void resumeFence(Presence p, Long sequence) {
+        long input = sequence == null ? -1 : sequence;
+        if (p.suspended || p.lastResumeInput != input) {
+            p.sequence = Math.min(MAX_SEQUENCE, Math.max(p.sequence, Math.max(0, input)) + 1);
+            p.lastResumeInput = input;
+        }
+        if (sequence != null) p.sequenced = true;
+    }
+
+    static void validateSequence(Long sequence) {
+        if (sequence != null && (sequence < 0 || sequence >= MAX_SEQUENCE))
+            throw ApiException.badRequest("방문 요청 순서를 다시 확인해 주세요.");
+    }
+
+    private static boolean accepts(Presence p, Long sequence) {
+        return sequence == null ? !p.sequenced : sequence > p.sequence;
+    }
+
+    private static void acceptSequence(Presence p, Long sequence) {
+        if (sequence != null) { p.sequence = sequence; p.sequenced = true; }
+    }
+
+    /** Hidden tabs stop moving immediately; duplicate beacons never renew their ten-second lease. */
+    public synchronized void suspend(String ticket, double x, double z, double yaw, Long sequence) {
+        validateSequence(sequence);
+        long now = clock.getAsLong();
+        sweep(now);
+        Presence p = ticket == null ? null : byTicket.get(ticket);
+        if (p == null || p.bot()) return;
+        synchronized (p) {
+            if (p.suspended || !accepts(p, sequence)) return;
+            acceptSequence(p, sequence);
+            updatePosition(p, x, z, yaw, false, null, now);
+            p.suspended = true;
+            p.lastSeen = now;
+        }
+    }
+
+    /** Called during service cleanup, after one sweep per room. */
+    synchronized boolean retainsTicket(String ticket) {
+        return byTicket.containsKey(ticket) || resumeTickets.containsKey(ticket);
+    }
+
+    synchronized int resumeTicketCount() { return resumeTickets.size(); }
+
+    private void remember(Presence p, long now) {
+        if (now < p.lastSeen || now - p.lastSeen > RESUME_MS) return;
+        ResumeBookmark b = p.bookmark == null ? new ResumeBookmark(p.userId) : p.bookmark;
+        b.currentTicket = p.ticket;
+        b.skin = p.skin;
+        b.x = p.restSlot == null ? p.x : p.standingX;
+        b.z = p.restSlot == null ? p.z : p.standingZ;
+        b.yaw = p.restSlot == null ? p.yaw : p.standingYaw;
+        b.savedAt = p.lastSeen;
+        b.sequence = p.sequence;
+        resumeTickets.put(p.ticket, b);
+        trimResumeTickets();
+    }
+
+    private void trimResumeTickets() {
+        while (resumeTickets.size() > MAX_RESUME_TICKETS) resumeTickets.remove(resumeTickets.keySet().iterator().next());
     }
 
     /** 나간다. 모르는 티켓이어도 조용히 지나간다 */
     public synchronized void leave(String ticket) {
         if (ticket == null) return;
         Presence p = byTicket.get(ticket);
-        if (p != null && !p.bot()) byTicket.remove(ticket, p);
+        if (p != null && !p.bot()) {
+            synchronized (p) {
+                byTicket.remove(ticket, p);
+                ResumeBookmark b = p.bookmark;
+                if (b != null) resumeTickets.values().removeIf(value -> value == b);
+            }
+        }
+        ResumeBookmark b = resumeTickets.remove(ticket);
+        // A delayed leave for an old alias must never remove its replacement visit.
+        if (b != null && ticket.equals(b.currentTicket)) resumeTickets.values().removeIf(value -> value == b);
     }
 
     /** 티켓으로 presence 를 찾는다 (살아 있는 것만). 모르거나 만료면 null */
@@ -414,9 +590,11 @@ public class BeachRoom {
         if (!"lie".equals(action) && !"sit".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("앉기, 눕기, 일어나기 중에서 골라 주세요.");
         RestSpot spot = REST_SPOTS.get(spotId == null ? REST_SPOT : spotId);
         if (spot == null) throw ApiException.badRequest("쉴 자리를 다시 골라 주세요.");
+        if (!map.supportsRestSpot(spot.id())) throw ApiException.badRequest("이 지도에서 이용할 수 있는 쉴 자리를 골라 주세요.");
         if (!"stand".equals(action) && "sit".equals(action) != spot.sitting())
             throw ApiException.badRequest("앉거나 누울 수 있는 자리를 다시 골라 주세요.");
         synchronized (me) {
+            if (me.suspended) throw new ApiException(409, "바닷가로 돌아온 뒤 다시 쉬어 주세요.");
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
                     me.x = clamp(me.standingX, MIN_X, MAX_X, REST_X);
@@ -424,7 +602,9 @@ public class BeachRoom {
                     me.yaw = me.standingYaw;
                     me.restSlot = null;
                     me.restSpot = null;
+                    me.updatedAt = Math.max(me.updatedAt + 1, now);
                 }
+                if (me.moving) me.updatedAt = Math.max(me.updatedAt + 1, now);
                 me.moving = false;
                 me.lastSeen = now;
                 return RestPresence.of(me);
@@ -434,8 +614,14 @@ public class BeachRoom {
                 me.lastSeen = now;
                 return RestPresence.of(me); // Lost responses can be retried without taking another slot.
             }
-            double reachZ = spot.z() + (spot.bed() ? BED_FEET_OFFSET_Z : 0);
-            if (!spot.bench() && !spot.onsen() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
+            double reachZ = spot.z() + (spot.bed() && !spot.hotel() ? BED_FEET_OFFSET_Z : 0);
+            if (spot.hotel()) {
+                // A radial check alone permits claims through the side/back walls. Stay inside the hotel footprint too.
+                double dx = me.x - spot.x(), dz = me.z - spot.z();
+                if (Math.abs(dx) > 4.35 + 1e-9 || dz < -4.5 - 1e-9 || dz > 4.45 + 1e-9
+                    || Math.hypot(dx, dz) > REST_REACH + 1e-9)
+                    throw ApiException.badRequest("호텔 안으로 들어와 침구 가까이에서 누워 주세요.");
+            } else if (!spot.bench() && !spot.onsen() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
                 throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
             boolean[] used = new boolean[spot.capacity()];
@@ -445,7 +631,9 @@ public class BeachRoom {
             }
             int slot = spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used) : 0;
             if (!spot.bench() && !spot.onsen()) while (slot < spot.capacity() && used[slot]) slot++;
-            if (slot == spot.capacity()) throw new ApiException(409, spot.bed() ? "이 오두막의 침구가 모두 사용 중이에요. 다른 오두막을 골라 주세요." : "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
+            if (slot == spot.capacity()) throw new ApiException(409, spot.hotel()
+                ? "이 호텔의 침구가 모두 사용 중이에요. 다른 호텔을 골라 주세요."
+                : spot.bed() ? "이 오두막의 침구가 모두 사용 중이에요. 다른 오두막을 골라 주세요." : "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
             me.standingX = me.x;
             me.standingZ = me.z;
             me.standingYaw = me.yaw;
@@ -463,7 +651,8 @@ public class BeachRoom {
                 me.yaw = seat.yaw();
             } else {
                 double theta = spot.bed() ? Math.PI : slot * Math.PI * 2 / REST_SLOTS;
-                me.x = spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
+                me.x = spot.hotel() ? spot.x() + (slot - .5) * 3
+                    : spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
                 me.z = spot.bed() ? spot.z() + BED_FEET_OFFSET_Z : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
                 me.yaw = theta;
             }
@@ -471,6 +660,7 @@ public class BeachRoom {
             me.restSlot = slot;
             me.moving = false;
             me.lastSeen = now;
+            me.updatedAt = Math.max(me.updatedAt + 1, now);
             return RestPresence.of(me);
         }
     }
@@ -492,34 +682,39 @@ public class BeachRoom {
 
     /** Privileged actions default to denied; only the authenticated controller may authorize a hug. */
     public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind, String character, boolean hugAllowed) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, character, hugAllowed, null);
+    }
+
+    public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind,
+                           String character, boolean hugAllowed, Long sequence) {
+        validateSequence(sequence);
+        Integer skin = selectedSkin(character);
         long now = clock.getAsLong();
         maybeSweep(now);
         Presence me = ticket == null ? null : byTicket.get(ticket);
         if (me == null || me.bot()) return null;
+        String care = null;
+        List<CareEvent> events = new ArrayList<>();
+        long acceptedSequence;
+        double originX, originZ;
         synchronized (me) {
-            if (byTicket.get(ticket) != me || !live(me, now)) {
-                byTicket.remove(ticket, me);
-                return null;
+            // Expiry is archived by the room sweep, never discarded by an individual poll.
+            if (byTicket.get(ticket) != me || !live(me, now)) return null;
+            if (!me.suspended && accepts(me, sequence)) {
+                acceptSequence(me, sequence);
+                updatePosition(me, x, z, yaw, moving, skin, now);
+                me.lastSeen = now;
+                // Serialize care with this visitor's sequence so a retry cannot send twice.
+                care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now, hugAllowed);
+                for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
             }
-            Integer selectedSkin = selectedSkin(character);
-            if (selectedSkin != null) me.skin = selectedSkin;
-            if (me.restSlot == null) {
-                me.x = clamp(x, MIN_X, MAX_X, me.x);
-                me.z = clamp(z, MIN_Z, MAX_Z, me.z);
-                if (Double.isFinite(yaw)) me.yaw = yaw;
-                me.moving = moving;
-            } else {
-                me.moving = false;
-            }
-            me.lastSeen = now;
+            acceptedSequence = me.sequence;
+            originX = me.x;
+            originZ = me.z;
         }
         advanceBots(now);
 
-        // 위로는 inbox 를 비우기 전에 보내서, 보낸 사람도 같은 응답에서 자기 효과를 본다
-        String care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now, hugAllowed);
-
         // Other ticks update Presence concurrently. Sort immutable coordinates so comparisons stay consistent.
-        double originX = me.x, originZ = me.z;
         List<PlayerView> players = byTicket.values().stream()
             .filter(p -> p != me && live(p, now) && me.sees(p) && p.sees(me))
             .map(PlayerView::of)
@@ -529,11 +724,23 @@ public class BeachRoom {
             }))
             .limit(MAX_PLAYERS)
             .toList();
-        List<CareEvent> events = new ArrayList<>();
-        for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
         FireworksState fireworks = fireworks();
         return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
-            care, null, fireworks.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil());
+            care, null, fireworks.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence);
+    }
+
+    private static void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
+        double nextX = p.restSlot == null ? clamp(x, MIN_X, MAX_X, p.x) : p.x;
+        double nextZ = p.restSlot == null ? clamp(z, MIN_Z, MAX_Z, p.z) : p.z;
+        double nextYaw = p.restSlot == null && Double.isFinite(yaw) ? yaw : p.yaw;
+        boolean nextMoving = p.restSlot == null && moving;
+        if (nextX != p.x || nextZ != p.z || nextYaw != p.yaw || nextMoving != p.moving || (skin != null && skin != p.skin))
+            p.updatedAt = Math.max(p.updatedAt + 1, now);
+        p.x = nextX;
+        p.z = nextZ;
+        p.yaw = nextYaw;
+        p.moving = nextMoving;
+        if (skin != null) p.skin = skin;
     }
 
     /** "sent" | "cooldown" | "gone". 종류가 이상하면 400 */
@@ -586,13 +793,25 @@ public class BeachRoom {
 
     private void maybeSweep(long now) {
         long last = lastSweep.get();
-        if (now - last >= SWEEP_EVERY_MS && lastSweep.compareAndSet(last, now)) sweep(now);
+        if ((now < last || now - last >= SWEEP_EVERY_MS) && lastSweep.compareAndSet(last, now)) sweep(now);
     }
 
     private synchronized void sweep(long now) {
         lastSweep.set(now);
         byTicket.values().removeIf(p -> {
-            synchronized (p) { return !p.bot() && !live(p, now); }
+            synchronized (p) {
+                // A small wall-clock correction must not disconnect active polling clients.
+                // Hidden leases instead expire, and archived future-dated bookmarks are discarded.
+                if (!p.suspended && now < p.lastSeen) p.lastSeen = now;
+                if (p.bot() || live(p, now)) return false;
+                remember(p, now);
+                return true;
+            }
+        });
+        resumeTickets.entrySet().removeIf(entry -> {
+            ResumeBookmark b = entry.getValue();
+            return now < b.savedAt || now - b.savedAt > RESUME_MS
+                || (entry.getKey().equals(b.retryTicket) && now > b.retryExpiresAt);
         });
         advanceBots(now);
     }
@@ -603,7 +822,9 @@ public class BeachRoom {
         return n;
     }
 
-    private static boolean live(Presence p, long now) { return p.bot() || now - p.lastSeen <= IDLE_MS; }
+    private static boolean live(Presence p, long now) {
+        return p.bot() || ((!p.suspended || now >= p.lastSeen) && now - p.lastSeen <= IDLE_MS);
+    }
 
     /**
      * 가짜 방문자는 시계의 함수라 어느 tick 에서 계산해도 같은 자리: x = cx + 2 sin(t/9000 + i), z = cz + 1.5 sin(t/13000 + 2i).
@@ -611,6 +832,7 @@ public class BeachRoom {
      */
     private void advanceBots(long now) {
         for (Presence b : bots) {
+            synchronized (b) {
             int i = b.botIndex;
             double t = now;
             double ax = t / 9000 + i, az = t / 13000 + 2 * i;
@@ -622,6 +844,8 @@ public class BeachRoom {
             b.moving = speed > 0.15;
             if (speed > 0.01) b.yaw = Math.atan2(-vx, -vz);
             b.lastSeen = now;
+            b.updatedAt = now;
+            }
         }
     }
 

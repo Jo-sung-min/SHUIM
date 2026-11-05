@@ -1,0 +1,1682 @@
+[
+  {
+    "Path": ".env.ait.example",
+    "SHA256": "974C3EE01449F6316D9861E870FE5C654BCFF79345E10D53B4D511CB3F398AC5",
+    "Length": 584
+  },
+  {
+    "Path": ".env.example",
+    "SHA256": "A445E6404F5C8A5A3A7732340087AFF38CEF61437EA6F53EE469DBF0ABC4C75F",
+    "Length": 1087
+  },
+  {
+    "Path": "AGENTS.md",
+    "SHA256": "D273860CB120CDC0C127D565B196D6846274AD3933D5848932659C2A0B193898",
+    "Length": 688
+  },
+  {
+    "Path": "app/.well-known/assetlinks.json/route.ts",
+    "SHA256": "30AB25A82B5F2C02C350C03D3DAAD6ED2C56D9E4130B38278EAF34B42F2D4C1A",
+    "Length": 978
+  },
+  {
+    "Path": "app/account-deletion/page.tsx",
+    "SHA256": "16E06B5074EECA07CA36C00F9E7063F7BE9D5E9003305A17C7D1A53BB3C527ED",
+    "Length": 2206
+  },
+  {
+    "Path": "app/account-screens.module.css",
+    "SHA256": "7CDBAD148C08193B5F5044E8DDC129E34162EE367A498AC856BAD6D2F4C7D4DD",
+    "Length": 17262
+  },
+  {
+    "Path": "app/admin/admin.module.css",
+    "SHA256": "613B1F9F0DEDA044F03DDBA7BD41B19D22079903733EEB53F94E088F33AD12D3",
+    "Length": 2200
+  },
+  {
+    "Path": "app/admin/layout.tsx",
+    "SHA256": "BFB342436EDF8EE80EB85DCFC78CE0A00716111BF4E96219F6A0E9D150BA31B9",
+    "Length": 520
+  },
+  {
+    "Path": "app/admin/page.tsx",
+    "SHA256": "BD855C5463E850B7B8C0FB04B92377EECCB39FD6675A98D1777E194AC642E11E",
+    "Length": 13598
+  },
+  {
+    "Path": "app/admin/QuoteAdmin.tsx",
+    "SHA256": "AFD8ACC20FD6F6DC665D76C3301E763B791FC47EAA2240567D5A502BB3C3757A",
+    "Length": 13705
+  },
+  {
+    "Path": "app/admin/SiteAdmin.tsx",
+    "SHA256": "E300266CC2DAEA83A289E09FFE27C45561B33AB835C5C810797FD6D3750C7663",
+    "Length": 11191
+  },
+  {
+    "Path": "app/auth/layout.tsx",
+    "SHA256": "0F51079D55E4D176403475B1FBE4817B2E14A18CBCB179619838E2720F193560",
+    "Length": 448
+  },
+  {
+    "Path": "app/auth/page.tsx",
+    "SHA256": "07E7A80DB880A8AF508331075CE665735BCBE2016850039551EC711033313437",
+    "Length": 16653
+  },
+  {
+    "Path": "app/beach/layout.tsx",
+    "SHA256": "AEA135ED04AA26A1D90266716D170E5F39B7ED408CC65B82AED37424FD125BE0",
+    "Length": 605
+  },
+  {
+    "Path": "app/beach/page.tsx",
+    "SHA256": "D8112DD3951A3B0AB1984CD5AB5B2D3D0D6E211B642BBC513AF8104CA0B505A7",
+    "Length": 1117
+  },
+  {
+    "Path": "app/beach/payment/ArchivedPaymentCallback.tsx",
+    "SHA256": "ECC34DB71BFB623A363A74095A7715DC4F48A52572F778E9B21FB7D7B18F6427",
+    "Length": 5122
+  },
+  {
+    "Path": "app/beach/payment/page.tsx",
+    "SHA256": "3630627DC9D1153294708600DF8045C30DDB7C1AEBF1D828EF597859325AC43A",
+    "Length": 542
+  },
+  {
+    "Path": "app/beach/payment/payment.module.css",
+    "SHA256": "0F790739C8B9EFFB2E9C52089E67C823E00073131B386EF09487DA8AAC817A89",
+    "Length": 2077
+  },
+  {
+    "Path": "app/blocks/layout.tsx",
+    "SHA256": "4314A1A5FE991DD02ED792415CB3A779DFA1DBFDDE76D62C5D3B674D86BE4D7F",
+    "Length": 247
+  },
+  {
+    "Path": "app/blocks/page.tsx",
+    "SHA256": "2D570BC2A039483DF89BCDAEC8FA9734129B7D22AFD79370B2F3159AAA3A3CF5",
+    "Length": 2953
+  },
+  {
+    "Path": "app/c/[slug]/admin/page.tsx",
+    "SHA256": "407989DEE2E34544DC89126A0D24A07C98C19263A2AE92BE4BA3682905BBF764",
+    "Length": 15329
+  },
+  {
+    "Path": "app/c/[slug]/layout.tsx",
+    "SHA256": "1B4DC7E5AB6B89DF8990B6B07554EFCF8F30AE0B37CBF6090EAC29A3B0EBC28F",
+    "Length": 492
+  },
+  {
+    "Path": "app/c/[slug]/page.tsx",
+    "SHA256": "02ABD9BFECEB0DD75E62FE5B80254FAF344D8965957A9DDFFE46014086198D66",
+    "Length": 13393
+  },
+  {
+    "Path": "app/c/[slug]/submit/page.tsx",
+    "SHA256": "84DD2B6CF2611EBC783C98A737E82C9CECBC80F3608B3984EB0B96B8969FB1D3",
+    "Length": 7897
+  },
+  {
+    "Path": "app/c/circle.module.css",
+    "SHA256": "E912139515141E9DA1F6CB307F204DEB6E9CAED6392C482B639E12D4AECEF8DD",
+    "Length": 9035
+  },
+  {
+    "Path": "app/c/home/page.tsx",
+    "SHA256": "D6277BDF174B35083649C813AF67385C3FAFE9F8A9A9D5FBB5BC5D9B3F9A32CD",
+    "Length": 6118
+  },
+  {
+    "Path": "app/c/new/page.tsx",
+    "SHA256": "5AB1E4EBF0DA01826E9C1E5F850BF9F24A51E4234C92DB80238E8AACCBAF3AF3",
+    "Length": 6457
+  },
+  {
+    "Path": "app/c/page.tsx",
+    "SHA256": "84C42FC1EC24FA741450FCEBA9B2A645DF1F8CE8989E3547C5CB62B4640F0AC9",
+    "Length": 4321
+  },
+  {
+    "Path": "app/c/submissions/page.tsx",
+    "SHA256": "D796E185E31C32CD7349E1081E53730EEF16FB2368689FA413636C2FF2B6A020",
+    "Length": 3796
+  },
+  {
+    "Path": "app/feed/feed-media.module.css",
+    "SHA256": "CB6CF6A12DAA4D926013A8D6BFE1FEEE6283DE1C3B377CE43847F51940CAFF39",
+    "Length": 2273
+  },
+  {
+    "Path": "app/feed/layout.tsx",
+    "SHA256": "E289C706057E8A5E5874343E55EC0D6037DF7BCEB6966B98F7C702C7461F50B2",
+    "Length": 453
+  },
+  {
+    "Path": "app/feed/page.tsx",
+    "SHA256": "7ED97A8CB7874D6028817B2C2DF233B0690A69E170AF3C6CD37326B8983E40B1",
+    "Length": 22505
+  },
+  {
+    "Path": "app/flow/layout.tsx",
+    "SHA256": "FE711CFEFA91E7454EDDC0DB44B719214B2477511895B0987EC22A6436CC1773",
+    "Length": 520
+  },
+  {
+    "Path": "app/flow/page.tsx",
+    "SHA256": "F4AF81DF9FA7EE3C726DED1B8B209C904D89E64546AB8763DCADA08434FF92A9",
+    "Length": 554
+  },
+  {
+    "Path": "app/fund/layout.tsx",
+    "SHA256": "A2983F310C87D3987F3AF56D101DD9650E77627B126237414F39EF9D20FAD0D3",
+    "Length": 518
+  },
+  {
+    "Path": "app/fund/page.tsx",
+    "SHA256": "459600AE2A22BA0CCC57BC325BCF2A6853F4CBB8FE494BAA2ED2D07487B84725",
+    "Length": 9038
+  },
+  {
+    "Path": "app/globals.css",
+    "SHA256": "437895DED88AE0E3B385199FFF88EF3789FF4E3768A2CC705DDE70B2DD435F89",
+    "Length": 85132
+  },
+  {
+    "Path": "app/goals/layout.tsx",
+    "SHA256": "F7729E76DB0F2395B518C7C030209E1BE0C598C958C951CA05F9730B943E7EDB",
+    "Length": 494
+  },
+  {
+    "Path": "app/goals/page.tsx",
+    "SHA256": "E83599B0DD6326C39B603205939AA6F5E003A54ABDAD84FF5282BBFA68BEF96D",
+    "Length": 10478
+  },
+  {
+    "Path": "app/info/ai/layout.tsx",
+    "SHA256": "A451BFAB57D6AF60D5AFB95BC89E3AE141E00C65E0F111D24D8C81DCB5DFACD9",
+    "Length": 257
+  },
+  {
+    "Path": "app/info/ai/page.tsx",
+    "SHA256": "FFD11586FA7AD4F3DDDE3F3547CCC39151050C2DFB07E11F69084B1642D19D2F",
+    "Length": 6275
+  },
+  {
+    "Path": "app/info/page.tsx",
+    "SHA256": "289F2110B48849FE645475CD791D585200E022310ABD5D163BC3CFAF04C4E11D",
+    "Length": 3902
+  },
+  {
+    "Path": "app/layout.tsx",
+    "SHA256": "4BC9EEEC6ABE6C53AD44CF752CFCDDF0714524C8F96AEEA6B97398FE0CB9A196",
+    "Length": 5631
+  },
+  {
+    "Path": "app/log/layout.tsx",
+    "SHA256": "958DEF5C52CDA515D0BE86C1E3BE25504FBA96DCF1329881A92284537BCCA65B",
+    "Length": 527
+  },
+  {
+    "Path": "app/log/page.tsx",
+    "SHA256": "ED7150DD21FCA9F32D7F3DDF7C37766413FAECBAF2BE48A7CF5CCC7842CDF370",
+    "Length": 12836
+  },
+  {
+    "Path": "app/manifest.ts",
+    "SHA256": "386F205FBB91CBECB40AD398258D4CE55C9276CCBE88166AACB688C319291DD3",
+    "Length": 1076
+  },
+  {
+    "Path": "app/me/layout.tsx",
+    "SHA256": "117FC369EF45DE93F76AC3C64406049274CC59FCA4FE14A7B88661A7B9A1B151",
+    "Length": 496
+  },
+  {
+    "Path": "app/me/page.tsx",
+    "SHA256": "0AC7E70F259969B6A22C580931F8D4914741BEA74F9933CDBE26715B21671648",
+    "Length": 19830
+  },
+  {
+    "Path": "app/memo/layout.tsx",
+    "SHA256": "EF61B0D48B650B161E34FD819CA331C9FFF139F87F1DF3631CF76A6EFAE8316E",
+    "Length": 518
+  },
+  {
+    "Path": "app/memo/page.tsx",
+    "SHA256": "0EE1C622B1A575BC9930472DB969EFF37A1B85A0A07C1A98284FF8DBBB18007D",
+    "Length": 397
+  },
+  {
+    "Path": "app/messages/[id]/layout.tsx",
+    "SHA256": "B85EDEB77FDEA1375857AFDEB09DDE8AAE553C8874C9FA59DC5CB07CABC4732F",
+    "Length": 495
+  },
+  {
+    "Path": "app/messages/[id]/page.tsx",
+    "SHA256": "7871DC2696DCF61D2405286965C4CCBF9D316C2872A5857D5589C7874E85DC45",
+    "Length": 6479
+  },
+  {
+    "Path": "app/messages/layout.tsx",
+    "SHA256": "C5D678FA7E200EE46C1944CB7028828EC0B1BEE783CBC57B5B9A42057A6EB985",
+    "Length": 500
+  },
+  {
+    "Path": "app/messages/page.tsx",
+    "SHA256": "6EA8AB79446B125A033DE6B6443447400D5973BB6682A05A61A2B7FD2EE01E99",
+    "Length": 3264
+  },
+  {
+    "Path": "app/og/route.tsx",
+    "SHA256": "6D099D51F21704C6A8F26F7513FCCEB177EDBDEA946901E05B70FF6BD17A7CF0",
+    "Length": 2678
+  },
+  {
+    "Path": "app/page.tsx",
+    "SHA256": "8732080CB43DBE75A4BDF28F6885B33BD0DACA87689B67CBCBFF55EE1F542A06",
+    "Length": 26995
+  },
+  {
+    "Path": "app/points/layout.tsx",
+    "SHA256": "8DC0F910B5DA79EF6BC2988BF40AB1A71066F05D77D4E5052855809AEED6A2DC",
+    "Length": 367
+  },
+  {
+    "Path": "app/points/page.tsx",
+    "SHA256": "21A697B986FC90A882438C46AACA3D9CDF5823D42D44994BECF40A2994092E89",
+    "Length": 123
+  },
+  {
+    "Path": "app/privacy/page.tsx",
+    "SHA256": "9A97EF5B6B0CE8418F46CB9A48D47F8E3911146D7E29E162BF3F8D20B9710A95",
+    "Length": 7346
+  },
+  {
+    "Path": "app/ranking/layout.tsx",
+    "SHA256": "65A1C82C614739D41E8E17D4E8AEBA619813DF3515BCAADD36FB4D5CF4D1D5B5",
+    "Length": 468
+  },
+  {
+    "Path": "app/ranking/page.tsx",
+    "SHA256": "7EB493087F1DE9AAA0A210385F1C3DA191E3CD4E9BA5C1BFD650D80B34325EC2",
+    "Length": 5204
+  },
+  {
+    "Path": "app/robots.ts",
+    "SHA256": "80F29E6AC6CE6754DC7107FA02F5C68CD6C7C140A8065E9A00CE8EC0978EDCC7",
+    "Length": 475
+  },
+  {
+    "Path": "app/schedule/layout.tsx",
+    "SHA256": "A480EBA45CB6D3ABF4CC8D52841EDED21D3B406EED4D4BB464E1C460DECCA75A",
+    "Length": 500
+  },
+  {
+    "Path": "app/schedule/page.tsx",
+    "SHA256": "449F2246CE57B67564FFAA2A4AC128CEDC3BCFF4E9BDC9D60C220972F943AFFD",
+    "Length": 9633
+  },
+  {
+    "Path": "app/settings/layout.tsx",
+    "SHA256": "9B019001320BCB97DBC67564580BF941BA8DB614ABA5688D59631F2D84DFB4FA",
+    "Length": 494
+  },
+  {
+    "Path": "app/settings/page.tsx",
+    "SHA256": "05CF7280165BC5C4E460CF8D237C7968CDFD73BF3F16092B116DA248EA2AA9A4",
+    "Length": 8780
+  },
+  {
+    "Path": "app/shout/[id]/layout.tsx",
+    "SHA256": "756F1D9D120EAF0E1844E848709FC70BE0977C54AFCFB840B11AA418F7E0209B",
+    "Length": 981
+  },
+  {
+    "Path": "app/shout/[id]/page.tsx",
+    "SHA256": "E3D5D53D1FAE5C5E15A3BD2A8918371B78555BA728FB4B94904490A44C329A87",
+    "Length": 12884
+  },
+  {
+    "Path": "app/shout/layout.tsx",
+    "SHA256": "629BF2943B2CB5F80E855FECB7535E08F02E1282921F57F9C095EF1A8A6246C2",
+    "Length": 473
+  },
+  {
+    "Path": "app/shout/page.tsx",
+    "SHA256": "A7894CBF7FA73165F1E46BB234BD76020F479DA518EEDF171FE5B2F314B4704D",
+    "Length": 10995
+  },
+  {
+    "Path": "app/shout/shout.module.css",
+    "SHA256": "2BE4DC9A460BEA7D29999D792A64451B6647DDF8B6AC37B815367FD581437F7D",
+    "Length": 13656
+  },
+  {
+    "Path": "app/shout/split.ts",
+    "SHA256": "166388326A2ACA44CCC7B714419190F0558B866FA7B8259C8A23F4CBCC79CEC7",
+    "Length": 759
+  },
+  {
+    "Path": "app/sitemap.ts",
+    "SHA256": "770ACBF2E17E33EFB8402F6C137996AF4130D9B7C772651D0BCD56F8FD0F6C9D",
+    "Length": 1297
+  },
+  {
+    "Path": "app/summary/layout.tsx",
+    "SHA256": "B868F616F16D2AEB6363F5E68BFCC6F67922D5DFE4133A1581067F732ABAAA46",
+    "Length": 533
+  },
+  {
+    "Path": "app/summary/page.tsx",
+    "SHA256": "6E578CE78FB6D9A6BBBE6DA53CC016850E022165FC856CCDE15A1214D21CD995",
+    "Length": 6738
+  },
+  {
+    "Path": "app/terms/page.tsx",
+    "SHA256": "647B493BBE06EA30F7426DA1C4C5A5EF4C0B1D920406BB2CCF326814E7CF843C",
+    "Length": 3706
+  },
+  {
+    "Path": "app/u/[id]/layout.tsx",
+    "SHA256": "2D67790B3B41D00A826BB0D827A70140ABB01B89A69A2E3131D63DF7F47ACF22",
+    "Length": 959
+  },
+  {
+    "Path": "app/u/[id]/listeners/page.tsx",
+    "SHA256": "B2CAB2CB8499259A80DB3FD665A7A82A3AF8C66B0EA24A733A750CD6DD9D7055",
+    "Length": 205
+  },
+  {
+    "Path": "app/u/[id]/listening/page.tsx",
+    "SHA256": "B85494910200B5EAD7E1BD404FDB98DAADF7F45F29E9A15E39D193D085D79AFD",
+    "Length": 212
+  },
+  {
+    "Path": "app/u/[id]/page.tsx",
+    "SHA256": "392F581FD4905466104EA64C24A5EEF1C8CDF896BED9FFE33A6B588B157955FE",
+    "Length": 6599
+  },
+  {
+    "Path": "app/uyuni/layout.tsx",
+    "SHA256": "43A96FA387B75A3090483F914C633B15E1179C6231C13D3E5EF49F1772918CCC",
+    "Length": 409
+  },
+  {
+    "Path": "app/uyuni/page.tsx",
+    "SHA256": "33030B362DF7B87AC3E9FADD4B1623A5DFEE5D87E477E27FE77EE67CBE80C126",
+    "Length": 907
+  },
+  {
+    "Path": "app/write/layout.tsx",
+    "SHA256": "181925F8D55DFBC808BBCC7DEE6DCE543B91268D6FDEB33796F37EA30CD87A3D",
+    "Length": 443
+  },
+  {
+    "Path": "app/write/page.tsx",
+    "SHA256": "6E8B74CB38E18683A52A1A7D07C0DF1B80814B5C850D2E91DAC2719651BDA182",
+    "Length": 8984
+  },
+  {
+    "Path": "app/write/write.module.css",
+    "SHA256": "ED423D633C76036D270CD994E0C172274E71568812F519F15FE9B91FE4F513FD",
+    "Length": 2853
+  },
+  {
+    "Path": "apps-in-toss.config.ts",
+    "SHA256": "72FAF511687F0A97A95C9B388E1DA2A61ADB5E74694955CEE8C0175B307EC4AA",
+    "Length": 853
+  },
+  {
+    "Path": "components/AccelChart.tsx",
+    "SHA256": "9A5C944A183319B6BC1DFDFD7459EA74E1E7886FE9560D49AF16AA13D86A8C92",
+    "Length": 3571
+  },
+  {
+    "Path": "components/AitRuntime.tsx",
+    "SHA256": "6B5B79F346A3CF6FF3814C8A29A5F22DF370AA846C6F189A98A8DF7A7F6524CF",
+    "Length": 1210
+  },
+  {
+    "Path": "components/AppRuntime.tsx",
+    "SHA256": "F8A89D317BE1C88C6B685276F2C430D9708EA6497BEDB36BEE53C80B863E6141",
+    "Length": 3448
+  },
+  {
+    "Path": "components/AppToast.tsx",
+    "SHA256": "EBA3CFA6E98BD4A3858883C7B6EEB6AD251DEFA26A4E0ABFE57E6E59EC21CF2D",
+    "Length": 1422
+  },
+  {
+    "Path": "components/BadgeShelf.tsx",
+    "SHA256": "CD2F46972DBC3FBE228AB81B794789AF203B38E456FAA18083942FF638EDCC53",
+    "Length": 5173
+  },
+  {
+    "Path": "components/beach/ArchivedFirePopControls.tsx",
+    "SHA256": "E8822E563631A0CD54D5F6C95369A8484844C693EFBBDACC1983DB93F7DFF2DD",
+    "Length": 12534
+  },
+  {
+    "Path": "components/beach/beach.module.css",
+    "SHA256": "0B17D6DE3A440260B5096C2617E6BBD6B5FDB73D3BF5171DE53AB3B3616DDE9B",
+    "Length": 21814
+  },
+  {
+    "Path": "components/beach/BeachCard.module.css",
+    "SHA256": "A316E966235FAD007AE65265590728299C93C26EC220F2BDD8611D7DE6E093DC",
+    "Length": 5788
+  },
+  {
+    "Path": "components/beach/BeachCard.tsx",
+    "SHA256": "5D2924697C133FBDB91BA92B733538EED0D37BE2E7C580D6908E162CF780CF1D",
+    "Length": 5125
+  },
+  {
+    "Path": "components/beach/BeachScene.tsx",
+    "SHA256": "A4CF23DC3776243F73B0D6D4CDFB3D794FA899BEA9758F0D0F71FDFBB00DBD3F",
+    "Length": 75250
+  },
+  {
+    "Path": "components/beach/CampfireControls.module.css",
+    "SHA256": "DD42D7DF6DF7621A238167699A02C2B3589895D6356AD54AA2379445BF44332D",
+    "Length": 15486
+  },
+  {
+    "Path": "components/beach/CampfireControls.tsx",
+    "SHA256": "1C95FB8328323568EF5F716A1A6DB2BBA6EBF7AEF24E65DADD80498EBA42D530",
+    "Length": 10521
+  },
+  {
+    "Path": "components/beach/Joystick.module.css",
+    "SHA256": "83D254608559C8AA29E6A5F56027BF5739CE5EC5127A292B37A2F45F6EC0818E",
+    "Length": 1900
+  },
+  {
+    "Path": "components/beach/Joystick.tsx",
+    "SHA256": "5519D3FB16FAC8B773F49F7F50ED1F3E9B855F98D1604AD537FDBDFF62E71F58",
+    "Length": 3563
+  },
+  {
+    "Path": "components/beach/PhotoPreview.module.css",
+    "SHA256": "7BED32D605DCE257208FBC825AAC451E5A95AD11B8D6442B9D098B913771A6DE",
+    "Length": 1758
+  },
+  {
+    "Path": "components/beach/PhotoPreview.tsx",
+    "SHA256": "B06F09B37F5B81499E5F9B8B627E9590A683FAA222909B5F58DFD23E590677EA",
+    "Length": 2875
+  },
+  {
+    "Path": "components/beach/RoomFireworksControls.tsx",
+    "SHA256": "5B5A8D9D6A0EED79A45C291C17A41B390BF55E0BE4C9A11BF4A2403E6E068359",
+    "Length": 3475
+  },
+  {
+    "Path": "components/beach/RoomLightingControls.tsx",
+    "SHA256": "717ACEF8CF7E34770D67388B2750DF4B3EF2333D450B2B9B07FB26430EF82ADC",
+    "Length": 2614
+  },
+  {
+    "Path": "components/BlockUser.tsx",
+    "SHA256": "08BA9D5D314A5D6CA7B8749F6D301ADB962523F6C3CF949A73B28E05B3E8B1B2",
+    "Length": 1397
+  },
+  {
+    "Path": "components/CareSheets.module.css",
+    "SHA256": "8C0343936158B40139C3DD18AC1A2DF85BAF5007101C50FF8B2BF4BD0F2DB754",
+    "Length": 1452
+  },
+  {
+    "Path": "components/CareSheets.tsx",
+    "SHA256": "0E939638C77AD04B668789298167F0A87FA448048377D084A8DF15C62948F2E4",
+    "Length": 4099
+  },
+  {
+    "Path": "components/CategoryIcon.tsx",
+    "SHA256": "E780D1863C898BD49D0F3C0AB0FB94A6AF570655450452AE508D35CE524D04D8",
+    "Length": 2036
+  },
+  {
+    "Path": "components/CheerFlame.tsx",
+    "SHA256": "818BF51D75EDA4CB72F2944106E829D879BA676824A86B4F9D96A5EAE1B07D01",
+    "Length": 2625
+  },
+  {
+    "Path": "components/CirclePosts.tsx",
+    "SHA256": "916CD1CDD87D006AFCD2CF4C85ACAF8C74DCEC30170E0E262EE3172408996BA7",
+    "Length": 3412
+  },
+  {
+    "Path": "components/CircleRow.tsx",
+    "SHA256": "6912571E26AE3D9F5125A4A00D0FB09B2DBC23B1E15EEAEBA0B10A2CA66656DF",
+    "Length": 1627
+  },
+  {
+    "Path": "components/CommunityConsent.tsx",
+    "SHA256": "CE4F5883DADEC161B863ACB4771A089095CD7271AB69A1B53527EACF421AF3A9",
+    "Length": 1947
+  },
+  {
+    "Path": "components/CommunityUI.tsx",
+    "SHA256": "EED444D577A59A37A2EEBDFCA25D8E3F71F2AD1A235FE641122EC669F50EF092",
+    "Length": 14769
+  },
+  {
+    "Path": "components/DailyQuote.tsx",
+    "SHA256": "04A0B444FF9D3AD6F1FD3AA1E961A7ACDC0FFCC1D698A35B3FD8A226C7A53004",
+    "Length": 1620
+  },
+  {
+    "Path": "components/DeleteAccount.tsx",
+    "SHA256": "B58B925169F0DD50BA54EE8CC4CDED5BA73BF37BC89FF876EF8CB981F7D583D3",
+    "Length": 2843
+  },
+  {
+    "Path": "components/FeedComposer.module.css",
+    "SHA256": "5345D9D2B9D4DCA201445F85B4F2B24371F0AB9A5B3A6085CFDACA5A3313B91C",
+    "Length": 6396
+  },
+  {
+    "Path": "components/FeedComposer.tsx",
+    "SHA256": "2ADFD50A18C2150A7560B8213367A4F4E56E36D0851F8CE3A0492759289C3A8F",
+    "Length": 19305
+  },
+  {
+    "Path": "components/FlowView.tsx",
+    "SHA256": "D9E2018A09C1E33B6ACD1E0EC6D9268C1426A4F20CC6824BAF63350223E85DB0",
+    "Length": 5182
+  },
+  {
+    "Path": "components/HelpBanner.tsx",
+    "SHA256": "C1B8C734A7E2F6D6BA1D0EDAB5DA1EC12A60421E73C8A9F427E23FAC7DEAA040",
+    "Length": 813
+  },
+  {
+    "Path": "components/Highlighted.tsx",
+    "SHA256": "9F7FD7B2389061029F913F0DF01FD96B86ABA6E8E94EA9C5748F938C870936CA",
+    "Length": 967
+  },
+  {
+    "Path": "components/Icons.tsx",
+    "SHA256": "307C049BF4750D58C325157AEA0AB4C494AEFAA5AB971C7F02D6BDA09FA62F4C",
+    "Length": 12995
+  },
+  {
+    "Path": "components/InlineScript.tsx",
+    "SHA256": "69E072B760CF7984F7E8D27D1B837F65C476569295AC9F068BEE6F09D3CB295D",
+    "Length": 729
+  },
+  {
+    "Path": "components/LegalLayout.tsx",
+    "SHA256": "742D2FE917BEFC0BCD38EE2F5E3FE0C25E5FBCDBB47969A7F5D7713EFCCF7E94",
+    "Length": 1175
+  },
+  {
+    "Path": "components/MemoPad.tsx",
+    "SHA256": "88348324E45720E6E35EA337DCB837658746DA49A9FFBD9838830B6F17929640",
+    "Length": 11325
+  },
+  {
+    "Path": "components/NavProgress.tsx",
+    "SHA256": "EFC418E3FC789D5F734940F76DDF8F65767FFB3A2D6AA21DF751AFA367D3D858",
+    "Length": 2542
+  },
+  {
+    "Path": "components/PeopleList.tsx",
+    "SHA256": "59AD7BA490901859332D608E5FB058C26AF4F86DFBA2930502A8505FBFFF46F4",
+    "Length": 5282
+  },
+  {
+    "Path": "components/PhotoEditor.module.css",
+    "SHA256": "C21C87D285764C82ADCF84CAE1347A363BA85FCA7382207D508044B9479CA9FD",
+    "Length": 6695
+  },
+  {
+    "Path": "components/PhotoEditor.tsx",
+    "SHA256": "624372648310FAEF2CA89D67B5A130F9602022FCED83B5ABEDDC97C55C52D4AD",
+    "Length": 19083
+  },
+  {
+    "Path": "components/PointsWallet.module.css",
+    "SHA256": "F8B36754659BB87BE4FE0F36603B310BB002BB2830EA56A40DE94C0B94125A79",
+    "Length": 7169
+  },
+  {
+    "Path": "components/PointsWallet.tsx",
+    "SHA256": "D4DE009A6235519181F057AF26B25FE05BB333924725B5E641F9BECD2ABD63A6",
+    "Length": 8228
+  },
+  {
+    "Path": "components/Profile.module.css",
+    "SHA256": "F19EF21A91783852AC10D6B3B54F3A39F69C4CD81ED8A79C28D4F2FB0621BB78",
+    "Length": 7980
+  },
+  {
+    "Path": "components/ProfileHeader.tsx",
+    "SHA256": "8209CE21AA89B4C808D40EE83FE4DFE579D4814A99CF1B7E8ED015A6BAFE8960",
+    "Length": 3026
+  },
+  {
+    "Path": "components/ProfileTabs.tsx",
+    "SHA256": "4ABBBA5B096BEF28D541FD44C317A70A09BD95A264C51BD1DFD00D448A935B48",
+    "Length": 4749
+  },
+  {
+    "Path": "components/SafetyAdmin.tsx",
+    "SHA256": "1D2E6B64FEB763D885A60A147B2233E421D0B02F708ED6EC90851789DE4E2277",
+    "Length": 7145
+  },
+  {
+    "Path": "components/SafetyReport.tsx",
+    "SHA256": "5357797087520AF527D348631DBA9C9F73DC2301278EFB7754227934DEB22B08",
+    "Length": 4155
+  },
+  {
+    "Path": "components/ServiceAvailability.tsx",
+    "SHA256": "1C73A9D5DEC8B65D2B174BF50801E38333D024CF0CBB6E2EB06FD9221CA8418F",
+    "Length": 6625
+  },
+  {
+    "Path": "components/ServiceInfo.module.css",
+    "SHA256": "868DFE69ED3A57025A6A25EEF229C3C76DA7B1321771B9FC13E0F27031CAA89C",
+    "Length": 5607
+  },
+  {
+    "Path": "components/ShoutTabs.tsx",
+    "SHA256": "C5EA9288EA8C8C669E12A0662285FADD5E3CA6DBA29C5548CC46D2E26BE931B1",
+    "Length": 1784
+  },
+  {
+    "Path": "components/Splash.tsx",
+    "SHA256": "9E0CDDA03107A831E5B35D6F26E29D308A004959EFFB5EEE6B3887A9A6AB69DA",
+    "Length": 3842
+  },
+  {
+    "Path": "components/TabBar.tsx",
+    "SHA256": "3EA8662B1378321E43D29572F00E9BE1C7A8C929BBA813AC82896B59A6F649C8",
+    "Length": 2825
+  },
+  {
+    "Path": "components/TitleChip.tsx",
+    "SHA256": "7FDC3C169088857F551BB79E112A7D5E360CE8CD4F85E766F72014190AF40139",
+    "Length": 403
+  },
+  {
+    "Path": "components/ui.tsx",
+    "SHA256": "39F9B86A50DC9EE22D4E434B19D57025F77B3EB378CD0DA671CBA9C166B12951",
+    "Length": 11524
+  },
+  {
+    "Path": "components/useLongPressReorder.ts",
+    "SHA256": "0FECF42491D96D6A68A0522E0FA4FFC8A5E57F805E496131EF0C7A5727F81ACF",
+    "Length": 6359
+  },
+  {
+    "Path": "lib/accel.ts",
+    "SHA256": "E3AC1F8AE78BB577A8C77C66AFDCD5BF78FDC145C4450091AB8238CBF2E544D8",
+    "Length": 2392
+  },
+  {
+    "Path": "lib/admin-quotes.ts",
+    "SHA256": "95A04572E66FF63B99D4986D9748093C632566C1A3C7099A0FAFC7F59FB3DE79",
+    "Length": 5295
+  },
+  {
+    "Path": "lib/ait-fetch.ts",
+    "SHA256": "2AD8D696152A1AAF8DC85FA3D141CAF5D59575C58BCBF037772D4508C0969A2B",
+    "Length": 2770
+  },
+  {
+    "Path": "lib/ait.ts",
+    "SHA256": "84ED3AB94ECF76EEF6ACC71FABF9312BBF3FAE5555C4BB47DE15405961C094A7",
+    "Length": 2589
+  },
+  {
+    "Path": "lib/assets.ts",
+    "SHA256": "A2FE258F3F0BA1C6E42A989BD597FF3FD4686CA06B3DA1806EC7AD9A2D17672C",
+    "Length": 2316
+  },
+  {
+    "Path": "lib/auth.ts",
+    "SHA256": "74FF755743410FFFB8BFC0D7F1EA3D826BC99E64CB1A85CD1499D988DFEED742",
+    "Length": 9285
+  },
+  {
+    "Path": "lib/beach/appearance.ts",
+    "SHA256": "A0C1A420A209354A2720B811C6DD1A62B2DBC454FDCC35F0F66F8119D031C7F1",
+    "Length": 2503
+  },
+  {
+    "Path": "lib/beach/atlas.ts",
+    "SHA256": "D7F05D1CB8480AFBFF128E392E37655B4550A261771C9A79CE1C2A0AFC718550",
+    "Length": 2454
+  },
+  {
+    "Path": "lib/beach/campfire-model.ts",
+    "SHA256": "B72CF1EF98709BF3FE92AEC89E41C59F2F77254A11953B031E1BBC315139E98F",
+    "Length": 5553
+  },
+  {
+    "Path": "lib/beach/care-effects.ts",
+    "SHA256": "21A7F749971CA68F0F4648CC780C95E0D40ACA3530AAABDF5DA9396025E2EF96",
+    "Length": 6456
+  },
+  {
+    "Path": "lib/beach/continuity.ts",
+    "SHA256": "B187FFFA663F4BB14FF88D7630CBA73C034AEA9C356C5D907E4814420F86142C",
+    "Length": 4877
+  },
+  {
+    "Path": "lib/beach/cove.ts",
+    "SHA256": "EFA141779186F48F8B514600966429A43A44165E5DDFDD744217950729EBC5E0",
+    "Length": 21927
+  },
+  {
+    "Path": "lib/beach/daylight.ts",
+    "SHA256": "9C62DA42B21656F14A105CA1DCDEC83399074284C00D088C1D94DB611AFF078A",
+    "Length": 9041
+  },
+  {
+    "Path": "lib/beach/engine.ts",
+    "SHA256": "87BE1BA28797D2E988CF2BF1F42D56CF5035D41FD872F5B7EFC42C1B9A02CDEA",
+    "Length": 106379
+  },
+  {
+    "Path": "lib/beach/fire-benches.ts",
+    "SHA256": "F2D9762E509F630E56287A181FB8652ACC074BE816EBE3FB8C05237D8A79B964",
+    "Length": 8576
+  },
+  {
+    "Path": "lib/beach/fire-commerce.ts",
+    "SHA256": "5B4171B6AE35A0FAA3C8B464F474EB7428C0BD51B6E682C79EB14EA861561A07",
+    "Length": 23519
+  },
+  {
+    "Path": "lib/beach/fire-powder.ts",
+    "SHA256": "AA66F00041B74557280032AD87CB146AC17F37F3F927A240089CE7260BD3EE16",
+    "Length": 2577
+  },
+  {
+    "Path": "lib/beach/fire.ts",
+    "SHA256": "646B97F86A5B27CCA5FDD55292D04B94C5F5E8DA99831D70584E7B4AB5DC21FF",
+    "Length": 24828
+  },
+  {
+    "Path": "lib/beach/firewood.ts",
+    "SHA256": "ABDC5CD58DAEED9D89775D2DD2DBE5C8D72C64A30D0D7BD4E2A0BDB3816BB869",
+    "Length": 7039
+  },
+  {
+    "Path": "lib/beach/fireworks.ts",
+    "SHA256": "49F1FFAEA6B703BE1B1A668A997FA26E1CD597B55E31A0C133F46171F5736473",
+    "Length": 17822
+  },
+  {
+    "Path": "lib/beach/hot-spring-landscape.ts",
+    "SHA256": "87FB96212DACBB64166F4DBB3C88DEF41F86B9638A1E1C1735F74E4B928959E5",
+    "Length": 8024
+  },
+  {
+    "Path": "lib/beach/hot-spring.ts",
+    "SHA256": "19421A37BF9417B44C6FE3661783FC1E8325ABBE32AB2ED337D89BA33D63EEDA",
+    "Length": 25764
+  },
+  {
+    "Path": "lib/beach/lanterns.ts",
+    "SHA256": "2F481C3F551E8AA53B99C1304ABDEF1B18D82F73FFF3F3BA2D2F713B75C364AF",
+    "Length": 11257
+  },
+  {
+    "Path": "lib/beach/maps.ts",
+    "SHA256": "641A34953FEFE589FD1BED83556528F6DB40040880E4EE78DE0CA4E58A735646",
+    "Length": 906
+  },
+  {
+    "Path": "lib/beach/navigation.ts",
+    "SHA256": "207A9CBFFB68D2562BFE2DD0A19A140459D0ABCEF80781BF9327117ED64CFF33",
+    "Length": 7305
+  },
+  {
+    "Path": "lib/beach/net.ts",
+    "SHA256": "3778F0E0E736F6BDF615318E03C95CB428EEE35195F7A0BC4B89BEB2149A2DA1",
+    "Length": 19382
+  },
+  {
+    "Path": "lib/beach/night-lights.ts",
+    "SHA256": "80FF4D06127FCF7CB72C316FAF1CE0F45C7076E53EA8513FBE7A5896936F1F55",
+    "Length": 9806
+  },
+  {
+    "Path": "lib/beach/onsen-rest.ts",
+    "SHA256": "C94F596E38379BE4569BD37F55F3B8B6C8E388D80142E2B30EDA754ED7F55C12",
+    "Length": 6555
+  },
+  {
+    "Path": "lib/beach/photo.ts",
+    "SHA256": "DBCE88EEFF2131DB739DEE1F217F959EB70158525FCB095782E44429B88B0A7B",
+    "Length": 3432
+  },
+  {
+    "Path": "lib/beach/pixel-avatar-depth.ts",
+    "SHA256": "9A35688D0287DE8B4F03FA03422BD2B69004A7D20E54AE8C69BDCB0621B86E87",
+    "Length": 7622
+  },
+  {
+    "Path": "lib/beach/remote-motion.ts",
+    "SHA256": "9942C65D45B5A9BFBF7CAAEEC2402C68B8D720C021D938E6906FC7563E119736",
+    "Length": 7511
+  },
+  {
+    "Path": "lib/beach/rigged-avatar.ts",
+    "SHA256": "440C73548571B9BF4E2B595D17CBCC77658D560E56C61C2EA0AADBBC93BCD76E",
+    "Length": 24743
+  },
+  {
+    "Path": "lib/beach/shelter-textiles.ts",
+    "SHA256": "69D2A3605276132DDCE37BAFA9839D875C4388922A26015C667B94BFA039A28F",
+    "Length": 4863
+  },
+  {
+    "Path": "lib/beach/shelters.ts",
+    "SHA256": "F43FB98E7140A29B8A7377B7543D7E55F16C3059B9291024C23916BC9E2031ED",
+    "Length": 27411
+  },
+  {
+    "Path": "lib/beach/sky-shader.ts",
+    "SHA256": "A2269C03BF885BC292F284D0D80B53624C05E1DB36FBC8580AE0F684233E9F8B",
+    "Length": 4704
+  },
+  {
+    "Path": "lib/beach/stargazing.ts",
+    "SHA256": "AFA7FC6AAD16C63F1B40A003CAB66D0634610E14A25BE40C343C6E8AAC6F3B28",
+    "Length": 6244
+  },
+  {
+    "Path": "lib/beach/uyuni-hotel-layout.ts",
+    "SHA256": "5E9921CDD25609F73BF208B230E756C03292EF1FFAA5407359F614FD8A8A77C1",
+    "Length": 3794
+  },
+  {
+    "Path": "lib/beach/uyuni-hotels.ts",
+    "SHA256": "3D1BAF8CB334B200D45D7336839D25049F503CB4ECB0AC71235C16CBA8500E17",
+    "Length": 15228
+  },
+  {
+    "Path": "lib/beach/uyuni-shader.ts",
+    "SHA256": "506BD8B63C7E89EDBEBF18BA8AC41DA7A97CA9972A40BFF36C40A2660CF5E9FA",
+    "Length": 7332
+  },
+  {
+    "Path": "lib/beach/uyuni.ts",
+    "SHA256": "EA9B97A9C6CDEE185D343ED419FF42BE5211255296160EFB1158ADF2493DFDAD",
+    "Length": 6346
+  },
+  {
+    "Path": "lib/care.ts",
+    "SHA256": "080D3DAA2387763B18E95BA6D517DFB61698C4D42828DD6CF9EDCD0480DCC831",
+    "Length": 4345
+  },
+  {
+    "Path": "lib/categories.ts",
+    "SHA256": "A61B72D9B99FE71575174DA0A5C8C66764F41008166F16D8786D4815A17BDFE2",
+    "Length": 3565
+  },
+  {
+    "Path": "lib/circles.ts",
+    "SHA256": "5C08532EFED109F588E974DC053C9A46F076FAFE1325CA2AE55836F94EA1B10B",
+    "Length": 9098
+  },
+  {
+    "Path": "lib/community-core.ts",
+    "SHA256": "BAC65CC7099067858DE9118FA114A3378E5BC9AFB7ED711734927534268D5736",
+    "Length": 19387
+  },
+  {
+    "Path": "lib/community.ts",
+    "SHA256": "96BCEB49899539F86C3D23D8DF222AE01F99BFE1FDA2410935FA51D5C2243E91",
+    "Length": 4639
+  },
+  {
+    "Path": "lib/consent.ts",
+    "SHA256": "56B498CF7303F0AFBD810ACBF92A902D80FA45E680671C036A13D6C87E5B875E",
+    "Length": 1704
+  },
+  {
+    "Path": "lib/crisis.ts",
+    "SHA256": "6D02FD36F56603D99570EA23EE97D12112791965A0FA063FA20652EAD74B2ED4",
+    "Length": 781
+  },
+  {
+    "Path": "lib/daily-quote.ts",
+    "SHA256": "C62DE2FC42FAA1E32C9C403C5414D3FBAF9AD6120425D76BE177990BBA3D161C",
+    "Length": 19782
+  },
+  {
+    "Path": "lib/dates.ts",
+    "SHA256": "1B6C26AFB8C0941D293CA5D505116EE853F54BFCA6EEE285CFD2AE881F9143CF",
+    "Length": 552
+  },
+  {
+    "Path": "lib/haptics.ts",
+    "SHA256": "08BD5F278E7CFD6D7FEADE9BCA3D62D79805F362815325A4BF0D90EF1EFB7D7F",
+    "Length": 674
+  },
+  {
+    "Path": "lib/highlight.ts",
+    "SHA256": "8BA9AA9418E283821FA1791B4D8F6C2650902C6B669B7F220A021E39D9F4446D",
+    "Length": 2159
+  },
+  {
+    "Path": "lib/legal.ts",
+    "SHA256": "B8193AE3A84D82C1BE7FDF7E77F919D6372A648E5CAF22DFFCC1FA788E521459",
+    "Length": 1209
+  },
+  {
+    "Path": "lib/photo-edit.ts",
+    "SHA256": "8780CD9C13DBC04800BFB339B7B72FBDE5F9A2CE1567B5653DAFBAF7AA7548B0",
+    "Length": 9128
+  },
+  {
+    "Path": "lib/photo-look.ts",
+    "SHA256": "BB109331ABA40CB25CD5743C72DD5D117DE7C8A469A864FD0BF32602272F651D",
+    "Length": 21792
+  },
+  {
+    "Path": "lib/points.ts",
+    "SHA256": "8A238E6E66F7A899FFF211BF57C86999228830CEFE16AD4D5C2DC427692E2FB4",
+    "Length": 3435
+  },
+  {
+    "Path": "lib/prompts.ts",
+    "SHA256": "3B80DBBCDDBB253D20CC60142E0D0FDE4C02ABD405A32F69AD69BD28CAC61C27",
+    "Length": 17606
+  },
+  {
+    "Path": "lib/records-sync.ts",
+    "SHA256": "768B1421B576252F02915AA1CD134422D76E46271E077ADE500E9239E3B3A005",
+    "Length": 9916
+  },
+  {
+    "Path": "lib/route-placeholder.ts",
+    "SHA256": "13979527EDE74D64222B517887D382553AA3C5C6BC4B870318664356E1C3FEE4",
+    "Length": 183
+  },
+  {
+    "Path": "lib/routes.ts",
+    "SHA256": "2FDF7DB001C0CABAE5853EFF74F8835A96D81374E32C38EB786DD768EB27B3A8",
+    "Length": 2382
+  },
+  {
+    "Path": "lib/safety.ts",
+    "SHA256": "C8E33A81887CBA50307572CD82A3FC14A3A3C6522BE8614566A9CD37ECD60AAF",
+    "Length": 2992
+  },
+  {
+    "Path": "lib/scroll-memory.ts",
+    "SHA256": "148B1C6D0FA5D976238441035C76F1E4CB56D3ACAC800DD95756B25DCCE3EA3B",
+    "Length": 3400
+  },
+  {
+    "Path": "lib/service-availability.ts",
+    "SHA256": "C97D2DB72464B00D94B9CC25FF5D63601D4A975560A7F35133D25B5E30350DF3",
+    "Length": 3093
+  },
+  {
+    "Path": "lib/share-profile.ts",
+    "SHA256": "1EFEFAE9036072AAD5FB03AACAC88152F4171A7F01749295710A2E192892C0D1",
+    "Length": 1666
+  },
+  {
+    "Path": "lib/site.ts",
+    "SHA256": "6E8AD8DC44350CDF5C4C7B7B9D796FDB4E5DC2E5C8523B068FC048C84C3CEDC1",
+    "Length": 3399
+  },
+  {
+    "Path": "lib/siteImage.ts",
+    "SHA256": "C94B4B0C04A97DD73C1D478A72109426BA0D9EAD1882DE3C8CC6F97B84525DBC",
+    "Length": 2306
+  },
+  {
+    "Path": "lib/social.ts",
+    "SHA256": "CA2D6646750E799F53F632FADC26B0AB96BA108FC64C1D6EE1F465A68B2581B4",
+    "Length": 6189
+  },
+  {
+    "Path": "lib/storage.ts",
+    "SHA256": "51EBBEF7A983BBEB2266A7081D2DB8E783E1460F950FBD7753F8567F309AA618",
+    "Length": 23436
+  },
+  {
+    "Path": "lib/theme.ts",
+    "SHA256": "B27A0A95824720AF67DF1BAFA43544ECD1F249B5346B3B5B3F347D5E5BF8E769",
+    "Length": 2161
+  },
+  {
+    "Path": "lib/toast.ts",
+    "SHA256": "01FC2AF79F721531E490C7D5E4C83B8E55662A707367781F0D3CA1FD1AD38137",
+    "Length": 2298
+  },
+  {
+    "Path": "lib/today-context.ts",
+    "SHA256": "35368FAA48863897DF8626910B681AE42D2CF5E066ACBBF9204BFA09E9B8FCEE",
+    "Length": 3101
+  },
+  {
+    "Path": "lib/upload.ts",
+    "SHA256": "36FF72C749F21233768DB621F7B931F0CF10FD05FA2EA09621677FD221FF3883",
+    "Length": 11801
+  },
+  {
+    "Path": "lib/use-current-day.ts",
+    "SHA256": "8C0FB0EFFDFCDC14B93BAB77D7FDEFCCF2E1982A8A29AC1651B17E9313F98FC9",
+    "Length": 1185
+  },
+  {
+    "Path": "lib/use-hide-on-scroll.ts",
+    "SHA256": "DAD7AEBD54DB7A054957D8180F0F7519FB08931B16D1E16A57AC471FF8F3FE07",
+    "Length": 1352
+  },
+  {
+    "Path": "next-env.d.ts",
+    "SHA256": "B8B3A344484B959AF5E4E3FC1A1609DAC3CB9ECE0CDEB6C145BE29BC4C491000",
+    "Length": 303
+  },
+  {
+    "Path": "next.config.ts",
+    "SHA256": "3BAC604B89FB6A1D7814BE5E1F559EA31DA20D121C7BC635C9D7E69ACEA5CB72",
+    "Length": 1729
+  },
+  {
+    "Path": "package-lock.json",
+    "SHA256": "5598887FCFA0D65436E40BBF39A380DEF91C3991FB7872EF69602886D5B4D47D",
+    "Length": 99917
+  },
+  {
+    "Path": "package.json",
+    "SHA256": "BA9DA447F4D233A72CEA3F5DE2BC17EDBCAA7EA79E1F8F4245CF6E5B361A41A6",
+    "Length": 2606
+  },
+  {
+    "Path": "public-assets.manifest.json",
+    "SHA256": "D8E5C0B1CB35A926ED1263E9E52345900DB061A805DC23175E69F451479F8D9E",
+    "Length": 10775
+  },
+  {
+    "Path": "public/beach/chars.json",
+    "SHA256": "96BEF6FEA9A2779472FFE5C9356397EB0341F3E6E7DB99B37B69051FFBDB26C8",
+    "Length": 529
+  },
+  {
+    "Path": "public/beach/models/tripo-female-onsen-mobile-v1.json",
+    "SHA256": "E94DA6AB359C5139C0B96D9E9FFB4BD822DE84F039A3ACCADB1C017E99CFAB79",
+    "Length": 59739
+  },
+  {
+    "Path": "public/beach/models/tripo-female-onsen-mobile-v2.json",
+    "SHA256": "C51F13FB463A70AE6BB2DC0B1501B420E6282CAED8901DCDAD615FA8CF185F54",
+    "Length": 59739
+  },
+  {
+    "Path": "public/beach/models/tripo-female-rigged-mobile-v1.json",
+    "SHA256": "D2E7EB1B21C74CB421EBE177412A605BB6D1B802D3617347099B4DF279E4CBF6",
+    "Length": 3397
+  },
+  {
+    "Path": "public/beach/models/tripo-female-rigged-mobile-v2.json",
+    "SHA256": "73E8280BA909173996DA4E3C1469D3A48685CC85CA9B70962AD3665C7BFA4213",
+    "Length": 1435
+  },
+  {
+    "Path": "public/beach/models/tripo-firewood-mobile-v2.json",
+    "SHA256": "A3094EFFF07EFC7E144C6C828587B0BDE5E27AA3BFA54DDA0853428D8A26B19C",
+    "Length": 2112
+  },
+  {
+    "Path": "public/beach/models/tripo-male-mobile-v1.json",
+    "SHA256": "45079FAE260685A2C7E86FAFED72D366FB1FEEC67F3A8B993B34A03AB3641FEC",
+    "Length": 2251
+  },
+  {
+    "Path": "public/beach/models/tripo-male-onsen-mobile-v1.json",
+    "SHA256": "E5F8F0D3816032E118D68E56BA3A96E5E5120A4C4DFDA9C1F9C63EB8392372D6",
+    "Length": 3003
+  },
+  {
+    "Path": "public/beach/models/tripo-male-onsen-mobile-v2.json",
+    "SHA256": "16EE8890F861E2E0D7C0442F4A633C7E253893921714A2AA2385E568710FADDD",
+    "Length": 3003
+  },
+  {
+    "Path": "public/beach/models/tripo-male-rigged-mobile-v2.json",
+    "SHA256": "CDEB01109B4365A37F5C771A1E84F7E9AF383B7C052DBC0167A2406325C6F899",
+    "Length": 14343
+  },
+  {
+    "Path": "public/beach/models/tripo-male-rigged-mobile-v3.json",
+    "SHA256": "E359FA5CDFC21521C6D8484DB2D9D5FD0586BD8D7923093A10DAE24080DB9517",
+    "Length": 1528
+  },
+  {
+    "Path": "public/beach/real/assets.json",
+    "SHA256": "E1DDBE3323849DAF18A2A382EF291AC2401B4B051D4F5B9D9B251471DC547838",
+    "Length": 5983
+  },
+  {
+    "Path": "public/beach/real/panorama.json",
+    "SHA256": "F439718A4B9D72FD0373B660A2710A18C951A9FA0F71674E70E7809F268B2877",
+    "Length": 1817
+  },
+  {
+    "Path": "public/beach/real/paradise-assets.json",
+    "SHA256": "573BC0B85090A6102E7D459FE2E9AAD23EE4F9870BFC5EAB385FEAB23A0E558C",
+    "Length": 3968
+  },
+  {
+    "Path": "public/beach/real/uyuni-milky-way-v1.webp",
+    "SHA256": "71E7D279F5CCC41007F0D93EA4B90CBC988B88E1B9BE285D92CA9CEDF94FC305",
+    "Length": 443462
+  },
+  {
+    "Path": "public/offline.html",
+    "SHA256": "5E8D95FBAE5857863BD807DB5C478A2B150EDDC2AE6D75111E5D53CCF1C31CD5",
+    "Length": 4462
+  },
+  {
+    "Path": "public/sw.js",
+    "SHA256": "8CFB4F3F96CA21BC4DE164188E540BEBDF770642655649ABBF481B31D0316BB2",
+    "Length": 1109
+  },
+  {
+    "Path": "scripts/admin-quotes.test.mjs",
+    "SHA256": "DE79D8336ABEF1B678C33EA3732FEC66F019D03AB2E73D590082191BA51440ED",
+    "Length": 11493
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/directions-preview.png",
+    "SHA256": "99BB890A467307AD4446A562CC1DDC7400F5158659781BF0FB701AD6847E78CE",
+    "Length": 68943
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female-walk.gif",
+    "SHA256": "68BCE068353A49172C40E36080B1FF53DC17CAD738A8C6094417D468239A7420",
+    "Length": 91997
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/animated.aseprite",
+    "SHA256": "86E57802A5C3BE7A264F0B256E00B336D5BF94817C5FE2488F6E6F60C3CC5558",
+    "Length": 267676
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/back.png",
+    "SHA256": "D03E0F8DBFA5EC1D9FAE9E305E12A132B1750AB93C3BC9E16F85B6A642103CCD",
+    "Length": 7510
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/front.aseprite",
+    "SHA256": "FB8FF86781F1C4C84DBC33B0CEFB71E48E7BF30C8BDD3437AC3444A3D1047F6C",
+    "Length": 10417
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/front.png",
+    "SHA256": "45671EE49D0D09693C696C095FBBECD2177321EBD59BEB58995BA45D4EE6F8C9",
+    "Length": 7945
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/body_base.png",
+    "SHA256": "6A7B79D4948C4AA4D676E5D978B048CF41500956AC0E1DB23D83C133BD76603A",
+    "Length": 1773
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/bottom.png",
+    "SHA256": "3D2B5278B5C9E770C3115BF44236CCDB9B9DA7A38F96CEE6277021B1B5B4C4F4",
+    "Length": 757
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/face.png",
+    "SHA256": "8E9100804BB6F8B25C0620010DE3C43A0373598F8D9B9198F81CB45124FF4154",
+    "Length": 1051
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/hair_back.png",
+    "SHA256": "64C40714636CA27EE74E43236E7EDCB566FDC4B600E367551086EFC7AFB3DD91",
+    "Length": 840
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/hair_front.png",
+    "SHA256": "0307EFF44D56101D107282091C32734637F5321EF8A6CC4E0D67839A633253C9",
+    "Length": 3145
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/hands_front.png",
+    "SHA256": "719D9D9EF1D05B51CFC1F790FB652DF02041933385391ED41E4B2B9E9A10B5A6",
+    "Length": 473
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/shoes.png",
+    "SHA256": "56D04C75BA58F6192BFD04DD4301BE3C1C0DE3101F24FB99ADCFBCD6806001C6",
+    "Length": 739
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/layers/top.png",
+    "SHA256": "C7AEF5CDBDCBB8659B8741BC9D7703A24AACE0B46ADBC75A42B3126120180A8B",
+    "Length": 1571
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/left.png",
+    "SHA256": "46CFF95D070E927C17F69117CA195FD9D48848237276D5BA578AC4166E743834",
+    "Length": 6092
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/right.png",
+    "SHA256": "E280FD4EB44535A7D5E339FE692114AE8BB5ED86B0504DAEA704447CD98ED871",
+    "Length": 6152
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/turns-prompt.txt",
+    "SHA256": "6821C18A929EF22287416A024A6EAC32E90C23869B61D4761808B998E9A79169",
+    "Length": 1979
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/female/turns-source.png",
+    "SHA256": "E5F614456E4F3E3B8D281A1D06B2B3CF36DEAF2AB4CCE4BC0A171A94E41854AF",
+    "Length": 1358950
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male-walk.gif",
+    "SHA256": "0E571435796AF4BCAC1927FD998BA867E8BE16A387E2790DD84123BD1E9EDD05",
+    "Length": 82227
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/animated.aseprite",
+    "SHA256": "EBFE951A8C003E9A5E847B21228CD75546CD4022E4813B9040BAACCB356FED1F",
+    "Length": 242148
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/back.png",
+    "SHA256": "119FC95840027CC843915E6C61E9A701F83188A4F68B90E9BC10BB65AA0298A3",
+    "Length": 6937
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/front.aseprite",
+    "SHA256": "5C7B9FEF468538A675D5C2D41BE367F76F68ED330C3CA9E3FCFB0BCA6CBAC68D",
+    "Length": 9152
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/front.png",
+    "SHA256": "9163527DB3926C693741489CDBD545FFACC39C6783085197271BC85A9AD2BA74",
+    "Length": 6842
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/body_base.png",
+    "SHA256": "26AF54E9D3B215278A045DAAAAD5E5A1AD05315539A1CE9B145540D73E47D7D9",
+    "Length": 1656
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/bottom.png",
+    "SHA256": "BB46CF1CDEF6DFB818A03FAC8BEA4A5D6C87604C4A6F04A428FC1BF58E3C7A98",
+    "Length": 702
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/face.png",
+    "SHA256": "EB7B060545D5541E165CF3FF4F27B068EBCD5AFFF5126E148F5254F0E19B877E",
+    "Length": 1029
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/hair_back.png",
+    "SHA256": "AD76365714A046E72483BE9C06989CAF519806CC74ADB0A2787E690E46F660DC",
+    "Length": 399
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/hair_front.png",
+    "SHA256": "475B7A044C8ADA1ED993CDBAE0898A2C8A3E81E8FDAF73D72571C39B77CC2659",
+    "Length": 2323
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/hands_front.png",
+    "SHA256": "E357D658699A1E14504C2DDDDFF020501DB249A89BD7E2655D44412C00D10742",
+    "Length": 462
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/shoes.png",
+    "SHA256": "D23FD6F55352C6995B8E5A07F11F612EB82548ACBB29C5DF4F9877162BD2AE8D",
+    "Length": 748
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/layers/top.png",
+    "SHA256": "DF61384F1A286BF2D39D2C7033643FB3DEE985CDDA259A479BE1B860EF772944",
+    "Length": 1718
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/left.png",
+    "SHA256": "DD2B79268397EAD6087C014854FC51886C98C1CE02D6D183370D98A90F0744EF",
+    "Length": 5721
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/right.png",
+    "SHA256": "0C0BE4B05E17F3953BD935B2BDC65C0C9A4B4BC9EEF2D9173A48274A311A4C43",
+    "Length": 5767
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/turns-prompt.txt",
+    "SHA256": "DAAA12838BD685A87E7A399A8E87C3F7D2FFA5BCD120D79030419CC7689FDA31",
+    "Length": 1848
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/male/turns-source.png",
+    "SHA256": "31DA803C3E95F857B68E906F5ABEF3FFF4B4ADCA90CB5352C9F515C6D7A73CEB",
+    "Length": 1290809
+  },
+  {
+    "Path": "scripts/aseprite/base-characters/README.md",
+    "SHA256": "E37E3B3A81837B2F19906600D55BC7995072CD2897477117599BB8EEC9084002",
+    "Length": 2726
+  },
+  {
+    "Path": "scripts/aseprite/beach-character-preview.png",
+    "SHA256": "883C66ECF06DEE61AC22AC05F264C08AD14DC9EA8F3ECCE76310F0CF60871AB4",
+    "Length": 21974
+  },
+  {
+    "Path": "scripts/aseprite/beach-character.aseprite",
+    "SHA256": "EBFE951A8C003E9A5E847B21228CD75546CD4022E4813B9040BAACCB356FED1F",
+    "Length": 242148
+  },
+  {
+    "Path": "scripts/aseprite/beach-character.lua",
+    "SHA256": "06C57E5B30DF70F3CB395FC9816AB5570FF7CE6E26A41996D04105EC2B7FF60A",
+    "Length": 8808
+  },
+  {
+    "Path": "scripts/aseprite/preview-character.lua",
+    "SHA256": "481E9538B78255013A9BB86BF21CBADB5150C178A7E036969206BF8E009B6C9E",
+    "Length": 685
+  },
+  {
+    "Path": "scripts/asset-bytes-fixture.mjs",
+    "SHA256": "0DDD2DD4B1875CEDD56AAE50B7C0876AE41F4675708871BD561C70095841A1B0",
+    "Length": 2834
+  },
+  {
+    "Path": "scripts/asset-bytes.test.mjs",
+    "SHA256": "5AF409B8E6A6E0E0B780B741C299EC317675FB05AA1890B4E46AC07FB5E382D0",
+    "Length": 3897
+  },
+  {
+    "Path": "scripts/assets-fixture.mjs",
+    "SHA256": "0254EAF5AF7E2F459FD2D335B9230B82168A7FA4A70D752B157B72D14F5A7B8B",
+    "Length": 598
+  },
+  {
+    "Path": "scripts/assets.test.mjs",
+    "SHA256": "1612B03401A767EA7E15D7E6C52AF042E14A5BAC1C785CE468C3971854E70791",
+    "Length": 8368
+  },
+  {
+    "Path": "scripts/beach-appearance.test.mjs",
+    "SHA256": "2353225E76CFAD9E7EACF1F73BC381A304C38C40921CBA1AC85F895C32495079",
+    "Length": 7451
+  },
+  {
+    "Path": "scripts/beach-avatar-crowd.test.mjs",
+    "SHA256": "36CCC5FE5B58C96269A3B5A756C9867FF4F92DF0AF134BA8228B5B8202E248B3",
+    "Length": 8789
+  },
+  {
+    "Path": "scripts/beach-avatar.test.mjs",
+    "SHA256": "5E17B19FC95D3F1A55856327AB2D36F400E7038BCD52D48BBD0E92A8040E5A71",
+    "Length": 31836
+  },
+  {
+    "Path": "scripts/beach-bench-interaction.test.mjs",
+    "SHA256": "88899EF87D4F960EAC65D44E8D81D9309BD463696CDB9E38B4AFA5675FC09042",
+    "Length": 14420
+  },
+  {
+    "Path": "scripts/beach-camera.test.mjs",
+    "SHA256": "7B1B4037CB7D98E82B0A9B1F35D0846403CB4549D3907A5257761E81A1D80691",
+    "Length": 10860
+  },
+  {
+    "Path": "scripts/beach-care.test.mjs",
+    "SHA256": "B353444C32FEF6DCC485923D9EED969D3F2ABFE77E496F91534C3E79E2C82EFB",
+    "Length": 9571
+  },
+  {
+    "Path": "scripts/beach-character.config.mjs",
+    "SHA256": "A70E2BE35E030E8A32FE3DF8EE9DCD8D87AFF1E7F9C9DF224A7105ABC8AAB5ED",
+    "Length": 855
+  },
+  {
+    "Path": "scripts/beach-continuity.test.mjs",
+    "SHA256": "16C64A571A26F988DB2F99DB91D44EE552FE3F0CF56458CBB1CE7CA453F6E0BD",
+    "Length": 13477
+  },
+  {
+    "Path": "scripts/beach-daylight.test.mjs",
+    "SHA256": "DABE66C7D723163B6A1D3051C5FD96FD13BEBFB904CF66C7D4371313D20FE198",
+    "Length": 3784
+  },
+  {
+    "Path": "scripts/beach-environment.test.mjs",
+    "SHA256": "71C7F6BFC076877A9CA5BB11B8949EAA38918973095156AE118FE05FECFA5C2E",
+    "Length": 18975
+  },
+  {
+    "Path": "scripts/beach-fire-benches.test.mjs",
+    "SHA256": "A294E5534614786F61DBF543983D17E97382CBB4D8EA7F555F85C7633B67F9AC",
+    "Length": 8718
+  },
+  {
+    "Path": "scripts/beach-fireworks.test.mjs",
+    "SHA256": "FC41EEF04D7176D780409887636CC820FE4D21B70267E732FAAAFC0046D56151",
+    "Length": 24429
+  },
+  {
+    "Path": "scripts/beach-hot-spring-landscape.test.mjs",
+    "SHA256": "AF7BE6DF4CEFD536B130F52650FE5912080395C39EA72D5ED2263327849BA580",
+    "Length": 7957
+  },
+  {
+    "Path": "scripts/beach-hot-spring.test.mjs",
+    "SHA256": "BC9949458C135B81671BF31A7ACADF167527113BF1CDAB9E1D40D991A842EB34",
+    "Length": 17154
+  },
+  {
+    "Path": "scripts/beach-lanterns.test.mjs",
+    "SHA256": "D0AD1FC2FD60022BCCD098B25B176BB3328BDD37C81E5EEAC77E9A7988934D41",
+    "Length": 4829
+  },
+  {
+    "Path": "scripts/beach-maps.test.mjs",
+    "SHA256": "FA5C48B4CA642958C96866D4EA6AA9719519DCD06466D8DF238DD04633435B58",
+    "Length": 15650
+  },
+  {
+    "Path": "scripts/beach-net.test.mjs",
+    "SHA256": "1DB2354841C9EF895496D42A58634CDC8F99BAB750F11D37CC6F59ACF5278523",
+    "Length": 37261
+  },
+  {
+    "Path": "scripts/beach-onsen-engine.test.mjs",
+    "SHA256": "953912535AD6DB70A00A26BFDB8C51B82C4F83B3191009569638C70E8538BFBA",
+    "Length": 15291
+  },
+  {
+    "Path": "scripts/beach-onsen-rest.test.mjs",
+    "SHA256": "61354BDE3E5B1D2C9C62B0CEEA7DB806D134C0112C872F46BDB99B290A3CE00B",
+    "Length": 5145
+  },
+  {
+    "Path": "scripts/beach-photo.test.mjs",
+    "SHA256": "2E8D95087C739166802F3875684F87992BDE3E36953F4A27893F4885A814682C",
+    "Length": 6586
+  },
+  {
+    "Path": "scripts/beach-pixel-depth.test.mjs",
+    "SHA256": "B86A4779515CED7F25B55763A6E317A2012C4D405919BC06216DFD91811D047C",
+    "Length": 6240
+  },
+  {
+    "Path": "scripts/beach-remote-motion.test.mjs",
+    "SHA256": "4926C7A30D9BA576069272916501F8AC628971BE1AC03CCC750D8E16D688678D",
+    "Length": 6548
+  },
+  {
+    "Path": "scripts/beach-render-quality.test.mjs",
+    "SHA256": "2F2319DF57045802B51A2C7E3A00E20375396DEDD815FFC2137A305734FFBE67",
+    "Length": 8892
+  },
+  {
+    "Path": "scripts/beach-rigged-avatar.test.mjs",
+    "SHA256": "230FC439FADC0E1060BDB127153F7584CF992EAE773A558A07B800BC6234D796",
+    "Length": 25663
+  },
+  {
+    "Path": "scripts/beach-shelter-textiles.test.mjs",
+    "SHA256": "B826E8F8F5B27231CE384923C55A8F8BA7FCC7D3912637FB1BC98CCA174DACB0",
+    "Length": 3681
+  },
+  {
+    "Path": "scripts/beach-shelters.test.mjs",
+    "SHA256": "AB95F65D40CDFD99540CEAE87252317EDFB0CBF9DDCC804F9080AE4FD99F9B9E",
+    "Length": 14561
+  },
+  {
+    "Path": "scripts/beach-stargazing.test.mjs",
+    "SHA256": "9399829C8F18C51DFC1F76824FD60109251C0533FB472AA5D8176D8EDB5B27FB",
+    "Length": 25748
+  },
+  {
+    "Path": "scripts/beach-uyuni-engine.test.mjs",
+    "SHA256": "A63CB0DD520E4C299BDBEEFD8C12F16078B4240ACAB40756117B5971BC7DFD2C",
+    "Length": 23964
+  },
+  {
+    "Path": "scripts/beach-uyuni-hotel-geometry.test.mjs",
+    "SHA256": "945070308DEB69FDC6E27ED60DC53B71848E5CC5DB747E5073EAD87FDF149C5D",
+    "Length": 11858
+  },
+  {
+    "Path": "scripts/beach-uyuni-hotels.test.mjs",
+    "SHA256": "0D4AD2581990BEC20E3953D3CF9B2CC9158AECC6E7C1BD5CE77EE56565CEAF42",
+    "Length": 7370
+  },
+  {
+    "Path": "scripts/beach-uyuni.test.mjs",
+    "SHA256": "AEF25B8B8FE5D48F633995330FCB6EED7298EBB132AF5631C710225C3E42A39C",
+    "Length": 12947
+  },
+  {
+    "Path": "scripts/beach-visit-lifecycle.test.mjs",
+    "SHA256": "3C4B46967B31D3088B1AB79DE452871D6C43C2B48ADC59D16737DAA4C2503682",
+    "Length": 18436
+  },
+  {
+    "Path": "scripts/beach-visit-state.test.mjs",
+    "SHA256": "B575998BC17A828E977415F3D90CABB07CE7B9DFADC82101C8E3460B46449B6F",
+    "Length": 5827
+  },
+  {
+    "Path": "scripts/beach-world-fixture.mjs",
+    "SHA256": "39202EA9F9479D00CA3F61191311635005EFF8C1B5910E05C184C0D0426FB6E1",
+    "Length": 3222
+  },
+  {
+    "Path": "scripts/build-ait.mjs",
+    "SHA256": "D74A9BA97E16BCE9B4976ED0F2A4A6D6E2E1A5B8D21B49DA00DB5C6B791D7BC7",
+    "Length": 4340
+  },
+  {
+    "Path": "scripts/check-release.mjs",
+    "SHA256": "DFFE131B82AF2D5A7FB6F7CBE5BAD5A6C73D0DCA56D5885789CE1D29E6A9A3BD",
+    "Length": 3088
+  },
+  {
+    "Path": "scripts/community-cache.test.mjs",
+    "SHA256": "EF8344C5BF84DD2B1DFBC673143BA63B6CBA6FBE0FF35EDD7365C1A2F3584E8B",
+    "Length": 1918
+  },
+  {
+    "Path": "scripts/daily-quote.test.mjs",
+    "SHA256": "E984C8DA5A2D3098E7A6633BA7F2611C39CD2F09C1F862C20A22117E3C74BAA4",
+    "Length": 3092
+  },
+  {
+    "Path": "scripts/fire-commerce.test.mjs",
+    "SHA256": "7277FE5B4D2AA521B4F09457F41D643AE704032AFB779658AA357C6C77A34CDC",
+    "Length": 18274
+  },
+  {
+    "Path": "scripts/fire-powder.test.mjs",
+    "SHA256": "975539F2F76817CF27E28078A6B1F1023F6AA81F24DFA69B89BE9D2BCB476EB3",
+    "Length": 6495
+  },
+  {
+    "Path": "scripts/fire-visual.test.mjs",
+    "SHA256": "234374B1C27F0AB47D761830A1437D7D2D701BB568B9818E1E957BD3A517E7C1",
+    "Length": 15361
+  },
+  {
+    "Path": "scripts/gen-beach-character.mjs",
+    "SHA256": "AC14FF21AC33710668035BDD44B4F5CCFA1D0BD20E85BCF160F01C5DD2BDFEC1",
+    "Length": 2694
+  },
+  {
+    "Path": "scripts/gen-beach-sprites.mjs",
+    "SHA256": "E906F6C4BA162FEEDF07072E0B67A81DFB184098793CC67E8240D5632395137E",
+    "Length": 16496
+  },
+  {
+    "Path": "scripts/photo-edit.test.mjs",
+    "SHA256": "86754D5275EB864AC02BE8FF2B615F889AEF8EE0677CAE88C63CD8DFAAA686B8",
+    "Length": 6400
+  },
+  {
+    "Path": "scripts/points.test.mjs",
+    "SHA256": "9BE6E249ED9B631119068CD04AE36071BF3F209385CBFDA9C4D4CFE8F76A2BED",
+    "Length": 4816
+  },
+  {
+    "Path": "scripts/records-sync.test.mjs",
+    "SHA256": "3D89081A3254DC0BDE401434F64873B11CB00E189AB6E22C17CC53403F530AAA",
+    "Length": 15056
+  },
+  {
+    "Path": "scripts/service-availability.test.mjs",
+    "SHA256": "8786790ABCDA77226726E6C0654C29072EBCE04709321A1A8C8B91D2D903BC4A",
+    "Length": 7107
+  },
+  {
+    "Path": "scripts/service-worker.test.mjs",
+    "SHA256": "1DF14BAF34A2BE2917089986D5A30A57CDEE86BDE0A83C7BF0EA9B0EA97DC8DA",
+    "Length": 2517
+  },
+  {
+    "Path": "scripts/sky-lantern-prompt.txt",
+    "SHA256": "F4891506962608D10559341035472228C746A1A3C0872F1D30AB86F0B0C95A54",
+    "Length": 2377
+  },
+  {
+    "Path": "scripts/today-context.test.mjs",
+    "SHA256": "F0BF05E1E2079DA3D639EB350CAA44B02D55E5BCA18F8F335A7C19B38DC1AE2A",
+    "Length": 15891
+  },
+  {
+    "Path": "scripts/upload.test.mjs",
+    "SHA256": "D00AE860DE417DAE5F0E016FADDB79237AE6EC6844100995B73A4FD2FD70962D",
+    "Length": 9823
+  },
+  {
+    "Path": "tsconfig.ait.json",
+    "SHA256": "FC44BE2B4ED542AFCE64678CD5AAC243ED2BCC42BAFB4C8477851EBF1E57D818",
+    "Length": 187
+  },
+  {
+    "Path": "tsconfig.json",
+    "SHA256": "C8834BE9C18531C3796CFADF47DFF749DAB9D885C505FC179AADEFEBC29B499F",
+    "Length": 699
+  }
+]

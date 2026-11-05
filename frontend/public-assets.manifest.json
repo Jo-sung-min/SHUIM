@@ -207,6 +207,12 @@
       "contentType": "image/png"
     },
     {
+      "key": "beach/real/uyuni-milky-way-v1.webp",
+      "bytes": 443462,
+      "sha256": "71e7d279f5ccc41007f0d93ea4b90cbc988b88e1b9be285d92ca9cedf94fc305",
+      "contentType": "image/webp"
+    },
+    {
       "key": "beach/real/white-cotton-v1.webp",
       "bytes": 237154,
       "sha256": "0432a3d7c06aa1f214eba729f2b837cd658c5ebeab8142e789e070902d9b69a9",

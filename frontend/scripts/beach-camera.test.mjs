@@ -36,6 +36,7 @@ function fixture() {
   const camera = new THREE.PerspectiveCamera(62, 390 / 844, 0.1, 520);
   camera.rotation.order = "YXZ";
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     disposed: false, inputPaused: false, scene: new THREE.Scene(), camera, sky: new THREE.Mesh(),
     self: { x: 0, z: 8, yaw: 0, pitch: 0.07, moving: false, bobT: 0 }, orbitYaw: 0,
     view: "third", mobile: false, followCam: new THREE.Vector3(), followSnap: true,

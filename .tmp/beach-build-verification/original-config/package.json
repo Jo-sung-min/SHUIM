@@ -1,0 +1,38 @@
+{
+  "name": "sorow-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:ait": "node scripts/build-ait.mjs",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test:offline": "node --test scripts/service-worker.test.mjs",
+    "test:records": "node --test scripts/records-sync.test.mjs",
+    "test:privacy": "node --test scripts/community-cache.test.mjs",
+    "test:beach": "node --test scripts/beach-net.test.mjs scripts/beach-shelters.test.mjs scripts/beach-shelter-textiles.test.mjs scripts/beach-hot-spring.test.mjs scripts/beach-hot-spring-landscape.test.mjs scripts/beach-onsen-rest.test.mjs scripts/beach-onsen-engine.test.mjs scripts/beach-fireworks.test.mjs scripts/beach-avatar.test.mjs scripts/beach-camera.test.mjs scripts/beach-pixel-depth.test.mjs scripts/beach-rigged-avatar.test.mjs scripts/beach-appearance.test.mjs scripts/beach-lanterns.test.mjs scripts/beach-stargazing.test.mjs scripts/beach-fire-benches.test.mjs scripts/beach-bench-interaction.test.mjs scripts/beach-environment.test.mjs scripts/beach-photo.test.mjs scripts/beach-care.test.mjs scripts/fire-commerce.test.mjs scripts/fire-powder.test.mjs scripts/fire-visual.test.mjs scripts/beach-daylight.test.mjs scripts/beach-render-quality.test.mjs scripts/beach-uyuni.test.mjs scripts/beach-uyuni-engine.test.mjs scripts/beach-maps.test.mjs scripts/beach-uyuni-hotels.test.mjs scripts/beach-uyuni-hotel-geometry.test.mjs scripts/beach-avatar-crowd.test.mjs scripts/beach-remote-motion.test.mjs scripts/beach-continuity.test.mjs scripts/beach-visit-state.test.mjs scripts/beach-visit-lifecycle.test.mjs",
+    "test:points": "node --test scripts/points.test.mjs",
+    "test:availability": "node --test scripts/service-availability.test.mjs",
+    "test:media": "node --test scripts/photo-edit.test.mjs scripts/upload.test.mjs",
+    "test:assets": "node --test scripts/assets.test.mjs scripts/asset-bytes.test.mjs",
+    "test:quotes": "node --test scripts/daily-quote.test.mjs",
+    "test:admin-quotes": "node --test scripts/admin-quotes.test.mjs",
+    "test:today": "node --test scripts/today-context.test.mjs",
+    "check:release": "node scripts/check-release.mjs"
+  },
+  "dependencies": {
+    "@apps-in-toss/web-framework": "3.8.0",
+    "next": "^16.4.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "0.187.0",
+    "typescript": "^5"
+  }
+}

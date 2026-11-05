@@ -9,12 +9,52 @@ const source = stripTypeScriptTypes(typed).replace(/\bexport\s+(?=(?:async\s+)?f
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 function setup(fetch) {
   const context = { fetch, Error, AbortSignal };
-  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, setBeachRest, setBeachLighting, launchBeachFireworks, readFireworkEvent, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, suspendBeach, setBeachRest, setBeachLighting, launchBeachFireworks, readFireworkEvent, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
   return context.api;
 }
 
 const fireworksEvent = { id: "c5b26760-2e99-4c83-94d6-5a25794c2f17", seed: 9157, startedAt: 1_000_000, durationMs: 12_000 };
 const fireworksState = { fireworks: [fireworksEvent], serverTime: 1_001_000, fireworksCooldownUntil: 1_015_000 };
+
+test("resume entry carries scoped ticket and ordering fence and accepts the server rest state", async () => {
+  let sent;
+  const rest = { pose: "lying", spotId: "hotel-dawn", slot: 1, x: -12, z: 23, yaw: 0 };
+  const api = setup(async (url, options) => { sent = { url, options }; return response({ mapId: "uyuni", resumed: true, sequence: 51, selfRest: rest }); });
+  const entered = await api.enterBeach("ours", "male", "uyuni", { ticket: "previous-visit", sequence: 50 });
+  assert.deepEqual(JSON.parse(sent.options.body), { communityId: "ours", character: "male", mapId: "uyuni", resumeTicket: "previous-visit", sequence: 50 });
+  assert.equal(entered.resumed, true); assert.equal(entered.sequence, 51);
+  assert.deepEqual(JSON.parse(JSON.stringify(entered.selfRest)), rest);
+});
+
+test("invalid ordering acknowledgements and unconfirmed rest data are rejected", async () => {
+  for (const sequence of [null, -1, 0.5, "1", Number.MAX_SAFE_INTEGER + 1]) {
+    const api = setup(async () => response({ sequence }));
+    await assert.rejects(api.enterBeach("ours"), /방문 순서/);
+    await assert.rejects(api.tickBeach({ ticket: "visit", sequence: 1 }), /방문 순서/);
+  }
+  await assert.rejects(setup(async () => response({ selfRest: { pose: "lying", slot: 99 } })).enterBeach("ours"), /머물던 자리/);
+});
+
+test("a cancelled lifecycle request aborts both entry and tick transport", async () => {
+  for (const method of ["enter", "tick"]) {
+    const controller = new AbortController(); let transport;
+    const api = setup(async (_url, options) => { transport = options.signal; return response({ sequence: 4 }); });
+    if (method === "enter") await api.enterBeach("ours", undefined, "beach", undefined, controller.signal);
+    else await api.tickBeach({ ticket: "visit", sequence: 4 }, controller.signal);
+    assert.equal(transport.aborted, false); controller.abort(); assert.equal(transport.aborted, true);
+  }
+});
+
+test("suspending keeps the last position and sequence without replaying a social action", async () => {
+  const calls = [];
+  const api = setup(async (url, options) => { calls.push({ url, options }); throw new Error("connection went away"); });
+  api.suspendBeach({ ticket: "visit", sequence: 8, x: 12, z: 19, yaw: 1.2 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 1); assert.equal(calls[0].url, "/api/beach/suspend");
+  assert.equal(calls[0].options.keepalive, true);
+  assert.equal(calls[0].options.credentials, "same-origin");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { ticket: "visit", sequence: 8, x: 12, z: 19, yaw: 1.2 });
+});
 
 test("fireworks and onsen controls require their own explicit server capabilities", async () => {
   for (const grant of [undefined, null, false, "true", 1]) {
@@ -150,6 +190,54 @@ test("entry and occupancy requests carry the selected community", async () => {
   assert.equal(calls[1].options.cache, "no-store");
   assert.equal(occupancy.count, 7);
   assert.equal(occupancy.capacity, 100);
+  assert.equal(occupancy.mapId, "beach");
+});
+
+test("Uyuni entry and occupancy stay in the selected map while shared social features remain available", async () => {
+  const calls = [];
+  const api = setup(async (url, options) => {
+    calls.push({ url, options });
+    return response({ communityId: "circle / one", mapId: "uyuni", count: 7, capacity: 100,
+      restEnabled: true, fireEnabled: true, bedEnabled: true, benchEnabled: true, onsenEnabled: true,
+      careCapabilities: { wave: true, hug: true }, ...fireworksState, fireworksControl: true });
+  });
+  const entered = await api.enterBeach("circle / one", "female-3d", "uyuni");
+  const count = await api.fetchBeachCount("circle / one", "uyuni");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { communityId: "circle / one", character: "female-3d", mapId: "uyuni" });
+  assert.equal(calls[1].url, "/api/beach/count?communityId=circle%20%2F%20one&mapId=uyuni");
+  assert.equal(count.mapId, "uyuni");
+  assert.equal(entered.mapId, "uyuni");
+  for (const capability of ["fireEnabled", "benchEnabled", "onsenEnabled"]) assert.equal(entered[capability], false, capability);
+  assert.equal(entered.bedEnabled, true, "the hotel bed capability is granted explicitly by the server");
+  assert.equal(entered.restEnabled, true);
+  assert.equal(entered.careCapabilities.wave, true);
+  assert.equal(entered.fireworksControl, true);
+});
+
+test("missing or crossed map confirmations never enter the wrong room and release stray tickets", async () => {
+  for (const [requested, actual] of [["uyuni", undefined], ["uyuni", "beach"], ["uyuni", null], ["beach", "uyuni"], ["beach", "unknown"]]) {
+    const calls = [];
+    const api = setup(async (url, options) => {
+      calls.push({ url, options });
+      return response({ mapId: actual, ticket: "stray-ticket", communityId: "ours", count: 1, capacity: 100 });
+    });
+    await assert.rejects(api.enterBeach("ours", undefined, requested), error => error instanceof api.BeachUnavailable && error.status === 409);
+    assert.equal(calls[1].url, "/api/beach/leave");
+    assert.deepEqual(JSON.parse(calls[1].options.body), { ticket: "stray-ticket" });
+    await assert.rejects(api.fetchBeachCount("ours", requested));
+  }
+});
+
+test("unsupported map requests fail before networking and old beach fire compatibility is narrowly scoped", async () => {
+  const api = setup(async () => { throw new Error("unexpected request"); });
+  for (const mapId of [null, "", "UYUNI", "other", 1]) {
+    await assert.rejects(api.enterBeach("ours", undefined, mapId), error => error instanceof api.BeachUnavailable);
+    await assert.rejects(api.fetchBeachCount("ours", mapId), error => error instanceof api.BeachUnavailable);
+  }
+  assert.equal((await setup(async () => response({})).enterBeach("ours")).fireEnabled, true);
+  for (const fireEnabled of [false, null, "true", 1]) {
+    assert.equal((await setup(async () => response({ fireEnabled })).enterBeach("ours")).fireEnabled, false);
+  }
 });
 
 test("unavailable or mismatched room counts never become a false empty beach", async () => {
@@ -321,6 +409,48 @@ test("hut claims send the selected hut, accept only its three slots, and preserv
     assert.equal(sent.spotId, spotId);
     await assert.rejects(setup(async () => response({ ...state, slot: 3 })).setBeachRest("ticket", "lie", spotId), /쉴 자리의 상태/);
   }
+});
+
+test("hotel beds require an explicit server grant on either map", async () => {
+  for (const mapId of ["beach", "uyuni"]) {
+    for (const bedEnabled of [undefined, null, false, "true", 1, true]) {
+      const entered = await setup(async () => response({ mapId, bedEnabled })).enterBeach("ours", undefined, mapId);
+      assert.equal(entered.bedEnabled, bedEnabled === true);
+    }
+  }
+});
+
+test("hotel claims use their two assigned bed slots and recover confirmed lying from ticks", async () => {
+  for (const spotId of ["hotel-dawn", "hotel-dusk"]) {
+    for (const slot of [0, 1]) {
+      const calls = [];
+      const state = { pose: "lying", spotId, slot, x: 8, z: 28, yaw: Math.PI };
+      const api = setup(async (url, options) => {
+        calls.push({ url, body: JSON.parse(options.body) });
+        return response(url.endsWith("/tick") ? { selfRest: state } : state);
+      });
+      const confirmed = await api.setBeachRest("uyuni-visit", "lie", spotId);
+      const recovered = await api.tickBeach({ ticket: "uyuni-visit" });
+      assert.equal(confirmed.slot, slot); assert.equal(recovered.selfRest.spotId, spotId);
+      assert.deepEqual(calls[0], { url: "/api/beach/rest", body: { ticket: "uyuni-visit", action: "lie", spotId } });
+      const standing = { pose: "standing", spotId: null, slot: null, x: 8, z: 25, yaw: 0 };
+      const standApi = setup(async (_url, options) => {
+        assert.deepEqual(JSON.parse(options.body), { ticket: "uyuni-visit", action: "stand" });
+        return response(standing);
+      });
+      assert.equal((await standApi.setBeachRest("uyuni-visit", "stand", spotId)).pose, "standing");
+    }
+  }
+});
+
+test("invalid hotel slots, poses and a different room confirmation cannot move a visitor", async () => {
+  const valid = { pose: "lying", spotId: "hotel-dawn", slot: 0, x: 8, z: 28, yaw: 0 };
+  for (const invalid of [{ ...valid, slot: 2 }, { ...valid, slot: -1 }, { ...valid, slot: 0.5 },
+    { ...valid, slot: "0" }, { ...valid, pose: "sitting" }, { ...valid, spotId: "hotel-other" }, { ...valid, x: null }]) {
+    await assert.rejects(setup(async () => response(invalid)).setBeachRest("visit", "lie", "hotel-dawn"), /쉴 자리의 상태/);
+    await assert.rejects(setup(async () => response({ selfRest: invalid })).tickBeach({ ticket: "visit" }), /쉴 자리의 상태/);
+  }
+  await assert.rejects(setup(async () => response({ ...valid, spotId: "hotel-dusk" })).setBeachRest("visit", "lie", "hotel-dawn"), /쉴 자리의 상태/);
 });
 
 test("bench seating asks the server for a slot and standing releases it without claiming another", async () => {

@@ -2,6 +2,12 @@ package kr.co.shuim.beach;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import java.io.IOException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.auth.AuthService;
@@ -42,14 +48,35 @@ public class BeachController {
     /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
     public record Care(String to, String kind) {}
     /** character 는 3D·픽셀 남녀 캐릭터를 바꿀 때 선택하며, 생략하면 현재 모습 유지 */
-    public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
+    public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character,
+                           @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {
+        public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
+            this(ticket, x, z, yaw, moving, care, character, null);
+        }
         public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care) {
             this(ticket, x, z, yaw, moving, care, null);
         }
     }
     public record TicketBody(String ticket) {}
-    public record EnterBody(String communityId, String character) {
-        public EnterBody(String communityId) { this(communityId, null); }
+    public record EnterBody(String communityId, String character, String mapId, String resumeTicket,
+                            @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {
+        public EnterBody(String communityId, String character, String mapId) { this(communityId, character, mapId, null, null); }
+        public EnterBody(String communityId, String character, String mapId, String resumeTicket) { this(communityId, character, mapId, resumeTicket, null); }
+        public EnterBody(String communityId) { this(communityId, null, null); }
+        public EnterBody(String communityId, String character) { this(communityId, character, null); }
+    }
+    public record SuspendBody(String ticket, Double x, Double z, Double yaw,
+                              @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {}
+    /** Jackson's default Long coercion truncates decimals, which would undermine request ordering. */
+    public static final class SequenceDeserializer extends StdDeserializer<Long> {
+        public SequenceDeserializer() { super(Long.class); }
+        @Override public Long deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            if (!parser.hasToken(JsonToken.VALUE_NUMBER_INT))
+                return (Long) context.handleUnexpectedToken(Long.class, parser);
+            long value = parser.getLongValue();
+            BeachRoom.validateSequence(value);
+            return value;
+        }
     }
     public record WoodBody(String ticket, String requestId) {}
     public record PowderBody(String ticket, String requestId, String color) {}
@@ -79,36 +106,43 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/enter { communityId, character?: "male" | "female" | "pixel-male" | "female-3d" } → { ticket, communityId, community: { id, slug, name }, capacity, me, spawn, bounds, count }
+     * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" } → map-scoped ticket, capabilities and state.
      * 이 소로우의 승인된 멤버만 들어갈 수 있다. 정원 초과는 409.
      */
     @PostMapping("/api/beach/enter")
     public Map<String, Object> enter(@RequestBody(required = false) EnterBody body, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
         CircleService.Circle circle = requireMember(body == null ? null : body.communityId(), me);
+        BeachMap map = BeachMap.from(body.mapId());
         Set<String> excluded = blocks.excludedIds(me.id());
-        BeachRoom.Presence p = beach.enter(circle.id(), me.id(), me.nick(), excluded, body.character());
+        BeachRoom.Entry entry = beach.enter(circle.id(), me.id(), me.nick(), excluded, body.character(), map.id(), body.resumeTicket(), body.sequence());
+        BeachRoom.Presence p = entry.presence();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ticket", p.ticket());
+        out.put("resumed", entry.resumed());
+        out.put("selfRest", BeachRoom.RestPresence.of(p));
+        out.put("sequence", p.sequence());
         out.put("communityId", circle.id());
+        out.put("mapId", map.id());
         out.put("community", Map.of("id", circle.id(), "slug", circle.slug(), "name", circle.name()));
         out.put("capacity", BeachRoom.CAPACITY);
         out.put("restEnabled", true);
         out.put("bedEnabled", true);
-        out.put("benchEnabled", true);
-        out.put("onsenEnabled", true);
+        out.put("benchEnabled", map.hasBeachFacilities());
+        out.put("onsenEnabled", map.hasBeachFacilities());
+        out.put("fireEnabled", map.hasBeachFacilities());
         out.put("careCapabilities", new BeachRoom.CareCapabilities(true, auth.isAdmin(me)));
         out.put("lightingControl", auth.isAdmin(me));
-        out.put("lighting", beach.lighting(circle.id()));
+        out.put("lighting", beach.lighting(circle.id(), map.id()));
         out.put("fireworksControl", auth.isAdmin(me));
-        BeachRoom.FireworksState fireworks = beach.fireworks(circle.id());
+        BeachRoom.FireworksState fireworks = beach.fireworks(circle.id(), map.id());
         out.put("fireworks", fireworks.events());
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", BeachRoom.MIN_Z, "maxZ", BeachRoom.MAX_Z));
-        out.put("count", beach.count(circle.id()));
-        BeachFireService.FireView fire = beach.fire(circle.id());
+        out.put("count", beach.count(circle.id(), map.id()));
+        BeachFireService.FireView fire = beach.fire(circle.id(), map.id());
         out.put("fire", fire);
         out.put("serverTime", fire.serverTime());
         return out;
@@ -148,12 +182,12 @@ public class BeachController {
             body.x() == null ? Double.NaN : body.x(),
             body.z() == null ? Double.NaN : body.z(),
             body.yaw() == null ? Double.NaN : body.yaw(),
-            Boolean.TRUE.equals(body.moving()), denied ? null : careTo, careKind, body.character(), capabilities != null && capabilities.hug());
+            Boolean.TRUE.equals(body.moving()), denied ? null : careTo, careKind, body.character(), capabilities != null && capabilities.hug(), body.sequence());
         if (r == null) throw ApiException.gone(GONE);
         return capabilities == null ? r : r.withCareCapabilities(capabilities, denied);
     }
 
-    /** POST /api/beach/rest: lie on starlight/hut spots, sit on fire-benches, or stand. Ticket scopes the visit. */
+    /** POST /api/beach/rest: lie on the map's starlight/hut/hotel spots, sit, or stand. Ticket scopes the visit. */
     @PostMapping("/api/beach/rest")
     public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
@@ -189,19 +223,34 @@ public class BeachController {
         return Map.of("ok", true);
     }
 
-    /** GET /api/beach/count?communityId=... → { communityId, count, capacity } (해당 소로우 멤버만) */
-    @GetMapping("/api/beach/count")
-    public Map<String, Object> count(@RequestParam(required = false) String communityId, HttpServletRequest req) {
-        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 바닷가를 이용해 주세요."));
-        CircleService.Circle circle = requireMember(communityId, me);
-        return Map.of("communityId", circle.id(), "count", beach.count(circle.id()), "capacity", BeachRoom.CAPACITY);
+    /** Best-effort hidden-page beacon. Reentry authenticates again; this only stops its ticket. */
+    @PostMapping("/api/beach/suspend")
+    public Map<String, Object> suspend(@RequestBody(required = false) SuspendBody body) {
+        if (body != null) beach.suspend(body.ticket(), body.x() == null ? Double.NaN : body.x(),
+            body.z() == null ? Double.NaN : body.z(), body.yaw() == null ? Double.NaN : body.yaw(), body.sequence());
+        return Map.of("ok", true);
     }
 
+    public Map<String, Object> count(String communityId, HttpServletRequest req) { return count(communityId, null, req); }
+
+    /** GET /api/beach/count?communityId=...&mapId=beach|uyuni (해당 소로우 멤버만) */
+    @GetMapping("/api/beach/count")
+    public Map<String, Object> count(@RequestParam(required = false) String communityId,
+                                   @RequestParam(required = false) String mapId, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 바닷가를 이용해 주세요."));
+        CircleService.Circle circle = requireMember(communityId, me);
+        BeachMap map = BeachMap.from(mapId);
+        return Map.of("communityId", circle.id(), "mapId", map.id(), "count", beach.count(circle.id(), map.id()), "capacity", BeachRoom.CAPACITY);
+    }
+
+    public BeachFireService.FireView fire(String communityId, HttpServletRequest req) { return fire(communityId, null, req); }
+
     @GetMapping("/api/beach/fire")
-    public BeachFireService.FireView fire(@RequestParam(required = false) String communityId, HttpServletRequest req) {
+    public BeachFireService.FireView fire(@RequestParam(required = false) String communityId,
+                                          @RequestParam(required = false) String mapId, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 모닥불을 이용해 주세요."));
         CircleService.Circle circle = requireMember(communityId, me);
-        return beach.fire(circle.id());
+        return beach.fire(circle.id(), mapId);
     }
 
     @PostMapping("/api/beach/fire/wood")

@@ -75,6 +75,8 @@ test("the corrected mobile asset loads once and shares render resources with ind
   assert.ok(first && second);
   assert.equal(mesh(first).geometry, mesh(second).geometry);
   assert.equal(mesh(first).material, mesh(second).material);
+  assert.equal(first.walk.getClip(), second.walk.getClip(), "immutable animation tracks belong to the downloaded model");
+  assert.notEqual(first.mixer, second.mixer, "each person keeps an independent animation clock");
   assert.notEqual(mesh(first).skeleton, mesh(second).skeleton);
   assert.notEqual(bone(first, "LeftArm"), bone(second, "LeftArm"));
   first.update(0.1, state({ moving: true, x: 4, z: 9 }));

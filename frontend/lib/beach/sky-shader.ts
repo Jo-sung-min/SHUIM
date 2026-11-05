@@ -36,7 +36,10 @@ vec3 beachSky(vec3 direction) {
   vec2 uv = vec2(azimuth / 6.2831853 + 0.5, asin(clamp(d.y, -1.0, 1.0)) / 3.1415927 + 0.5);
   vec2 skyUv = vec2(0.5 + sin(azimuth) * 0.12, max(0.54, uv.y));
   float seaFacing = smoothstep(0.12, 0.8, -d.z);
-  vec3 photo = mix(texture2D(uPhoto, skyUv).rgb, texture2D(uPhoto, uv).rgb, seaFacing) * uPhotoTint;
+  // The panorama is magnified across the sky. Sample its base level explicitly
+  // so mobile derivative/LOD differences cannot turn clouds into angular patches.
+  // Water keeps its own mipmapped sampling of the shared photo texture.
+  vec3 photo = mix(textureLod(uPhoto, skyUv, 0.0).rgb, textureLod(uPhoto, uv, 0.0).rgb, seaFacing) * uPhotoTint;
   vec3 gradient = mix(uSkyHorizon, uSkyTop, smoothstep(-0.025, 0.7, d.y));
   float warmHour = clamp((uSkyHorizon.r - uSkyHorizon.b) * 2.3, 0.0, 1.0);
   float skyMask = smoothstep(-0.025, 0.06, d.y);

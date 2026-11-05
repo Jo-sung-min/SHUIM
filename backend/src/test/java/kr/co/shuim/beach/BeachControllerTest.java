@@ -54,11 +54,70 @@ class BeachControllerTest {
     }
 
     @Test
+    void resumeRechecksMembershipAccountOwnershipAndCurrentBlockList() {
+        activeMember("circle-a");
+        var first = enter("circle-a");
+        String ticket = (String) first.get("ticket");
+        var body = new BeachController.EnterBody("circle-a", null, "beach", ticket, 0L);
+        assertEquals(false, first.get("resumed"));
+        when(circles.member("circle-a", "u-1")).thenReturn(Optional.empty());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.enter(body, request, response)).status());
+        activeMember("circle-a");
+        when(auth.requireUser(any(), any())).thenReturn(user("u-1", 10L));
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.enter(body, request, response)).status());
+        activeMember("circle-a");
+        when(blocks.excludedIds("u-1")).thenReturn(Set.of("new-block"));
+        var back = controller.enter(body, request, response);
+        assertEquals(ticket, back.get("ticket"));
+        assertEquals(first.get("me"), back.get("me"));
+        assertEquals(true, back.get("resumed"));
+        assertEquals(Set.of("new-block"), beach.requireVisit(ticket, "u-1").presence().excluded());
+        assertEquals(1L, back.get("sequence"));
+        assertEquals("standing", ((BeachRoom.RestPresence) back.get("selfRest")).pose());
+    }
+
+    @Test
+    void sequenceAndSuspendJsonContractRejectsCoercionAndOldPacketsCannotUndoResume() throws Exception {
+        activeMember("circle-a");
+        String ticket = (String) enter("circle-a").get("ticket");
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"x\":8,\"z\":20,\"sequence\":10}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.sequence").value(10));
+        for (String invalid : List.of("-1", "9007199254740991", "1.5", "\"11\"", "true", "{}", "[]")) {
+            for (String endpoint : List.of("tick", "suspend")) {
+                mvc.perform(post("/api/beach/" + endpoint).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"ticket\":\"" + ticket + "\",\"sequence\":" + invalid + "}"))
+                    .andExpect(status().isBadRequest());
+            }
+            mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"communityId\":\"circle-a\",\"resumeTicket\":\"" + ticket + "\",\"sequence\":" + invalid + "}"))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(post("/api/beach/suspend").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"x\":9,\"z\":21,\"sequence\":11}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.ok").value(true));
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"x\":-20,\"z\":-1,\"sequence\":10}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.selfRest.x").value(9));
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"communityId\":\"circle-a\",\"resumeTicket\":\"" + ticket + "\",\"sequence\":11}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.ticket").value(ticket))
+            .andExpect(jsonPath("$.resumed").value(true)).andExpect(jsonPath("$.sequence").value(12))
+            .andExpect(jsonPath("$.selfRest.x").value(9));
+        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + ticket + "\",\"x\":10,\"z\":22,\"sequence\":13}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.selfRest.x").value(10));
+    }
+
+    @Test
     void enterReturnsScopedTicketCommunityCapacitySpawnAndCount() {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "communityId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "serverTime", "restEnabled", "bedEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "fireworksControl", "fireworks", "fireworksCooldownUntil"), out.keySet());
+        assertEquals(Set.of("ticket", "resumed", "selfRest", "sequence", "communityId", "mapId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "fireEnabled", "serverTime", "restEnabled", "bedEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "fireworksControl", "fireworks", "fireworksCooldownUntil"), out.keySet());
+        assertEquals("beach", out.get("mapId"));
+        assertEquals(true, out.get("fireEnabled"));
         assertEquals(true, out.get("restEnabled"));
         assertEquals(true, out.get("bedEnabled"));
         assertEquals(true, out.get("benchEnabled"));
@@ -78,7 +137,7 @@ class BeachControllerTest {
         assertTrue((double) spawn.get("z") >= 2.8 && (double) spawn.get("z") <= 4);
         assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -1.0, "maxZ", 55.0), out.get("bounds"));
         assertEquals(1, out.get("count"));
-        assertEquals(Map.of("communityId", "circle-a", "count", 1, "capacity", 100), controller.count("circle-a", request));
+        assertEquals(Map.of("communityId", "circle-a", "mapId", "beach", "count", 1, "capacity", 100), controller.count("circle-a", request));
         BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
             new BeachController.Care("u-x", "comfort")), request);
         assertEquals("gone", tick.care());

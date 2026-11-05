@@ -3,7 +3,7 @@ export interface WallRect { minX: number; maxX: number; minZ: number; maxZ: numb
 /** Plan only when an action is requested. Clearance-aware corners fit doors and furniture aisles. */
 export function findWalkingPath(
   from: { x: number; z: number }, target: { x: number; z: number },
-  obstacles: readonly { x: number; z: number; r: number }[], walls: readonly WallRect[], bounds: WallRect,
+  obstacles: readonly { x: number; z: number; r: number }[], walls: readonly WallRect[], bounds: WallRect, searchPadding = 7,
 ): { x: number; z: number }[] | null {
   const radius = 0.4, spacing = 0.35;
   const clear = (x: number, z: number) => {
@@ -19,10 +19,10 @@ export function findWalkingPath(
   };
   if (!clear(from.x, from.z) || !clear(target.x, target.z)) return null;
   if (segment(from, target)) return [{ ...target }];
-  const left = Math.max(bounds.minX + radius, Math.min(from.x, target.x) - 7);
-  const front = Math.max(bounds.minZ + radius, Math.min(from.z, target.z) - 7);
-  const right = Math.min(bounds.maxX - radius, Math.max(from.x, target.x) + 7);
-  const back = Math.min(bounds.maxZ - radius, Math.max(from.z, target.z) + 7);
+  const left = Math.max(bounds.minX + radius, Math.min(from.x, target.x) - searchPadding);
+  const front = Math.max(bounds.minZ + radius, Math.min(from.z, target.z) - searchPadding);
+  const right = Math.min(bounds.maxX - radius, Math.max(from.x, target.x) + searchPadding);
+  const back = Math.min(bounds.maxZ - radius, Math.max(from.z, target.z) + searchPadding);
   const width = Math.floor((right - left) / spacing) + 1, depth = Math.floor((back - front) / spacing) + 1;
   const point = (id: number) => ({ x: left + id % width * spacing, z: front + Math.floor(id / width) * spacing });
   const nearest = (p: { x: number; z: number }) => {

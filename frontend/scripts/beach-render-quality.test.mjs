@@ -4,6 +4,7 @@ import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 const shaderSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/sky-shader.ts", import.meta.url), "utf8"))
   .replace(/\bexport\s+(?=const\b)/g, "");
@@ -17,7 +18,7 @@ const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/engine.
   .replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const document = { visibilityState: "visible" };
-const context = { THREE, CHAR_ANIM: atlas.CHAR_ANIM, SKY_FRAGMENT: shaders.SKY_FRAGMENT, document, performance: { now: () => 10_000 },
+const context = { ...hotSpring, THREE, CHAR_ANIM: atlas.CHAR_ANIM, SKY_FRAGMENT: shaders.SKY_FRAGMENT, document, performance: { now: () => 10_000 },
   CAMPFIRE: { x: 0, z: 12 },
   window: { innerWidth: 390, innerHeight: 844, devicePixelRatio: 3 } };
 vm.runInNewContext(`${source}\nglobalThis.api = { BeachEngine, beachRenderSettings };`, context);
@@ -27,6 +28,7 @@ const physicalPixels = size => Math.floor(size.width * size.pixelRatio) * Math.f
 function fixture() {
   const buffers = [], qualityChanges = [];
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     canvas: { clientWidth: 390, clientHeight: 844 }, mobile: true, quality: "high", skyRenderMode: false,
     camera: new THREE.PerspectiveCamera(), view: "first", skyRest: null,
     renderer: { setDrawingBufferSize: (width, height, pixelRatio) => buffers.push({ width, height, pixelRatio }), shadowMap: { enabled: true }, render() {} },
@@ -128,13 +130,21 @@ test("asset warmup, hidden tabs and long interruptions cannot permanently downgr
 test("the detailed sky still renders one inexpensive background mesh without lights, shadows or new assets", () => {
   const requested = [];
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "beach", uyuni: null,
     scene: new THREE.Scene(), loadEnvironmentTexture: path => { requested.push(path); return new THREE.Texture(); },
   });
   engine.buildSky();
   assert.deepEqual(requested, ["/beach/real/paradise-panorama-v1.webp"]);
   assert.equal(engine.scene.children.length, 1);
   assert.ok(engine.sky.layers.isEnabled(1));
-  assert.ok(engine.sky.geometry.index.count / 3 < 800);
+  assert.equal(engine.sky.geometry.index.count / 3, 1, "one background triangle has no internal seams");
+  const positions = engine.sky.geometry.getAttribute("position");
+  const triangle = new THREE.Triangle(...[0, 1, 2].map(i => new THREE.Vector3().fromBufferAttribute(positions, i)));
+  for (const x of [-1, 1]) for (const y of [-1, 1]) {
+    assert.ok(triangle.containsPoint(new THREE.Vector3(x, y, 0)), "the background covers every viewport corner");
+  }
+  assert.equal(engine.skyMat.side, THREE.FrontSide);
+  assert.equal(engine.sky.frustumCulled, false, "screen-space geometry remains visible at every camera angle");
   assert.equal(engine.sky.castShadow, false); assert.equal(engine.sky.receiveShadow, false);
   assert.equal(engine.skyMat.depthWrite, false); assert.equal(engine.skyMat.depthTest, false);
   assert.equal(engine.skyMat.fog, false);

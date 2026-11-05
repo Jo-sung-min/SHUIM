@@ -7,6 +7,19 @@
   box-shadow: 0 9px 26px -18px #5c483c70;
 }
 .scene { position: relative; min-height: 260px; isolation: isolate; overflow: hidden; background: #3c575a; }
+.mapChoices { display:flex; gap:4px; padding:7px; background:#f5f2ea; }
+.mapChoices button { display:flex; flex:1; align-items:center; justify-content:center; gap:7px; min-height:40px; padding:8px 12px; border:1px solid transparent; border-radius:14px; background:transparent; color:#7b8179; font:inherit; font-size:12px; font-weight:650; cursor:pointer; transition:background .16s,color .16s; }
+.mapChoices button[aria-pressed="true"] { border-color:#dddccf; background:#fffef9; color:#456052; box-shadow:0 2px 7px #6371580b; }
+.mapChoices button:focus-visible { outline:3px solid #b5c7b4; outline-offset:-2px; }
+.mapChoices button span { font-size:19px; line-height:1; font-weight:400; }
+.card[data-map="uyuni"] { border-color:#d2dbe0; background:#f7f9f8; }
+.card[data-map="uyuni"] .landscape { background:linear-gradient(180deg,#7398b8 0%,#aec7d8 37%,#e6e8e7 54%,#c6dae2 55%,#9bbbcf 75%,#718fae 100%); }
+.card[data-map="uyuni"] .landscape::before, .card[data-map="uyuni"] .landscape::after { content:""; position:absolute; inset:0 0 46%; pointer-events:none; background:radial-gradient(ellipse 23% 15% at 17% 68%,#fff8 25%,#ffffff22 68%,transparent 100%),radial-gradient(ellipse 29% 17% at 75% 43%,#ffffffe0 15%,#ffffff50 65%,transparent 100%),radial-gradient(ellipse 20% 14% at 43% 84%,#fff8 20%,#ffffff33 65%,transparent 100%); }
+.card[data-map="uyuni"] .landscape::after { inset:54% 0 0; transform:scaleY(-1); opacity:.76; }
+.card[data-map="uyuni"] .scene::after { background:linear-gradient(180deg,#213b5b94,transparent 73%); }
+.card[data-map="uyuni"] .people { bottom:23px; }
+.card[data-map="uyuni"] .person { -webkit-box-reflect:below -2px linear-gradient(transparent 12%,#ffffff2e 100%); }
+.card[data-map="uyuni"] .person::after { opacity:.2; }
 .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #17282799, #1728272b 54%, transparent 78%); z-index: -1; pointer-events: none; }
 .landscape { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: var(--beach-landscape-image) center 60% / cover no-repeat; }
 .timeTint { position: absolute; inset: 0; mix-blend-mode: multiply; transition: background-color 2s, opacity 2s; }
@@ -44,4 +57,4 @@
   .selector label { display: none; }
   .footer { padding: 12px 14px; }
 }
-@media (prefers-reduced-motion: reduce) { .timeTint, .enter { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .timeTint, .enter, .mapChoices button { transition: none; } }
