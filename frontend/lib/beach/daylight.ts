@@ -213,6 +213,22 @@ export function uyuniDaylightAt(hourIn: number): Daylight {
   };
 }
 
+/**
+ * 대나무숲: 빽빽한 줄기와 캐노피가 먼 곳을 가리므로 안개가 초록빛으로 가깝게 닫히고(그만큼 덜 그린다),
+ * 낮에는 댓잎 그늘이 캐릭터에 살짝 초록빛을 얹는다. 밤 팔레트·등불 타이밍은 다른 지도와 같다.
+ */
+export function bambooDaylightAt(hourIn: number): Daylight {
+  const base = daylightAt(hourIn);
+  const night = Math.max(0, Math.min(1, base.stars));
+  const canopyFog: RGB = [0.5, 0.6, 0.38];
+  const nightFog: RGB = [0.045, 0.075, 0.062];
+  const fog = mixRgb(mixRgb(base.fog, canopyFog, 0.58 * (1 - night) + 0.25 * night), nightFog, base.deepNight);
+  const shade: RGB = [base.tint[0] * 0.92, base.tint[1] * 1.0, base.tint[2] * 0.88];
+  const lanternWarm: RGB = [0.74, 0.7, 0.68];
+  const tint = mixRgb(mixRgb(base.tint, shade, 1 - night), lanternWarm, base.deepNight * 0.45);
+  return { ...base, fog, fogNear: 12, fogFar: 54, tint };
+}
+
 /** 지금 시각 (분까지, 0~24) */
 export function currentHour(now = new Date()): number {
   return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;

@@ -20,6 +20,11 @@
 .card[data-map="uyuni"] .people { bottom:23px; }
 .card[data-map="uyuni"] .person { -webkit-box-reflect:below -2px linear-gradient(transparent 12%,#ffffff2e 100%); }
 .card[data-map="uyuni"] .person::after { opacity:.2; }
+.card[data-map="bamboo"] { border-color:#cfdac1; background:#f6f9f0; }
+.card[data-map="bamboo"] .landscape { background:linear-gradient(180deg,#a9c95e 0%,#73a03d 38%,#4e7a2f 66%,#5e4b32 86%,#7a6540 100%); }
+.card[data-map="bamboo"] .landscape::before { content:""; position:absolute; inset:0 0 18%; pointer-events:none; background:repeating-linear-gradient(90deg,#00000000 0 17px,#2f4f2466 17px 21px,#d6ea9955 21px 23px,#00000000 23px 36px),repeating-linear-gradient(91deg,#00000000 0 29px,#243d1b44 29px 32px,#00000000 32px 61px); }
+.card[data-map="bamboo"] .landscape::after { content:""; position:absolute; left:34%; right:34%; bottom:0; height:22%; pointer-events:none; background:linear-gradient(180deg,#b89b6a00,#b89b6ad9 45%,#c9ad7b); clip-path:polygon(38% 0,62% 0,100% 100%,0 100%); }
+.card[data-map="bamboo"] .scene::after { background:linear-gradient(180deg,#1b2e1a99,#1b2e1a2b 54%,transparent 78%); }
 .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #17282799, #1728272b 54%, transparent 78%); z-index: -1; pointer-events: none; }
 .landscape { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: var(--beach-landscape-image) center 60% / cover no-repeat; }
 .timeTint { position: absolute; inset: 0; mix-blend-mode: multiply; transition: background-color 2s, opacity 2s; }

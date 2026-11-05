@@ -70,23 +70,78 @@ public class BeachRoom {
     public static final String ONSEN_BENCH_SPOT = "onsen-benches", ONSEN_FLOAT_SPOT = "onsen-float";
     public static final int ONSEN_BENCH_SLOTS = 6, ONSEN_FLOAT_SLOTS = 3;
     public static final double ONSEN_X = 0, ONSEN_Z = 45, ONSEN_REACH = 2.2, ONSEN_BENCH_RADIUS = 3.55;
+    /** Bamboo-trail pavilions: six edge seats each, mirrored by the frontend trail layout (lib/beach/bamboo-trail.ts). */
+    public static final int PAVILION_SLOTS = 6;
+    public static final double PAVILION_REACH = 2.4;
+    /** Centre and the unit axis the entrance steps face. Right-hand axis is (-fz, fx). */
+    record Pavilion(String spot, double x, double z, int fx, int fz) {}
+    static final List<Pavilion> PAVILIONS = List.of(
+        new Pavilion("pavilion-wind", -18.2, 26, 1, 0),
+        new Pavilion("pavilion-moon", 1, 44.5, 0, 1),
+        new Pavilion("pavilion-pine", 10.5, 30, 1, 0),
+        new Pavilion("pavilion-step", 14, 8, -1, 0));
+    /** Local seat (lx, lz, facing lx, facing lz): two beside the steps, two on each open side. */
+    private static final double[][] PAVILION_SEAT_LOCAL = {
+        {-1.7, 2.42, 0, 1}, {1.7, 2.42, 0, 1},
+        {-2.42, -0.9, -1, 0}, {-2.42, 0.9, -1, 0},
+        {2.42, -0.9, 1, 0}, {2.42, 0.9, 1, 0}};
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
         boolean onsen() { return ONSEN_BENCH_SPOT.equals(id) || ONSEN_FLOAT_SPOT.equals(id); }
-        boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id); }
+        boolean pavilion() { return isPavilionSpot(id); }
+        boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id) || pavilion(); }
     }
-    private record BenchSeat(double x, double z, double yaw) {}
-    private static final Map<String, RestSpot> REST_SPOTS = Map.of(
-        REST_SPOT, new RestSpot(REST_SPOT, REST_X, REST_Z, REST_SLOTS, false),
-        "hut-pine", new RestSpot("hut-pine", -13, 24.8, BED_SLOTS, true),
-        "hut-wave", new RestSpot("hut-wave", 0, 26.8, BED_SLOTS, true),
-        "hut-sunset", new RestSpot("hut-sunset", 13, 24.8, BED_SLOTS, true),
-        BENCH_SPOT, new RestSpot(BENCH_SPOT, 0, 12, BENCH_SLOTS, false),
-        ONSEN_BENCH_SPOT, new RestSpot(ONSEN_BENCH_SPOT, ONSEN_X, ONSEN_Z, ONSEN_BENCH_SLOTS, false),
-        ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false),
-        HOTEL_DAWN_SPOT, new RestSpot(HOTEL_DAWN_SPOT, -12, 23, HOTEL_BED_SLOTS, true),
-        HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true));
+    record BenchSeat(double x, double z, double yaw) {}
+    private static final Map<String, RestSpot> REST_SPOTS = Map.ofEntries(
+        Map.entry(REST_SPOT, new RestSpot(REST_SPOT, REST_X, REST_Z, REST_SLOTS, false)),
+        Map.entry("hut-pine", new RestSpot("hut-pine", -13, 24.8, BED_SLOTS, true)),
+        Map.entry("hut-wave", new RestSpot("hut-wave", 0, 26.8, BED_SLOTS, true)),
+        Map.entry("hut-sunset", new RestSpot("hut-sunset", 13, 24.8, BED_SLOTS, true)),
+        Map.entry(BENCH_SPOT, new RestSpot(BENCH_SPOT, 0, 12, BENCH_SLOTS, false)),
+        Map.entry(ONSEN_BENCH_SPOT, new RestSpot(ONSEN_BENCH_SPOT, ONSEN_X, ONSEN_Z, ONSEN_BENCH_SLOTS, false)),
+        Map.entry(ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false)),
+        Map.entry(HOTEL_DAWN_SPOT, new RestSpot(HOTEL_DAWN_SPOT, -12, 23, HOTEL_BED_SLOTS, true)),
+        Map.entry(HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true)),
+        Map.entry(PAVILIONS.get(0).spot(), new RestSpot(PAVILIONS.get(0).spot(), PAVILIONS.get(0).x(), PAVILIONS.get(0).z(), PAVILION_SLOTS, false)),
+        Map.entry(PAVILIONS.get(1).spot(), new RestSpot(PAVILIONS.get(1).spot(), PAVILIONS.get(1).x(), PAVILIONS.get(1).z(), PAVILION_SLOTS, false)),
+        Map.entry(PAVILIONS.get(2).spot(), new RestSpot(PAVILIONS.get(2).spot(), PAVILIONS.get(2).x(), PAVILIONS.get(2).z(), PAVILION_SLOTS, false)),
+        Map.entry(PAVILIONS.get(3).spot(), new RestSpot(PAVILIONS.get(3).spot(), PAVILIONS.get(3).x(), PAVILIONS.get(3).z(), PAVILION_SLOTS, false)));
+
+    static boolean isPavilionSpot(String spotId) {
+        return spotId != null && PAVILIONS.stream().anyMatch(p -> p.spot().equals(spotId));
+    }
+
+    private static Pavilion pavilionOf(RestSpot spot) {
+        return PAVILIONS.stream().filter(p -> p.spot().equals(spot.id())).findFirst().orElseThrow();
+    }
+
+    /** Same arithmetic as the frontend seat table: exact integer axes keep the two sides identical. */
+    static BenchSeat pavilionSeat(Pavilion p, int slot) {
+        double[] s = PAVILION_SEAT_LOCAL[slot];
+        int rx = -p.fz(), rz = p.fx();
+        double x = p.x() + s[0] * rx + s[1] * p.fx();
+        double z = p.z() + s[0] * rz + s[1] * p.fz();
+        double fx = s[2] * rx + s[3] * p.fx(), fz = s[2] * rz + s[3] * p.fz();
+        return new BenchSeat(x, z, Math.atan2(0.0 - fx, 0.0 - fz));
+    }
+
+    private static int nearestPavilionSlot(Presence me, RestSpot spot, boolean[] used) {
+        Pavilion pavilion = pavilionOf(spot);
+        boolean nearby = false;
+        int closest = -1;
+        double closestDistance = Double.POSITIVE_INFINITY;
+        for (int slot = 0; slot < spot.capacity(); slot++) {
+            BenchSeat seat = pavilionSeat(pavilion, slot);
+            double distance = Math.hypot(me.x - seat.x(), me.z - seat.z());
+            if (distance > PAVILION_REACH + 1e-9) continue;
+            nearby = true;
+            if (!used[slot] && distance < closestDistance) { closest = slot; closestDistance = distance; }
+        }
+        if (!nearby) throw ApiException.badRequest("정자 마루 끝 가까이에서 앉아 주세요.");
+        if (closest < 0) throw new ApiException(409, "가까운 자리가 모두 차 있어요. 마루의 다른 쪽으로 다가가 주세요.");
+        return closest;
+    }
 
     /** 가짜 방문자: 아이디 bot-1..3, 느리게 정해진 길을 오간다. 위로는 받지만 보내지는 않고, 나가지도 않는다 */
     private static final String[] BOT_NICKS = {"바람", "파도", "조개"};
@@ -129,7 +184,8 @@ public class BeachRoom {
     }
 
     private static String restPose(Presence p) {
-        return p.restSlot == null ? "standing" : BENCH_SPOT.equals(p.restSpot) || ONSEN_BENCH_SPOT.equals(p.restSpot) ? "sitting" : "lying";
+        return p.restSlot == null ? "standing"
+            : BENCH_SPOT.equals(p.restSpot) || ONSEN_BENCH_SPOT.equals(p.restSpot) || isPavilionSpot(p.restSpot) ? "sitting" : "lying";
     }
 
     private static BenchSeat benchSeat(int slot) {
@@ -597,7 +653,9 @@ public class BeachRoom {
         if (!"lie".equals(action) && !"sit".equals(action) && !"stand".equals(action)) throw ApiException.badRequest("앉기, 눕기, 일어나기 중에서 골라 주세요.");
         RestSpot spot = REST_SPOTS.get(spotId == null ? REST_SPOT : spotId);
         if (spot == null) throw ApiException.badRequest("쉴 자리를 다시 골라 주세요.");
-        if (!map.supportsRestSpot(spot.id())) throw ApiException.badRequest("이 지도에서 이용할 수 있는 쉴 자리를 골라 주세요.");
+        // Standing usually names no spot; the implied default must not be rejected on a map without a starlight circle.
+        if ((spotId != null || !"stand".equals(action)) && !map.supportsRestSpot(spot.id()))
+            throw ApiException.badRequest("이 지도에서 이용할 수 있는 쉴 자리를 골라 주세요.");
         if (!"stand".equals(action) && "sit".equals(action) != spot.sitting())
             throw ApiException.badRequest("앉거나 누울 수 있는 자리를 다시 골라 주세요.");
         synchronized (me) {
@@ -628,7 +686,7 @@ public class BeachRoom {
                 if (Math.abs(dx) > 4.35 + 1e-9 || dz < -4.5 - 1e-9 || dz > 4.45 + 1e-9
                     || Math.hypot(dx, dz) > REST_REACH + 1e-9)
                     throw ApiException.badRequest("호텔 안으로 들어와 침구 가까이에서 누워 주세요.");
-            } else if (!spot.bench() && !spot.onsen() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
+            } else if (!spot.bench() && !spot.onsen() && !spot.pavilion() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
                 throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
             boolean[] used = new boolean[spot.capacity()];
@@ -636,8 +694,10 @@ public class BeachRoom {
                 Integer slot = other.restSlot;
                 if (slot != null && spot.id().equals(other.restSpot) && live(other, now)) used[slot] = true;
             }
-            int slot = spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used) : 0;
-            if (!spot.bench() && !spot.onsen()) while (slot < spot.capacity() && used[slot]) slot++;
+            boolean nearestSeat = spot.bench() || spot.onsen() || spot.pavilion();
+            int slot = spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used)
+                : spot.pavilion() ? nearestPavilionSlot(me, spot, used) : 0;
+            if (!nearestSeat) while (slot < spot.capacity() && used[slot]) slot++;
             if (slot == spot.capacity()) throw new ApiException(409, spot.hotel()
                 ? "이 호텔의 침구가 모두 사용 중이에요. 다른 호텔을 골라 주세요."
                 : spot.bed() ? "이 오두막의 침구가 모두 사용 중이에요. 다른 오두막을 골라 주세요." : "별빛 자리가 모두 차 있어요. 잠시 뒤 다시 와 주세요.");
@@ -651,8 +711,8 @@ public class BeachRoom {
                 me.standingX = ONSEN_X + (me.x - ONSEN_X) * scale;
                 me.standingZ = ONSEN_Z + (me.z - ONSEN_Z) * scale;
             }
-            if (spot.bench() || spot.onsen()) {
-                BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : benchSeat(slot);
+            if (nearestSeat) {
+                BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : spot.pavilion() ? pavilionSeat(pavilionOf(spot), slot) : benchSeat(slot);
                 me.x = seat.x();
                 me.z = seat.z();
                 me.yaw = seat.yaw();

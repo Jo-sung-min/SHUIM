@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { assetCssUrl } from "@/lib/assets";
 import { MAPS, type MapId } from "@/lib/beach/maps";
-import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type ViewMode } from "@/lib/beach/engine";
+import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
 import { hourLabel, hourOverride } from "@/lib/beach/daylight";
@@ -25,6 +25,7 @@ const VIEW_KEY = "beach-view";
 const INTRO_VISIBLE_MS = 4000;
 const INTRO_FADE_MS = 700;
 const EMPTY_ONSEN: OnsenState = { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
+const EMPTY_PAVILION: PavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "" };
 type SkyPhase = "walking" | "joining" | "standing";
 
 /** 마지막에 고른 시점 (기기별로 기억) */
@@ -76,7 +77,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const bedEnabledRef = useRef(false);
   const benchEnabledRef = useRef(false);
   const onsenEnabledRef = useRef(false);
+  const pavilionEnabledRef = useRef(false);
+  const pavilionRef = useRef<PavilionState>(EMPTY_PAVILION);
   const benchActionRef = useRef<() => void>(() => {});
+  const pavilionActionRef = useRef<() => void>(() => {});
   const captureBusyRef = useRef(false);
   const cameraTriggerRef = useRef<HTMLButtonElement>(null);
   const photoFocusFrameRef = useRef(0);
@@ -135,6 +139,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [bench, setBench] = useState<BenchState>({ near: false, seated: false, occupied: 0, capacity: 12, available: false });
   const [onsenEnabled, setOnsenEnabled] = useState(false);
   const [onsen, setOnsen] = useState<OnsenState>(EMPTY_ONSEN);
+  const [pavilionEnabled, setPavilionEnabled] = useState(false);
+  const [pavilion, setPavilion] = useState<PavilionState>(EMPTY_PAVILION);
   const [photo, setPhoto] = useState<BeachPhoto | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [stargazing, setStargazing] = useState<StargazingState>({ near: false, lying: false, occupied: 0, capacity: 8 });
@@ -146,6 +152,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [, bump] = useState(0);
 
   selectedRef.current = selected;
+  pavilionRef.current = pavilion;
   const lying = stargazing.lying || Boolean(bed?.lying) || onsen.floating;
 
   useEffect(() => () => photo?.dispose(), [photo]);
@@ -405,9 +412,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setBenchEnabled(benchEnabledRef.current);
     onsenEnabledRef.current = entered.onsenEnabled === true;
     setOnsenEnabled(onsenEnabledRef.current);
+    pavilionEnabledRef.current = entered.pavilionEnabled === true;
+    setPavilionEnabled(pavilionEnabledRef.current);
     // Only the server may preserve a rest slot; a live local walk keeps its most recent position.
     engine.restoreVisit(entered.spawn, entered.selfRest, camera,
-      sameAccount && !engine.isLying && !engine.isBenchSeated && !engine.onsenState.sitting, entered.bounds);
+      sameAccount && !engine.isLying && !engine.isBenchSeated && !engine.isPavilionSeated && !engine.onsenState.sitting, entered.bounds);
     rememberVisit(true);
     applyFire(entered.fire);
     return true;
@@ -570,6 +579,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setBed(null);
     setBench({ near: false, seated: false, occupied: 0, capacity: 12, available: false });
     onsenEnabledRef.current = false; setOnsenEnabled(false); setOnsen(EMPTY_ONSEN);
+    pavilionEnabledRef.current = false; setPavilionEnabled(false); setPavilion(EMPTY_PAVILION);
     setRestActionSpot(null);
     fireTimeRef.current = 0;
     fireLogsRef.current = null;
@@ -611,6 +621,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         setBenchEnabled(benchEnabledRef.current);
         onsenEnabledRef.current = entered.onsenEnabled === true;
         setOnsenEnabled(onsenEnabledRef.current);
+        pavilionEnabledRef.current = entered.pavilionEnabled === true;
+        setPavilionEnabled(pavilionEnabledRef.current);
         const initialView = savedView();
         setView(initialView);
         engine = new BeachEngine(canvas, {
@@ -633,6 +645,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             onBenchChange: (state) => setBench(state),
             onOnsenChange: (state) => setOnsen(state),
             onBenchAction: () => benchActionRef.current(),
+            onPavilionChange: (state) => setPavilion(state),
+            onPavilionAction: () => pavilionActionRef.current(),
           },
         });
         engineRef.current = engine;
@@ -837,16 +851,25 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const toggleStargazing = async (spotId = "starlight") => {
     const engine = engineRef.current;
     const isBench = spotId === "fire-benches";
+    const isPavilion = spotId.startsWith("pavilion-");
     const isOnsenSeat = spotId === "onsen-benches", isOnsenFloat = spotId === "onsen-float";
     const isOnsen = isOnsenSeat || isOnsenFloat;
-    const isBed = !isBench && !isOnsen && spotId !== "starlight";
-    const enabled = () => isOnsen ? onsenEnabledRef.current : isBench ? benchEnabledRef.current : isBed ? bedEnabledRef.current : restEnabledRef.current;
+    const isBed = !isBench && !isOnsen && !isPavilion && spotId !== "starlight";
+    const enabled = () => isOnsen ? onsenEnabledRef.current : isBench ? benchEnabledRef.current : isPavilion ? pavilionEnabledRef.current : isBed ? bedEnabledRef.current : restEnabledRef.current;
     if (!engine || !enabled() || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
     const currentOnsen = engine.onsenState;
-    if ((engine.isBenchSeated && !isBench) || (engine.isLying && (isBench || isOnsenSeat))
+    const pavilionSeated = engine.isPavilionSeated === true;
+    if ((engine.isBenchSeated && !isBench) || (pavilionSeated && !isPavilion) || (engine.isLying && (isBench || isOnsenSeat || isPavilion))
       || (currentOnsen.sitting && !isOnsenSeat) || (currentOnsen.floating && !isOnsenFloat)) {
       showToast("다른 자리로 가려면 먼저 일어나 주세요.", { kind: "info" });
       return;
+    }
+    if (isPavilion && !pavilionSeated) {
+      const nearby = engine.getPavilionState();
+      if (!nearby.near || !nearby.available) {
+        showToast(nearby.near ? "가까운 자리가 찼어요. 마루의 다른 쪽으로 가 주세요." : "정자 마루 끝 가까이에서 앉을 수 있어요.", { kind: "info" });
+        return;
+      }
     }
     if (isOnsen && !currentOnsen.sitting && !currentOnsen.floating
       && !(isOnsenSeat ? currentOnsen.canSit : currentOnsen.canFloat)) {
@@ -860,13 +883,13 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         return;
       }
     }
-    const destination = isBench ? engine.getBenchState() : isBed ? engine.getBedState() : stargazing;
-    if (!isOnsen && !engine.isLying && !engine.isBenchSeated && (!destination || destination.occupied >= destination.capacity)) return;
+    const destination = isBench ? engine.getBenchState() : isPavilion ? engine.getPavilionState() : isBed ? engine.getBedState() : stargazing;
+    if (!isOnsen && !engine.isLying && !engine.isBenchSeated && !pavilionSeated && (!destination || destination.occupied >= destination.capacity)) return;
     const operation = ++skyOperationRef.current;
     const visit = visitGenerationRef.current;
     const actor = meRef.current?.id;
     const current = () => aliveRef.current && !blockedRef.current && skyOperationRef.current === operation && engineRef.current === engine && visitGenerationRef.current === visit;
-    const action = engine.isLying || engine.isBenchSeated || currentOnsen.sitting ? "stand" : isBench || isOnsenSeat ? "sit" : "lie";
+    const action = engine.isLying || engine.isBenchSeated || pavilionSeated || currentOnsen.sitting ? "stand" : isBench || isOnsenSeat || isPavilion ? "sit" : "lie";
     setRestActionSpot(spotId);
     engine.select(null);
     setCarePrompt(null);
@@ -914,6 +937,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         if (cause instanceof BeachUnavailable && cause.status === 404) {
           if (isOnsen) { onsenEnabledRef.current = false; setOnsenEnabled(false); }
           else if (isBench) { benchEnabledRef.current = false; setBenchEnabled(false); }
+          else if (isPavilion) { pavilionEnabledRef.current = false; setPavilionEnabled(false); }
           else if (isBed) { bedEnabledRef.current = false; setBedEnabled(false); }
           else { restEnabledRef.current = false; setRestEnabled(false); }
         }
@@ -928,6 +952,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     }
   };
   benchActionRef.current = () => { void toggleStargazing("fire-benches"); };
+  pavilionActionRef.current = () => { const spot = pavilionRef.current.spotId; if (spot) void toggleStargazing(spot); };
 
   /** 모닥불 앞까지 걸어간 뒤, 새 위치를 서버에 올리고(서버가 거리를 확인한다) 장작을 넣는다 */
   const onAddWood = useCallback(async (requestId: string, phase: (p: WoodPhase) => void) => {
@@ -1062,9 +1087,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const onsenPhase = restActionSpot?.startsWith("onsen-") ? skyPhase : null;
   const onsenResting = onsen.sitting || onsen.floating;
   const onsenContextVisible = mapId === "beach" && (onsenEnabled || onsenResting) && (onsen.inWater || onsenResting || Boolean(onsenPhase));
-  const restContextVisible = !bench.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase) || Boolean(activeBed?.near) || stargazing.near);
+  const pavilionPhase = restActionSpot?.startsWith("pavilion-") ? skyPhase : null;
+  const pavilionContextVisible = mapId === "bamboo" && (pavilion.near || pavilion.seated || Boolean(pavilionPhase));
+  const restContextVisible = !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
   const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
-  const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || Boolean(rest) || walking;
+  const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || Boolean(rest) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
 
   return (
@@ -1092,17 +1119,17 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <p>{map.welcome}</p>
       </div>}
 
-      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !onsen.sitting && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
         {lost && <p className={styles.dockNotice} role="status">연결을 다시 이어 보는 중…</p>}
         {!actionsOpen && (skyPhase || woodBusy || powderPhase) && <p className={styles.dockNotice} role="status">잠깐만요, 행동을 마치고 있어요.</p>}
-        {hint && !actionsOpen && !selected && !lost && !lying && !bench.seated && !onsen.sitting && <p className={styles.dockHint}>걷고, 둘러보고, 행동을 골라 함께 쉬어요.</p>}
+        {hint && !actionsOpen && !selected && !lost && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && <p className={styles.dockHint}>{mapId === "bamboo" ? "둘레길을 걷다 정자에 앉아 함께 쉬어요." : "걷고, 둘러보고, 행동을 골라 함께 쉬어요."}</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
           <div className={styles.trayHeader}>
             <div className={styles.trayHeading}>
               <strong>{carePrompt ? "마음을 건넬 사람을 골라요" : selected ? selected.nick + "님에게" : "무엇을 해볼까요?"}</strong>
-              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : bench.seated ? "모닥불 곁에 앉아 쉬는 중" : "옆으로 넘겨 더 골라요"}</small>
+              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : bench.seated ? "모닥불 곁에 앉아 쉬는 중" : pavilion.seated ? "정자에 걸터앉아 쉬는 중" : "옆으로 넘겨 더 골라요"}</small>
             </div>
             {selected && !carePrompt && <button type="button" className={styles.traySmallButton} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }} aria-label="다른 사람 고르기"><IconUsers /></button>}
             <button type="button" className={styles.traySmallButton} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
@@ -1126,6 +1153,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             <span className={styles.contextIcon}><IconSmile /></span>
             <span className={styles.contextCopy}><strong>{benchPhase === "standing" ? "일어나는 중…" : bench.seated ? "통나무에서 일어나기" : benchPhase === "joining" ? "자리 잡는 중…" : !bench.available ? "가까운 자리가 찼어요" : "통나무에 앉기"}</strong><small>{bench.seated ? "모닥불을 바라보며 쉬는 중" : !benchEnabled ? "앉을 자리를 준비하고 있어요" : !bench.available ? "다른 통나무 쪽으로 가 주세요" : "따뜻한 불 곁에서 함께 쉬어요"}</small></span>
             <span className={styles.contextCount} aria-label={`벤치 12석 중 ${bench.occupied}석 사용 중`}>{bench.occupied}/{bench.capacity}</span>
+          </button>}
+          {pavilionContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || (!pavilion.seated && (!pavilionEnabled || !pavilion.available))} aria-pressed={pavilion.seated} aria-keyshortcuts="E" onClick={() => { const spot = pavilion.spotId; if (spot) void toggleStargazing(spot); }}>
+            <span className={styles.contextIcon}><IconSmile /></span>
+            <span className={styles.contextCopy}><strong>{pavilionPhase === "standing" ? "일어나는 중…" : pavilion.seated ? "정자에서 일어나기" : pavilionPhase === "joining" ? "자리 잡는 중…" : !pavilion.available ? "가까운 자리가 찼어요" : "정자에 앉기"}</strong><small>{pavilion.seated ? `${pavilion.name}에 걸터앉아 숲을 바라보는 중` : !pavilionEnabled ? "앉을 자리를 준비하고 있어요" : !pavilion.available ? "마루의 다른 쪽으로 가 주세요" : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`}</small></span>
+            <span className={styles.contextCount} aria-label={`정자 ${pavilion.capacity}석 중 ${pavilion.occupied}석 사용 중`}>{pavilion.occupied}/{pavilion.capacity}</span>
           </button>}
           {restContextVisible && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!lying && (!areaEnabled || skyFull))} onClick={() => void toggleStargazing(areaSpot)}>
             <span className={styles.contextIcon}><IconMoon /></span>

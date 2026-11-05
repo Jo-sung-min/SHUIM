@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
 import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
-import { type Daylight, daylightAt, uyuniDaylightAt } from "./daylight";
+import { type Daylight, bambooDaylightAt, daylightAt, uyuniDaylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
 import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringFloorHeight, hotSpringCeilingHeight } from "./hot-spring";
@@ -22,6 +22,9 @@ import { SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
 import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
+import { BambooWorld } from "./bamboo";
+import { BAMBOO_SKY_FRAGMENT } from "./bamboo-shader";
+import { BAMBOO_PAVILIONS, BAMBOO_PAVILION_COLLIDERS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_SEATS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, TRAIL_WALK_HALF, bambooCeilingHeight, bambooFloorHeight, bambooPavilionForSpot, claimedPavilionSeat, nearbyBambooPavilion, nearestOnTrail, onTrail, resolveTrail, type PavilionSeat } from "./bamboo-trail";
 import type { MapId } from "./maps";
 import { FirePowderPlayback } from "./fire-powder";
 import { captureScenePhoto } from "./photo";
@@ -39,7 +42,16 @@ function claimedRestSlot(state: { pose?: string; spotId?: string | null; slot?: 
   return claimedStargazingSlot(state) ?? claimedBedSlot(state) ?? claimedUyuniHotelBed(state) ?? claimedOnsenFloat(state);
 }
 function claimedSeatSlot(state: { pose?: string; spotId?: string | null; slot?: number | null }) {
-  return claimedFireBenchSlot(state) ?? claimedOnsenSeat(state);
+  return claimedFireBenchSlot(state) ?? claimedOnsenSeat(state) ?? claimedPavilionSeat(state);
+}
+
+/** Which shared rest spots exist on a map; claims for the others are ignored, never drawn at a stray coordinate. */
+function mapSupportsSpot(mapId: MapId, spotId: string | null | undefined): boolean {
+  if (spotId == null) return true;
+  if (mapId === "bamboo") return bambooPavilionForSpot(spotId) !== null;
+  if (bambooPavilionForSpot(spotId)) return false;
+  if (mapId === "uyuni") return spotId === STARGAZING.id || uyuniHotelForSpot(spotId) !== null;
+  return uyuniHotelForSpot(spotId) === null;
 }
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
@@ -47,6 +59,8 @@ export interface SelfState { x: number; z: number; yaw: number; moving: boolean 
 export interface RestState { shelterName: string; seated: boolean }
 export interface BenchState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean }
 export interface OnsenState { inWater: boolean; canSit: boolean; canFloat: boolean; sitting: boolean; floating: boolean; occupiedSeats: number[]; occupiedFloats: number[] }
+/** 대나무숲 정자: 가까운 정자의 좌석 상황. spotId 는 앉아 있는 정자 또는 가장 가까운 정자 */
+export interface PavilionState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean; spotId: string | null; name: string }
 /** 자동으로 걸어간 결과: 도착 · 사용자가 직접 움직여 멈춤 · 길이 막힘 */
 export type AutoWalkResult = "arrived" | "cancelled" | "blocked";
 /** 1인칭(내 눈) · 3인칭(내 캐릭터 뒤 위에서 따라가는 카메라) */
@@ -70,6 +84,8 @@ export interface EngineHandlers {
   onBenchChange?: (state: BenchState) => void;
   onBenchAction?: () => void;
   onOnsenChange?: (state: OnsenState) => void;
+  onPavilionChange?: (state: PavilionState) => void;
+  onPavilionAction?: () => void;
   onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
@@ -310,8 +326,9 @@ export class BeachEngine {
   private sandMat!: THREE.MeshStandardMaterial;
   private photo: THREE.Texture | null = null;
   private assetLoads: Promise<void>[] = [];
-  private cove!: Cove | UyuniWorld;
+  private cove!: Cove | UyuniWorld | BambooWorld;
   private uyuni: UyuniWorld | null = null;
+  private bamboo: BambooWorld | null = null;
   private mapId: MapId;
   private charTex!: THREE.Texture;
   private propTex!: THREE.Texture;
@@ -376,6 +393,8 @@ export class BeachEngine {
   private lastBenchState = "";
   private onsenSeat: (typeof ONSEN_SEATS)[number] | null = null;
   private lastOnsenState = "";
+  private pavilionSeat: PavilionSeat | null = null;
+  private lastPavilionState = "";
 
   private daylight: Daylight;
   private hourOverride: number | null;
@@ -428,6 +447,13 @@ export class BeachEngine {
       wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
       this.uyuni = new UyuniWorld(this.scene, this.skyMat.uniforms, sand, { wood, cotton });
       this.cove = this.uyuni;
+    } else if (this.mapId === "bamboo") {
+      const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
+      wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
+      wood.repeat.set(2, 2);
+      this.bamboo = new BambooWorld(this.scene, { wood }, this.mobile);
+      this.cove = this.bamboo;
+      this.obstacles.push(...BAMBOO_PAVILION_OBSTACLES.map((o) => ({ ...o })));
     } else {
       this.buildGround();
       this.cove = new Cove(this.scene, this.obstacles);
@@ -484,18 +510,21 @@ export class BeachEngine {
         uDeepNight: { value: 0 }, uSkyTop: { value: new THREE.Vector3() }, uSkyHorizon: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() },
         uSun: { value: new THREE.Vector3() }, uSunColor: { value: new THREE.Vector3() },
         uCloudColor: { value: new THREE.Vector3() }, uCloudAmount: { value: 0.45 },
+        uHorizonFog: { value: new THREE.Vector3(0.5, 0.6, 0.4) },
       },
       vertexShader: SKY_VERT,
-      fragmentShader: this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : SKY_FRAGMENT,
+      fragmentShader: this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : this.mapId === "bamboo" ? BAMBOO_SKY_FRAGMENT : SKY_FRAGMENT,
       depthWrite: false,
-      depthTest: false,
+      // The forest canopy covers most of the sky: draw it after the opaque world at the far plane, so covered pixels are rejected early.
+      depthTest: this.mapId === "bamboo",
+      depthFunc: THREE.LessEqualDepth,
       toneMapped: false,
     });
     const skyGeometry = new THREE.BufferGeometry();
     skyGeometry.setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
     skyGeometry.setIndex([0, 1, 2]);
     this.sky = new THREE.Mesh(skyGeometry, this.skyMat);
-    this.sky.renderOrder = -10;
+    this.sky.renderOrder = this.mapId === "bamboo" ? 90 : -10;
     this.sky.frustumCulled = false;
     this.sky.layers.enable(1); // Sky-only camera excludes every hut, cliff and avatar.
     this.scene.add(this.sky);
@@ -682,8 +711,8 @@ export class BeachEngine {
   }
 
   private buildProps() {
-    if (this.uyuni) {
-      buildStargazingZone(this.scene);
+    if (this.mapId !== "beach") {
+      if (!this.bamboo) buildStargazingZone(this.scene);
       this.updateStargazingState();
       return;
     }
@@ -697,7 +726,7 @@ export class BeachEngine {
   }
 
   setFireState(state: FireState) {
-    if (this.uyuni || !state || !Number.isFinite(state.logs)) return;
+    if (this.mapId !== "beach" || !state || !Number.isFinite(state.logs)) return;
     const playback = this.firePowder.sync(state, performance.now());
     if (!playback.accepted) return;
     this.fireState = { ...state, logs: Math.max(0, Math.min(12, state.logs)) };
@@ -727,7 +756,7 @@ export class BeachEngine {
 
   /** 모닥불 앞(돌 둘레 바깥, 장작을 넣을 수 있는 거리 안)까지 알아서 걸어가 불을 바라본다 */
   walkToFire(): Promise<AutoWalkResult> {
-    if (this.uyuni) return Promise.resolve("cancelled");
+    if (this.mapId !== "beach") return Promise.resolve("cancelled");
     if (this.disposed || this.skyRest || this.fixedSeat) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     const stand = this.camera.aspect < 0.75 ? 4.2 : 3.2;
@@ -738,7 +767,7 @@ export class BeachEngine {
 
   /** Approach the shared circle. Claiming a mat still requires the server's response. */
   walkToStargazing(): Promise<AutoWalkResult> {
-    if (this.disposed || this.skyRest || this.fixedSeat) return Promise.resolve("cancelled");
+    if (this.disposed || this.bamboo || this.skyRest || this.fixedSeat) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     const target = stargazingApproach(this.self.x, this.self.z);
     if (this.uyuni) {
@@ -752,6 +781,7 @@ export class BeachEngine {
   }
 
   walkToBed(spotId: string): Promise<AutoWalkResult> {
+    if (this.bamboo) return Promise.resolve("cancelled");
     if (this.uyuni) {
       const hotel = uyuniHotelForSpot(spotId);
       if (this.disposed || this.skyRest || this.fixedSeat || !hotel) return Promise.resolve("cancelled");
@@ -783,14 +813,15 @@ export class BeachEngine {
 
   get isLying() { return Boolean(this.skyRest); }
   get isBenchSeated() { return Boolean(this.benchSeat); }
+  get isPavilionSeated() { return Boolean(this.pavilionSeat); }
   get isBedLying() { return Boolean(this.skyRest?.spotId.startsWith("hut-") || uyuniHotelForSpot(this.skyRest?.spotId)); }
-  private get fixedSeat() { return this.onsenSeat ?? this.benchSeat; }
+  private get fixedSeat() { return this.onsenSeat ?? this.benchSeat ?? this.pavilionSeat ?? null; }
   private floatingPose(slot: StargazingSlot | null): StargazingSlot | null {
     return slot?.spotId === "onsen-float" ? { ...slot, avatarY: onsenFloatingY(this.time, slot.slot) } : slot;
   }
 
   get onsenState(): OnsenState {
-    if (this.uyuni) return { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
+    if (this.mapId !== "beach") return { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
     const seats = new Set<number>(), floats = new Set<number>();
     for (const player of this.players.values()) {
       const seat = claimedOnsenSeat(player.data), floating = claimedOnsenFloat(player.data);
@@ -818,7 +849,7 @@ export class BeachEngine {
   }
 
   getBenchState(): BenchState {
-    if (this.uyuni) return { near: false, seated: false, occupied: 0, capacity: 0, available: false };
+    if (this.mapId !== "beach") return { near: false, seated: false, occupied: 0, capacity: 0, available: false };
     const used = new Set<number>();
     for (const player of this.players.values()) {
       const seat = claimedFireBenchSlot(player.data);
@@ -838,7 +869,34 @@ export class BeachEngine {
     this.handlers.onBenchChange?.(state);
   }
 
+  /** 가까운 정자(또는 앉아 있는 정자)의 좌석 상황. 좌석은 서버가 배정하므로 여기서는 보이는 사람들로만 센다 */
+  getPavilionState(): PavilionState {
+    const empty: PavilionState = { near: false, seated: false, occupied: 0, capacity: PAVILION_SEAT_CAPACITY, available: false, spotId: null, name: "" };
+    if (!this.bamboo) return empty;
+    const pavilion = this.pavilionSeat ? bambooPavilionForSpot(this.pavilionSeat.spotId) : nearbyBambooPavilion(this.self.x, this.self.z);
+    if (!pavilion) return empty;
+    const used = new Set<number>();
+    for (const player of this.players.values()) {
+      const seat = claimedPavilionSeat(player.data);
+      if (seat?.spotId === pavilion.spotId) used.add(seat.slot);
+    }
+    if (this.pavilionSeat?.spotId === pavilion.spotId) used.add(this.pavilionSeat.slot);
+    const reachable = BAMBOO_PAVILION_SEATS.filter((seat) => seat.spotId === pavilion.spotId && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= PAVILION_REACH);
+    return { near: !this.skyRest && (reachable.length > 0 || Boolean(this.pavilionSeat)), seated: Boolean(this.pavilionSeat), occupied: used.size,
+      capacity: PAVILION_SEAT_CAPACITY, available: reachable.some((seat) => !used.has(seat.slot)), spotId: pavilion.spotId, name: pavilion.name };
+  }
+
+  private updatePavilionState() {
+    if (!this.bamboo) return;
+    const state = this.getPavilionState();
+    const key = `${state.spotId}:${state.near}:${state.seated}:${state.occupied}:${state.available}`;
+    if (key === this.lastPavilionState) return;
+    this.lastPavilionState = key;
+    this.handlers.onPavilionChange?.(state);
+  }
+
   getBedState(): BedState | null {
+    if (this.bamboo) return null;
     if (this.uyuni) {
       const hotel = uyuniHotelForSpot(this.skyRest?.spotId) ?? nearbyUyuniHotel(this.self.x, this.self.z);
       if (!hotel) return null;
@@ -876,11 +934,11 @@ export class BeachEngine {
   /** Only a server-confirmed claim changes posture. Repeated ticks preserve camera dragging. */
   applyRest(state: RestPresence) {
     if (this.disposed || !state) return;
-    if (this.uyuni && state.pose !== "standing" && state.spotId !== STARGAZING.id && !claimedUyuniHotelBed(state)) return;
-    if (!this.uyuni && uyuniHotelForSpot(state.spotId)) return;
+    if (state.pose !== "standing" && !mapSupportsSpot(this.mapId, state.spotId)) return;
     const slot = claimedRestSlot(state);
     const bench = claimedFireBenchSlot(state);
-    const onsen = claimedOnsenSeat(state), seat = onsen ?? bench;
+    const pavilion = claimedPavilionSeat(state);
+    const onsen = claimedOnsenSeat(state), seat = onsen ?? bench ?? pavilion;
     if (seat) {
       if (this.fixedSeat?.spotId === seat.spotId && this.fixedSeat.slot === seat.slot) return;
       if (!this.skyRest && !this.fixedSeat) this.beforeSkyRest = { pitch: this.self.pitch };
@@ -889,6 +947,7 @@ export class BeachEngine {
       this.skyLook = null;
       this.benchSeat = bench;
       this.onsenSeat = onsen;
+      this.pavilionSeat = pavilion;
       this.self.x = seat.x; this.self.z = seat.z;
       this.self.yaw = seat.yaw; this.self.pitch = -0.08;
       this.eyeHeight = seat.avatarY + 0.78;
@@ -900,6 +959,7 @@ export class BeachEngine {
       if (this.restSeat) this.standUp();
       this.benchSeat = null;
       this.onsenSeat = null;
+      this.pavilionSeat = null;
       this.skyRest = slot;
       this.skyLook = { yaw: 0, pitch: 0 };
       this.setView("third");
@@ -913,6 +973,7 @@ export class BeachEngine {
       this.skyLook = null;
       this.benchSeat = null;
       this.onsenSeat = null;
+      this.pavilionSeat = null;
       this.self.x = state.x; this.self.z = state.z; this.self.yaw = state.yaw;
       this.self.pitch = THREE.MathUtils.clamp(this.beforeSkyRest?.pitch ?? 0.07, -0.55, 0.5);
       this.beforeSkyRest = null;
@@ -929,6 +990,15 @@ export class BeachEngine {
     this.updateBedState();
     this.updateBenchState();
     this.updateOnsenState();
+    this.updatePavilionState();
+    if (this.bamboo) {
+      // The forest has no starlight circle; never offer the shared mats there.
+      if (this.lastStargazingState !== "forest") {
+        this.lastStargazingState = "forest";
+        this.handlers.onStargazingChange?.({ near: false, lying: false, occupied: 0, capacity: STARGAZING.capacity });
+      }
+      return;
+    }
     const slots = new Set<number>();
     for (const player of this.players.values()) {
       const slot = claimedStargazingSlot(player.data);
@@ -1027,7 +1097,7 @@ export class BeachEngine {
   }
 
   private mapDaylight(): Daylight {
-    return (this.mapId === "uyuni" ? uyuniDaylightAt : daylightAt)(this.hour());
+    return (this.mapId === "uyuni" ? uyuniDaylightAt : this.mapId === "bamboo" ? bambooDaylightAt : daylightAt)(this.hour());
   }
 
   get daylightNow() {
@@ -1052,6 +1122,7 @@ export class BeachEngine {
     u.uCloudAmount.value = d.cloudAmount;
     u.uStars.value = d.stars;
     u.uLantern.value = d.lanterns;
+    (u.uHorizonFog.value as THREE.Vector3).set(...d.fog);
     this.lanterns?.setAmount(d.lanterns);
 
     if (this.seaMat) {
@@ -1072,8 +1143,9 @@ export class BeachEngine {
 
     const fog = this.scene.fog as THREE.Fog;
     fog.color.setRGB(...d.fog, THREE.SRGBColorSpace);
-    fog.near = 70;
-    fog.far = 270;
+    // The forest closes in: its own near/far keep the far stalks and world edge inside the haze.
+    fog.near = this.bamboo ? d.fogNear : 70;
+    fog.far = this.bamboo ? d.fogFar : 270;
     this.renderer.setClearColor(fog.color, 1);
 
     for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
@@ -1156,6 +1228,12 @@ export class BeachEngine {
       e.preventDefault();
       return;
     }
+    if (this.bamboo && ((k === "e" && (this.pavilionSeat || this.getPavilionState().near)) || (k === "Escape" && this.pavilionSeat))) {
+      this.keys.delete(k);
+      if (e.type === "keydown" && !e.repeat) this.handlers.onPavilionAction?.();
+      e.preventDefault();
+      return;
+    }
     if (k === "Escape" && this.restSeat) {
       if (e.type === "keydown") this.standUp();
       return;
@@ -1233,7 +1311,7 @@ export class BeachEngine {
     if (!stamp) return; // An old room response must not rewind people or remove newer arrivals.
     const seen = new Set<string>();
     for (const incoming of list) {
-      const wrongMap = this.uyuni ? incoming.spotId !== STARGAZING.id && !claimedUyuniHotelBed(incoming) : Boolean(uyuniHotelForSpot(incoming.spotId));
+      const wrongMap = incoming.spotId != null && !mapSupportsSpot(this.mapId, incoming.spotId);
       const p: RemotePlayer = wrongMap
         ? { ...incoming, pose: "standing", spotId: null, slot: null } : incoming;
       seen.add(p.pid);
@@ -1495,7 +1573,7 @@ export class BeachEngine {
     this.self.yaw = yaw(finite(preserveLocal ? this.self.yaw : spawn.yaw, 0));
     this.self.pitch = clamp(finite(this.beforeSkyRest?.pitch, 0.07), -0.55, 0.5);
     this.self.moving = false;
-    this.skyRest = null; this.skyLook = null; this.benchSeat = null; this.onsenSeat = null;
+    this.skyRest = null; this.skyLook = null; this.benchSeat = null; this.onsenSeat = null; this.pavilionSeat = null;
     this.restSeat = null; this.returnFromSeat = null; this.beforeSkyRest = null;
     this.eyeHeight = this.deckHeight(this.self.x, this.self.z) + EYE;
     this.keys.clear(); this.move = { x: 0, y: 0 }; this.look.active = false;
@@ -1584,6 +1662,7 @@ export class BeachEngine {
     this.quality = level;
     this.renderer.shadowMap.enabled = this.mapId === "beach" && level === "high";
     this.uyuni?.setQuality(level === "low");
+    this.bamboo?.setQuality(level === "low");
     this.resize();
     this.handlers.onQuality?.(level);
   }
@@ -1811,6 +1890,11 @@ export class BeachEngine {
     const baseY = (this.fixedSeat?.avatarY ?? 0.52) - 0.52;
     const wanted = new THREE.Vector3(this.self.x - direction.x * reach,
       baseY + 2.5 - this.self.pitch * 1.4, this.self.z - direction.z * reach);
+    if (this.bamboo) {
+      // Pavilion seats face outward, so the orbit sits inside the roof: stay below the rafters.
+      const ceiling = bambooCeilingHeight(wanted.x, wanted.z);
+      if (ceiling !== null) wanted.y = Math.min(wanted.y, ceiling - 0.2);
+    }
     if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
     else this.followCam.lerp(wanted, Math.min(1, dt * 10));
     this.camera.position.copy(this.followCam);
@@ -1824,7 +1908,7 @@ export class BeachEngine {
     const elev = Math.max(0.08, Math.min(1.0, 0.4 - this.self.pitch * 0.8));
     const f = this.facing(this.orbitYaw);
     const reach = this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
-    const ceiling = this.uyuni ? uyuniHotelCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
+    const ceiling = this.uyuni ? uyuniHotelCeilingHeight(x, z) : this.bamboo ? bambooCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
     const cosE = Math.cos(elev), sinE = Math.sin(elev);
     const wanted = new THREE.Vector3();
     for (let k = 1; k >= 0.06; k -= 0.06) {
@@ -1859,6 +1943,13 @@ export class BeachEngine {
   private cameraFree(p: THREE.Vector3) {
     const b = this.bounds;
     if (p.x < b.minX + 0.3 || p.x > b.maxX - 0.3 || p.z < b.minZ + 0.3 || p.z > b.maxZ - 0.3) return false;
+    if (this.bamboo) {
+      // Keep the orbit out of the stalks: on the path, a yard, or just beyond the fence.
+      if (!onTrail(p.x, p.z) && nearestOnTrail(p.x, p.z).distance > TRAIL_WALK_HALF + 0.9) return false;
+      if (p.y < PAVILION_POST_HEIGHT + 0.6) for (const o of this.obstacles) if (Math.hypot(p.x - o.x, p.z - o.z) < o.r + 0.15) return false;
+      const ceiling = bambooCeilingHeight(p.x, p.z);
+      return (ceiling === null || p.y < ceiling - 0.18) && p.y >= bambooFloorHeight(p.x, p.z) + 0.2;
+    }
     if (this.uyuni) {
       // Furniture and low terrace rails do not block a camera above their tops.
       if (p.y < 1.65) for (const wall of UYUNI_HOTEL_COLLIDERS) if (p.x > wall.minX - 0.2 && p.x < wall.maxX + 0.2 && p.z > wall.minZ - 0.2 && p.z < wall.maxZ + 0.2) return false;
@@ -1899,7 +1990,7 @@ export class BeachEngine {
       n.sprite.rotation.set(0, Math.atan2(cam.x - seat.x, cam.z - seat.z), 0, "YXZ");
       shapeSeatedAvatar(n.sprite, { yaw: seat.yaw, avatarY: seat.avatarY - baseY });
       n.shadow.visible = !this.onsenSeat;
-      n.shadow.position.set(seat.x, baseY + 0.015, seat.z);
+      n.shadow.position.set(seat.x, (this.pavilionSeat ? this.deckHeight(seat.x, seat.z) : baseY) + 0.015, seat.z);
       this.setFrameOn(n.tex, viewFor(seat.yaw, seat.x, seat.z, cam), CHAR_ANIM.idle.from, this.skin);
       return;
     }
@@ -1928,12 +2019,18 @@ export class BeachEngine {
       const min = o.r + 0.35;
       if (d < min && d > 1e-4) { x = o.x + (dx / d) * min; z = o.z + (dz / d) * min; }
     }
+    if (this.bamboo) {
+      // Posts and the back railing, then the fenced corridor: the walker never enters the stalks.
+      const railed = resolveWalls(x, z, BAMBOO_PAVILION_COLLIDERS);
+      return resolveTrail(railed[0], railed[1]);
+    }
     const sheltered = resolveWalls(x, z, SHELTER_COLLIDERS);
     return resolveWalls(sheltered[0], sheltered[1], HOT_SPRING_COLLIDERS);
   }
 
   private deckHeight(x: number, z: number) {
     if (this.uyuni) return uyuniHotelFloorHeight(x, z);
+    if (this.bamboo) return bambooFloorHeight(x, z);
     const ledge = onsenLedgeHeight(x, z);
     if (ledge !== null) return ledge;
     const spring = hotSpringFloorHeight(x, z);
@@ -1942,6 +2039,7 @@ export class BeachEngine {
   }
 
   private nearbySeat() {
+    if (this.bamboo) return null;
     if (this.uyuni) {
       const hotel = nearbyUyuniHotel(this.self.x, this.self.z);
       if (!hotel) return null;
@@ -2036,7 +2134,9 @@ export class BeachEngine {
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = !fixed && p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
-      if (!resting) p.sprite.position.set(p.cur.x, onsenSeated ? HOT_SPRING.floorY : deck + hop, p.cur.z);
+      // Pavilion seats are on the deck edge with legs over the side: the folded sprite stands on the ground below.
+      const pavilionSeated = seated !== null && bambooPavilionForSpot(seated.spotId) !== null;
+      if (!resting) p.sprite.position.set(p.cur.x, onsenSeated ? HOT_SPRING.floorY : pavilionSeated ? 0 : deck + hop, p.cur.z);
       const avatar = this.syncAvatar(p, p.data.skin, p.cur.x, p.cur.z);
       p.sprite.visible = !avatar;
       this.pixelDepth?.update(p.sprite, p.data.skin, Boolean(resting) && p.sprite.visible);
@@ -2072,6 +2172,8 @@ export class BeachEngine {
     this.skyMat.uniforms.uTime.value = this.time;
     if (this.uyuni) {
       this.uyuni.update(this.time, this.camera, this.self);
+    } else if (this.bamboo) {
+      this.bamboo.update(this.time, this.camera, this.self);
     } else {
       this.seaMat.uniforms.uTime.value = this.time;
       this.fire?.setPowder(this.firePowder.sample(performance.now()));
@@ -2130,6 +2232,8 @@ export class BeachEngine {
     this.fireworks = null;
     this.fire?.dispose();
     this.fire = null;
+    this.bamboo?.dispose();
+    this.bamboo = null;
     const textures = new Set<THREE.Texture>();
     for (const texture of Object.values(this.fxTex ?? {})) textures.add(texture);
     const materials = new Set<THREE.Material>();

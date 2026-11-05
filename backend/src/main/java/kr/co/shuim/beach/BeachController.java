@@ -142,8 +142,9 @@ public class BeachController {
         out.put("mapId", map.id());
         out.put("community", Map.of("id", circle.id(), "slug", circle.slug(), "name", circle.name()));
         out.put("capacity", circle.spaceCapacity());
-        out.put("restEnabled", true);
-        out.put("bedEnabled", true);
+        out.put("restEnabled", map.hasStarlight());
+        out.put("bedEnabled", map.hasBeds());
+        out.put("pavilionEnabled", map.hasPavilions());
         out.put("benchEnabled", map.hasBeachFacilities());
         out.put("onsenEnabled", map.hasBeachFacilities());
         out.put("fireEnabled", map.hasBeachFacilities());

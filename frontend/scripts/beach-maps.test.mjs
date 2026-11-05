@@ -139,10 +139,10 @@ test("reconnection keeps Uyuni and a response from a departed visit only release
     const engine = { restoreVisit() {}, select() {}, getContinuityView: () => ({ view: "first", yaw: 0, pitch: 0.07, orbitYaw: 0, restSpot: null }),
       isLying: false, isBenchSeated: false, onsenState: { sitting: false } };
     const ctx = { communityId: "ours", mapId: "uyuni", enterBeach: (...args) => { requests.push(args); return pending.promise; }, leaveBeach: ticket => left.push(ticket) };
-    for (const name of ["aliveRef", "engineRef", "visitGenerationRef", "requestEpochRef", "resumeRecordRef", "sequenceRef", "blockedRef", "meRef", "pendingCareRef", "careBusyRef", "ticketRef", "lightingRef", "lightingBusyRef", "fireEnabledRef", "restEnabledRef", "bedEnabledRef", "benchEnabledRef", "onsenEnabledRef"]) ctx[name] = { current: null };
+    for (const name of ["aliveRef", "engineRef", "visitGenerationRef", "requestEpochRef", "resumeRecordRef", "sequenceRef", "blockedRef", "meRef", "pendingCareRef", "careBusyRef", "ticketRef", "lightingRef", "lightingBusyRef", "fireEnabledRef", "restEnabledRef", "bedEnabledRef", "benchEnabledRef", "onsenEnabledRef", "pavilionEnabledRef"]) ctx[name] = { current: null };
     ctx.aliveRef.current = true; ctx.engineRef.current = engine; ctx.visitGenerationRef.current = 4;
     ctx.requestEpochRef.current = 8; ctx.sequenceRef.current = 0;
-    for (const name of ["setCareBusy", "resetFireworks", "setFireworksControl", "applyFireworks", "setLightingBusy", "setLightingOpen", "setLightingControl", "setLighting", "applyLighting", "adoptCharacter", "setCareCapabilities", "setCount", "setCapacity", "setCommunity", "setFireEnabled", "setRestEnabled", "setBedEnabled", "setBenchEnabled", "setOnsenEnabled", "applyFire", "rememberVisit"]) ctx[name] = () => {};
+    for (const name of ["setCareBusy", "resetFireworks", "setFireworksControl", "applyFireworks", "setLightingBusy", "setLightingOpen", "setLightingControl", "setLighting", "applyLighting", "adoptCharacter", "setCareCapabilities", "setCount", "setCapacity", "setCommunity", "setFireEnabled", "setRestEnabled", "setBedEnabled", "setBenchEnabled", "setOnsenEnabled", "setPavilionEnabled", "applyFire", "rememberVisit"]) ctx[name] = () => {};
     vm.runInNewContext(compile(`globalThis.run = ${reenter.arguments[0].getText(sceneAst)};`), ctx);
     const result = ctx.run(engine, 4, 8, new AbortController().signal);
     if (depart) ctx.visitGenerationRef.current++;
@@ -168,7 +168,7 @@ function hotelRestHarness({ enabled = true, confirm, sync } = {}) {
     resumeForAction: async () => {}, haptic() {}, showToast: text => notices.push(text),
     scheduleTick: () => calls.push(["poll"]), stopWithError: error => { throw error; },
   };
-  for (const name of ["onsenEnabledRef", "benchEnabledRef", "restEnabledRef", "skyBusyRef", "woodBusyRef", "powderBusyRef", "blockedRef", "skyOperationRef", "visitGenerationRef", "aliveRef", "restMutationRef", "inFlightRef", "ticketRef", "meRef", "bedEnabledRef"]) ctx[name] = { current: null };
+  for (const name of ["onsenEnabledRef", "benchEnabledRef", "restEnabledRef", "pavilionEnabledRef", "skyBusyRef", "woodBusyRef", "powderBusyRef", "blockedRef", "skyOperationRef", "visitGenerationRef", "aliveRef", "restMutationRef", "inFlightRef", "ticketRef", "meRef", "bedEnabledRef"]) ctx[name] = { current: null };
   ctx.aliveRef.current = true; ctx.bedEnabledRef.current = enabled;
   ctx.skyOperationRef.current = 0; ctx.visitGenerationRef.current = 4;
   ctx.meRef.current = { id: "me" }; ctx.ticketRef.current = "uyuni-visit";
@@ -179,7 +179,7 @@ function hotelRestHarness({ enabled = true, confirm, sync } = {}) {
     return action === "stand" ? { pose: "standing", spotId: null, slot: null, x: -12, z: 22, yaw: 0 }
       : { pose: "lying", spotId, slot: 1, x: -10.5, z: 24.5, yaw: Math.PI };
   };
-  for (const name of ["setRestActionSpot", "setCarePrompt", "setSkyPhase", "setOnsenEnabled", "setBenchEnabled", "setBedEnabled", "setRestEnabled"]) ctx[name] = () => {};
+  for (const name of ["setRestActionSpot", "setCarePrompt", "setSkyPhase", "setOnsenEnabled", "setBenchEnabled", "setBedEnabled", "setRestEnabled", "setPavilionEnabled"]) ctx[name] = () => {};
   vm.runInNewContext(compile(`globalThis.run = ${toggleRest.getText(sceneAst)};`), ctx);
   return { ctx, engine, calls, applied, notices, run: ctx.run };
 }

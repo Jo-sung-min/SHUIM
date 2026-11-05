@@ -115,7 +115,7 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "resumed", "selfRest", "sequence", "communityId", "mapId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "fireEnabled", "serverTime", "restEnabled", "bedEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "fireworksControl", "fireworks", "fireworksCooldownUntil"), out.keySet());
+        assertEquals(Set.of("ticket", "resumed", "selfRest", "sequence", "communityId", "mapId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "fireEnabled", "serverTime", "restEnabled", "bedEnabled", "pavilionEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "fireworksControl", "fireworks", "fireworksCooldownUntil"), out.keySet());
         assertEquals("beach", out.get("mapId"));
         assertEquals(true, out.get("fireEnabled"));
         assertEquals(true, out.get("restEnabled"));

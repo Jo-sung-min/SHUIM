@@ -77,6 +77,44 @@ class BeachMapControllerTest {
             .andExpect(jsonPath("$.count").value(1));
     }
 
+    @Test void bambooEntryAdvertisesPavilionsInsteadOfStarlightBedsOrBeachFacilities() throws Exception {
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\",\"mapId\":\"bamboo\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("bamboo"))
+            .andExpect(jsonPath("$.count").value(1)).andExpect(jsonPath("$.capacity").value(100))
+            .andExpect(jsonPath("$.restEnabled").value(false)).andExpect(jsonPath("$.bedEnabled").value(false))
+            .andExpect(jsonPath("$.pavilionEnabled").value(true))
+            .andExpect(jsonPath("$.benchEnabled").value(false)).andExpect(jsonPath("$.onsenEnabled").value(false))
+            .andExpect(jsonPath("$.fireEnabled").value(false)).andExpect(jsonPath("$.fire.logs").value(0))
+            .andExpect(jsonPath("$.bounds.minZ").value(-4)).andExpect(jsonPath("$.bounds.maxZ").value(55))
+            .andExpect(jsonPath("$.bounds.minX").value(-22)).andExpect(jsonPath("$.bounds.maxX").value(22));
+        mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "bamboo"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("bamboo")).andExpect(jsonPath("$.count").value(1));
+        mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "uyuni"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\",\"mapId\":\"uyuni\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.restEnabled").value(true)).andExpect(jsonPath("$.bedEnabled").value(true))
+            .andExpect(jsonPath("$.pavilionEnabled").value(false));
+        verifyNoInteractions(fire);
+    }
+
+    @Test void pavilionRestApiUsesServerSeatsAndRejectsClaimsAwayFromTheDeck() throws Exception {
+        String ticket = (String) controller.enter(new BeachController.EnterBody("room", null, "bamboo"), request, response).get("ticket");
+        service.tick(ticket, 1, 40, .75, false, null, null);
+        String sit = "{\"ticket\":\"" + ticket + "\",\"action\":\"sit\",\"spotId\":\"pavilion-moon\",\"slot\":4,\"x\":0}";
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON).content(sit)).andExpect(status().isBadRequest());
+        service.tick(ticket, 2.5, 46.6, .75, false, null, null);
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON).content(sit))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("sitting"))
+            .andExpect(jsonPath("$.spotId").value("pavilion-moon")).andExpect(jsonPath("$.slot").value(0))
+            .andExpect(jsonPath("$.x").value(2.7)).andExpect(jsonPath("$.z").value(46.92))
+            .andExpect(jsonPath("$.yaw").value(Math.PI));
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + ticket + "\",\"action\":\"stand\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("standing"))
+            .andExpect(jsonPath("$.x").value(2.5)).andExpect(jsonPath("$.z").value(46.6));
+        verifyNoInteractions(fire);
+    }
+
     @Test void unsupportedMapNamesAndJsonTypesAreRejectedInsteadOfFallingBack() throws Exception {
         for (String invalid : List.of("\"\"", "\"UYUNI\"", "\"uyuni \"", "\"other\"", "7", "true", "{}", "[]"))
             mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)

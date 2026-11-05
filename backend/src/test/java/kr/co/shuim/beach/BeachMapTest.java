@@ -172,6 +172,32 @@ class BeachMapTest {
         assertEquals(1, service.count("room")); assertEquals(0, service.count("room", "uyuni"));
     }
 
+    @Test void bambooTrailIsItsOwnRoomWithPavilionSeatsAndNoOtherFacilities() {
+        var forest = enter("bamboo", "walker");
+        var coast = enter("beach", "walker");
+        assertTrue(forest.z() >= 2.8 && forest.z() < 4, "The trailhead reuses the shared arrival point.");
+        assertEquals("bamboo", service.requireVisit(forest.ticket(), "walker").mapId());
+        assertEquals(1, service.count("room", "bamboo")); assertEquals(1, service.count("room", "beach"));
+        service.tick(forest.ticket(), 0, -40, .5, true, null, null);
+        assertEquals(-4, forest.z(), "the forest only has a little room behind its entrance");
+        assertEquals(1, tick(coast).count());
+        assertTrue(tick(forest).players().isEmpty(), "the same member on the beach is not in the forest");
+        var empty = new BeachFireService.FireView(0, 12, 0, "amber", null, clock.get(), null, null, 0, false, null);
+        assertEquals(empty, tick(forest).fire());
+        for (String spot : List.of("starlight", "hut-pine", "fire-benches", "onsen-benches", "hotel-dawn"))
+            assertEquals(400, assertThrows(ApiException.class, () -> service.rest(forest.ticket(), "lie", spot)).status(), spot);
+        service.tick(forest.ticket(), 15.78 - .3, 24.3 + .2, 0, false, null, null);
+        assertEquals(400, assertThrows(ApiException.class, () -> service.rest(forest.ticket(), "sit", "pavilion-wind")).status(), "mirrored x is far from the west pavilion");
+        service.tick(forest.ticket(), -15.78 + .3, 24.3 + .2, 0, false, null, null);
+        var seated = service.rest(forest.ticket(), "sit", "pavilion-wind");
+        assertEquals(new BeachRoom.RestPresence("sitting", "pavilion-wind", 0, -15.78, 24.3, -Math.PI / 2), seated);
+        assertEquals(seated, service.tick(forest.ticket(), 0, 0, 0, true, null, null).selfRest(), "ticks cannot move a seated visitor");
+        assertEquals(400, assertThrows(ApiException.class, () -> service.rest(coast.ticket(), "sit", "pavilion-wind")).status(), "pavilions are not on the beach");
+        String id = UUID.randomUUID().toString();
+        assertEquals(400, assertThrows(ApiException.class, () -> service.addWood(forest.ticket(), "walker", id)).status());
+        verify(fire, never()).addWood(anyString(), anyString(), anyString());
+    }
+
     @Test void absentMapUsesTheLegacyBeachAndUnsupportedNamesCannotCreateAliases() {
         service.enter("room", "legacy", "기존", Set.of());
         enter("beach", "explicit");

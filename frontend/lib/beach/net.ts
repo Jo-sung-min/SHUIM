@@ -29,6 +29,8 @@ export interface EnterResponse {
   bedEnabled?: boolean;
   benchEnabled?: boolean;
   onsenEnabled?: boolean;
+  /** Bamboo-trail pavilions: shared edge seats claimed through the rest API. */
+  pavilionEnabled?: boolean;
   careCapabilities?: CareCapabilities;
   lighting?: RoomLighting | null;
   lightingControl?: boolean;
@@ -249,7 +251,7 @@ function acceptsMap(actual: unknown, requested: MapId): boolean {
 }
 
 function requireMap(mapId: MapId): void {
-  if (mapId !== "beach" && mapId !== "uyuni") throw new BeachUnavailable("다시 쉴 곳을 골라 주세요.", 400);
+  if (mapId !== "beach" && mapId !== "uyuni" && mapId !== "bamboo") throw new BeachUnavailable("다시 쉴 곳을 골라 주세요.", 400);
 }
 
 export async function enterBeach(communityId: string, character?: BeachCharacter, mapId: MapId = "beach",
@@ -270,6 +272,7 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
     bedEnabled: response.bedEnabled === true, benchEnabled: mapId === "beach" && response.benchEnabled === true,
     careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
     lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: mapId === "beach" && response.onsenEnabled === true,
+    pavilionEnabled: mapId === "bamboo" && response.pavilionEnabled === true,
     fireworksControl: response.fireworksControl === true && fireworks.supported,
     fireworks: fireworks.fireworks, fireworksCooldownUntil: fireworks.fireworksCooldownUntil };
 }
@@ -331,7 +334,10 @@ function validRestPresence(value: unknown): value is RestPresence {
     const z = sitting ? 45 + Math.sin(angle) * 3.55 : 43.3;
     return Math.abs(state.x - x) <= 0.02 && Math.abs(state.z - z) <= 0.02 && Math.abs(state.yaw) < 1e-6;
   }
-  if (state.pose === "sitting") return state.spotId === "fire-benches" && state.slot! < 12;
+  if (state.pose === "sitting") {
+    return (state.spotId === "fire-benches" && state.slot! < 12)
+      || (["pavilion-wind", "pavilion-moon", "pavilion-pine", "pavilion-step"].includes(state.spotId ?? "") && state.slot! < 6);
+  }
   if (state.spotId === "hotel-dawn" || state.spotId === "hotel-dusk") return state.pose === "lying" && state.slot! < 2;
   return state.pose === "lying" && (state.spotId === "starlight" ? state.slot! < 8
     : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3);
