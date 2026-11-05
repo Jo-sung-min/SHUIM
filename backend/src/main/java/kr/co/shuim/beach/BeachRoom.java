@@ -258,6 +258,8 @@ public class BeachRoom {
 
     public static final int FIREWORK_DURATION_MS = 12_000;
     public static final long FIREWORK_COOLDOWN_MS = 15_000;
+    private static final Set<String> FIREWORK_VARIANTS = Set.of("festival", "songi", "love", "bloom", "saturn", "willow", "stardust");
+    private static final Set<String> UYUNI_FIREWORK_VARIANTS = Set.of("bloom", "saturn", "willow", "stardust");
     private static final long FIREWORK_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000L;
     public record FireworkEvent(String id, int seed, long startedAt, int durationMs, String variant) {}
     public record FireworksState(List<FireworkEvent> events, long cooldownUntil, long serverTime) {}
@@ -265,6 +267,39 @@ public class BeachRoom {
     private final LinkedHashMap<UUID, FireworkEvent> fireworkRequests = new LinkedHashMap<>();
     private FireworkEvent activeFirework;
     private long fireworksCooldownUntil;
+    private final BeachUyuniMoments uyuniMoments = new BeachUyuniMoments();
+
+    /** The actor and room are rechecked under the same lock used by rest/leave. */
+    synchronized BeachUyuniMoments.Launch launchUyuniMoment(String ticket, String userId, String requestId,
+            String kind, String letter, String color, String wish, Set<String> excluded) {
+        long now = clock.getAsLong();
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        if (map != BeachMap.UYUNI) throw ApiException.badRequest("반짝이 글자와 소원 풍등은 우유니에서 함께 띄울 수 있어요.");
+        synchronized (me) {
+            if (me.suspended || me.restSlot != null) throw new ApiException(409, "일어난 뒤에 함께 띄워 주세요.");
+            me.excluded = excluded == null ? Set.of() : Set.copyOf(excluded);
+            uyuniMoments.refreshExclusions(userId, me.excluded);
+            return uyuniMoments.launch(me, requestId, kind, letter, color, wish, now);
+        }
+    }
+
+    synchronized BeachUyuniMoments.State uyuniMoments(String ticket) {
+        long now = clock.getAsLong();
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        return uyuniMomentsFor(me);
+    }
+
+    private synchronized BeachUyuniMoments.State uyuniMomentsFor(Presence me) {
+        long now = clock.getAsLong();
+        if (map != BeachMap.UYUNI) return new BeachUyuniMoments.State(List.of(), BeachUyuniMoments.NO_COOLDOWNS, now);
+        // Scan current sender exclusions once; old events also retain their launch-time exclusions after departure.
+        Set<String> blockedSenders = byTicket.values().stream().filter(p -> p.excluded.contains(me.userId))
+            .map(Presence::userId).collect(java.util.stream.Collectors.toSet());
+        return uyuniMoments.snapshot(me.userId, me.excluded, blockedSenders, now);
+    }
 
     public synchronized FireworksState fireworks() {
         long now = clock.getAsLong();
@@ -288,8 +323,11 @@ public class BeachRoom {
             throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
         }
         String selected = variant == null ? "festival" : variant;
-        if (!Set.of("festival", "songi", "love").contains(selected)) {
+        if (!FIREWORK_VARIANTS.contains(selected)) {
             throw ApiException.badRequest("불꽃놀이 종류를 다시 골라 주세요.");
+        }
+        if (map != BeachMap.UYUNI && UYUNI_FIREWORK_VARIANTS.contains(selected)) {
+            throw ApiException.badRequest("이 불꽃놀이는 우유니에서 볼 수 있어요.");
         }
         // Keep retry identities beyond the animation lifetime without growing indefinitely.
         // At one launch per 15 seconds this holds at most 5,761 entries per room.
@@ -327,7 +365,14 @@ public class BeachRoom {
     public record TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                              BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                              @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities, Lighting lighting,
-                             List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence) {
+                             List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence,
+                             List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns) {
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                          BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
+                          CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence) {
+            this(players, events, count, received, care, fire, serverTime, selfRest, careCapabilities, lighting, fireworks,
+                fireworksCooldownUntil, sequence, List.of(), BeachUyuniMoments.NO_COOLDOWNS);
+        }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                           CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil) {
@@ -350,10 +395,10 @@ public class BeachRoom {
             this(players, events, count, received, care, fire, serverTime, selfRest, null, AUTO_LIGHTING);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence);
+            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns);
         }
         public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
-            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence);
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns);
         }
     }
 
@@ -798,8 +843,10 @@ public class BeachRoom {
             .limit(MAX_PLAYERS)
             .toList();
         FireworksState fireworks = fireworks();
+        BeachUyuniMoments.State moments = uyuniMomentsFor(me);
         return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
-            care, null, fireworks.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence);
+            care, null, Math.max(fireworks.serverTime(), moments.serverTime()), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence,
+            moments.events(), moments.cooldowns());
     }
 
     private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {

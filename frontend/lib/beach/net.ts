@@ -37,15 +37,83 @@ export interface EnterResponse {
   fireworksControl?: boolean;
   fireworks?: FireworkEvent[];
   fireworksCooldownUntil?: number;
+  uyuniMomentsEnabled?: boolean;
+  uyuniMoments?: UyuniMoment[];
+  uyuniMomentCooldowns?: UyuniMomentCooldowns;
   serverTime?: number;
 }
 
-export type FireworkVariant = "festival" | "songi" | "love";
+export type SparklerLetter = "L" | "O" | "V" | "E";
+export type WishLanternColor = "amber" | "rose" | "mint" | "sky" | "violet";
+export type UyuniMomentInput = { kind: "sparkler"; letter: SparklerLetter }
+  | { kind: "lantern"; color: WishLanternColor; wish: string };
+export interface UyuniMoment {
+  id: string; kind: "sparkler" | "lantern"; fromPid: string; fromNick: string;
+  x: number; z: number; yaw: number; startedAt: number; durationMs: number;
+  letter?: SparklerLetter; color?: WishLanternColor; wish?: string;
+}
+export interface UyuniMomentCooldowns { sparkler: number; lantern: number }
+export interface UyuniMomentLaunch { event: UyuniMoment; serverTime: number; cooldowns: UyuniMomentCooldowns }
+
+const isSparklerLetter = (value: unknown): value is SparklerLetter => ["L", "O", "V", "E"].includes(value as string);
+const isWishLanternColor = (value: unknown): value is WishLanternColor => ["amber", "rose", "mint", "sky", "violet"].includes(value as string);
+const validWish = (value: unknown): value is string => typeof value === "string" && value === value.trim()
+  && Array.from(value).length >= 1 && Array.from(value).length <= 80 && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+
+/** Only finite, bounded room events may create a drawing or a wish texture. */
+export function readUyuniMoment(value: unknown): UyuniMoment | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const event = value as UyuniMoment;
+  if (!Object.keys(event).every(key => ["id", "kind", "fromPid", "fromNick", "x", "z", "yaw", "startedAt", "durationMs", "letter", "color", "wish"].includes(key))
+    || typeof event.id !== "string" || !UUID_PATTERN.test(event.id)
+    || typeof event.fromPid !== "string" || !event.fromPid || event.fromPid.length > 100
+    || typeof event.fromNick !== "string" || Array.from(event.fromNick).length > 100
+    || ![event.x, event.z, event.yaw].every(Number.isFinite) || Math.abs(event.x) > 22 || event.z < -50 || event.z > 55 || Math.abs(event.yaw) > Math.PI + 0.001
+    || !isTime(event.startedAt) || event.startedAt > Number.MAX_SAFE_INTEGER - 40_000) return null;
+  const base = { id: event.id.toLowerCase(), kind: event.kind, fromPid: event.fromPid, fromNick: event.fromNick,
+    x: event.x, z: event.z, yaw: event.yaw, startedAt: event.startedAt, durationMs: event.durationMs };
+  if (event.kind === "sparkler" && event.durationMs === 12_000 && isSparklerLetter(event.letter) && event.color == null && event.wish == null)
+    return { ...base, letter: event.letter };
+  if (event.kind === "lantern" && event.durationMs === 40_000 && isWishLanternColor(event.color) && validWish(event.wish) && event.letter == null)
+    return { ...base, color: event.color, wish: event.wish };
+  return null;
+}
+
+function readMomentCooldowns(value: unknown, serverTime: number): UyuniMomentCooldowns | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const state = value as UyuniMomentCooldowns;
+  return isTime(state.sparkler) && isTime(state.lantern)
+    && state.sparkler <= serverTime + 4_000 && state.lantern <= serverTime + 8_000
+    ? { sparkler: state.sparkler, lantern: state.lantern } : null;
+}
+
+function readUyuniMomentsState(response: { uyuniMoments?: unknown; uyuniMomentCooldowns?: unknown; serverTime?: unknown }) {
+  if (response.uyuniMoments === undefined && response.uyuniMomentCooldowns === undefined)
+    return { events: [] as UyuniMoment[], cooldowns: { sparkler: 0, lantern: 0 }, supported: false };
+  const error = () => new Error("빛과 소원등을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
+  if (!Array.isArray(response.uyuniMoments) || response.uyuniMoments.length > 64 || !isTime(response.serverTime)) throw error();
+  const cooldowns = readMomentCooldowns(response.uyuniMomentCooldowns, response.serverTime);
+  if (!cooldowns) throw error();
+  const unique = new Map<string, UyuniMoment>();
+  for (const value of response.uyuniMoments) {
+    const event = readUyuniMoment(value);
+    if (!event || event.startedAt > response.serverTime) throw error();
+    const previous = unique.get(event.id);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(event)) throw error();
+    if (response.serverTime < event.startedAt + event.durationMs) unique.set(event.id, event);
+  }
+  const events = Array.from(unique.values()).sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
+  if (events.filter(e => e.kind === "sparkler").length > 32 || events.filter(e => e.kind === "lantern").length > 32) throw error();
+  return { events, cooldowns, supported: true };
+}
+
+export type FireworkVariant = "festival" | "songi" | "love" | "bloom" | "saturn" | "willow" | "stardust";
 export interface FireworkEvent { id: string; seed: number; startedAt: number; durationMs: number; variant?: FireworkVariant }
 export interface FireworkLaunch { event: FireworkEvent; serverTime: number; cooldownUntil: number }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isTime = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-const isFireworkVariant = (value: unknown): value is FireworkVariant => value === "festival" || value === "songi" || value === "love";
+const isFireworkVariant = (value: unknown): value is FireworkVariant =>
+  typeof value === "string" && ["festival", "songi", "love", "bloom", "saturn", "willow", "stardust"].includes(value);
 
 /** Only a bounded server event can allocate fireworks particles. */
 export function readFireworkEvent(value: unknown): FireworkEvent | null {
@@ -189,6 +257,8 @@ export interface TickResponse {
   lighting?: RoomLighting | null;
   fireworks?: FireworkEvent[];
   fireworksCooldownUntil?: number;
+  uyuniMoments?: UyuniMoment[];
+  uyuniMomentCooldowns?: UyuniMomentCooldowns;
   serverTime?: number;
 }
 
@@ -268,12 +338,15 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
   if (response.selfRest != null && !validRestPresence(response.selfRest)) throw new Error("머물던 자리를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   if (response.sequence !== undefined && (!Number.isSafeInteger(response.sequence) || response.sequence < 0)) throw new Error("방문 순서를 확인하지 못했어요.");
   const fireworks = readFireworksState(response);
+  const moments = readUyuniMomentsState(response);
   return { ...response, mapId, fireEnabled: mapId === "beach" && (response.fireEnabled === undefined || response.fireEnabled === true),
     bedEnabled: response.bedEnabled === true, benchEnabled: mapId === "beach" && response.benchEnabled === true,
     careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
     lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: mapId === "beach" && response.onsenEnabled === true,
     pavilionEnabled: mapId === "bamboo" && response.pavilionEnabled === true,
     fireworksControl: response.fireworksControl === true && fireworks.supported,
+    uyuniMomentsEnabled: mapId === "uyuni" && response.uyuniMomentsEnabled === true && moments.supported,
+    uyuniMoments: mapId === "uyuni" ? moments.events : [], uyuniMomentCooldowns: moments.cooldowns,
     fireworks: fireworks.fireworks, fireworksCooldownUntil: fireworks.fireworksCooldownUntil };
 }
 
@@ -290,6 +363,9 @@ export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promis
   const fireworks = readFireworksState(response);
   response.fireworks = fireworks.fireworks;
   response.fireworksCooldownUntil = fireworks.fireworksCooldownUntil;
+  const moments = readUyuniMomentsState(response);
+  response.uyuniMoments = moments.events;
+  response.uyuniMomentCooldowns = moments.cooldowns;
   // Movement-only ticks do not refresh privileges. A confirmed action response does.
   return response.careCapabilities == null ? response : { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
 }
@@ -298,6 +374,18 @@ export async function setBeachLighting(ticket: string, mode: RoomLightingMode): 
   const lighting = readRoomLighting(response);
   if (!lighting || lighting.mode !== mode) throw new Error("방의 시간을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   return lighting;
+}
+export async function launchUyuniMoment(ticket: string, requestId: string, input: UyuniMomentInput): Promise<UyuniMomentLaunch> {
+  if (!UUID_PATTERN.test(requestId) || !input || (input.kind === "sparkler" ? !isSparklerLetter(input.letter)
+    : input.kind !== "lantern" || !isWishLanternColor(input.color) || !validWish(input.wish)))
+    throw new Error("글자나 소원등을 다시 골라 주세요. 소원은 80자까지 적을 수 있어요.");
+  const response = await post<UyuniMomentLaunch>("/api/beach/moments", { ticket, requestId, ...input }, { signal: AbortSignal.timeout(8000) });
+  const event = readUyuniMoment(response?.event);
+  const cooldowns = response && isTime(response.serverTime) ? readMomentCooldowns(response.cooldowns, response.serverTime) : null;
+  if (!event || !cooldowns || !isTime(response.serverTime) || event.startedAt > response.serverTime
+    || event.kind !== input.kind || (input.kind === "sparkler" ? event.letter !== input.letter : event.color !== input.color || event.wish !== input.wish))
+    throw new Error("빛과 소원등의 시작을 확인하지 못했어요. 같은 선택으로 다시 눌러 주세요.");
+  return { event, serverTime: response.serverTime, cooldowns };
 }
 export async function launchBeachFireworks(ticket: string, requestId: string, variant: FireworkVariant = "festival"): Promise<FireworkLaunch> {
   if (!isFireworkVariant(variant)) throw new Error("불꽃놀이 종류를 다시 골라 주세요.");

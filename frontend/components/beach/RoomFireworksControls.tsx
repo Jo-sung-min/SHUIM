@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { IconHeart, IconSmile, IconSparkle } from "@/components/Icons";
+import { IconHeart, IconLotus, IconMoon, IconRain, IconSmile, IconSparkle, IconStar } from "@/components/Icons";
 import type { FireworkVariant } from "@/lib/beach/net";
+import type { MapId } from "@/lib/beach/maps";
 import styles from "./beach.module.css";
 
 const STYLES = [
@@ -11,8 +12,25 @@ const STYLES = [
   { variant: "love", label: "사랑해", description: "마음을 하늘에 적어요", Icon: IconHeart },
 ] as const;
 
-export default function RoomFireworksControls({ deadline, busy, disabled, onLaunch }: {
-  deadline: number; busy: boolean; disabled: boolean; onLaunch: (variant: FireworkVariant) => void;
+const UYUNI_DESCRIPTIONS: Record<FireworkVariant, string> = {
+  festival: "밤하늘 가득, 함께 터지는 불꽃",
+  songi: "불꽃이 지나간 자리에 빛나는 인사",
+  love: "분홍빛 하트가 차례로 피어나요",
+  bloom: "색색의 꽃잎이 겹겹이 피어나요",
+  saturn: "빛나는 고리가 하늘에 퍼져요",
+  willow: "금빛 불씨가 비처럼 쏟아져요",
+  stardust: "작은 별꽃이 다시 터져 반짝여요",
+};
+const UYUNI_STYLES = [STYLES[0],
+  { variant: "bloom", label: "겹꽃", description: UYUNI_DESCRIPTIONS.bloom, Icon: IconLotus },
+  { variant: "saturn", label: "별고리", description: UYUNI_DESCRIPTIONS.saturn, Icon: IconMoon },
+  { variant: "willow", label: "황금비", description: UYUNI_DESCRIPTIONS.willow, Icon: IconRain },
+  { variant: "stardust", label: "별무리", description: UYUNI_DESCRIPTIONS.stardust, Icon: IconStar },
+  STYLES[1], STYLES[2],
+] as const;
+
+export default function RoomFireworksControls({ deadline, busy, disabled, onLaunch, mapId = "beach" }: {
+  deadline: number; busy: boolean; disabled: boolean; onLaunch: (variant: FireworkVariant) => void; mapId?: MapId;
 }) {
   const [now, setNow] = useState(Date.now);
   const [open, setOpen] = useState(false);
@@ -52,12 +70,12 @@ export default function RoomFireworksControls({ deadline, busy, disabled, onLaun
     </button>
     {open && <div id={panelId} className={styles.fireworksPanel} role="group" aria-label="불꽃놀이 종류">
       <strong>하늘에 띄우고 싶은 마음</strong>
-      {STYLES.map(({ variant, label, description, Icon }) => <button key={variant} type="button"
+      {(mapId === "uyuni" ? UYUNI_STYLES : STYLES).map(({ variant, label, description, Icon }) => <button key={variant} type="button"
         data-firework-variant={variant} disabled={unavailable}
         onClick={() => { setOpen(false); trigger.current?.focus(); onLaunch(variant); }}>
-        <Icon /><span><strong>{label}</strong><small>{description}</small></span>
+        <Icon /><span><strong>{label}</strong><small>{mapId === "uyuni" ? UYUNI_DESCRIPTIONS[variant] : description}</small></span>
       </button>)}
-      <small>고르면 바로 시작해요.</small>
+      <small>약 12초, 고르면 바로 시작해요.</small>
     </div>}
   </div>;
 }

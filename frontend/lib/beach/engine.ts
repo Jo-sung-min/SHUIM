@@ -30,12 +30,13 @@ import { FirePowderPlayback } from "./fire-powder";
 import { captureScenePhoto } from "./photo";
 import { SkyLanterns } from "./lanterns";
 import { BeachFireworks } from "./fireworks";
+import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type BeachAvatar } from "./rigged-avatar";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
-import type { CareKind, FireState, FireworkEvent, RemotePlayer, RestPresence } from "./net";
+import type { CareKind, FireState, FireworkEvent, UyuniMoment, RemotePlayer, RestPresence } from "./net";
 export type { StargazingState } from "./stargazing";
 export type { BedState } from "./shelters";
 function claimedRestSlot(state: { pose?: string; spotId?: string | null; slot?: number | null }): StargazingSlot | null {
@@ -336,6 +337,7 @@ export class BeachEngine {
   private fire: CoastalFire | null = null;
   private lanterns: SkyLanterns | null = null;
   private fireworks: BeachFireworks | null = null;
+  private uyuniMoments: UyuniMoments | null = null;
   private fireState: FireState = { logs: 3, maxLogs: 12, intensity: 0.25, color: "amber", serverTime: 0, queuedPops: 0, powder: null };
   private firePowder = new FirePowderPlayback();
   private nearFire = false;
@@ -743,8 +745,17 @@ export class BeachEngine {
   /** Confirmed room events are shared; the effects module deduplicates their IDs. */
   applyFireworks(events: FireworkEvent[], serverTime: number) {
     if (this.disposed || (!this.fireworks && events.length === 0)) return;
-    this.fireworks ??= new BeachFireworks(this.scene, { mobile: this.mobile });
+    this.fireworks ??= new BeachFireworks(this.scene, {
+      mobile: this.mobile, ...(this.mapId === "uyuni" ? { grand: true, reflectWater: true } : {}),
+    });
     this.fireworks.apply(events, serverTime);
+  }
+
+  applyUyuniMoments(events: UyuniMoment[], serverTime: number) {
+    if (this.disposed || this.mapId !== "uyuni" || (!this.uyuniMoments && events.length === 0)) return;
+    this.uyuniMoments ??= new UyuniMoments(this.scene, { floorHeight: uyuniHotelFloorHeight });
+    this.uyuniMoments.setQuality(this.quality);
+    this.uyuniMoments.apply(events, serverTime);
   }
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
@@ -1663,6 +1674,7 @@ export class BeachEngine {
     this.renderer.shadowMap.enabled = this.mapId === "beach" && level === "high";
     this.uyuni?.setQuality(level === "low");
     this.bamboo?.setQuality(level === "low");
+    this.uyuniMoments?.setQuality(level);
     this.resize();
     this.handlers.onQuality?.(level);
   }
@@ -2185,6 +2197,7 @@ export class BeachEngine {
       this.lanterns?.update(this.time);
     }
     this.fireworks?.update(this.camera, undefined, this.renderer.domElement.height);
+    this.uyuniMoments?.update(this.camera, undefined, this.renderer.domElement.height);
   }
 
   /* ---------------- 정리 ---------------- */
@@ -2230,6 +2243,8 @@ export class BeachEngine {
     this.lanterns = null;
     this.fireworks?.dispose();
     this.fireworks = null;
+    this.uyuniMoments?.dispose();
+    this.uyuniMoments = null;
     this.fire?.dispose();
     this.fire = null;
     this.bamboo?.dispose();

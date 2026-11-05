@@ -5,6 +5,7 @@ import test from "node:test";
 import ts from "typescript";
 import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
+import { randomUUID } from "node:crypto";
 
 const compile = text => ts.transpileModule(text, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -81,10 +82,11 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     setInputPaused() {} setSkin() {} setHourOverride() {} resize() {}
     setFireState(value) { this.events.push(["fire", plain(value)]); }
     applyFireworks() {} select() {} playCare() {}
+    applyUyuniMoments(events, serverTime) { this.events.push(["moments", plain(events), serverTime]); }
     applyRest(value) { this.events.push(["rest", plain(value)]); }
     setPlayers(value) { this.events.push(["players", plain(value)]); }
   }
-  const env = { window, document, navigator, localStorage, AbortController, AbortSignal, URL, console, Error,
+  const env = { window, document, navigator, localStorage, AbortController, AbortSignal, URL, console, Error, crypto: { randomUUID },
     process: { env: { NODE_ENV: "production" } }, performance: { now: () => now - 1_700_000_000_000 },
     Date: class extends Date { static now() { return now; } },
     fetch(path, init) {
@@ -158,6 +160,96 @@ const tick = (request, extra = {}) => ({ sequence: request.body.sequence, server
   players: [], count: 1, received: { comfort: 0, hug: 0, wave: 0 }, events: [], fire, ...extra });
 const of = (h, path) => h.requests.filter(request => request.path === `/api/beach/${path}`);
 async function joined(h, payload = entry()) { await h.mount(); of(h, "enter")[0].resolve(payload); await h.flush(); return h.engines[0]; }
+
+const moments = (time, events = [], cooldowns = { sparkler: 0, lantern: 0 }) => ({ serverTime: time, uyuniMomentsEnabled: true,
+  uyuniMoments: events, uyuniMomentCooldowns: cooldowns });
+function momentControls(h) {
+  let controls;
+  walkElements(h.tree, node => { if (typeof node.props.onLantern === "function") controls = node; });
+  assert.ok(controls, "a supported Uyuni visit exposes the actions"); return controls.props;
+}
+
+test("uncertain wish launch retains its UUID across same-account mobile reentry and merges one confirmed event", async () => {
+  const h = harness(), engine = await joined(h, entry(moments(h.now)));
+  const wish = "우리의 내일도 반짝이길";
+  const first = momentControls(h).onLantern("rose", wish); await h.flush();
+  of(h, "tick").at(-1).resolve(tick(of(h, "tick").at(-1), moments(h.now))); await h.flush();
+  const uncertain = of(h, "moments").at(-1); assert.ok(uncertain);
+  uncertain.resolve({ error: "연결이 잠시 끊겼어요" }, 500);
+  assert.equal(await first, false); await h.flush();
+  const event = { id: "00000000-0000-4000-8000-000000000001", kind: "lantern", fromPid: "self", fromNick: "나",
+    x: 0, z: 3, yaw: 0, startedAt: h.now, durationMs: 40000, color: "rose", wish };
+  await h.visibility(true); await h.advance(10_001); await h.visibility(false); await h.advance(0);
+  of(h, "enter").at(-1).resolve(entry({ ...moments(h.now, [event]), ticket: "visit-2", resumed: true, sequence: 3 })); await h.flush();
+  // Settle the resumed poll before manually retrying the uncertain action.
+  const resumedTick = of(h, "tick").at(-1);
+  resumedTick.resolve(tick(resumedTick, moments(h.now, [event]))); await h.flush();
+  const retry = momentControls(h).onLantern("rose", wish); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose, moments(h.now, [event]))); await h.flush();
+  const repeated = of(h, "moments").at(-1);
+  assert.equal(repeated.body.requestId, uncertain.body.requestId);
+  assert.equal(repeated.body.ticket, "visit-2");
+  repeated.resolve({ event, serverTime: h.now, cooldowns: { sparkler: 0, lantern: h.now + 8000 } });
+  assert.equal(await retry, true); await h.flush();
+  assert.equal(engine.events.filter(e => e[0] === "moments").at(-1)[1].length, 1);
+  await h.unmount();
+});
+
+test("a late moment acknowledgement cannot restore an event removed by a newer room snapshot", async () => {
+  const h = harness(), engine = await joined(h, entry(moments(h.now)));
+  const pending = momentControls(h).onSparkler("E"); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose, moments(h.now))); await h.flush();
+  const launch = of(h, "moments").at(-1), start = h.now;
+  await h.advance(1000);
+  const poll = of(h, "tick").at(-1); poll.resolve(tick(poll, moments(h.now, []))); await h.flush();
+  launch.resolve({ event: { id: "00000000-0000-4000-8000-000000000002", kind: "sparkler", fromPid: "self", fromNick: "나",
+    x: 0, z: 3, yaw: 0, startedAt: start, durationMs: 12000, letter: "E" }, serverTime: start,
+    cooldowns: { sparkler: start + 4000, lantern: 0 } });
+  await pending; await h.flush();
+  assert.equal(engine.events.filter(e => e[0] === "moments").at(-1)[1].length, 0);
+  await h.unmount();
+});
+
+test("an old launch response cannot clear the busy state or request of a same-ticket resumed launch", async () => {
+  const h = harness(), engine = await joined(h, entry(moments(h.now)));
+  const original = momentControls(h).onSparkler("L"); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose, moments(h.now))); await h.flush();
+  const oldRequest = of(h, "moments").at(-1);
+  await h.visibility(true); await h.visibility(false); await h.advance(0);
+  of(h, "enter").at(-1).resolve(entry({ ...moments(h.now), resumed: true, sequence: 3 })); await h.flush();
+  const resumed = of(h, "tick").at(-1); resumed.resolve(tick(resumed, moments(h.now))); await h.flush();
+  const retry = momentControls(h).onSparkler("L"); await h.flush();
+  const nextPose = of(h, "tick").at(-1); nextPose.resolve(tick(nextPose, moments(h.now))); await h.flush();
+  const newRequest = of(h, "moments").at(-1);
+  assert.equal(newRequest.body.requestId, oldRequest.body.requestId);
+  const result = { event: { id: "00000000-0000-4000-8000-000000000003", kind: "sparkler", fromPid: "self", fromNick: "나",
+    x: 0, z: 3, yaw: 0, startedAt: h.now, durationMs: 12000, letter: "L" }, serverTime: h.now,
+    cooldowns: { sparkler: h.now + 4000, lantern: 0 } };
+  oldRequest.resolve(result); assert.equal(await original, false); await h.flush();
+  assert.equal(momentControls(h).busy, true, "the old finally cannot unlock the current operation");
+  assert.equal(engine.events.filter(e => e[0] === "moments").at(-1)[1].length, 0);
+  newRequest.resolve(result); assert.equal(await retry, true); await h.flush();
+  assert.equal(momentControls(h).busy, false);
+  assert.equal(engine.events.filter(e => e[0] === "moments").at(-1)[1].length, 1);
+  await h.unmount();
+});
+
+test("launch waits for the ongoing poll, then requires a fresh successful position confirmation", async () => {
+  const h = harness(), engine = await joined(h, entry(moments(h.now))); await h.advance(0);
+  const oldPose = of(h, "tick").at(-1);
+  Object.assign(engine.self, { x: 4, z: -8, yaw: .8 });
+  const action = momentControls(h).onSparkler("V"); await h.flush();
+  assert.equal(of(h, "moments").length, 0);
+  oldPose.resolve(tick(oldPose, moments(h.now))); await h.flush(); await h.advance(40);
+  const currentPose = of(h, "tick").at(-1);
+  assert.notEqual(currentPose, oldPose);
+  assert.equal(currentPose.body.x, 4); assert.equal(currentPose.body.z, -8);
+  currentPose.resolve({ error: "연결을 확인하고 있어요" }, 503);
+  assert.equal(await action, false); await h.flush();
+  assert.equal(of(h, "moments").length, 0, "an unconfirmed position never launches from the stale server pose");
+  assert.equal(momentControls(h).busy, false);
+  await h.unmount();
+});
 
 test("mobile suspension saves the live position, cancels polling and never sends leave", async () => {
   const h = harness(), engine = await joined(h); await h.advance(0);

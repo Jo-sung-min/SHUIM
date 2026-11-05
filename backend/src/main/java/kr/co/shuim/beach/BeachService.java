@@ -187,6 +187,21 @@ public class BeachService {
     }
 
     /** Only the owned visit selects a room; the authenticated controller authorizes launches. */
+    public BeachUyuniMoments.State uyuniMoments(String ticket) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().uyuniMoments(ticket);
+    }
+
+    public BeachUyuniMoments.Launch launchUyuniMoment(String ticket, String userId, String requestId,
+            String kind, String letter, String color, String wish, Set<String> excluded) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().launchUyuniMoment(ticket, userId, requestId, kind, letter, color, wish, excluded);
+    }
+
+    /** Only the owned visit selects a room; the authenticated controller authorizes launches. */
     public BeachRoom.FireworkLaunch launchFireworks(String ticket, String userId, String requestId) {
         return launchFireworks(ticket, userId, requestId, null);
     }

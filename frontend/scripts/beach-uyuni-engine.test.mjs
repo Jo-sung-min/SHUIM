@@ -29,6 +29,10 @@ const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...atlas, ...stars, ...huts, ...benches, ...navigation, ...daylight, ...sky, ...uyuniSky, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ getContext: () => null }) },
   window: { innerWidth: 390, innerHeight: 844, devicePixelRatio: 3 },
+  BeachFireworks: class {
+    constructor(scene, options) { this.scene = scene; this.options = options; this.events = []; }
+    apply(events, serverTime) { this.events.push({ events, serverTime }); }
+  },
 }, ["BeachEngine"]);
 const { STARGAZING, stargazingSlot } = stars;
 const { UYUNI_HOTELS, UYUNI_HOTEL_DECK, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS,
@@ -38,6 +42,27 @@ const close = (actual, expected, message = `${actual} ≈ ${expected}`) => asser
 const pool = kind => ({ ready: true, canLoad: true, create() {
   return { kind, root: new THREE.Group(), states: [], update(dt, state) { this.states.push({ dt, ...state }); }, dispose() {} };
 } });
+
+test("only Uyuni opts into the grand reflected show and allocates it after a confirmed event", () => {
+  for (const mapId of ["uyuni", "beach", "bamboo"]) {
+    const engine = Object.assign(Object.create(BeachEngine.prototype), {
+      mapId, mobile: true, disposed: false, scene: new THREE.Scene(), fireworks: null,
+    });
+    engine.applyFireworks([], 100);
+    assert.equal(engine.fireworks, null, "idle rooms do not allocate effects");
+    const events = [{ id: "confirmed-show" }];
+    engine.applyFireworks(events, 101);
+    const show = engine.fireworks;
+    assert.equal(show.scene, engine.scene);
+    assert.deepEqual(plain(show.options), mapId === "uyuni" ? { mobile: true, grand: true, reflectWater: true } : { mobile: true });
+    assert.equal(show.events[0].events, events);
+    engine.applyFireworks(events, 102);
+    assert.equal(engine.fireworks, show, "reuses the renderer for shared snapshots");
+    engine.disposed = true;
+    engine.applyFireworks(events, 103);
+    assert.equal(show.events.length, 2, "disposed visits cannot create or update a show");
+  }
+});
 
 test("Uyuni uses its sunset palette for manual selection and periodic clock updates while beach stays unchanged", () => {
   for (const mapId of ["uyuni", "beach"]) {

@@ -100,8 +100,8 @@ test("fireworks launch sends the owned ticket, stable retry UUID and default sty
   assert.equal(oldRetry.event.startedAt, fireworksEvent.startedAt, "an expired retry is acknowledged without inventing a fresh start time");
 });
 
-test("all three fireworks styles round-trip and retry responses retain the server's original style", async () => {
-  for (const variant of ["festival", "songi", "love"]) {
+test("all seven fireworks styles round-trip and retry responses retain the server's original style", async () => {
+  for (const variant of ["festival", "songi", "love", "bloom", "saturn", "willow", "stardust"]) {
     let body;
     const event = { ...fireworksEvent, variant };
     const api = setup(async (_url, options) => { body = JSON.parse(options.body); return response({ event, serverTime: 1_001_000, cooldownUntil: 1_015_000 }); });
@@ -112,6 +112,8 @@ test("all three fireworks styles round-trip and retry responses retain the serve
     assert.equal(changedRetry.event.variant, variant, "a retry acknowledges the existing event rather than inventing a new style");
     const tick = await setup(async () => response({ ...fireworksState, fireworks: [event] })).tickBeach({ ticket: "observer" });
     assert.equal(tick.fireworks[0].variant, variant);
+    const entered = await setup(async () => response({ ...fireworksState, fireworks: [event], mapId: "uyuni", communityId: "room" })).enterBeach("room", undefined, "uyuni");
+    assert.equal(entered.fireworks[0].variant, variant, "a late Uyuni visitor sees the same style");
   }
 });
 

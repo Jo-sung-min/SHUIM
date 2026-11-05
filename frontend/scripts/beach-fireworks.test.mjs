@@ -10,6 +10,9 @@ import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/fireworks.ts", import.meta.url), "utf8"))
   .replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
+const variantSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-festival-variants.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
 const event = (id = "one", startedAt = 100_000, seed = 1785) => ({ id, seed, startedAt, durationMs: 12_000 });
 
 function fixture({ mobile = false, dom = true, height = 844 } = {}) {
@@ -24,7 +27,7 @@ function fixture({ mobile = false, dom = true, height = 844 } = {}) {
   }
   const context = { THREE: { ...THREE, TextureLoader }, Date: { now: () => time }, ...assets };
   if (dom) { context.document = {}; context.window = { innerHeight: height }; }
-  vm.runInNewContext(`${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
+  vm.runInNewContext(`${variantSource}\n${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
   const scene = new THREE.Scene(), fireworks = new context.api.BeachFireworks(scene, { mobile });
   return { ...context.api, scene, fireworks, requests, setTime(value) { time = value; },
     load(index = 0) { requests[index].onLoad(requests[index].texture); } };

@@ -85,6 +85,21 @@ public class BeachController {
     public record PowderBody(String ticket, String requestId, String color) {}
     public record RestBody(String ticket, String action, String spotId) {}
     public record LightingBody(String ticket, String mode) {}
+    public record MomentBody(
+        @JsonDeserialize(using = MomentTextDeserializer.class) String ticket,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String requestId,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String kind,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String letter,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String color,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String wish) {}
+    /** Wishes and variants are text; JSON numbers/booleans must not be silently coerced. */
+    public static final class MomentTextDeserializer extends StdDeserializer<String> {
+        public MomentTextDeserializer() { super(String.class); }
+        @Override public String deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            if (!parser.hasToken(JsonToken.VALUE_STRING)) return (String) context.handleUnexpectedToken(String.class, parser);
+            return parser.getText();
+        }
+    }
     public record FireworksBody(String ticket, String requestId, JsonNode variant) {
         public FireworksBody(String ticket, String requestId) { this(ticket, requestId, (JsonNode) null); }
         public FireworksBody(String ticket, String requestId, String variant) {
@@ -155,6 +170,10 @@ public class BeachController {
         BeachRoom.FireworksState fireworks = beach.fireworks(circle.id(), map.id());
         out.put("fireworks", fireworks.events());
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
+        BeachUyuniMoments.State moments = beach.uyuniMoments(p.ticket());
+        out.put("uyuniMomentsEnabled", map == BeachMap.UYUNI && !me.anonymous());
+        out.put("uyuniMoments", moments.events());
+        out.put("uyuniMomentCooldowns", moments.cooldowns());
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", map.minX(), "maxX", map.maxX(), "minZ", map.minZ(), "maxZ", map.maxZ()));
@@ -235,6 +254,17 @@ public class BeachController {
         requireMember(visit.communityId(), me);
         if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 불꽃놀이를 시작할 수 있어요.");
         return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), body.selectedVariant());
+    }
+
+    /** A registered current member can launch only from their own standing Uyuni visit. */
+    @PostMapping("/api/beach/moments")
+    public BeachUyuniMoments.Launch moment(@RequestBody(required = false) MomentBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 함께 띄워 주세요."));
+        if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 함께 띄워 주세요.");
+        if (body == null) throw ApiException.badRequest("함께 띄울 내용을 다시 확인해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        return beach.launchUyuniMoment(body.ticket(), me.id(), body.requestId(), body.kind(), body.letter(), body.color(), body.wish(), blocks.excludedIds(me.id()));
     }
 
     /** POST /api/beach/leave { ticket } → { ok: true } (모르는 티켓이어도 ok) */

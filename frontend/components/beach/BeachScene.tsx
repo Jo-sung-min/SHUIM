@@ -18,6 +18,8 @@ import Joystick from "./Joystick";
 import PhotoPreview, { CameraIcon } from "./PhotoPreview";
 import RoomLightingControls from "./RoomLightingControls";
 import RoomFireworksControls from "./RoomFireworksControls";
+import UyuniMomentControls from "./UyuniMomentControls";
+import { launchUyuniMoment, type UyuniMoment, type UyuniMomentInput, type UyuniMomentCooldowns } from "@/lib/beach/net";
 import styles from "./beach.module.css";
 
 const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요", wave: "인사를 건넸어요" };
@@ -97,6 +99,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const fireworksBusyRef = useRef(false);
   const fireworksRequestRef = useRef<{ id: string; variant: FireworkVariant } | null>(null);
   const fireworksClockRef = useRef({ time: -1, cooldown: 0 });
+  const momentBusyRef = useRef(false);
+  const momentOperationRef = useRef(0);
+  const momentRequestRef = useRef<{ id: string; input: UyuniMomentInput } | null>(null);
+  const momentClockRef = useRef<{ time: number; events: UyuniMoment[]; cooldowns: UyuniMomentCooldowns }>({ time: -1, events: [], cooldowns: { sparkler: 0, lantern: 0 } });
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -124,6 +130,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [fireworksControl, setFireworksControl] = useState(false);
   const [fireworksBusy, setFireworksBusy] = useState(false);
   const [fireworksDeadline, setFireworksDeadline] = useState(0);
+  const [momentsEnabled, setMomentsEnabled] = useState(false);
+  const [momentBusy, setMomentBusy] = useState(false);
+  const [momentOpen, setMomentOpen] = useState(false);
+  const [momentDeadlines, setMomentDeadlines] = useState<UyuniMomentCooldowns>({ sparkler: 0, lantern: 0 });
   const [lost, setLost] = useState(false);
   const [fire, setFire] = useState<FireState | null>(null);
   const [fireEnabled, setFireEnabled] = useState(false);
@@ -241,11 +251,36 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     haptic();
   }, []);
 
+  const resetMoments = useCallback((preserveRequest = false) => {
+    momentOperationRef.current++;
+    momentBusyRef.current = false;
+    if (!preserveRequest) momentRequestRef.current = null;
+    momentClockRef.current = { time: -1, events: [], cooldowns: { sparkler: 0, lantern: 0 } };
+    setMomentsEnabled(false); setMomentBusy(false);
+    if (!preserveRequest) setMomentOpen(false);
+    setMomentDeadlines({ sparkler: 0, lantern: 0 });
+  }, []);
+
+  const applyMoments = useCallback((events: UyuniMoment[] | undefined, serverTime: number | undefined, cooldowns: UyuniMomentCooldowns | undefined, append = false) => {
+    if (!Number.isSafeInteger(serverTime) || !cooldowns) return;
+    const time = serverTime!, previous = momentClockRef.current;
+    if (time < previous.time) return;
+    const live = new Map((append ? previous.events : []).map(event => [event.id, event]));
+    for (const event of events ?? []) live.set(event.id, event);
+    const current = [...live.values()].filter(event => event.startedAt + event.durationMs > time);
+    engineRef.current?.applyUyuniMoments(current, time);
+    momentClockRef.current = { time, events: current, cooldowns };
+    if (previous.cooldowns.sparkler !== cooldowns.sparkler || previous.cooldowns.lantern !== cooldowns.lantern || previous.time < 0) {
+      const deadline = (until: number) => until > time ? Date.now() + until - time : 0;
+      setMomentDeadlines({ sparkler: deadline(cooldowns.sparkler), lantern: deadline(cooldowns.lantern) });
+    }
+  }, []);
+
   useEffect(() => {
     if (!lightingControl || hudHidden || photo || phase !== "ready" || actionsOpen || characterPickerOpen || powderOpen) setLightingOpen(false);
   }, [lightingControl, hudHidden, photo, phase, actionsOpen, characterPickerOpen, powderOpen]);
 
-  const controlsPaused = Boolean(photo) || characterPickerOpen || lightingOpen || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
+  const controlsPaused = Boolean(photo) || characterPickerOpen || lightingOpen || momentOpen || momentBusy || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
     controlsPausedRef.current = controlsPaused;
@@ -254,7 +289,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   useEffect(() => { if (lying || !nearFire) setPowderOpen(false); }, [lying, nearFire]);
 
   useEffect(() => {
-    if (!actionsOpen || photo || powderOpen || characterPickerOpen) return;
+    if (!actionsOpen || photo || powderOpen || characterPickerOpen || momentOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -265,7 +300,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [actionsOpen, photo, powderOpen, characterPickerOpen]);
+  }, [actionsOpen, photo, powderOpen, characterPickerOpen, momentOpen]);
 
   useEffect(() => {
     if (!selected || characterPickerOpen || photo || powderOpen) return;
@@ -365,9 +400,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setSkyPhase(null);
     setRestActionSpot(null);
     resetFireworks();
+    resetMoments();
     setError(cause.message);
     setPhase("error");
-  }, [resetFireworks, communityId, mapId]);
+  }, [resetFireworks, resetMoments, communityId, mapId]);
 
   const reenter = useCallback(async (engine: BeachEngine, visit: number, epoch: number, signal: AbortSignal): Promise<boolean> => {
     const belongsToVisit = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit && requestEpochRef.current === epoch;
@@ -390,6 +426,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     resetFireworks();
     setFireworksControl(entered.fireworksControl === true);
     applyFireworks(entered.fireworks, entered.serverTime, entered.fireworksCooldownUntil);
+    resetMoments(sameAccount);
+    setMomentsEnabled(entered.uyuniMomentsEnabled === true);
+    applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns);
     lightingRef.current = null;
     lightingBusyRef.current = false;
     setLightingBusy(null); setLightingOpen(false);
@@ -420,7 +459,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     rememberVisit(true);
     applyFire(entered.fire);
     return true;
-  }, [communityId, mapId, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, rememberVisit]);
+  }, [communityId, mapId, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, applyMoments, resetMoments, rememberVisit]);
 
   const runTick = useCallback(async (allowRestSync = false): Promise<boolean> => {
     const engine = engineRef.current;
@@ -481,6 +520,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       applyFire(res.fire);
       applyLighting(res.lighting);
       applyFireworks(res.fireworks, res.serverTime, res.fireworksCooldownUntil);
+      applyMoments(res.uyuniMoments, res.serverTime, res.uyuniMomentCooldowns);
       for (const ev of res.events) handleEvent(ev);
       if (care) {
         careBusyRef.current = false;
@@ -527,7 +567,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         scheduleTick();
       }
     }
-  }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire, applyLighting, applyFireworks, rememberVisit]);
+  }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire, applyLighting, applyFireworks, applyMoments, rememberVisit]);
   tickRunnerRef.current = runTick;
 
   useEffect(() => {
@@ -567,6 +607,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setLighting(null); setLightingControl(false); setLightingOpen(false); setLightingBusy(null);
     resetFireworks();
     setLost(false);
+    resetMoments();
     woodBusyRef.current = false;
     powderBusyRef.current = false;
     restMutationRef.current = false;
@@ -658,6 +699,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         applyFire(entered.fire);
         setFireworksControl(entered.fireworksControl === true);
         applyFireworks(entered.fireworks, entered.serverTime, entered.fireworksCooldownUntil);
+        setMomentsEnabled(entered.uyuniMomentsEnabled === true);
+        applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns);
         if (process.env.NODE_ENV !== "production") (window as unknown as { __beach?: BeachEngine }).__beach = engine; // 개발 콘솔에서 들여다보기
         setTimeLabel(hourLabel(engine.daylightNow.hour));
         setNightControls(engine.daylightNow.deepNight > 0.5);
@@ -680,6 +723,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       // An interrupted social request may already have arrived. Never send it a second time.
       pendingCareRef.current = null;
       careBusyRef.current = false; setCareBusy(false);
+      // A hidden/offline page keeps the uncertain UUID, but no old completion owns the controls.
+      momentOperationRef.current++;
+      momentBusyRef.current = false; setMomentBusy(false);
     };
     function suspend() {
       const eng = engineRef.current;
@@ -750,7 +796,55 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       engineRef.current?.dispose();
       engineRef.current = null;
     };
-  }, [communityId, mapId, scheduleTick, stopWithError, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, rememberVisit]);
+  }, [communityId, mapId, scheduleTick, stopWithError, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, applyMoments, resetMoments, rememberVisit]);
+
+  const launchMoment = async (input: UyuniMomentInput): Promise<boolean> => {
+    const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
+    if (!ticket || !engine || !momentsEnabled || momentBusyRef.current || blockedRef.current || lost || lying || rest?.seated || bench.seated || skyPhase
+      || (!momentRequestRef.current && Date.now() < momentDeadlines[input.kind])) return false;
+    const epoch = requestEpochRef.current, operation = ++momentOperationRef.current;
+    const currentOperation = () => requestEpochRef.current === epoch && momentOperationRef.current === operation;
+    const belongsToVisit = () => currentOperation() && aliveRef.current && !blockedRef.current && engineRef.current === engine && ticketRef.current === ticket && visitGenerationRef.current === visit;
+    momentBusyRef.current = true; setMomentBusy(true);
+    const request = momentRequestRef.current ?? { id: crypto.randomUUID(), input };
+    const sameChoice = JSON.stringify(request.input) === JSON.stringify(input);
+    momentRequestRef.current = request;
+    if (!sameChoice) showToast("앞서 보낸 빛을 먼저 확인할게요. 적은 소원은 그대로 남아 있어요.", { kind: "info" });
+    haptic();
+    try {
+      // Stop at the chosen place and let the usual ordered tick publish that pose.
+      engine.setInputPaused(true);
+      const poseDeadline = performance.now() + 9000;
+      while (inFlightRef.current && belongsToVisit() && performance.now() < poseDeadline)
+        await new Promise<void>(resolve => window.setTimeout(resolve, 40));
+      if (!belongsToVisit()) return false;
+      const positionConfirmed = await tickRunnerRef.current();
+      if (!belongsToVisit()) return false;
+      if (positionConfirmed !== true) throw new Error("지금 서 있는 자리를 확인하지 못했어요. 연결 후 다시 눌러 주세요.");
+      const result = await launchUyuniMoment(ticket, request.id, request.input);
+      if (!belongsToVisit()) return false;
+      momentRequestRef.current = null;
+      applyMoments([result.event], result.serverTime, result.cooldowns, true);
+      if (result.event.startedAt + result.event.durationMs <= result.serverTime)
+        showToast("앞서 보낸 빛을 확인했어요. 다시 고르면 새로 시작해요.", { kind: "info" });
+      else toastSuccess(result.event.kind === "sparkler" ? `${result.event.letter}를 빛으로 그려요` : "소원을 담은 등이 떠올라요");
+      if (sameChoice) { setActionsOpen(false); setCarePrompt(null); engine.select(null); }
+      return sameChoice;
+    } catch (cause) {
+      if (!belongsToVisit()) return false;
+      // Keep the same UUID after an uncertain response; no automatic replay.
+      if (cause instanceof BeachUnavailable || cause instanceof BeachCooldown || cause instanceof BeachGone) momentRequestRef.current = null;
+      if (cause instanceof BeachUnavailable && [401, 403].includes(cause.status)) setMomentsEnabled(false);
+      if (cause instanceof BeachGone) { ticketRef.current = null; setMomentsEnabled(false); scheduleTick(0); }
+      if (cause instanceof BeachCooldown) scheduleTick(0);
+      showToast(cause instanceof Error ? cause.message : "빛을 확인하지 못했어요. 같은 선택으로 다시 눌러 주세요.", { kind: "info" });
+      return false;
+    } finally {
+      if (currentOperation() && aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit && (ticketRef.current === ticket || ticketRef.current === null)) {
+        momentBusyRef.current = false; setMomentBusy(false);
+      }
+    }
+  };
 
   const launchFireworks = async (variant: FireworkVariant) => {
     const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
@@ -1102,7 +1196,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       <div className={styles.top} hidden={hudHidden}>
         <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
         {phase === "ready" && <div className={styles.adminTools}>
-          {fireworksControl && <RoomFireworksControls deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
+          {fireworksControl && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
             onLaunch={(variant) => void launchFireworks(variant)} />}
           {lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}
             busy={lightingBusy} disabled={lost} onOpenChange={openLighting} onSelect={mode => void changeLighting(mode)} />}
@@ -1138,6 +1232,13 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             {people.length ? people.map((person) => <button type="button" key={person.pid} className={styles.personChoice} onClick={() => engineRef.current?.select(person.pid)}><IconUser /><span>{person.nick}</span><small>선택하기</small></button>) : <p className={styles.emptyPeople}>아직 함께 쉬는 사람이 없어요.<br />누군가 오면 인사를 건네 보세요.</p>}
           </div>}
           <div className={styles.actionScroll} hidden={Boolean(carePrompt)} role="group" aria-label="할 수 있는 행동" tabIndex={0}>
+            {mapId === "uyuni" && momentsEnabled && <UyuniMomentControls
+              key={communityId + ":" + meRef.current?.id}
+              active={actionsOpen && !carePrompt && !photo && !hudHidden && !characterPickerOpen && phase === "ready"}
+              disabled={lost || lying || Boolean(rest?.seated) || bench.seated || Boolean(skyPhase)}
+              busy={momentBusy} cooldowns={momentDeadlines} onOpenChange={setMomentOpen}
+              onSparkler={letter => launchMoment({ kind: "sparkler", letter })}
+              onLantern={(color, wish) => launchMoment({ kind: "lantern", color, wish })} />}
             <button type="button" className={styles.actionTile + " " + styles.waveTile} disabled={cooling || lost || !careCapabilities.wave} onClick={() => sendCare("wave")}><span className={styles.actionIcon} aria-hidden="true">👋</span><strong>인사하기</strong><small>{careCapabilities.wave ? "반가운 마음" : "준비 중"}</small></button>
             <button type="button" className={styles.actionTile + " " + styles.comfortTile} disabled={cooling || lost} onClick={() => sendCare("comfort")}><span className={styles.actionIcon}><IconLeaf /></span><strong>위로 건네기</strong><small>따뜻한 마음</small></button>
             {careCapabilities.hug && <button type="button" className={styles.actionTile + " " + styles.hugTile} disabled={cooling || lost} onClick={() => sendCare("hug")}><span className={styles.actionIcon}><IconHeart /></span><strong>안아주기</strong><small>관리자 포옹</small></button>}
