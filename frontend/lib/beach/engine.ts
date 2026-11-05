@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
 import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
-import { type Daylight, daylightAt } from "./daylight";
+import { type Daylight, daylightAt, uyuniDaylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
 import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringFloorHeight, hotSpringCeilingHeight } from "./hot-spring";
@@ -308,7 +308,7 @@ export class BeachEngine {
   private skyMat!: THREE.ShaderMaterial;
   private seaMat!: THREE.ShaderMaterial;
   private sandMat!: THREE.MeshStandardMaterial;
-  private photo!: THREE.Texture;
+  private photo: THREE.Texture | null = null;
   private assetLoads: Promise<void>[] = [];
   private cove!: Cove | UyuniWorld;
   private uyuni: UyuniWorld | null = null;
@@ -416,7 +416,7 @@ export class BeachEngine {
 
     this.camera = new THREE.PerspectiveCamera(this.cameraFov(), 1, 0.1, 520);
     this.camera.rotation.order = "YXZ";
-    this.daylight = daylightAt(this.hour());
+    this.daylight = this.mapDaylight();
     this.scene.fog = new THREE.Fog(0xffffff, this.daylight.fogNear, this.daylight.fogFar);
 
     this.buildSky();
@@ -475,8 +475,8 @@ export class BeachEngine {
   }
 
   private buildSky() {
-    this.photo = this.loadEnvironmentTexture("/beach/real/paradise-panorama-v1.webp", false);
-    this.photo.wrapS = THREE.RepeatWrapping;
+    this.photo = this.mapId === "uyuni" ? null : this.loadEnvironmentTexture("/beach/real/paradise-panorama-v1.webp", false);
+    if (this.photo) this.photo.wrapS = THREE.RepeatWrapping;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
         uPhoto: { value: this.photo }, uPhotoTint: { value: new THREE.Vector3(1, 1, 1) },
@@ -1023,7 +1023,11 @@ export class BeachEngine {
   /* ---------------- 시간대 ---------------- */
   setHourOverride(h: number | null) {
     this.hourOverride = h;
-    this.applyDaylight(daylightAt(this.hour()));
+    this.applyDaylight(this.mapDaylight());
+  }
+
+  private mapDaylight(): Daylight {
+    return (this.mapId === "uyuni" ? uyuniDaylightAt : daylightAt)(this.hour());
   }
 
   get daylightNow() {
@@ -1606,7 +1610,7 @@ export class BeachEngine {
 
     if (now - this.lastDaylightAt > 20_000) {
       this.lastDaylightAt = now;
-      this.applyDaylight(daylightAt(this.hour()));
+      this.applyDaylight(this.mapDaylight());
     }
 
     this.updateSelf(dt);

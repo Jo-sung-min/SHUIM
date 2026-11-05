@@ -21,8 +21,12 @@ const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["cre
 const huts = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "bedSlot", "claimedBedSlot"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls", "findWalkingPath", "findClearApproach"]);
+const daylight = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "uyuniDaylightAt"]);
+const sky = await load("../lib/beach/sky-shader.ts", {}, ["SKY_FRAGMENT", "SKY_UNIFORMS", "SKY_FUNCTIONS"]);
+const coast = await load("../lib/beach/uyuni-coast.ts", {}, ["UYUNI_COAST_FUNCTIONS"]);
+const uyuniSky = await load("../lib/beach/uyuni-shader.ts", { ...sky, ...coast }, ["UYUNI_SKY_FRAGMENT"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
-  THREE, ...atlas, ...stars, ...huts, ...benches, ...navigation, CAMPFIRE: { x: 0, z: 12 }, performance,
+  THREE, ...atlas, ...stars, ...huts, ...benches, ...navigation, ...daylight, ...sky, ...uyuniSky, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ getContext: () => null }) },
   window: { innerWidth: 390, innerHeight: 844, devicePixelRatio: 3 },
 }, ["BeachEngine"]);
@@ -34,6 +38,42 @@ const close = (actual, expected, message = `${actual} ≈ ${expected}`) => asser
 const pool = kind => ({ ready: true, canLoad: true, create() {
   return { kind, root: new THREE.Group(), states: [], update(dt, state) { this.states.push({ dt, ...state }); }, dispose() {} };
 } });
+
+test("Uyuni uses its sunset palette for manual selection and periodic clock updates while beach stays unchanged", () => {
+  for (const mapId of ["uyuni", "beach"]) {
+    const expected = mapId === "uyuni" ? daylight.uyuniDaylightAt : daylight.daylightAt;
+    const engine = Object.assign(Object.create(BeachEngine.prototype), {
+      mapId, hourOverride: 18, quality: "high", qualityWarmupUntil: Infinity, lastDaylightAt: -Infinity,
+      lastRender: 0, time: 0, clock: { update() {}, getDelta: () => 0.016 },
+      applyDaylight(value) { this.daylight = value; },
+      updateSelf() {}, syncSkyResolution() {}, updatePlayers() {}, updateFx() {}, updateWorld() {},
+      renderer: { render() {} },
+    });
+    assert.deepEqual(engine.mapDaylight(), expected(18), "initial scene uses the map palette");
+    engine.setHourOverride(18);
+    assert.deepEqual(engine.daylightNow, expected(18));
+    engine.hourOverride = 19;
+    engine.frame();
+    assert.deepEqual(engine.daylightNow, expected(19), "natural-time refresh uses the same map palette");
+    engine.setHourOverride(20);
+    assert.deepEqual(engine.daylightNow, daylight.daylightAt(20), "both maps retain the original full night");
+  }
+});
+
+test("Uyuni sky requests no panorama texture while the beach retains and shares its existing photo", () => {
+  for (const mapId of ["uyuni", "beach"]) {
+    const requested = [];
+    const engine = Object.assign(Object.create(BeachEngine.prototype), {
+      mapId, scene: new THREE.Scene(), loadEnvironmentTexture(path) { requested.push(path); return new THREE.Texture(); },
+    });
+    engine.buildSky();
+    assert.deepEqual(requested, mapId === "uyuni" ? [] : ["/beach/real/paradise-panorama-v1.webp"]);
+    assert.equal(engine.skyMat.uniforms.uPhoto.value, engine.photo);
+    if (mapId === "uyuni") assert.equal(engine.photo, null);
+    else assert.equal(engine.photo.wrapS, THREE.RepeatWrapping);
+    engine.sky.geometry.dispose(); engine.skyMat.dispose(); engine.photo?.dispose();
+  }
+});
 
 function fixture(mapId = "uyuni") {
   const events = { fire: [], star: [], bench: [], onsen: [], quality: [], world: [], waterQuality: [], buffers: [] };

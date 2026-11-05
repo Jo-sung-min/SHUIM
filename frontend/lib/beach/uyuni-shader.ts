@@ -84,42 +84,65 @@ vec3 uyuniNight(vec3 d) {
   return dark + stars;
 }
 
+vec4 uyuniDay(vec3 d) {
+  float up = max(d.y, 0.0);
+  float warm = clamp((uSkyHorizon.r - uSkyHorizon.b) * 1.8, 0.0, 1.0);
+  vec3 sky = mix(uSkyHorizon, uSkyTop,
+    smoothstep(-0.015, mix(0.8, 0.38, warm), d.y));
+
+  // Continuous 3D cloud density: no panorama edges, stretched UVs or pole cap.
+  // Bounded noise scales make soft billows with finer, feathered edges.
+  vec3 p = d * vec3(4.4, 6.0, 4.4) + vec3(uTime * 0.0018, 2.8, -1.7);
+  float broad = uyuniNebulaNoise(p);
+  float middle = uyuniNebulaNoise(p * 2.03 + 7.2);
+  float density = broad * 0.46 + middle * 0.28 + uyuniNebulaNoise(p * 4.11 - 3.8) * 0.16
+    + uyuniNebulaNoise(p * 8.27 + 12.3) * 0.075 + uyuniNebulaNoise(p * 16.3 - 9.2) * 0.025;
+  float cover = 0.48 - (uCloudAmount - 0.45) * 0.20;
+  float cloud = smoothstep(cover, cover + 0.12, density);
+  cloud *= smoothstep(0.015, 0.12, up) * mix(0.96, 0.74, warm);
+  if (cloud > 0.001) {
+    // Two offset density samples give the sun-facing billows soft relief;
+    // this is a single sky pass, without volumetric marching or another scene.
+    vec3 lightDirection = normalize(uSun + vec3(0.0, 0.4, 0.0));
+    float lightDensity = uyuniNebulaNoise(p + lightDirection * 0.32);
+    float lightDetail = uyuniNebulaNoise(p * 2.03 + 7.2 + lightDirection * 0.45);
+    float light = clamp(0.60 + (broad - lightDensity) * 2.8 + (middle - lightDetail) * 0.7, 0.18, 1.0);
+    vec3 shade = mix(uSkyHorizon * vec3(0.68, 0.75, 0.84), uCloudColor * 0.68, 0.5);
+    vec3 cloudColor = mix(shade, uCloudColor, light);
+    // After sunset only the lower billows retain amber light; high clouds fade
+    // into the blue hour so the first stars have clear, dark space around them.
+    vec3 eveningShade = mix(uSkyTop * 0.70, uCloudColor * 0.48, exp(-up * 3.0) * 0.42);
+    vec3 eveningLight = uCloudColor * mix(0.50, 0.95, exp(-up * 4.0));
+    cloudColor = mix(cloudColor, mix(eveningShade, eveningLight, light), warm);
+    float rim = (1.0 - cloud) * max(0.0, broad - lightDensity) * 0.55;
+    cloudColor += uSunColor * rim;
+    sky = mix(sky, cloudColor, cloud);
+  }
+  float sunDistance = length(d - uSun);
+  float sunDisc = 1.0 - smoothstep(0.009, 0.012, sunDistance);
+  float sunHalo = exp(-sunDistance * sunDistance / 0.012) * 0.07;
+  sky += uSunColor * (sunDisc * 0.65 + sunHalo)
+    * smoothstep(-0.025, 0.05, uSun.y) * (1.0 - cloud * 0.82);
+  return vec4(sky, cloud);
+}
+
 vec3 uyuniSky(vec3 direction) {
   vec3 d = normalize(direction);
   float up = max(d.y, 0.0);
-  float azimuth = atan(d.x, -d.z);
-  float night = smoothstep(0.03, 0.92, uStars);
-  vec3 gradient = mix(uSkyHorizon, uSkyTop, smoothstep(-0.025, 0.8, d.y));
-  vec3 day = gradient;
+  // Early stars sit above the orange afterglow. The full dark sky arrives later.
+  float night = smoothstep(0.55, 1.0, uStars);
+  vec4 day = vec4(0.0);
   if (night < 1.0) {
-    // Only the upper sky is sampled: the beach photograph's sea and cliffs can
-    // never become a baked horizon on this entirely open salt flat.
-    vec2 photoUv = vec2(fract(azimuth / 6.2831853 + 0.5), mix(0.72, 0.98, up));
-    vec3 photo = textureLod(uPhoto, photoUv, 0.0).rgb;
-    // The rear coast sits across the panorama's join. Blend its two ends in
-    // both sky and reflection so a vertical photograph edge cannot frame it.
-    float photoSeam = min(photoUv.x, 1.0 - photoUv.x);
-    if (photoSeam < 0.025) {
-      vec3 edge = (textureLod(uPhoto, vec2(0.001, photoUv.y), 0.0).rgb
-        + textureLod(uPhoto, vec2(0.999, photoUv.y), 0.0).rgb) * 0.5;
-      photo = mix(edge, photo, smoothstep(0.0, 0.025, photoSeam));
+    day = uyuniDay(d);
+    if (uStars > 0.0) {
+      vec3 firstStars = uyuniStars(d, 220.0, 0.988, 0.0)
+        + uyuniStars(d, 70.0, 0.992, 19.7) * 0.85;
+      day.rgb += firstStars * uStars * smoothstep(0.08, 0.34, up) * (1.0 - day.a * 0.92);
     }
-    float warmHour = clamp((uSkyHorizon.r - uSkyHorizon.b) * 2.3, 0.0, 1.0);
-    day = mix(gradient, photo * uPhotoTint,
-      smoothstep(0.015, 0.24, up) * (0.68 - warmHour * 0.5));
-    float cloudNoise = beachSkyCloud(d.xz / (up + 0.22) * 2.6 + vec2(uTime * 0.0012, 0.0));
-    float cloud = smoothstep(0.42 - uCloudAmount * 0.1, 0.66, cloudNoise);
-    cloud *= smoothstep(0.015, 0.12, up) * (1.0 - smoothstep(0.85, 0.995, up));
-    vec3 cloudLight = uCloudColor * mix(0.8, 1.0, smoothstep(0.38, 0.64, cloudNoise));
-    day = mix(day, cloudLight, cloud * 0.86);
-    float sunDistance = length(d - uSun);
-    float sunDisc = 1.0 - smoothstep(0.009, 0.012, sunDistance);
-    float sunHalo = exp(-sunDistance * sunDistance / 0.012) * 0.07;
-    day += uSunColor * (sunDisc * 0.65 + sunHalo) * smoothstep(-0.025, 0.05, uSun.y);
   }
 
   vec3 dark = night > 0.0 ? uyuniNight(d) : vec3(0.0);
-  vec3 sky = uyuniHorizonAir(mix(day, dark, night), d, night);
+  vec3 sky = uyuniHorizonAir(mix(day.rgb, dark, night), d, night);
   return uyuniCoast(d, sky, night);
 }
 `;
@@ -135,7 +158,7 @@ void main() {
   } else {
     // Continue the water beyond the camera's geometry range. This removes the
     // dark crease where a finite floor used to meet the lower sky hemisphere.
-    float night = smoothstep(0.03, 0.92, uStars);
+    float night = smoothstep(0.55, 1.0, uStars);
     color = uyuniWaterHorizon(uyuniSky(vec3(d.x, -d.y, d.z)), d, night);
   }
   gl_FragColor = vec4(color, 1.0);
@@ -204,12 +227,13 @@ void main() {
   vec3 reflection = uyuniSky(reflect(incoming, normal));
   float facing = clamp(dot(-incoming, normal), 0.0, 1.0);
   float fresnel = pow(1.0 - facing, 5.0);
-  float night = smoothstep(0.03, 0.92, uStars);
+  float night = smoothstep(0.55, 1.0, uStars);
+  float mirrorNight = smoothstep(0.02, 0.42, uStars);
   vec3 grain = texture2D(uSand, fract(p * 0.18)).rgb;
   vec3 salt = mix(vec3(0.94, 0.955, 0.98), grain, 0.36) * uSandTint;
   float nearFeet = 1.0 - smoothstep(0.8, 5.2, length(p - uWalker));
-  float reflectionAmount = mix(0.58 + fresnel * 0.4, 0.91 + fresnel * 0.08, night);
-  reflectionAmount -= nearFeet * mix(0.15, 0.025, night);
+  float reflectionAmount = mix(0.58 + fresnel * 0.4, 0.91 + fresnel * 0.08, mirrorNight);
+  reflectionAmount -= nearFeet * mix(0.15, 0.025, mirrorNight);
   reflectionAmount *= 1.0 - dry;
   // The visible salt floor is only centimetres below the surface. No second
   // transparent plane, render target, depth read, blur pass or avatar reflection.

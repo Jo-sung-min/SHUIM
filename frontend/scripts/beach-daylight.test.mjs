@@ -7,8 +7,8 @@ import test from "node:test";
 const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/daylight.ts", import.meta.url), "utf8"))
   .replace(/\bexport\s+(?=function\b|const\b)/g, "");
 const context = {};
-vm.runInNewContext(`${source}\nglobalThis.api = { daylightAt };`, context);
-const { daylightAt } = context.api;
+vm.runInNewContext(`${source}\nglobalThis.api = { daylightAt, uyuniDaylightAt };`, context);
+const { daylightAt, uyuniDaylightAt } = context.api;
 const energy = rgb => rgb.reduce((sum, value) => sum + value, 0);
 
 test("18:00 fills the sky and reflection palette with rose pink, sustained through 19:00", () => {
@@ -61,5 +61,52 @@ test("all color and lighting channels remain continuous at every new sunset boun
       a.forEach((value, index) => assert.ok(Number.isFinite(value) && Math.abs(value - b[index]) < .0001,
         `${channel} is continuous around ${boundary}:00`));
     }
+  }
+});
+
+test("Uyuni sunset has an orange horizon, dark blue upper sky and first stars with the sun below the horizon", () => {
+  const sunset = uyuniDaylightAt(18);
+  const [r, g, b] = sunset.skyHorizon;
+  assert.ok(r > 0.85 && r > g * 1.5 && g > b * 1.5, "the horizon is warm orange rather than rose");
+  assert.ok(sunset.skyTop[2] > sunset.skyTop[1] && sunset.skyTop[1] > sunset.skyTop[0]);
+  assert.ok(Math.max(...sunset.skyTop) < 0.3, "the upper sky is already dark enough for the first stars");
+  assert.ok(sunset.stars >= 0.35 && sunset.stars <= 0.5);
+  assert.ok(sunset.sun[1] < -0.025 && sunset.sun[1] > -0.05, "the sun disc is just below the shader's visibility cutoff");
+  assert.ok(Math.abs(Math.hypot(...sunset.sun) - 1) < 1e-12);
+  assert.equal(sunset.label, "노을");
+  assert.ok(daylightAt(18).stars < 0.15, "the beach keeps its own sunset");
+});
+
+test("Uyuni preserves every original daytime and nighttime value outside its sunset, including wrapped hours", () => {
+  for (let minute = -1440; minute <= 2880; minute += 5) {
+    const hour = minute / 60;
+    const original = daylightAt(hour);
+    if (original.hour > 17.5 && original.hour < 20) continue;
+    assert.deepEqual(uyuniDaylightAt(hour), original, `unchanged daylight at ${hour}:00`);
+  }
+});
+
+test("Uyuni evening colors, stars and celestial directions remain finite and continuous through 20:00", () => {
+  const numericEntries = daylight => Object.entries(daylight).filter(([, value]) => typeof value !== "string");
+  for (const boundary of [17.5, 18, 19, 19.5, 20]) {
+    const before = uyuniDaylightAt(boundary - 1e-5), after = uyuniDaylightAt(boundary + 1e-5);
+    for (const [channel, value] of numericEntries(before)) {
+      const a = Array.isArray(value) ? value : [value];
+      const b = Array.isArray(after[channel]) ? after[channel] : [after[channel]];
+      a.forEach((part, index) => assert.ok(Number.isFinite(part) && Math.abs(part - b[index]) < 0.0001,
+        `${channel} stays continuous around ${boundary}:00`));
+    }
+  }
+  let brightness = Infinity, stars = 0;
+  for (let minute = 0; minute <= 150; minute++) {
+    const value = uyuniDaylightAt(17.5 + minute / 60);
+    const nextBrightness = energy(value.skyTop) + energy(value.skyHorizon) + energy(value.cloud);
+    assert.ok(nextBrightness <= brightness + 1e-10, "the evening sky never brightens abruptly");
+    assert.ok(value.stars >= stars - 1e-10 && value.stars <= 1);
+    for (const [channel, parts] of numericEntries(value)) {
+      for (const part of Array.isArray(parts) ? parts : [parts]) assert.ok(Number.isFinite(part), channel);
+    }
+    assert.ok(Math.abs(Math.hypot(...value.sun) - 1) < 1e-12);
+    brightness = nextBrightness; stars = value.stars;
   }
 });

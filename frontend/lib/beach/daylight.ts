@@ -164,6 +164,55 @@ export function daylightAt(hourIn: number): Daylight {
   };
 }
 
+// Uyuni's sunset starts after the last afternoon light and joins the unchanged
+// night palette at 20:00. These are final colors, including the deep-night endpoint.
+const UYUNI_TWILIGHT_KEYS: [number, Key][] = [
+  [17.5, daylightAt(17.5)],
+  [18, {
+    skyTop: c("#172744"), skyHorizon: c("#ed8240"), sunColor: c("#ffba7d"), cloud: c("#d9a07b"), cloudAmount: 0.5,
+    seaDeep: c("#243749"), seaShallow: c("#ae795b"), foam: c("#f1ccb0"),
+    sandTint: [1, 0.9, 0.82], tint: [1, 0.9, 0.84], fog: c("#b88c78"), stars: 0.42, sunGlow: 0.35, specular: 0.75,
+  }],
+  [19, {
+    skyTop: c("#111c32"), skyHorizon: c("#925a41"), sunColor: c("#e0a583"), cloud: c("#806978"), cloudAmount: 0.46,
+    seaDeep: c("#172536"), seaShallow: c("#655565"), foam: c("#b2adbf"),
+    sandTint: [0.88, 0.8, 0.79], tint: [0.82, 0.8, 0.88], fog: c("#625367"), stars: 0.72, sunGlow: 0.12, specular: 0.6,
+  }],
+  [19.5, {
+    skyTop: c("#0b1326"), skyHorizon: c("#3a374a"), sunColor: c("#b6b9cf"), cloud: c("#41445b"), cloudAmount: 0.4,
+    seaDeep: c("#0c1929"), seaShallow: c("#30364b"), foam: c("#7d879d"),
+    sandTint: [0.6, 0.58, 0.66], tint: [0.7, 0.72, 0.8], fog: c("#303448"), stars: 0.88, sunGlow: 0.02, specular: 0.45,
+  }],
+  [20, daylightAt(20)],
+];
+
+/** 우유니의 주황빛 잔광과 첫 별. 낮·새벽·20시 이후의 밤은 기존 팔레트를 그대로 쓴다. */
+export function uyuniDaylightAt(hourIn: number): Daylight {
+  const base = daylightAt(hourIn);
+  const { hour } = base;
+  if (hour <= 17.5 || hour >= 20) return base;
+  let i = 0;
+  while (i < UYUNI_TWILIGHT_KEYS.length - 2 && UYUNI_TWILIGHT_KEYS[i + 1][0] <= hour) i++;
+  const [h0, a] = UYUNI_TWILIGHT_KEYS[i], [h1, b] = UYUNI_TWILIGHT_KEYS[i + 1];
+  const t = (hour - h0) / (h1 - h0);
+  const k = (key: keyof Key) => mix(a[key] as number, b[key] as number, t);
+  const kc = (key: keyof Key) => mixRgb(a[key] as RGB, b[key] as RGB, t);
+  const stars = k("stars");
+  // At the sunset preset the disc is just below the horizon. Ease the small
+  // offset in and out so natural-time visits keep a continuous celestial path.
+  const sunDrop = 0.035 * smooth((hour - 17.5) / 0.5) * (1 - smooth((hour - 18) / 2));
+  return {
+    ...base,
+    sun: normalize([base.sun[0], base.sun[1] - sunDrop, base.sun[2]]),
+    skyTop: kc("skyTop"), skyHorizon: kc("skyHorizon"), sunColor: kc("sunColor"),
+    cloud: kc("cloud"), cloudAmount: k("cloudAmount"),
+    seaDeep: kc("seaDeep"), seaShallow: kc("seaShallow"), foam: kc("foam"),
+    sandTint: kc("sandTint"), tint: kc("tint"), fog: kc("fog"),
+    stars, sunGlow: k("sunGlow"), specular: k("specular"),
+    lanterns: Math.max(0, Math.min(1, (stars - 0.25) / 0.6)),
+  };
+}
+
 /** 지금 시각 (분까지, 0~24) */
 export function currentHour(now = new Date()): number {
   return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
