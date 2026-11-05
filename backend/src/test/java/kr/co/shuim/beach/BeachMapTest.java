@@ -186,11 +186,11 @@ class BeachMapTest {
         assertEquals(empty, tick(forest).fire());
         for (String spot : List.of("starlight", "hut-pine", "fire-benches", "onsen-benches", "hotel-dawn"))
             assertEquals(400, assertThrows(ApiException.class, () -> service.rest(forest.ticket(), "lie", spot)).status(), spot);
-        service.tick(forest.ticket(), 15.78 - .3, 24.3 + .2, 0, false, null, null);
-        assertEquals(400, assertThrows(ApiException.class, () -> service.rest(forest.ticket(), "sit", "pavilion-wind")).status(), "mirrored x is far from the west pavilion");
-        service.tick(forest.ticket(), -15.78 + .3, 24.3 + .2, 0, false, null, null);
+        service.tick(forest.ticket(), 30.58 - .3, 48.3 + .2, 0, false, null, null);
+        assertEquals(400, assertThrows(ApiException.class, () -> service.rest(forest.ticket(), "sit", "pavilion-wind")).status(), "mirrored x is far from the meadow pavilion");
+        service.tick(forest.ticket(), -30.58 + .3, 48.3 + .2, 0, false, null, null);
         var seated = service.rest(forest.ticket(), "sit", "pavilion-wind");
-        assertEquals(new BeachRoom.RestPresence("sitting", "pavilion-wind", 0, -15.78, 24.3, -Math.PI / 2), seated);
+        assertEquals(new BeachRoom.RestPresence("sitting", "pavilion-wind", 0, -30.58, 48.3, -Math.PI / 2), seated);
         assertEquals(seated, service.tick(forest.ticket(), 0, 0, 0, true, null, null).selfRest(), "ticks cannot move a seated visitor");
         assertEquals(400, assertThrows(ApiException.class, () -> service.rest(coast.ticket(), "sit", "pavilion-wind")).status(), "pavilions are not on the beach");
         String id = UUID.randomUUID().toString();

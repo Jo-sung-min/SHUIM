@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Daylight } from "./daylight";
-import { BAMBOO_PAVILIONS, PAVILION_EAVE, PAVILION_FLOOR_Y, PAVILION_HALF, PAVILION_POST_HEIGHT, PAVILION_STEP_LENGTH } from "./bamboo-trail";
+import {
+  BAMBOO_PAVILIONS, DECK_BENCH_HEIGHT, DECK_HALF_X, DECK_HALF_Z, DECK_RISE, PAVILION_EAVE, PAVILION_HALF, PAVILION_POST_HEIGHT,
+  PAVILION_RISE, PAVILION_STEP_LENGTH, type PavilionKind,
+} from "./bamboo-trail";
 
 /** 기와 무늬: 수키와(볼록한 줄)와 암키와 골이 번갈아 가는 줄을 캔버스로 그린다 (외부 이미지 없음). */
 export function roofTileTexture(): THREE.Texture {
@@ -83,8 +86,8 @@ export interface BambooPavilionSet {
 }
 
 /**
- * Four identical pavilions: one template is merged per material, then instanced four times,
- * so the whole set costs eight draws. Textures are injected by the engine.
+ * Four identical pavilions and one summit deck: a template per kind is merged per material, then instanced,
+ * so the whole set costs about a dozen draws. Local y is relative to the flattened ground at each site. Textures are injected by the engine.
  */
 export function buildBambooPavilions(scene: THREE.Scene, textures: { wood: THREE.Texture }): BambooPavilionSet {
   const root = new THREE.Group(); root.name = "bamboo-pavilions"; scene.add(root);
@@ -109,60 +112,90 @@ export function buildBambooPavilions(scene: THREE.Scene, textures: { wood: THREE
   const hip = hipRidgeGeometry();
   const knob = new THREE.SphereGeometry(0.16, 10, 8);
   const lantern = new THREE.CylinderGeometry(0.15, 0.13, 0.36, 10, 1);
-  // One template in pavilion-local space, grouped by material. Local +Z here is the entrance side
-  // after the per-pavilion yaw rotation (a Y rotation maps local -Z onto the facing vector), hence -lz.
-  const templates = new Map<THREE.Material, { name: string; parts: THREE.BufferGeometry[] }>();
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), euler = new THREE.Euler();
-  const part = (name: string, geometry: THREE.BufferGeometry, material: THREE.Material,
-    lx: number, y: number, lz: number, sx: number, sy: number, sz: number, ry = 0) => {
-    const piece = geometry.clone();
-    matrix.compose(new THREE.Vector3(lx, y, -lz), quaternion.setFromEuler(euler.set(0, ry, 0)), new THREE.Vector3(sx, sy, sz));
-    piece.applyMatrix4(matrix);
-    if (!templates.has(material)) templates.set(material, { name, parts: [] });
-    templates.get(material)!.parts.push(piece);
+  const meshes: THREE.InstancedMesh[] = [], merged: THREE.BufferGeometry[] = [];
+
+  const buildKind = (kind: PavilionKind) => {
+    // One template in site-local space, grouped by material. A Y rotation by the site yaw maps local -Z onto the
+    // facing vector, hence -lz for the entrance-positive coordinates used by the layout tables.
+    const templates = new Map<THREE.Material, { name: string; parts: THREE.BufferGeometry[] }>();
+    const part = (name: string, geometry: THREE.BufferGeometry, material: THREE.Material,
+      lx: number, y: number, lz: number, sx: number, sy: number, sz: number, ry = 0) => {
+      const piece = geometry.clone();
+      matrix.compose(new THREE.Vector3(lx, y, -lz), quaternion.setFromEuler(euler.set(0, ry, 0)), new THREE.Vector3(sx, sy, sz));
+      piece.applyMatrix4(matrix);
+      if (!templates.has(material)) templates.set(material, { name, parts: [] });
+      templates.get(material)!.parts.push(piece);
+    };
+    if (kind === "pavilion") {
+      const floorY = PAVILION_RISE, postTop = floorY + PAVILION_POST_HEIGHT, half = PAVILION_HALF;
+      part("deck", box, floorWood, 0, floorY - 0.08, 0, half * 2, 0.16, half * 2);
+      part("trim", box, darkWood, 0, floorY - 0.2, 0, half * 2 + 0.1, 0.12, half * 2 + 0.1);
+      for (const [lx, lz] of [[-2.15, -2.15], [2.15, -2.15], [-2.15, 2.15], [2.15, 2.15], [-2.15, 0], [2.15, 0]]) {
+        part("stone", footing, stone, lx, 0.2, lz, 1, 0.42, 1);
+        part("wood", cylinder, wood, lx, floorY + PAVILION_POST_HEIGHT / 2, lz, 0.14, PAVILION_POST_HEIGHT, 0.14);
+      }
+      for (const side of [-1, 1]) {
+        part("wood", box, wood, 0, postTop + 0.11, side * 2.15, half * 2 + 0.6, 0.22, 0.2);
+        part("wood", box, wood, side * 2.15, postTop + 0.11, 0, 0.2, 0.22, half * 2 + 0.6);
+      }
+      part("roof", roof, tile, 0, postTop + 0.22, 0, 1, 1, 1);
+      part("roof-underside", roofUnder, underside, 0, postTop + 0.22, 0, 0.985, 1, 0.985);
+      for (let k = 0; k < 4; k++) part("ridge", hip, ridge, 0, postTop + 0.22, 0, 1, 1, 1, k * Math.PI / 2);
+      part("ridge", knob, ridge, 0, postTop + 0.22 + 1.62, 0, 1, 1.3, 1);
+      // Back railing: the only edge where nobody sits.
+      for (const y of [0.45, 0.82]) part("wood", box, wood, 0, floorY + y, -half, half * 2, 0.07, 0.07);
+      for (const lx of [-2.0, -1.0, 0, 1.0, 2.0]) part("wood", box, wood, lx, floorY + 0.45, -half, 0.06, 0.82, 0.06);
+      part("stone", box, stone, 0, 0.31, half + 0.3, 1.5, 0.18, 0.6);
+      part("stone", box, stone, 0, 0.11, half + 0.3 + PAVILION_STEP_LENGTH / 2, 1.5, 0.18, 0.6);
+      part("plaque", box, plaque, 0, postTop - 0.26, half + 0.08, 1.1, 0.34, 0.06);
+      for (const lx of [-1.9, 1.9]) {
+        part("trim", cylinder, darkWood, lx, postTop - 0.17, 2.3, 0.012, 0.3, 0.012);
+        part("paper-lanterns", lantern, paper, lx, postTop - 0.5, 2.3, 1, 1, 1);
+      }
+    } else {
+      // Summit deck: a wide platform, railed on the view side and both ends, a long bench facing the city,
+      // steps on the opposite side and two lamp posts at the railing corners.
+      const floorY = DECK_RISE, hx = DECK_HALF_X, hz = DECK_HALF_Z;
+      part("deck", box, floorWood, 0, floorY - 0.08, 0, hx * 2, 0.16, hz * 2);
+      part("trim", box, darkWood, 0, floorY - 0.2, 0, hx * 2 + 0.1, 0.12, hz * 2 + 0.1);
+      for (const lx of [-4.2, -2.1, 0, 2.1, 4.2]) for (const lz of [-2.3, 2.3]) part("stone", footing, stone, lx, 0.2, lz, 0.9, 0.42, 0.9);
+      const railY = [0.5, 1.0];
+      for (const y of railY) {
+        part("wood", box, wood, 0, floorY + y, hz, hx * 2, 0.07, 0.07);
+        for (const side of [-1, 1]) part("wood", box, wood, side * hx, floorY + y, 0, 0.07, 0.07, hz * 2);
+      }
+      for (let i = 0; i <= 6; i++) part("wood", box, wood, -hx + i * hx * 2 / 6, floorY + 0.52, hz, 0.08, 1.04, 0.08);
+      for (const side of [-1, 1]) for (const lz of [-hz + 0.9, 0, hz - 0.9]) part("wood", box, wood, side * hx, floorY + 0.52, lz, 0.08, 1.04, 0.08);
+      part("wood", box, wood, 0, floorY + DECK_BENCH_HEIGHT - 0.04, 2.2, hx * 2 - 0.6, 0.08, 0.5);
+      for (const lx of [-3.9, -1.3, 1.3, 3.9]) part("trim", box, darkWood, lx, floorY + DECK_BENCH_HEIGHT / 2 - 0.04, 2.2, 0.1, DECK_BENCH_HEIGHT - 0.08, 0.42);
+      part("stone", box, stone, 0, 0.36, -(hz + 0.3), 1.5, 0.18, 0.6);
+      part("stone", box, stone, 0, 0.14, -(hz + 0.3 + PAVILION_STEP_LENGTH / 2), 1.5, 0.18, 0.6);
+      for (const lx of [-4.3, 4.3]) {
+        part("wood", cylinder, wood, lx, floorY + 1.15, 2.5, 0.07, 2.3, 0.07);
+        part("trim", box, darkWood, lx, floorY + 2.3, 2.5, 0.5, 0.05, 0.5);
+        part("paper-lanterns", lantern, paper, lx, floorY + 2.0, 2.5, 1.15, 1.15, 1.15);
+      }
+    }
+    const sites = BAMBOO_PAVILIONS.filter((p) => p.kind === kind);
+    const transform = new THREE.Object3D();
+    for (const [material, template] of templates) {
+      const geometry = mergeGeometries(template.parts, false)!;
+      for (const piece of template.parts) piece.dispose();
+      merged.push(geometry);
+      const mesh = new THREE.InstancedMesh(geometry, material, sites.length);
+      mesh.name = `bamboo-${kind}-${template.name}`;
+      sites.forEach((site, index) => {
+        transform.position.set(site.x, site.groundY, site.z); transform.scale.set(1, 1, 1); transform.rotation.set(0, site.yaw, 0);
+        transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      root.add(mesh); meshes.push(mesh);
+    }
   };
-  const floorY = PAVILION_FLOOR_Y, postTop = floorY + PAVILION_POST_HEIGHT, half = PAVILION_HALF;
-  part("deck", box, floorWood, 0, floorY - 0.08, 0, half * 2, 0.16, half * 2);
-  part("trim", box, darkWood, 0, floorY - 0.2, 0, half * 2 + 0.1, 0.12, half * 2 + 0.1);
-  for (const [lx, lz] of [[-2.15, -2.15], [2.15, -2.15], [-2.15, 2.15], [2.15, 2.15], [-2.15, 0], [2.15, 0]]) {
-    part("stone", footing, stone, lx, 0.2, lz, 1, 0.42, 1);
-    part("wood", cylinder, wood, lx, floorY + PAVILION_POST_HEIGHT / 2, lz, 0.14, PAVILION_POST_HEIGHT, 0.14);
-  }
-  for (const side of [-1, 1]) {
-    part("wood", box, wood, 0, postTop + 0.11, side * 2.15, half * 2 + 0.6, 0.22, 0.2);
-    part("wood", box, wood, side * 2.15, postTop + 0.11, 0, 0.2, 0.22, half * 2 + 0.6);
-  }
-  part("roof", roof, tile, 0, postTop + 0.22, 0, 1, 1, 1);
-  part("roof-underside", roofUnder, underside, 0, postTop + 0.22, 0, 0.985, 1, 0.985);
-  for (let k = 0; k < 4; k++) part("ridge", hip, ridge, 0, postTop + 0.22, 0, 1, 1, 1, k * Math.PI / 2);
-  part("ridge", knob, ridge, 0, postTop + 0.22 + 1.62, 0, 1, 1.3, 1);
-  // Back railing: the only edge where nobody sits.
-  for (const y of [0.45, 0.82]) part("wood", box, wood, 0, floorY + y, -half, half * 2, 0.07, 0.07);
-  for (const lx of [-2.0, -1.0, 0, 1.0, 2.0]) part("wood", box, wood, lx, floorY + 0.45, -half, 0.06, 0.82, 0.06);
-  part("stone", box, stone, 0, 0.31, half + 0.3, 1.5, 0.18, 0.6);
-  part("stone", box, stone, 0, 0.11, half + 0.3 + PAVILION_STEP_LENGTH / 2, 1.5, 0.18, 0.6);
-  part("plaque", box, plaque, 0, postTop - 0.26, half + 0.08, 1.1, 0.34, 0.06);
-  for (const lx of [-1.9, 1.9]) {
-    part("trim", cylinder, darkWood, lx, postTop - 0.17, 2.3, 0.012, 0.3, 0.012);
-    part("paper-lanterns", lantern, paper, lx, postTop - 0.5, 2.3, 1, 1, 1);
-  }
-  const transform = new THREE.Object3D();
-  const meshes: THREE.InstancedMesh[] = [];
-  const merged: THREE.BufferGeometry[] = [];
-  for (const [material, template] of templates) {
-    const geometry = mergeGeometries(template.parts, false)!;
-    for (const piece of template.parts) piece.dispose();
-    merged.push(geometry);
-    const mesh = new THREE.InstancedMesh(geometry, material, BAMBOO_PAVILIONS.length);
-    mesh.name = `bamboo-pavilion-${template.name}`;
-    BAMBOO_PAVILIONS.forEach((pavilion, index) => {
-      transform.position.set(pavilion.x, 0, pavilion.z); transform.scale.set(1, 1, 1); transform.rotation.set(0, pavilion.yaw, 0);
-      transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    root.add(mesh); meshes.push(mesh);
-  }
+  buildKind("pavilion");
+  buildKind("deck");
   const warm = new THREE.Color(0xffc27a), dim = new THREE.Color(0xe9dcc8);
   return { root, applyDaylight(d) {
     if (disposed) return;

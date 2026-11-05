@@ -157,7 +157,7 @@ public class BeachController {
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
-        out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", map.minZ(), "maxZ", BeachRoom.MAX_Z));
+        out.put("bounds", Map.of("minX", map.minX(), "maxX", map.maxX(), "minZ", map.minZ(), "maxZ", map.maxZ()));
         out.put("count", beach.count(circle.id(), map.id()));
         BeachFireService.FireView fire = beach.fire(circle.id(), map.id());
         out.put("fire", fire);

@@ -73,18 +73,23 @@ public class BeachRoom {
     /** Bamboo-trail pavilions: six edge seats each, mirrored by the frontend trail layout (lib/beach/bamboo-trail.ts). */
     public static final int PAVILION_SLOTS = 6;
     public static final double PAVILION_REACH = 2.4;
-    /** Centre and the unit axis the entrance steps face. Right-hand axis is (-fz, fx). */
-    record Pavilion(String spot, double x, double z, int fx, int fz) {}
-    static final List<Pavilion> PAVILIONS = List.of(
-        new Pavilion("pavilion-wind", -18.2, 26, 1, 0),
-        new Pavilion("pavilion-moon", 1, 44.5, 0, 1),
-        new Pavilion("pavilion-pine", 10.5, 30, 1, 0),
-        new Pavilion("pavilion-step", 14, 8, -1, 0));
-    /** Local seat (lx, lz, facing lx, facing lz): two beside the steps, two on each open side. */
+    /** Local seat (lx, lz, facing lx, facing lz): pavilions seat two beside the steps and two on each open side. */
     private static final double[][] PAVILION_SEAT_LOCAL = {
         {-1.7, 2.42, 0, 1}, {1.7, 2.42, 0, 1},
         {-2.42, -0.9, -1, 0}, {-2.42, 0.9, -1, 0},
         {2.42, -0.9, 1, 0}, {2.42, 0.9, 1, 0}};
+    /** The summit viewing deck seats six in a row along its railing, all facing the city. */
+    private static final double[][] DECK_SEAT_LOCAL = {
+        {-3.75, 2.2, 0, 1}, {-2.25, 2.2, 0, 1}, {-0.75, 2.2, 0, 1},
+        {0.75, 2.2, 0, 1}, {2.25, 2.2, 0, 1}, {3.75, 2.2, 0, 1}};
+    /** Centre and the unit axis the steps (pavilion) or the view (deck) face. Right-hand axis is (-fz, fx). */
+    record Pavilion(String spot, double x, double z, int fx, int fz, double[][] seats) {}
+    static final List<Pavilion> PAVILIONS = List.of(
+        new Pavilion("pavilion-step", 14, 10, -1, 0, PAVILION_SEAT_LOCAL),
+        new Pavilion("pavilion-wind", -33, 50, 1, 0, PAVILION_SEAT_LOCAL),
+        new Pavilion("pavilion-pine", 31, 58, -1, 0, PAVILION_SEAT_LOCAL),
+        new Pavilion("pavilion-moon", -18, 80, 1, 0, PAVILION_SEAT_LOCAL),
+        new Pavilion("pavilion-summit", 0, 100, 0, 1, DECK_SEAT_LOCAL));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
@@ -106,7 +111,8 @@ public class BeachRoom {
         Map.entry(PAVILIONS.get(0).spot(), new RestSpot(PAVILIONS.get(0).spot(), PAVILIONS.get(0).x(), PAVILIONS.get(0).z(), PAVILION_SLOTS, false)),
         Map.entry(PAVILIONS.get(1).spot(), new RestSpot(PAVILIONS.get(1).spot(), PAVILIONS.get(1).x(), PAVILIONS.get(1).z(), PAVILION_SLOTS, false)),
         Map.entry(PAVILIONS.get(2).spot(), new RestSpot(PAVILIONS.get(2).spot(), PAVILIONS.get(2).x(), PAVILIONS.get(2).z(), PAVILION_SLOTS, false)),
-        Map.entry(PAVILIONS.get(3).spot(), new RestSpot(PAVILIONS.get(3).spot(), PAVILIONS.get(3).x(), PAVILIONS.get(3).z(), PAVILION_SLOTS, false)));
+        Map.entry(PAVILIONS.get(3).spot(), new RestSpot(PAVILIONS.get(3).spot(), PAVILIONS.get(3).x(), PAVILIONS.get(3).z(), PAVILION_SLOTS, false)),
+        Map.entry(PAVILIONS.get(4).spot(), new RestSpot(PAVILIONS.get(4).spot(), PAVILIONS.get(4).x(), PAVILIONS.get(4).z(), PAVILION_SLOTS, false)));
 
     static boolean isPavilionSpot(String spotId) {
         return spotId != null && PAVILIONS.stream().anyMatch(p -> p.spot().equals(spotId));
@@ -118,7 +124,7 @@ public class BeachRoom {
 
     /** Same arithmetic as the frontend seat table: exact integer axes keep the two sides identical. */
     static BenchSeat pavilionSeat(Pavilion p, int slot) {
-        double[] s = PAVILION_SEAT_LOCAL[slot];
+        double[] s = p.seats()[slot];
         int rx = -p.fz(), rz = p.fx();
         double x = p.x() + s[0] * rx + s[1] * p.fx();
         double z = p.z() + s[0] * rz + s[1] * p.fz();
@@ -662,8 +668,8 @@ public class BeachRoom {
             if (me.suspended) throw new ApiException(409, "바닷가로 돌아온 뒤 다시 쉬어 주세요.");
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
-                    me.x = clamp(me.standingX, MIN_X, MAX_X, REST_X);
-                    me.z = clamp(me.standingZ, map.minZ(), MAX_Z, REST_Z + REST_REACH);
+                    me.x = clamp(me.standingX, map.minX(), map.maxX(), REST_X);
+                    me.z = clamp(me.standingZ, map.minZ(), map.maxZ(), REST_Z + REST_REACH);
                     me.yaw = me.standingYaw;
                     me.restSlot = null;
                     me.restSpot = null;
@@ -797,8 +803,8 @@ public class BeachRoom {
     }
 
     private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
-        double nextX = p.restSlot == null ? clamp(x, MIN_X, MAX_X, p.x) : p.x;
-        double nextZ = p.restSlot == null ? clamp(z, map.minZ(), MAX_Z, p.z) : p.z;
+        double nextX = p.restSlot == null ? clamp(x, map.minX(), map.maxX(), p.x) : p.x;
+        double nextZ = p.restSlot == null ? clamp(z, map.minZ(), map.maxZ(), p.z) : p.z;
         double nextYaw = p.restSlot == null && Double.isFinite(yaw) ? yaw : p.yaw;
         boolean nextMoving = p.restSlot == null && moving;
         if (nextX != p.x || nextZ != p.z || nextYaw != p.yaw || nextMoving != p.moving || (skin != null && skin != p.skin))
@@ -906,8 +912,8 @@ public class BeachRoom {
             double vx = 2 * Math.cos(ax) / 9;   // m/s
             double vz = 1.5 * Math.cos(az) / 13;
             double speed = Math.hypot(vx, vz);
-            b.x = clamp(BOT_CENTERS[i - 1][0] + 2 * Math.sin(ax), MIN_X, MAX_X, b.x);
-            b.z = clamp(BOT_CENTERS[i - 1][1] + 1.5 * Math.sin(az), map.minZ(), MAX_Z, b.z);
+            b.x = clamp(BOT_CENTERS[i - 1][0] + 2 * Math.sin(ax), map.minX(), map.maxX(), b.x);
+            b.z = clamp(BOT_CENTERS[i - 1][1] + 1.5 * Math.sin(az), map.minZ(), map.maxZ(), b.z);
             b.moving = speed > 0.15;
             if (speed > 0.01) b.yaw = Math.atan2(-vx, -vz);
             b.lastSeen = now;

@@ -60,7 +60,7 @@ export interface RestState { shelterName: string; seated: boolean }
 export interface BenchState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean }
 export interface OnsenState { inWater: boolean; canSit: boolean; canFloat: boolean; sitting: boolean; floating: boolean; occupiedSeats: number[]; occupiedFloats: number[] }
 /** 대나무숲 정자: 가까운 정자의 좌석 상황. spotId 는 앉아 있는 정자 또는 가장 가까운 정자 */
-export interface PavilionState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean; spotId: string | null; name: string }
+export interface PavilionState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean; spotId: string | null; name: string; kind: "pavilion" | "deck" }
 /** 자동으로 걸어간 결과: 도착 · 사용자가 직접 움직여 멈춤 · 길이 막힘 */
 export type AutoWalkResult = "arrived" | "cancelled" | "blocked";
 /** 1인칭(내 눈) · 3인칭(내 캐릭터 뒤 위에서 따라가는 카메라) */
@@ -871,7 +871,7 @@ export class BeachEngine {
 
   /** 가까운 정자(또는 앉아 있는 정자)의 좌석 상황. 좌석은 서버가 배정하므로 여기서는 보이는 사람들로만 센다 */
   getPavilionState(): PavilionState {
-    const empty: PavilionState = { near: false, seated: false, occupied: 0, capacity: PAVILION_SEAT_CAPACITY, available: false, spotId: null, name: "" };
+    const empty: PavilionState = { near: false, seated: false, occupied: 0, capacity: PAVILION_SEAT_CAPACITY, available: false, spotId: null, name: "", kind: "pavilion" };
     if (!this.bamboo) return empty;
     const pavilion = this.pavilionSeat ? bambooPavilionForSpot(this.pavilionSeat.spotId) : nearbyBambooPavilion(this.self.x, this.self.z);
     if (!pavilion) return empty;
@@ -883,7 +883,7 @@ export class BeachEngine {
     if (this.pavilionSeat?.spotId === pavilion.spotId) used.add(this.pavilionSeat.slot);
     const reachable = BAMBOO_PAVILION_SEATS.filter((seat) => seat.spotId === pavilion.spotId && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= PAVILION_REACH);
     return { near: !this.skyRest && (reachable.length > 0 || Boolean(this.pavilionSeat)), seated: Boolean(this.pavilionSeat), occupied: used.size,
-      capacity: PAVILION_SEAT_CAPACITY, available: reachable.some((seat) => !used.has(seat.slot)), spotId: pavilion.spotId, name: pavilion.name };
+      capacity: PAVILION_SEAT_CAPACITY, available: reachable.some((seat) => !used.has(seat.slot)), spotId: pavilion.spotId, name: pavilion.name, kind: pavilion.kind };
   }
 
   private updatePavilionState() {
@@ -1984,7 +1984,7 @@ export class BeachEngine {
     n.shadow.visible = shown;
     if (!shown) return;
     if (this.fixedSeat || this.restSeat) {
-      const baseY = this.onsenSeat ? HOT_SPRING.floorY : this.restSeat ? this.deckHeight(this.restSeat.x, this.restSeat.z) : 0;
+      const baseY = this.onsenSeat ? HOT_SPRING.floorY : this.pavilionSeat ? this.pavilionSeat.baseY : this.restSeat ? this.deckHeight(this.restSeat.x, this.restSeat.z) : 0;
       const seat = this.fixedSeat ?? { ...this.restSeat!, avatarY: baseY + 0.52 }, cam = this.camera.position;
       n.sprite.position.set(seat.x, baseY, seat.z);
       n.sprite.rotation.set(0, Math.atan2(cam.x - seat.x, cam.z - seat.z), 0, "YXZ");
@@ -2121,22 +2121,22 @@ export class BeachEngine {
       const frame = charFrame(walking, p.animT);
       const turn = p.target.yaw - p.cur.yaw;
       if (!fixed && !p.motion) p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
+      // Pavilion seats are on the deck edge with legs over the side: the folded sprite stands on the ground below.
+      const pavilionSeat = seated !== null ? claimedPavilionSeat(p.data) : null;
       if (!seated) shapeSeatedAvatar(p.sprite, null);
       if (resting) {
         applyLyingTransform(p.sprite, resting);
         this.setFrame(p, CHAR_VIEW.front, CHAR_ANIM.idle.from, p.data.skin);
       } else {
         p.sprite.rotation.set(0, Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z), 0, "YXZ");
-        if (seated) shapeSeatedAvatar(p.sprite, { yaw: seated.yaw, avatarY: seated.avatarY - (onsenSeated ? HOT_SPRING.floorY : 0) });
+        if (seated) shapeSeatedAvatar(p.sprite, { yaw: seated.yaw, avatarY: seated.avatarY - (onsenSeated ? HOT_SPRING.floorY : pavilionSeat ? pavilionSeat.baseY : 0) });
         this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
       }
       const dl = Math.hypot(p.cur.x - cam.x, p.cur.z - cam.z);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = !fixed && p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
-      // Pavilion seats are on the deck edge with legs over the side: the folded sprite stands on the ground below.
-      const pavilionSeated = seated !== null && bambooPavilionForSpot(seated.spotId) !== null;
-      if (!resting) p.sprite.position.set(p.cur.x, onsenSeated ? HOT_SPRING.floorY : pavilionSeated ? 0 : deck + hop, p.cur.z);
+      if (!resting) p.sprite.position.set(p.cur.x, onsenSeated ? HOT_SPRING.floorY : pavilionSeat ? pavilionSeat.baseY : deck + hop, p.cur.z);
       const avatar = this.syncAvatar(p, p.data.skin, p.cur.x, p.cur.z);
       p.sprite.visible = !avatar;
       this.pixelDepth?.update(p.sprite, p.data.skin, Boolean(resting) && p.sprite.visible);

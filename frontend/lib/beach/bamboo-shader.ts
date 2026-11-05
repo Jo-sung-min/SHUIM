@@ -11,7 +11,7 @@ varying vec3 vDir;
 ${UYUNI_SKY_FUNCTIONS}
 void main() {
   vec3 d = normalize(vDir);
-  // The canopy hides most of this; only the gaps between leaves ever show it.
+  // The canopy hides most of this; only the gaps between leaves and the open summit ever show it.
   float night = smoothstep(0.55, 1.0, uStars);
   vec3 up = vec3(d.x, abs(d.y), d.z);
   vec4 day = vec4(0.0);
@@ -61,12 +61,26 @@ vec3 bambooLight(vec3 world, vec3 normal, float dapple) {
   return light;
 }`;
 
+/** Three open areas (x, z, radius, feather): the meadow, the summit and the bare north face. 1 inside, 0 outside. */
+export const BAMBOO_CLEARING_GLSL = `
+uniform vec4 uClearings[3];
+float bambooClearing(vec2 p) {
+  float inside = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float d = distance(p, uClearings[i].xy);
+    inside = max(inside, 1.0 - smoothstep(uClearings[i].z - uClearings[i].w, uClearings[i].z, d));
+  }
+  return inside;
+}`;
+
 export const BAMBOO_GROUND_VERT = `
 varying vec3 vWorld;
+varying vec3 vNormal;
 #include <fog_pars_vertex>
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorld = world.xyz;
+  vNormal = mat3(modelMatrix) * normal;
   vec4 mvPosition = viewMatrix * world;
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -77,13 +91,15 @@ uniform sampler2D uMask;
 uniform vec4 uMaskRect;
 uniform float uTime;
 uniform float uDapple;
-uniform vec3 uLitter; uniform vec3 uLitterLight; uniform vec3 uMoss;
+uniform vec3 uLitter; uniform vec3 uLitterLight; uniform vec3 uMoss; uniform vec3 uGrass; uniform vec3 uGrassLight;
 uniform vec3 uEarth; uniform vec3 uEarthLight;
 uniform vec3 uStone; uniform vec3 uStoneLight;
 uniform vec3 uPoolColor;
 varying vec3 vWorld;
+varying vec3 vNormal;
 ${BAMBOO_NOISE_GLSL}
 ${BAMBOO_LIGHT_GLSL}
+${BAMBOO_CLEARING_GLSL}
 #include <fog_pars_fragment>
 void main() {
   vec2 p = vWorld.xz;
@@ -95,15 +111,20 @@ void main() {
   vec3 litter = mix(uLitter, uLitterLight, fine * 0.7 + coarse * 0.3);
   float moss = smoothstep(0.42, 0.72, bambooNoise(p * 0.33 + 9.1)) * 0.65;
   litter = mix(litter, uMoss, moss);
+  // Open clearings are short grass with a few bare patches instead of leaf litter.
+  float clearing = bambooClearing(p);
+  vec3 grass = mix(uGrass, uGrassLight, fine * 0.55 + coarse * 0.45);
+  grass = mix(grass, uEarthLight, smoothstep(0.62, 0.8, bambooNoise(p * 0.5 + 2.7)) * 0.5);
+  litter = mix(litter, grass, clearing);
   float path = smoothstep(0.32, 0.6, mask.r + (fine - 0.5) * 0.22);
   vec3 earth = mix(uEarth, uEarthLight, fine * 0.5 + coarse * 0.5);
   float slab = smoothstep(0.35, 0.55, mask.g + (fine - 0.5) * 0.08);
   vec3 stone = mix(uStone, uStoneLight, bambooNoise(p * 5.0 + 2.0) * 0.6 + fine * 0.4);
   vec3 color = mix(litter, mix(earth, stone, slab), path);
   float edge = smoothstep(0.2, 0.45, mask.r) * (1.0 - smoothstep(0.45, 0.75, mask.r));
-  color = mix(color, uMoss, edge * 0.35);
-  float dapple = mix(1.0 - uDapple, 1.0, bambooNoise(p * 0.75 + vec2(uTime * 0.02, uTime * 0.013)));
-  color *= bambooLight(vWorld, vec3(0.0, 1.0, 0.0), dapple);
+  color = mix(color, uMoss, edge * 0.35 * (1.0 - clearing));
+  float dapple = mix(1.0 - uDapple * (1.0 - clearing), 1.0, bambooNoise(p * 0.75 + vec2(uTime * 0.02, uTime * 0.013)));
+  color *= bambooLight(vWorld, normalize(vNormal), dapple);
   color += uPoolColor * mask.b * uNight;
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
@@ -114,6 +135,7 @@ void main() {
 export const BAMBOO_STALK_VERT = `
 attribute vec4 aStalk;
 attribute vec4 aSeed;
+attribute float aGround;
 uniform float uTime;
 uniform float uSway;
 varying vec3 vWorld;
@@ -127,7 +149,7 @@ void main() {
   float bend = h * h * uSway;
   float sway = sin(uTime * 0.7 + aSeed.x) * 0.22 * bend + sin(uTime * 1.9 + aSeed.x * 1.7) * 0.04 * bend;
   vec3 world = vec3(aStalk.x + position.x * aStalk.w + sway + aSeed.w * h * aStalk.z,
-    h * aStalk.z, aStalk.y + position.z * aStalk.w + sway * 0.6);
+    aGround - 0.15 + h * aStalk.z, aStalk.y + position.z * aStalk.w + sway * 0.6);
   vWorld = world;
   vNormal = normal;
   vHeight01 = h;
@@ -232,11 +254,14 @@ uniform float uCanopyAlpha;
 varying vec2 vUv;
 varying vec3 vWorld;
 ${BAMBOO_LIGHT_GLSL}
+${BAMBOO_CLEARING_GLSL}
 #include <fog_pars_fragment>
 void main() {
   vec2 uv = vUv * uRepeat + vec2(uTime * 0.004, uTime * 0.0025);
   vec4 leaf = texture2D(uLeaf, uv);
-  if (leaf.a < uCanopyAlpha) discard;
+  // The canopy opens over the meadow and the summit, thinning out before the clearing edge.
+  float cover = 1.0 - bambooClearing(vWorld.xz + vec2(0.0, 0.0));
+  if (leaf.a * cover < uCanopyAlpha) discard;
   // Seen from below: the underside is in shade, with sunlight showing through.
   vec3 light = mix(uGroundAmbient, uAmbient, 0.5) + uSunColor * 0.42 * max(uSunDir.y, 0.0);
   vec3 color = leaf.rgb * uCanopyColor * light;
@@ -244,6 +269,41 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
+}`;
+
+/** The city beyond the far slope: a distant panel never touched by the forest fog, lit up as the lanterns come on. */
+export const BAMBOO_CITY_VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+export const BAMBOO_CITY_FRAG = `
+uniform sampler2D uCity;
+uniform float uNight;
+uniform float uLights;
+uniform float uTime;
+uniform vec3 uHaze;
+uniform vec3 uHazeNight;
+varying vec2 vUv;
+void main() {
+  // r: hill silhouettes (far to near), g: windows and street lights, b: glow over the centre.
+  vec4 c = texture2D(uCity, vUv);
+  // The glow belongs to the valley floor; above the ridge line the panel must stay clear so stars show through.
+  float hills = c.r, lights = c.g, glow = c.b * (1.0 - smoothstep(0.40, 0.52, vUv.y));
+  vec3 haze = mix(uHaze, uHazeNight, uNight);
+  vec3 dayHills = mix(haze * 1.08, haze * 0.72, hills);
+  vec3 nightHills = mix(vec3(0.010, 0.015, 0.030), vec3(0.024, 0.03, 0.05), hills);
+  float twinkle = 0.86 + 0.14 * sin(uTime * 1.7 + vUv.x * 240.0) * sin(uTime * 2.3 + vUv.y * 170.0);
+  vec3 lamps = vec3(1.0, 0.74, 0.44) * lights * uLights * twinkle * 1.9 + vec3(0.95, 0.62, 0.42) * glow * uLights * 0.2;
+  vec3 color = mix(dayHills, nightHills, uNight) + lamps;
+  float body = max(hills, max(lights * uLights, glow * uLights * 0.5));
+  float alpha = body * smoothstep(0.0, 0.14, vUv.y);
+  if (alpha < 0.012) discard;
+  gl_FragColor = vec4(color, alpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 /** Additive billboard halos around each lantern; exactly zero at the edge of the quad. */

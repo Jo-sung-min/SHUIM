@@ -17,6 +17,10 @@ public enum BeachMap {
             default -> BeachRoom.MIN_Z;
         };
     }
+    /** The bamboo mountain is twice as wide as the shore and climbs far beyond it. */
+    public double maxZ() { return this == BAMBOO ? 115 : BeachRoom.MAX_Z; }
+    public double minX() { return this == BAMBOO ? -44 : BeachRoom.MIN_X; }
+    public double maxX() { return this == BAMBOO ? 44 : BeachRoom.MAX_X; }
     public boolean hasBeachFacilities() { return this == BEACH; }
     /** The shared starlight circle belongs to the open maps; the forest rests in its pavilions instead. */
     public boolean hasStarlight() { return this != BAMBOO; }

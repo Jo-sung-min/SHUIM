@@ -25,7 +25,7 @@ const VIEW_KEY = "beach-view";
 const INTRO_VISIBLE_MS = 4000;
 const INTRO_FADE_MS = 700;
 const EMPTY_ONSEN: OnsenState = { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
-const EMPTY_PAVILION: PavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "" };
+const EMPTY_PAVILION: PavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "", kind: "pavilion" };
 type SkyPhase = "walking" | "joining" | "standing";
 
 /** 마지막에 고른 시점 (기기별로 기억) */
@@ -1156,7 +1156,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           </button>}
           {pavilionContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || (!pavilion.seated && (!pavilionEnabled || !pavilion.available))} aria-pressed={pavilion.seated} aria-keyshortcuts="E" onClick={() => { const spot = pavilion.spotId; if (spot) void toggleStargazing(spot); }}>
             <span className={styles.contextIcon}><IconSmile /></span>
-            <span className={styles.contextCopy}><strong>{pavilionPhase === "standing" ? "일어나는 중…" : pavilion.seated ? "정자에서 일어나기" : pavilionPhase === "joining" ? "자리 잡는 중…" : !pavilion.available ? "가까운 자리가 찼어요" : "정자에 앉기"}</strong><small>{pavilion.seated ? `${pavilion.name}에 걸터앉아 숲을 바라보는 중` : !pavilionEnabled ? "앉을 자리를 준비하고 있어요" : !pavilion.available ? "마루의 다른 쪽으로 가 주세요" : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`}</small></span>
+            <span className={styles.contextCopy}><strong>{pavilionPhase === "standing" ? "일어나는 중…" : pavilion.seated ? (pavilion.kind === "deck" ? "전망대에서 일어나기" : "정자에서 일어나기") : pavilionPhase === "joining" ? "자리 잡는 중…" : !pavilion.available ? "가까운 자리가 찼어요" : pavilion.kind === "deck" ? "전망대에 앉기" : "정자에 앉기"}</strong><small>{pavilion.seated ? (pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`) : !pavilionEnabled ? "앉을 자리를 준비하고 있어요" : !pavilion.available ? (pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요") : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`}</small></span>
             <span className={styles.contextCount} aria-label={`정자 ${pavilion.capacity}석 중 ${pavilion.occupied}석 사용 중`}>{pavilion.occupied}/{pavilion.capacity}</span>
           </button>}
           {restContextVisible && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!lying && (!areaEnabled || skyFull))} onClick={() => void toggleStargazing(areaSpot)}>

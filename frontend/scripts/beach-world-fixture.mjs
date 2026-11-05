@@ -52,8 +52,8 @@ const trailSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/ba
 const trailContext = {};
 vm.runInNewContext(`${trailSource}\nglobalThis.api = {
   BAMBOO_BOUNDS, TRAIL_WALK_HALF, BAMBOO_PAVILIONS, BAMBOO_PAVILION_SEATS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_COLLIDERS,
-  BAMBOO_LANTERNS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, PAVILION_FLOOR_Y,
+  BAMBOO_LANTERNS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, PAVILION_RISE, SUMMIT, MEADOW, SUMMIT_HEIGHT,
   bambooPavilionForSpot, pavilionSeat, claimedPavilionSeat, nearbyBambooPavilion, bambooFloorHeight, bambooCeilingHeight,
-  nearestOnTrail, onTrail, resolveTrail
+  groundHeight, mountainHeight, nearestOnTrail, onTrail, resolveTrail
 };`, trailContext);
 export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...motionContext.api, ...trailContext.api, ...assets };

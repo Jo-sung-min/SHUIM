@@ -226,7 +226,7 @@ export function bambooDaylightAt(hourIn: number): Daylight {
   const shade: RGB = [base.tint[0] * 0.92, base.tint[1] * 1.0, base.tint[2] * 0.88];
   const lanternWarm: RGB = [0.74, 0.7, 0.68];
   const tint = mixRgb(mixRgb(base.tint, shade, 1 - night), lanternWarm, base.deepNight * 0.45);
-  return { ...base, fog, fogNear: 12, fogFar: 54, tint };
+  return { ...base, fog, fogNear: 14, fogFar: 62, tint };
 }
 
 /** 지금 시각 (분까지, 0~24) */

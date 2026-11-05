@@ -336,7 +336,7 @@ function validRestPresence(value: unknown): value is RestPresence {
   }
   if (state.pose === "sitting") {
     return (state.spotId === "fire-benches" && state.slot! < 12)
-      || (["pavilion-wind", "pavilion-moon", "pavilion-pine", "pavilion-step"].includes(state.spotId ?? "") && state.slot! < 6);
+      || (["pavilion-wind", "pavilion-moon", "pavilion-pine", "pavilion-step", "pavilion-summit"].includes(state.spotId ?? "") && state.slot! < 6);
   }
   if (state.spotId === "hotel-dawn" || state.spotId === "hotel-dusk") return state.pose === "lying" && state.slot! < 2;
   return state.pose === "lying" && (state.spotId === "starlight" ? state.slot! < 8
