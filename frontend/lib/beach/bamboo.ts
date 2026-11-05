@@ -2,14 +2,17 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Daylight } from "./daylight";
 import {
-  BAMBOO_FENCES, BAMBOO_LANTERNS, BAMBOO_PAVILIONS, DECK_YARD, MEADOW, NORTH_FACE, PAVILION_YARD_HALF, STALK_FIELD, SUMMIT, TRAIL_POLYLINES, TRAIL_WIDTH,
-  bambooBrushSites, bambooStalkSites, groundHeight, seededRandom, type StalkSite, type TrailLantern,
+  BAMBOO_BOUNDS, BAMBOO_FENCES, BAMBOO_LANTERNS, BAMBOO_PAVILIONS, DECK_YARD, MEADOW, NORTH_FACE, PAVILION_YARD_HALF, STALK_FIELD, SUMMIT, TRAIL_POLYLINES, TRAIL_WIDTH,
+  bambooBrushSites, bambooStalkSites, groundHeight, seededRandom, summitGroveSites, type StalkSite, type TrailLantern,
 } from "./bamboo-trail";
 import {
-  BAMBOO_CANOPY_FRAG, BAMBOO_CANOPY_VERT, BAMBOO_CITY_FRAG, BAMBOO_CITY_VERT, BAMBOO_FIREFLY_FRAG, BAMBOO_FIREFLY_VERT,
+  BAMBOO_CANOPY_FRAG, BAMBOO_CANOPY_VERT, BAMBOO_FIREFLY_FRAG, BAMBOO_FIREFLY_VERT,
   BAMBOO_FOLIAGE_FRAG, BAMBOO_FOLIAGE_VERT, BAMBOO_GLOW_FRAG, BAMBOO_GLOW_VERT, BAMBOO_GROUND_FRAG, BAMBOO_GROUND_VERT,
   BAMBOO_STALK_FRAG, BAMBOO_STALK_VERT,
 } from "./bamboo-shader";
+import { buildBambooOverlook } from "./bamboo-overlook";
+import { buildBambooGuestbook } from "./bamboo-guestbook";
+import type { BambooNote } from "./bamboo-notes";
 import { buildBambooPavilions, type BambooPavilionSet } from "./bamboo-pavilions";
 
 export interface BambooWalker { x: number; z: number; moving: boolean }
@@ -18,18 +21,17 @@ export interface BambooWalker { x: number; z: number; moving: boolean }
 const MASK = { minX: -48, minZ: -8, width: 96, depth: 128, sizeX: 1024, sizeZ: 1536 } as const;
 const CHUNK_COLS = 6, CHUNK_ROWS = 8;
 const LEAF_RADIUS = { high: 32, low: 22 } as const;
+const SUMMIT_LEAF_RADIUS = 48;
 /** Chunks whose nearest point is beyond the fog (62 m) are not drawn at all. */
 const STALK_RADIUS = 56;
 const STONE_LIGHT_Y = 0.83;
 const LAMP_INTENSITY = 12;
-/** The city sits far beyond the mountain's north slope, below the summit's line of sight. */
-const CITY = { z: 440, y: 60, width: 1500, height: 240 } as const;
-
 interface Chunk {
   stalks: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   leaves: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   cx: number; cz: number; radius: number;
   stalkCount: number; leafCount: number;
+  groveStalks: number; groveLeaves: number;
 }
 
 const srgb = (hex: number) => new THREE.Color(hex);
@@ -131,63 +133,6 @@ function brushTexture(): THREE.Texture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
-}
-
-/** 도시 야경: 먼 산 능선(r), 창문·가로등 불빛(g), 도심 위 빛무리(b)를 채널별로 그린다. 외부 이미지 없음. */
-function cityTexture(): THREE.Texture {
-  if (typeof document === "undefined") return new THREE.Texture();
-  const width = 2048, height = 512, { canvas, ctx } = canvas2d(width, height, true);
-  const rand = seededRandom(97);
-  ctx.globalCompositeOperation = "lighter";
-  // Three ridges, far to near, each a lower and brighter mask value for aerial perspective.
-  [[286, 34, 0.5], [318, 24, 0.72], [350, 16, 1]].forEach(([baseline, amplitude, value], layer) => {
-    ctx.fillStyle = `rgba(255,0,0,${value})`;
-    ctx.beginPath();
-    ctx.moveTo(0, height);
-    for (let x = 0; x <= width; x += 8) {
-      const y = baseline - amplitude * (0.55 * Math.sin(x / (260 + layer * 90) + layer) + 0.3 * Math.sin(x / (97 + layer * 23) + 2.1 * layer) + 0.15 * Math.sin(x / 41 + layer));
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(width, height); ctx.closePath(); ctx.fill();
-  });
-  // Towers with lit window grids, taller toward the centre.
-  for (let i = 0; i < 46; i++) {
-    const cx = 160 + rand() * (width - 320), near = 1 - Math.abs(cx - width / 2) / (width / 2);
-    const w = 8 + rand() * 22, h = 28 + rand() * (60 + near * 90), bottom = 462 + rand() * 20;
-    ctx.fillStyle = "rgba(255,0,0,0.9)"; ctx.fillRect(cx - w / 2, bottom - h, w, h);
-    for (let y = bottom - h + 3; y < bottom - 3; y += 4) for (let x = cx - w / 2 + 2; x < cx + w / 2 - 1; x += 3.5) {
-      if (rand() < 0.55) { ctx.fillStyle = `rgba(0,255,0,${0.5 + rand() * 0.5})`; ctx.fillRect(x, y, 1.6, 1.6); }
-    }
-    if (h > 110 && rand() < 0.7) { ctx.fillStyle = "rgba(0,255,0,1)"; ctx.fillRect(cx - 1, bottom - h - 3, 2, 2); }
-  }
-  // Street and window lights across the valley: denser and brighter near the centre and the foot of the slope.
-  for (let i = 0; i < 14000; i++) {
-    const x = rand() * width, t = rand();
-    const y = 352 + Math.pow(t, 0.6) * 150;
-    const near = 1 - Math.abs(x - width / 2) / (width / 2);
-    if (rand() > 0.35 + near * 0.65) continue;
-    const size = 0.8 + rand() * (1.2 + (y - 352) / 150 * 1.6);
-    ctx.fillStyle = `rgba(0,255,0,${0.35 + rand() * 0.65})`;
-    ctx.fillRect(x, y, size, size);
-  }
-  for (let row = 0; row < 7; row++) {
-    const y = 372 + row * 19 + rand() * 6;
-    for (let x = rand() * 40; x < width; x += 9 + rand() * 14) {
-      if (rand() < 0.8) { ctx.fillStyle = "rgba(0,255,0,0.8)"; ctx.fillRect(x, y, 1.5, 1.5); }
-    }
-  }
-  const glow = ctx.createRadialGradient(width / 2, 455, 0, width / 2, 455, 760);
-  glow.addColorStop(0, "rgba(0,0,255,0.7)"); glow.addColorStop(0.45, "rgba(0,0,255,0.3)"); glow.addColorStop(1, "rgba(0,0,255,0)");
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
-  const band = ctx.createLinearGradient(0, 330, 0, 512);
-  band.addColorStop(0, "rgba(0,0,255,0)"); band.addColorStop(0.6, "rgba(0,0,255,0.35)"); band.addColorStop(1, "rgba(0,0,255,0.5)");
-  ctx.fillStyle = band; ctx.fillRect(0, 330, width, 182);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.NoColorSpace;
-  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.anisotropy = 4;
   return texture;
 }
 
@@ -362,7 +307,8 @@ export class BambooWorld {
   private readonly fireflies: THREE.Points;
   private readonly windows: THREE.InstancedMesh;
   private readonly windowMaterial = new THREE.MeshBasicMaterial({ color: 0x2a2622, toneMapped: false });
-  private readonly cityMaterial: THREE.ShaderMaterial;
+  private readonly overlook: ReturnType<typeof buildBambooOverlook>;
+  private readonly guestbook: ReturnType<typeof buildBambooGuestbook>;
   private readonly pavilions: BambooPavilionSet;
   private readonly lanternPoints: { x: number; y: number; z: number }[];
   private readonly materials: THREE.Material[] = [];
@@ -392,8 +338,8 @@ export class BambooWorld {
       this.lamps.push(lamp);
     }
 
-    const mask = groundMaskTexture(), leaf = leafClusterTexture(), canopy = canopyTexture(), brush = brushTexture(), city = cityTexture();
-    this.textures.push(mask, leaf, canopy, brush, city);
+    const mask = groundMaskTexture(), leaf = leafClusterTexture(), canopy = canopyTexture(), brush = brushTexture();
+    this.textures.push(mask, leaf, canopy, brush);
     const shared = () => ({ ...this.light, uTime: this.time, uSway: this.sway, uClearings: this.clearings, ...this.fogUniforms });
 
     this.groundMaterial = new THREE.ShaderMaterial({
@@ -410,8 +356,15 @@ export class BambooWorld {
     });
     this.materials.push(this.groundMaterial);
     // Fine grid where people walk, a coarse skirt out to the fog; the skirt sits just below so the seam never shows.
-    const inner = heightfield(-52, 52, -12, 124, 1.5, groundHeight);
-    const outer = heightfield(-100, 100, -60, 180, 6, (x, z) => groundHeight(x, z) - 0.15);
+    // The terrain outside the summit drops into the valley on its front and both flanks.
+    const slope = (x: number, z: number) => {
+      const north = THREE.MathUtils.smoothstep(z, BAMBOO_BOUNDS.maxZ, 164);
+      const flank = THREE.MathUtils.smoothstep(Math.abs(x), BAMBOO_BOUNDS.maxX, 86)
+        * THREE.MathUtils.smoothstep(z, 73, 94);
+      return groundHeight(x, z) - 38 * (north + flank * (1 - north));
+    };
+    const inner = heightfield(-52, 52, -12, 124, 1.5, slope);
+    const outer = heightfield(-100, 100, -60, 180, 6, (x, z) => slope(x, z) - 0.15);
     this.geometries.push(inner, outer);
     for (const [index, geometry] of [inner, outer].entries()) {
       const mesh = new THREE.Mesh(geometry, this.groundMaterial);
@@ -429,7 +382,7 @@ export class BambooWorld {
       vertexShader: BAMBOO_FOLIAGE_VERT, fragmentShader: BAMBOO_FOLIAGE_FRAG, fog: true, side: THREE.DoubleSide,
     });
     this.materials.push(stalkMaterial, leafMaterial);
-    this.buildForest(stalkMaterial, leafMaterial);
+    this.buildForest(stalkMaterial, leafMaterial, slope);
 
     const canopyMaterial = new THREE.ShaderMaterial({
       uniforms: { ...shared(), uLeaf: { value: canopy }, uRepeat: { value: new THREE.Vector2(22, 26) }, uCanopyColor: { value: srgb(0x6e8f42) }, uCanopyAlpha: { value: 0.5 } },
@@ -464,21 +417,25 @@ export class BambooWorld {
     this.windows = this.buildLanterns();
     this.glow = this.buildGlow();
     this.fireflies = this.buildFireflies();
-    this.cityMaterial = this.buildCity(city);
+    this.overlook = buildBambooOverlook(this.root, this.time);
+    this.guestbook = buildBambooGuestbook(this.root);
     this.pavilions = buildBambooPavilions(scene, textures);
     this.root.add(this.pavilions.root);
   }
 
-  private buildForest(stalkMaterial: THREE.ShaderMaterial, leafMaterial: THREE.ShaderMaterial) {
+  private buildForest(stalkMaterial: THREE.ShaderMaterial, leafMaterial: THREE.ShaderMaterial, heightAt: (x: number, z: number) => number) {
     const sites = bambooStalkSites();
     const { outer } = STALK_FIELD;
     const chunkW = (outer.maxX - outer.minX) / CHUNK_COLS, chunkD = (outer.maxZ - outer.minZ) / CHUNK_ROWS;
     const buckets: StalkSite[][] = Array.from({ length: CHUNK_COLS * CHUNK_ROWS }, () => []);
-    for (const site of sites) {
+    const groves: StalkSite[][] = Array.from({ length: buckets.length }, () => []);
+    const chunkIndex = (site: StalkSite) => {
       const col = Math.min(CHUNK_COLS - 1, Math.max(0, Math.floor((site.x - outer.minX) / chunkW)));
       const row = Math.min(CHUNK_ROWS - 1, Math.max(0, Math.floor((site.z - outer.minZ) / chunkD)));
-      buckets[row * CHUNK_COLS + col].push(site);
-    }
+      return row * CHUNK_COLS + col;
+    };
+    for (const site of sites) buckets[chunkIndex(site)].push(site);
+    for (const site of summitGroveSites(heightAt)) groves[chunkIndex(site)].push(site);
     // Five smooth-shaded sides read as round at a 5–10 cm radius and save a sixth of the forest's triangles.
     const stalkBase = new THREE.CylinderGeometry(0.82, 1, 1, 5, 1, true);
     stalkBase.translate(0, 0.5, 0);
@@ -486,14 +443,16 @@ export class BambooWorld {
     this.geometries.push(stalkBase, quad);
     const rand = seededRandom(41);
     buckets.forEach((bucket, index) => {
-      if (!bucket.length) return;
+      const grove = groves[index];
+      if (!bucket.length && !grove.length) return;
       // Shuffle so the first half is an even subsample for the low-quality cut.
       for (let i = bucket.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [bucket[i], bucket[j]] = [bucket[j], bucket[i]]; }
+      const stems = [...grove, ...bucket];
       const col = index % CHUNK_COLS, row = Math.floor(index / CHUNK_COLS);
       const cx = outer.minX + (col + 0.5) * chunkW, cz = outer.minZ + (row + 0.5) * chunkD;
-      const stalkGeometry = instanced(stalkBase, bucket.length);
-      const stalk = new Float32Array(bucket.length * 4), seed = new Float32Array(bucket.length * 4), ground = new Float32Array(bucket.length);
-      bucket.forEach((site, i) => {
+      const stalkGeometry = instanced(stalkBase, stems.length);
+      const stalk = new Float32Array(stems.length * 4), seed = new Float32Array(stems.length * 4), ground = new Float32Array(stems.length);
+      stems.forEach((site, i) => {
         stalk.set([site.x, site.z, site.height, site.radius], i * 4);
         seed.set([site.phase, site.tint, site.leafAt, site.lean], i * 4);
         ground[i] = site.y;
@@ -507,10 +466,20 @@ export class BambooWorld {
       stalks.name = `bamboo-stalks-${index}`;
       // Secondary clusters follow the primary ones so a halved count keeps every stalk's crown.
       const clusters: number[] = [], clusterSeeds: number[] = [];
-      const push = (site: StalkSite, ratio: number, size: number) => {
-        clusters.push(site.x + site.lean * site.height * ratio, site.y - 0.15 + site.height * ratio, site.z, size);
-        clusterSeeds.push(site.phase, site.tint, site.phase * 3.1, ratio);
+      const push = (site: StalkSite, ratio: number, size: number, branch = 0) => {
+        const yaw = site.phase * 3.1 + branch;
+        clusters.push(site.x + site.lean * site.height * ratio + Math.sin(yaw) * branch * 0.22,
+          site.y - 0.15 + site.height * ratio, site.z + Math.cos(yaw) * branch * 0.22, size);
+        clusterSeeds.push(site.phase, site.tint, yaw, ratio);
       };
+      for (const site of grove) {
+        // Low arches, side branches and crowns overlap at different depths.
+        // The same perforated bamboo leaves still reveal stems and shafts of light.
+        push(site, site.leafAt, 3.7 + site.tint * 1.5);
+        push(site, .42 + .13 * site.tint, 3.8 + site.tint * 1.1, 2.3);
+        if (site.height > 5) push(site, .20 + .12 * site.tint, 3.3 + site.tint * .9, 3.6);
+      }
+      const groveLeaves = clusters.length / 4;
       for (const site of bucket) push(site, site.leafAt, 2.3 + site.tint * 1.3);
       for (const site of bucket) if (site.tint > 0.62) push(site, 0.42 + site.tint * 0.25, 1.5 + site.tint * 0.7);
       const leafCount = clusters.length / 4;
@@ -523,7 +492,8 @@ export class BambooWorld {
       leaves.renderOrder = 1;
       this.root.add(stalks, leaves);
       this.geometries.push(stalkGeometry, leafGeometry);
-      this.chunks.push({ stalks, leaves, cx, cz, radius: Math.hypot(chunkW / 2, chunkD / 2), stalkCount: bucket.length, leafCount });
+      this.chunks.push({ stalks, leaves, cx, cz, radius: Math.hypot(chunkW / 2, chunkD / 2),
+        stalkCount: stems.length, leafCount, groveStalks: grove.length, groveLeaves });
     });
   }
 
@@ -663,32 +633,11 @@ export class BambooWorld {
     return points;
   }
 
-  /** The distant city: a single panel beyond the north slope, outside the fog, facing the summit. */
-  private buildCity(texture: THREE.Texture): THREE.ShaderMaterial {
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uCity: { value: texture }, uNight: { value: 0 }, uLights: { value: 0 }, uTime: this.time,
-        uHaze: { value: srgb(0x9fb5bf) }, uHazeNight: { value: srgb(0x0a1420) },
-      },
-      vertexShader: BAMBOO_CITY_VERT, fragmentShader: BAMBOO_CITY_FRAG,
-      transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
-    });
-    this.materials.push(material);
-    const geometry = new THREE.PlaneGeometry(CITY.width, CITY.height);
-    this.geometries.push(geometry);
-    const panel = new THREE.Mesh(geometry, material);
-    panel.name = "bamboo-city";
-    panel.position.set(0, CITY.y, CITY.z);
-    panel.rotation.y = Math.PI;
-    panel.renderOrder = 1;
-    this.root.add(panel);
-    return material;
-  }
-
   applyDaylight(d: Daylight) {
     if (this.disposed) return;
     const night = THREE.MathUtils.clamp(d.stars, 0, 1), lamps = THREE.MathUtils.clamp(d.lanterns, 0, 1);
     this.lampAmount = lamps;
+    this.guestbook.setLanternAmount(lamps);
     const sunUp = d.sun[1] > -0.02;
     const direction = sunUp ? d.sun : d.moon;
     this.sun.position.set(direction[0] * 60, Math.max(12, direction[1] * 60), direction[2] * 60);
@@ -708,10 +657,7 @@ export class BambooWorld {
     this.glow.visible = lamps > 0.01;
     this.fireflies.visible = lamps > 0.05 && !this.low;
     for (const lamp of this.lamps) { lamp.intensity = LAMP_INTENSITY * lamps; lamp.visible = lamps > 0.01; }
-    this.cityMaterial.uniforms.uNight.value = night;
-    this.cityMaterial.uniforms.uLights.value = Math.max(lamps, night * 0.9);
-    (this.cityMaterial.uniforms.uHaze.value as THREE.Color).setRGB(...d.fog, THREE.SRGBColorSpace).lerp(new THREE.Color(0xa9bdc6), 0.5);
-    (this.cityMaterial.uniforms.uHazeNight.value as THREE.Color).setRGB(...d.fog, THREE.SRGBColorSpace).multiplyScalar(0.8);
+    this.overlook.applyDaylight(d);
     this.pavilions.applyDaylight(d);
     this.lastLampAt.t = -Infinity;
   }
@@ -723,7 +669,11 @@ export class BambooWorld {
     for (const chunk of this.chunks) {
       const reach = Math.hypot(chunk.cx - position.x, chunk.cz - position.z) - chunk.radius;
       chunk.stalks.visible = reach < STALK_RADIUS;
-      chunk.leaves.visible = reach < this.leafRadius;
+      const nearby = reach < this.leafRadius;
+      chunk.leaves.visible = nearby || (chunk.groveLeaves > 0 && reach < SUMMIT_LEAF_RADIUS);
+      // Beyond the ordinary forest's LOD distance, retain only the summit prefix.
+      const fieldLeaves = chunk.leafCount - chunk.groveLeaves;
+      chunk.leaves.geometry.instanceCount = chunk.groveLeaves + (nearby ? (this.low ? Math.ceil(fieldLeaves / 2) : fieldLeaves) : 0);
     }
     const x = walker?.x ?? position.x, z = walker?.z ?? position.z;
     const moved = Math.hypot(x - this.lastLampAt.x, z - this.lastLampAt.z);
@@ -746,13 +696,19 @@ export class BambooWorld {
     this.low = low;
     this.leafRadius = low ? LEAF_RADIUS.low : LEAF_RADIUS.high;
     for (const chunk of this.chunks) {
-      chunk.stalks.geometry.instanceCount = low ? Math.ceil(chunk.stalkCount * 0.55) : chunk.stalkCount;
-      chunk.leaves.geometry.instanceCount = low ? Math.ceil(chunk.leafCount * 0.5) : chunk.leafCount;
+      chunk.stalks.geometry.instanceCount = low ? chunk.groveStalks + Math.ceil((chunk.stalkCount - chunk.groveStalks) * 0.55) : chunk.stalkCount;
     }
     if (this.brush) this.brush.visible = !low;
     if (this.canopies[1]) this.canopies[1].visible = !low;
     this.fireflies.visible = this.lampAmount > 0.05 && !low;
     this.lastLampAt.t = -Infinity;
+  }
+
+  setGuestbookEntries(entries: readonly BambooNote[]) {
+    this.guestbook.setEntries(entries);
+  }
+  clipGuestbookCamera(x: number, y: number, z: number, target: THREE.Vector3) {
+    this.guestbook.clipCamera(x, y, z, target);
   }
 
   setFireState(_logCount: number, _color: string) {}
@@ -762,6 +718,8 @@ export class BambooWorld {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.overlook.dispose();
+    this.guestbook.dispose();
     this.pavilions.dispose();
     this.root.removeFromParent();
     this.root.traverse((object) => { if (object instanceof THREE.InstancedMesh) object.dispose(); });

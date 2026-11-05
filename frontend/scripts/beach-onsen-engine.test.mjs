@@ -223,7 +223,7 @@ test("fireworks allocate on the first room event, forward clocks and updates, an
   engine.applyFireworks(events, 1200); engine.applyFireworks(events, 1300);
   assert.equal(effects.length, count + 1);
   const manager = effects.at(-1);
-  assert.deepEqual(plain(manager.options), { mobile: false }); assert.equal(manager.scene, engine.scene);
+  assert.deepEqual(plain(manager.options), { mobile: false, grand: true, reflectWater: false }); assert.equal(manager.scene, engine.scene);
   assert.deepEqual(manager.applied.map(x => x.serverTime), [1200, 1300]);
   Object.assign(engine, { skyMat: { uniforms: { uTime: {} } }, seaMat: { uniforms: { uTime: {}, uCamPos: { value: new THREE.Vector3() } } },
     cove: { setFireFlare() {}, update() {} } });

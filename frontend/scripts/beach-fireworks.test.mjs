@@ -15,7 +15,7 @@ const variantSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/
   .replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
 const event = (id = "one", startedAt = 100_000, seed = 1785) => ({ id, seed, startedAt, durationMs: 12_000 });
 
-function fixture({ mobile = false, dom = true, height = 844 } = {}) {
+function fixture({ mobile = false, dom = true, height = 844, audio } = {}) {
   let time = 100_000;
   const requests = [];
   class TextureLoader {
@@ -28,7 +28,7 @@ function fixture({ mobile = false, dom = true, height = 844 } = {}) {
   const context = { THREE: { ...THREE, TextureLoader }, Date: { now: () => time }, ...assets };
   if (dom) { context.document = {}; context.window = { innerHeight: height }; }
   vm.runInNewContext(`${variantSource}\n${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
-  const scene = new THREE.Scene(), fireworks = new context.api.BeachFireworks(scene, { mobile });
+  const scene = new THREE.Scene(), fireworks = new context.api.BeachFireworks(scene, { mobile }, audio);
   return { ...context.api, scene, fireworks, requests, setTime(value) { time = value; },
     load(index = 0) { requests[index].onLoad(requests[index].texture); } };
 }
@@ -257,6 +257,21 @@ test("higher drawing-buffer resolution preserves the CSS size of sparks, text do
   fireworks.update(camera, 105_000, Number.NaN);
   assert.equal(object.material.uniforms.uViewport.value, 844, "an invalid optional height safely uses the CSS fallback");
   fireworks.dispose();
+});
+
+test("audio receives the actual visible geometry once per accepted room event and uses its shared clock", () => {
+  const starts = [], times = [];
+  const { fireworks, scene, setTime } = fixture({ audio: {
+    addShow(...values) { starts.push(values); }, update(time) { times.push(time); },
+  } });
+  fireworks.apply([event("expired", 170_000), event("live", 195_000)], 200_000);
+  assert.equal(starts.length, 1);
+  assert.deepEqual(starts[0], [scene.children[0].geometry, 195_000, 200_000, 1785]);
+  setTime(100_500); fireworks.apply([event("live", 195_000)], 200_200);
+  fireworks.update(); assert.equal(times.at(-1), 200_500);
+  assert.equal(starts.length, 1, "a polling retry never reschedules the booms");
+  fireworks.dispose(); fireworks.apply([event("other", 201_000)], 201_000);
+  assert.equal(starts.length, 1);
 });
 
 test("late joiners start at the shared age and duplicate or delayed snapshots never rewind an existing show", () => {

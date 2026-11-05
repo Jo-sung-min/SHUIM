@@ -2,6 +2,7 @@
 
 import type { BeachCharacter } from "./appearance";
 import type { MapId } from "./maps";
+import type { RoomMusicState } from "./room-music";
 
 /**
  * 바닷가 서버와 주고받기. 각 소로우에 멤버 전용 방(/api/beach, BeachRoom)이 하나씩 있다.
@@ -31,9 +32,12 @@ export interface EnterResponse {
   onsenEnabled?: boolean;
   /** Bamboo-trail pavilions: shared edge seats claimed through the rest API. */
   pavilionEnabled?: boolean;
+  festival?: BambooFestivalState;
   careCapabilities?: CareCapabilities;
   lighting?: RoomLighting | null;
   lightingControl?: boolean;
+  music?: RoomMusicState;
+  musicControl?: boolean;
   fireworksControl?: boolean;
   fireworks?: FireworkEvent[];
   fireworksCooldownUntil?: number;
@@ -195,6 +199,7 @@ export interface FireState {
 
 export interface RemotePlayer {
   updatedAt?: number;
+  festival?: BambooFestivalState;
   pid: string;
   id: string;
   nick: string;
@@ -206,6 +211,27 @@ export interface RemotePlayer {
   pose?: RestPresence["pose"];
   spotId?: string | null;
   slot?: number | null;
+}
+
+export type BambooToy = "balloon" | "fan" | "propeller";
+export interface PropellerFlight { id: string; x: number; z: number; yaw: number; startedAt: number; durationMs: number }
+export interface BambooFestivalState { held: BambooToy | null; flight: PropellerFlight | null; balloonHue?: number | null }
+
+function readFestival(value: BambooFestivalState | undefined): BambooFestivalState | undefined {
+  if (!value || (value.held !== null && !["balloon", "fan", "propeller"].includes(value.held))) return undefined;
+  const f = value.flight;
+  if (f !== null && (!f || !UUID_PATTERN.test(f.id) || !isTime(f.startedAt) || f.durationMs !== 6000
+    || ![f.x, f.z, f.yaw].every(Number.isFinite) || Math.abs(f.x) > 44 || f.z < -4 || f.z > 115)) return undefined;
+  if (value.balloonHue != null && (!Number.isInteger(value.balloonHue) || value.balloonHue < 0 || value.balloonHue >= 360))
+    return { ...value, balloonHue: null };
+  return value;
+}
+
+export async function chooseBambooToy(ticket: string, requestId: string, choice: BambooToy | "put-away") {
+  const result = await post<{ festival: BambooFestivalState; serverTime: number }>("/api/beach/festival",
+    { ticket, requestId, choice }, { signal: AbortSignal.timeout(8000) });
+  if (!isTime(result.serverTime) || !readFestival(result.festival)) throw new Error("축제 소품을 확인하지 못했어요. 다시 눌러 주세요.");
+  return result;
 }
 
 export type CareKind = "comfort" | "hug" | "wave";
@@ -255,6 +281,7 @@ export interface TickResponse {
   fire: FireState;
   selfRest?: RestPresence;
   lighting?: RoomLighting | null;
+  music?: RoomMusicState;
   fireworks?: FireworkEvent[];
   fireworksCooldownUntil?: number;
   uyuniMoments?: UyuniMoment[];
@@ -344,6 +371,7 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
     careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
     lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: mapId === "beach" && response.onsenEnabled === true,
     pavilionEnabled: mapId === "bamboo" && response.pavilionEnabled === true,
+    festival: mapId === "bamboo" ? readFestival(response.festival) : undefined,
     fireworksControl: response.fireworksControl === true && fireworks.supported,
     uyuniMomentsEnabled: mapId === "uyuni" && response.uyuniMomentsEnabled === true && moments.supported,
     uyuniMoments: mapId === "uyuni" ? moments.events : [], uyuniMomentCooldowns: moments.cooldowns,
@@ -366,6 +394,7 @@ export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promis
   const moments = readUyuniMomentsState(response);
   response.uyuniMoments = moments.events;
   response.uyuniMomentCooldowns = moments.cooldowns;
+  for (const player of response.players ?? []) if (player.festival) player.festival = readFestival(player.festival);
   // Movement-only ticks do not refresh privileges. A confirmed action response does.
   return response.careCapabilities == null ? response : { ...response, careCapabilities: readCareCapabilities(response.careCapabilities) };
 }

@@ -30,30 +30,31 @@ vec3 uyuniStars(vec3 d, float scale, float threshold, float salt) {
   float footprint = max(length(dFdx(d)), length(dFdy(d)));
   vec2 cell = floor(sp);
   float seed = beachSkyHash(cell);
+  if (seed < threshold) return vec3(0.0);
   vec2 jitter = (vec2(beachSkyHash(cell + 7.3), beachSkyHash(cell + 3.1)) - 0.5) * 0.42;
   vec2 point = (cell + 0.5 + jitter - salt) / scale;
   float r2 = dot(point, point);
   float y = 1.0 - r2;
   float ring = sqrt(max(0.0, 2.0 - r2));
   vec3 starDirection = vec3(point.x * ring, y, point.y * ring);
-  float radius = mix(0.0007, 0.0015, beachSkyHash(cell + 1.7));
+  float brightness = beachSkyHash(cell + 1.7);
+  float radius = mix(0.0007, 0.0015, brightness);
   float aa = max(footprint * 0.5, 0.00015);
-  float core = 1.0 - smoothstep(max(0.0, radius - aa), radius + aa, length(d - starDirection));
+  float distanceToStar = length(d - starDirection);
+  float core = 1.0 - smoothstep(max(0.0, radius - aa), radius + aa, distanceToStar);
   float energy = radius * radius / (radius * radius + footprint * footprint * 0.12);
   float twinkle = 0.78 + 0.22 * sin(uTime * (0.42 + seed * 0.38) + seed * 60.0);
+  // Only the light fluctuates. The star stays on the same world ray, including
+  // its mirror image. Different phases let a few stars catch the eye at a time.
+  vec3 viewAxis = vec3(viewMatrix[0].z, viewMatrix[1].z, viewMatrix[2].z);
+  float phase = brightness * 52.0 + dot(viewAxis, starDirection) * 18.0
+    + dot(cameraPosition.xz, point) * 0.7;
+  float pulse = smoothstep(0.48, 1.0, sin(phase + uTime * (1.3 + brightness)));
+  float glint = uStarMotion * pulse * smoothstep(0.28, 0.82, brightness);
+  float halo = 1.0 - smoothstep(0.0, radius * 2.25 + aa, distanceToStar);
   vec3 tint = mix(vec3(0.78, 0.87, 1.0), vec3(1.0, 0.90, 0.77), beachSkyHash(cell + 4.2));
-  return tint * step(threshold, seed) * core * energy * twinkle
-    * (0.65 + 0.65 * beachSkyHash(cell + 1.7)) * smoothstep(0.015, 0.14, d.y);
-}
-
-float uyuniNebulaNoise(vec3 p) {
-  vec3 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float n = dot(i, vec3(1.0, 57.0, 113.0));
-  vec4 low = fract(sin(n + vec4(0.0, 1.0, 57.0, 58.0)) * 43758.5453);
-  vec4 high = fract(sin(n + vec4(113.0, 114.0, 170.0, 171.0)) * 43758.5453);
-  return mix(mix(mix(low.x, low.y, f.x), mix(low.z, low.w, f.x), f.y),
-    mix(mix(high.x, high.y, f.x), mix(high.z, high.w, f.x), f.y), f.z);
+  return tint * energy * (core * (twinkle + 0.76 * glint) + halo * 0.30 * glint)
+    * (0.65 + 0.65 * brightness) * smoothstep(0.015, 0.14, d.y);
 }
 
 vec3 uyuniNight(vec3 d) {
@@ -70,10 +71,10 @@ vec3 uyuniNight(vec3 d) {
   float band = exp(-across * across / 0.026);
   if (band > 0.003) {
     vec3 p = d * 7.0 + vec3(3.1, -2.7, 8.4);
-    float wisps = uyuniNebulaNoise(p * 9.7 + 13.2);
-    float dust = uyuniNebulaNoise(p) * 0.45 + uyuniNebulaNoise(p * 2.1 + 7.4) * 0.30
-      + uyuniNebulaNoise(p * 4.6 - 3.8) * 0.17 + wisps * 0.08;
-    float laneNoise = uyuniNebulaNoise(p * 1.8 + vec3(12.0, 4.3, -7.1));
+    float wisps = skyNoise3D(p * 9.7 + 13.2);
+    float dust = skyNoise3D(p) * 0.45 + skyNoise3D(p * 2.1 + 7.4) * 0.30
+      + skyNoise3D(p * 4.6 - 3.8) * 0.17 + wisps * 0.08;
+    float laneNoise = skyNoise3D(p * 1.8 + vec3(12.0, 4.3, -7.1));
     float core = exp(-across * across / 0.0045);
     float darkLane = smoothstep(0.45, 0.72, laneNoise) * core;
     vec3 cloud = mix(vec3(0.10, 0.14, 0.24), vec3(0.25, 0.16, 0.26), dust);
@@ -85,45 +86,7 @@ vec3 uyuniNight(vec3 d) {
 }
 
 vec4 uyuniDay(vec3 d) {
-  float up = max(d.y, 0.0);
-  float warm = clamp((uSkyHorizon.r - uSkyHorizon.b) * 1.8, 0.0, 1.0);
-  vec3 sky = mix(uSkyHorizon, uSkyTop,
-    smoothstep(-0.015, mix(0.8, 0.38, warm), d.y));
-
-  // Continuous 3D cloud density: no panorama edges, stretched UVs or pole cap.
-  // Bounded noise scales make soft billows with finer, feathered edges.
-  vec3 p = d * vec3(4.4, 6.0, 4.4) + vec3(uTime * 0.0018, 2.8, -1.7);
-  float broad = uyuniNebulaNoise(p);
-  float middle = uyuniNebulaNoise(p * 2.03 + 7.2);
-  float density = broad * 0.46 + middle * 0.28 + uyuniNebulaNoise(p * 4.11 - 3.8) * 0.16
-    + uyuniNebulaNoise(p * 8.27 + 12.3) * 0.075 + uyuniNebulaNoise(p * 16.3 - 9.2) * 0.025;
-  float cover = 0.48 - (uCloudAmount - 0.45) * 0.20;
-  float cloud = smoothstep(cover, cover + 0.12, density);
-  cloud *= smoothstep(0.015, 0.12, up) * mix(0.96, 0.74, warm);
-  if (cloud > 0.001) {
-    // Two offset density samples give the sun-facing billows soft relief;
-    // this is a single sky pass, without volumetric marching or another scene.
-    vec3 lightDirection = normalize(uSun + vec3(0.0, 0.4, 0.0));
-    float lightDensity = uyuniNebulaNoise(p + lightDirection * 0.32);
-    float lightDetail = uyuniNebulaNoise(p * 2.03 + 7.2 + lightDirection * 0.45);
-    float light = clamp(0.60 + (broad - lightDensity) * 2.8 + (middle - lightDetail) * 0.7, 0.18, 1.0);
-    vec3 shade = mix(uSkyHorizon * vec3(0.68, 0.75, 0.84), uCloudColor * 0.68, 0.5);
-    vec3 cloudColor = mix(shade, uCloudColor, light);
-    // After sunset only the lower billows retain amber light; high clouds fade
-    // into the blue hour so the first stars have clear, dark space around them.
-    vec3 eveningShade = mix(uSkyTop * 0.70, uCloudColor * 0.48, exp(-up * 3.0) * 0.42);
-    vec3 eveningLight = uCloudColor * mix(0.50, 0.95, exp(-up * 4.0));
-    cloudColor = mix(cloudColor, mix(eveningShade, eveningLight, light), warm);
-    float rim = (1.0 - cloud) * max(0.0, broad - lightDensity) * 0.55;
-    cloudColor += uSunColor * rim;
-    sky = mix(sky, cloudColor, cloud);
-  }
-  float sunDistance = length(d - uSun);
-  float sunDisc = 1.0 - smoothstep(0.009, 0.012, sunDistance);
-  float sunHalo = exp(-sunDistance * sunDistance / 0.012) * 0.07;
-  sky += uSunColor * (sunDisc * 0.65 + sunHalo)
-    * smoothstep(-0.025, 0.05, uSun.y) * (1.0 - cloud * 0.82);
-  return vec4(sky, cloud);
+  return daylightSky(d, 0.0);
 }
 
 vec3 uyuniSky(vec3 direction) {

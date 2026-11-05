@@ -28,6 +28,8 @@ export const DECK_HALF_Z = 2.7;
 export const DECK_RISE = 0.6;
 export const DECK_BENCH_HEIGHT = 0.45;
 export const DECK_YARD = { x: 5.6, z: 3.8 } as const;
+// The left-hand lamp sits behind the bench so the board is visible between the rails.
+export const DECK_LANTERN_SITES = [[-4.3, -2.5], [4.3, 2.5]] as const;
 const DECK_YARD_X = DECK_YARD.x, DECK_YARD_Z = DECK_YARD.z;
 /** Stalks start beyond the fence, the lanterns and the dry brush. */
 const STALK_CLEARANCE = 2.6;
@@ -274,6 +276,22 @@ export function bambooCeilingHeight(x: number, z: number): number | null {
 export interface TrailObstacle { x: number; z: number; r: number }
 export interface TrailWall { minX: number; maxX: number; minZ: number; maxZ: number }
 
+/** The board runs parallel to the +X railing and faces the middle of the deck. */
+export const BAMBOO_GUESTBOOK = {
+  x: 12.2, z: 100, yaw: -Math.PI / 2, scale: 2, halfWidth: 3.5, reach: 2.6, frontReach: 8.5,
+} as const;
+export const BAMBOO_GUESTBOOK_OBSTACLES: readonly TrailObstacle[] = Array.from({ length: 21 }, (_, i) => {
+  const along = (i / 10 - 1) * BAMBOO_GUESTBOOK.halfWidth;
+  return { x: BAMBOO_GUESTBOOK.x, z: BAMBOO_GUESTBOOK.z + along, r: 0.24 };
+});
+
+export function isNearBambooGuestbook(x: number, z: number) {
+  const board = BAMBOO_GUESTBOOK;
+  const front = board.x - x, along = Math.abs(z - board.z);
+  if (front >= 0 && front <= board.frontReach && along <= board.halfWidth) return true;
+  return Math.hypot(front, Math.max(0, along - board.halfWidth)) <= board.reach;
+}
+
 const POST_LOCAL: readonly [number, number][] = [[-2.15, -2.15], [2.15, -2.15], [-2.15, 2.15], [2.15, 2.15], [-2.15, 0], [2.15, 0]];
 export const BAMBOO_PAVILION_POSTS: readonly { pavilionId: string; x: number; z: number }[] = BAMBOO_PAVILIONS
   .filter((p) => p.kind === "pavilion")
@@ -371,8 +389,8 @@ export const BAMBOO_LANTERNS: readonly TrailLantern[] = (() => {
   }
   for (const p of BAMBOO_PAVILIONS) {
     const deck = p.kind === "deck";
-    for (const lx of deck ? [-4.3, 4.3] : [-1.9, 1.9]) {
-      const w = pavilionWorld(p, lx, deck ? 2.5 : 2.3);
+    for (const [lx, lz] of deck ? DECK_LANTERN_SITES : [[-1.9, 2.3], [1.9, 2.3]]) {
+      const w = pavilionWorld(p, lx, lz);
       out.push({ x: w.x, z: w.z, y: p.floorY + (deck ? 2.0 : PAVILION_POST_HEIGHT - 0.5), yaw: p.yaw, kind: "paper", pavilionId: p.id });
     }
   }
@@ -417,6 +435,40 @@ export function seededRandom(seed: number) {
 }
 
 export interface StalkSite { x: number; z: number; y: number; height: number; radius: number; phase: number; tint: number; leafAt: number; lean: number }
+
+/** Rhizome clumps follow the two shoulders of the summit, outside the clearing and its city-facing opening. */
+export function summitGroveSites(heightAt: (x: number, z: number) => number): StalkSite[] {
+  const deck = BAMBOO_PAVILIONS.find(p => p.kind === "deck")!;
+  const rand = seededRandom(139);
+  const sites: StalkSite[] = [];
+  for (const side of [-1, 1]) {
+    // The far clumps overlap gaps between nearer clumps as the walker moves along
+    // the rail. A mix of new shoots and mature bamboo covers the lateral valley.
+    const stands = side > 0
+      ? [[59, 36], [67, 23], [71, 32], [77, 18], [85, 29], [92, 20], [101, 35], [109, 38],
+        [105, 23], [116, 27], [123, 21], [138, 31]]
+      : [[57, 35], [67, 24], [75, 33], [82, 20], [91, 32], [98, 22], [105, 37],
+        [107, 25], [113, 21], [127, 28], [141, 29]];
+    for (const [bearing, depth] of stands) {
+      const angle = bearing * Math.PI / 180;
+      const forwardX = side * Math.sin(angle), forwardZ = Math.cos(angle);
+      const acrossX = side * forwardZ, acrossZ = -Math.sin(angle);
+      const stalks = depth >= 37 ? 9 : 12;
+      for (let i = 0; i < stalks; i++) {
+        const spin = rand() * 2 * Math.PI, spread = Math.sqrt(rand());
+        const along = depth + Math.cos(spin) * spread * 3.0;
+        const across = Math.sin(spin) * spread * 2.2;
+        const x = deck.x + along * forwardX + across * acrossX;
+        const z = deck.z + 2 + along * forwardZ + across * acrossZ;
+        if (Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.radius + 1 || onTrail(x, z)) continue;
+        const height = i % 4 === 0 ? 1.8 + rand() * 3.6 : i % 4 === 1 ? 5.4 + rand() * 3.7 : 9.4 + rand() * 7.6;
+        sites.push({ x, z, y: heightAt(x, z), height, radius: 0.025 + height * 0.005,
+          phase: rand() * Math.PI * 2, tint: rand(), leafAt: 0.73 + rand() * 0.20, lean: (rand() - 0.5) * 0.17 });
+      }
+    }
+  }
+  return sites;
+}
 /** 안쪽은 촘촘히, 바깥 띠는 성기게(안개 속). 정상 공터 주변은 비우고 그 둘레만 드문드문. */
 export const STALK_FIELD = { inner: { minX: -46, maxX: 46, minZ: -6, maxZ: 118 }, outer: { minX: -72, maxX: 72, minZ: -36, maxZ: 150 } } as const;
 
@@ -429,7 +481,7 @@ export function bambooStalkSites(seed = 7): StalkSite[] {
     const summit = Math.hypot(x - SUMMIT.x, z - SUMMIT.z);
     if (summit < SUMMIT.radius + 4 || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.radius + 1.5) return;
     // The whole north face below the summit stays bare so the deck looks straight out at the city.
-    if (z > SUMMIT.z + 1 && Math.abs(x) < 70) return;
+    if (z > SUMMIT.z + 1) return;
     const u = rand();
     if (summit < SUMMIT.radius + 11 && u < 0.6) return;
     out.push({ x, z, y: groundHeight(x, z), height: 8.5 + rand() * 4.5, radius: 0.055 + rand() * 0.045, phase: rand() * Math.PI * 2,

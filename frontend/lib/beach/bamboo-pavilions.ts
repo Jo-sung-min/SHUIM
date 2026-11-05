@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Daylight } from "./daylight";
 import {
-  BAMBOO_PAVILIONS, DECK_BENCH_HEIGHT, DECK_HALF_X, DECK_HALF_Z, DECK_RISE, PAVILION_EAVE, PAVILION_HALF, PAVILION_POST_HEIGHT,
+  BAMBOO_PAVILIONS, DECK_BENCH_HEIGHT, DECK_HALF_X, DECK_HALF_Z, DECK_LANTERN_SITES, DECK_RISE, PAVILION_EAVE, PAVILION_HALF, PAVILION_POST_HEIGHT,
   PAVILION_RISE, PAVILION_STEP_LENGTH, type PavilionKind,
 } from "./bamboo-trail";
 
@@ -160,21 +160,21 @@ export function buildBambooPavilions(scene: THREE.Scene, textures: { wood: THREE
       part("deck", box, floorWood, 0, floorY - 0.08, 0, hx * 2, 0.16, hz * 2);
       part("trim", box, darkWood, 0, floorY - 0.2, 0, hx * 2 + 0.1, 0.12, hz * 2 + 0.1);
       for (const lx of [-4.2, -2.1, 0, 2.1, 4.2]) for (const lz of [-2.3, 2.3]) part("stone", footing, stone, lx, 0.2, lz, 0.9, 0.42, 0.9);
-      const railY = [0.5, 1.0];
-      for (const y of railY) {
-        part("wood", box, wood, 0, floorY + y, hz, hx * 2, 0.07, 0.07);
+      // A slim timber cap leaves the view under the seated eye open to the river.
+      part("wood", box, wood, 0, floorY + 0.88, hz, hx * 2, 0.045, 0.055);
+      for (const y of [0.5, 1.0]) {
         for (const side of [-1, 1]) part("wood", box, wood, side * hx, floorY + y, 0, 0.07, 0.07, hz * 2);
       }
-      for (let i = 0; i <= 6; i++) part("wood", box, wood, -hx + i * hx * 2 / 6, floorY + 0.52, hz, 0.08, 1.04, 0.08);
+      for (const ratio of [-1, -0.35, 0.35, 1]) part("wood", box, wood, hx * ratio, floorY + 0.44, hz, 0.06, 0.88, 0.06);
       for (const side of [-1, 1]) for (const lz of [-hz + 0.9, 0, hz - 0.9]) part("wood", box, wood, side * hx, floorY + 0.52, lz, 0.08, 1.04, 0.08);
       part("wood", box, wood, 0, floorY + DECK_BENCH_HEIGHT - 0.04, 2.2, hx * 2 - 0.6, 0.08, 0.5);
       for (const lx of [-3.9, -1.3, 1.3, 3.9]) part("trim", box, darkWood, lx, floorY + DECK_BENCH_HEIGHT / 2 - 0.04, 2.2, 0.1, DECK_BENCH_HEIGHT - 0.08, 0.42);
       part("stone", box, stone, 0, 0.36, -(hz + 0.3), 1.5, 0.18, 0.6);
       part("stone", box, stone, 0, 0.14, -(hz + 0.3 + PAVILION_STEP_LENGTH / 2), 1.5, 0.18, 0.6);
-      for (const lx of [-4.3, 4.3]) {
-        part("wood", cylinder, wood, lx, floorY + 1.15, 2.5, 0.07, 2.3, 0.07);
-        part("trim", box, darkWood, lx, floorY + 2.3, 2.5, 0.5, 0.05, 0.5);
-        part("paper-lanterns", lantern, paper, lx, floorY + 2.0, 2.5, 1.15, 1.15, 1.15);
+      for (const [lx, lz] of DECK_LANTERN_SITES) {
+        part("wood", cylinder, wood, lx, floorY + 1.15, lz, 0.07, 2.3, 0.07);
+        part("trim", box, darkWood, lx, floorY + 2.3, lz, 0.5, 0.05, 0.5);
+        part("paper-lanterns", lantern, paper, lx, floorY + 2.0, lz, 1.15, 1.15, 1.15);
       }
     }
     const sites = BAMBOO_PAVILIONS.filter((p) => p.kind === kind);

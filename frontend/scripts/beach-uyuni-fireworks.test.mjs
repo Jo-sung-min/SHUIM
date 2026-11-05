@@ -154,15 +154,57 @@ test("personal shows have no fans, and love is five sequential deep heart shells
   f.fireworks.dispose();
 });
 
-test("four additional shows dispatch through the renderer with the same shared reflection and no beach change",()=>{
-  for(const variant of ["bloom","saturn","willow","stardust"]) {
-    const f=fixture(); f.fireworks.apply([event(variant,variant)],100000); f.fireworks.update(f.camera,105000,844);
-    assert.equal(f.scene.children.length,2); const [main,reflection]=f.scene.children;
-    assert.equal(main.geometry.userData.variant,variant); assert.equal(main.geometry,reflection.geometry);
-    assert.equal(main.geometry.userData.phrase,""); assert.equal(main.material.uniforms.uAge.value,5);
-    const fallback=f.fireworkGeometry(1729,true,variant,false), beach=f.fireworkGeometry(1729,true,"festival",false);
-    for(const name of Object.keys(beach.attributes)) assert.deepEqual(fallback.attributes[name].array,beach.attributes[name].array);
-    fallback.dispose(); beach.dispose(); f.fireworks.dispose();
+test("all seven shows share the same choreography on the beach and Uyuni, and only Uyuni draws a reflection",()=>{
+  for(const variant of ["festival","songi","love","bloom","saturn","willow","stardust"]) {
+    const salt=fixture(), shore=fixture({mobile:true,grand:true,reflectWater:false});
+    for(const f of [salt,shore]) {
+      f.fireworks.apply([event(variant,variant)],100000);
+      f.fireworks.update(f.camera,105000,844);
+    }
+    const [main,reflection]=salt.scene.children, [coastal]=shore.scene.children;
+    assert.equal(salt.scene.children.length,2); assert.equal(shore.scene.children.length,1);
+    assert.equal(main.geometry,reflection.geometry);
+    assert.equal(coastal.geometry.userData.variant,variant);
+    for(const name of Object.keys(main.geometry.attributes))
+      assert.deepEqual(coastal.geometry.attributes[name].array,main.geometry.attributes[name].array);
+    assert.equal(coastal.material.vertexShader,main.material.vertexShader);
+    assert.equal(coastal.material.uniforms.uAge.value,5);
+    shore.fireworks.dispose(); salt.fireworks.dispose();
+  }
+});
+
+test("all seven bamboo shows burst toward the skyline and retain legible lettering from the front rail",()=>{
+  for(const variant of ["festival","songi","love","bloom","saturn","willow","stardust"]) {
+    const summit=fixture({mobile:true,grand:true,summitDisplay:true}), ocean=fixture({mobile:true,grand:true});
+    summit.fireworks.apply([event("summit",variant)],100000);
+    ocean.fireworks.apply([event("shore",variant)],100000);
+    assert.equal(summit.scene.children.length,1);
+    const object=summit.scene.children[0], geo=object.geometry;
+    assert.deepEqual(geo.attributes.timing.array,ocean.scene.children[0].geometry.attributes.timing.array);
+    assert.equal(geo.userData.variant,variant);
+    if(variant==="songi") assert.deepEqual(glyphs(geo),glyphs(ocean.scene.children[0].geometry));
+    for(const x of [-3.75,0,3.75]) {
+      const eyeY=22;
+      summit.camera.position.set(x,eyeY,102.2);
+      summit.camera.lookAt(x,eyeY-Math.tan(.20)*100,202.2);
+      summit.fireworks.update(summit.camera,105000,844);
+      const {position,timing}=geo.attributes;
+      for(let i=0;i<timing.count;i++) if(timing.getW(i)===3) {
+        const center=new THREE.Vector3().fromBufferAttribute(position,i);
+        assert.ok(center.z>260 && center.z<450 && center.y>eyeY,"shows appear over the river toward +Z");
+        const ndc=center.project(summit.camera);
+        assert.ok(ndc.z<1 && Math.abs(ndc.x)<1 && Math.abs(ndc.y)<1,"each shell center is visible from the front bench");
+      }
+      if(variant==="songi") {
+        const {uTextCenter,uTextUp,uTextRight,uTextScale}=object.material.uniforms;
+        assert.ok(uTextCenter.value.z>350);
+        for(const [dx,dy] of glyphs(geo)) {
+          const p=uTextCenter.value.clone().addScaledVector(uTextRight.value,dx*uTextScale.value).addScaledVector(uTextUp.value,dy*uTextScale.value).project(summit.camera);
+          assert.ok(Math.abs(p.x)<1 && Math.abs(p.y)<1,"the full message fits in the portrait lookout view");
+        }
+      }
+    }
+    summit.fireworks.dispose(); ocean.fireworks.dispose();
   }
 });
 
@@ -216,7 +258,7 @@ test("fine streak shader stays continuous along its centre and thin across the g
   f.fireworks.dispose();
 });
 
-test("opt-in leaves beach geometry unchanged and repeated frames allocate no new GPU resources",()=>{
+test("the smaller bamboo show retains its geometry and repeated frames allocate no new GPU resources",()=>{
   const legacy=fixture({mobile:true}), explicit=fixture({mobile:true,grand:false,reflectWater:false});
   legacy.fireworks.apply([event()],100000); explicit.fireworks.apply([event()],100000);
   assert.equal(legacy.scene.children.length,1); assert.equal(explicit.scene.children.length,1);

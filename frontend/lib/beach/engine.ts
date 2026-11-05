@@ -23,6 +23,10 @@ import { UyuniWorld } from "./uyuni";
 import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
 import { BambooWorld } from "./bamboo";
+import { BambooFestivalToys } from "./bamboo-festival-toys";
+import { BAMBOO_GUESTBOOK, BAMBOO_GUESTBOOK_OBSTACLES, isNearBambooGuestbook } from "./bamboo-guestbook";
+import type { BambooNote } from "./bamboo-notes";
+import type { BambooFestivalState, PropellerFlight } from "./net";
 import { BAMBOO_SKY_FRAGMENT } from "./bamboo-shader";
 import { BAMBOO_PAVILIONS, BAMBOO_PAVILION_COLLIDERS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_SEATS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, TRAIL_WALK_HALF, bambooCeilingHeight, bambooFloorHeight, bambooPavilionForSpot, claimedPavilionSeat, nearbyBambooPavilion, nearestOnTrail, onTrail, resolveTrail, type PavilionSeat } from "./bamboo-trail";
 import type { MapId } from "./maps";
@@ -30,6 +34,7 @@ import { FirePowderPlayback } from "./fire-powder";
 import { captureScenePhoto } from "./photo";
 import { SkyLanterns } from "./lanterns";
 import { BeachFireworks } from "./fireworks";
+import { FireworkAudio } from "./firework-audio";
 import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type BeachAvatar } from "./rigged-avatar";
@@ -87,6 +92,8 @@ export interface EngineHandlers {
   onOnsenChange?: (state: OnsenState) => void;
   onPavilionChange?: (state: PavilionState) => void;
   onPavilionAction?: () => void;
+  onGuestbookRangeChange?: (near: boolean) => void;
+  onGuestbookInSight?: (inSight: boolean) => void;
   onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
@@ -323,6 +330,7 @@ export class BeachEngine {
 
   private sky!: THREE.Mesh;
   private skyMat!: THREE.ShaderMaterial;
+  private lastStarView: THREE.Quaternion | null = null;
   private seaMat!: THREE.ShaderMaterial;
   private sandMat!: THREE.MeshStandardMaterial;
   private photo: THREE.Texture | null = null;
@@ -330,6 +338,13 @@ export class BeachEngine {
   private cove!: Cove | UyuniWorld | BambooWorld;
   private uyuni: UyuniWorld | null = null;
   private bamboo: BambooWorld | null = null;
+  private nearGuestbook = false;
+  private guestbookInSight = false;
+  private festivalToys: BambooFestivalToys | null = null;
+  private ownFestival?: BambooFestivalState;
+  private festivalOwnPid = "self";
+  private festivalClockOffset = 0;
+  private festivalGrip = new THREE.Vector3();
   private mapId: MapId;
   private charTex!: THREE.Texture;
   private propTex!: THREE.Texture;
@@ -337,10 +352,11 @@ export class BeachEngine {
   private fire: CoastalFire | null = null;
   private lanterns: SkyLanterns | null = null;
   private fireworks: BeachFireworks | null = null;
+  private fireworkAudio: FireworkAudio | null = null;
   private uyuniMoments: UyuniMoments | null = null;
   private momentOwnPid: string | null = null;
   private sparklerActors = new Map<string, UyuniMoment>();
-  private fireState: FireState = { logs: 3, maxLogs: 12, intensity: 0.25, color: "amber", serverTime: 0, queuedPops: 0, powder: null };
+  private fireState: FireState | null = null;
   private firePowder = new FirePowderPlayback();
   private nearFire = false;
   private inputPaused = false;
@@ -458,6 +474,7 @@ export class BeachEngine {
       this.bamboo = new BambooWorld(this.scene, { wood }, this.mobile);
       this.cove = this.bamboo;
       this.obstacles.push(...BAMBOO_PAVILION_OBSTACLES.map((o) => ({ ...o })));
+      this.obstacles.push(...BAMBOO_GUESTBOOK_OBSTACLES.map(o => ({ ...o })));
     } else {
       this.buildGround();
       this.cove = new Cove(this.scene, this.obstacles);
@@ -481,6 +498,7 @@ export class BeachEngine {
     this.applyDaylight(this.daylight);
     this.bindInput();
     this.resize();
+    this.fireworkAudio = new FireworkAudio(this.camera.position, this.mapId, this.running);
   }
 
   /** 캐릭터와 배경이 준비됐을 때 */
@@ -511,6 +529,7 @@ export class BeachEngine {
       uniforms: {
         uPhoto: { value: this.photo }, uPhotoTint: { value: new THREE.Vector3(1, 1, 1) },
         uStars: { value: 0 }, uTime: { value: 0 }, uLantern: { value: 0 },
+        uStarMotion: { value: 0 },
         uDeepNight: { value: 0 }, uSkyTop: { value: new THREE.Vector3() }, uSkyHorizon: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() },
         uSun: { value: new THREE.Vector3() }, uSunColor: { value: new THREE.Vector3() },
         uCloudColor: { value: new THREE.Vector3() }, uCloudAmount: { value: 0.45 },
@@ -729,7 +748,7 @@ export class BeachEngine {
       return;
     }
     this.fire = new CoastalFire(this.scene, FIRE.x, FIRE.z);
-    this.fire.setState(this.fireState.logs, this.fireState.color);
+    this.fire.setState(this.fireState?.logs ?? 0, this.fireState?.color ?? "amber");
     this.obstacles.push({ x: FIRE.x, z: FIRE.z, r: 1.35 });
     this.lanterns = new SkyLanterns(this.scene, this.mobile ? 16 : 22);
     this.lanterns.setAmount(this.daylight.lanterns);
@@ -756,9 +775,41 @@ export class BeachEngine {
   applyFireworks(events: FireworkEvent[], serverTime: number) {
     if (this.disposed || (!this.fireworks && events.length === 0)) return;
     this.fireworks ??= new BeachFireworks(this.scene, {
-      mobile: this.mobile, ...(this.mapId === "uyuni" ? { grand: true, reflectWater: true } : {}),
-    });
+      mobile: this.mobile,
+      grand: true,
+      reflectWater: this.mapId === "uyuni",
+      ...(this.mapId === "bamboo" ? { summitDisplay: true } : {}),
+    }, this.fireworkAudio ?? undefined);
     this.fireworks.apply(events, serverTime);
+  }
+
+  get fireworksMuted() { return this.fireworkAudio?.muted ?? false; }
+  setFireworksMuted(muted: boolean) { this.fireworkAudio?.setMuted(muted); }
+  get fieldVolume() { return this.fireworkAudio?.fieldVolume ?? 50; }
+  setFieldVolume(percent: number) { this.fireworkAudio?.setFieldVolume(percent); }
+
+  setOwnFestival(state: BambooFestivalState | undefined, serverTime: number, ownPid?: string) {
+    if (!this.bamboo || this.disposed) return;
+    this.ownFestival = state;
+    if (ownPid) this.festivalOwnPid = ownPid;
+    this.festivalClockOffset = serverTime - performance.now();
+    if (state?.held || state?.flight) this.prepareFestival(state.flight, serverTime);
+  }
+
+  private prepareFestival(flight: PropellerFlight | null, serverTime: number) {
+    this.festivalToys ??= new BambooFestivalToys(this.scene, bambooFloorHeight);
+    if (flight) this.festivalToys.launch({ ...flight, y: bambooFloorHeight(flight.x, flight.z) + 0.85 }, serverTime);
+  }
+
+  private drawFestivalToy(pid: string, node: AvatarNode | null, state: BambooFestivalState | undefined,
+    pose: { x: number; z: number; yaw: number }, now: number, firstPerson = false) {
+    if (!state?.held || !node || !this.festivalToys) return;
+    if (state.held === "propeller" && state.flight && now < state.flight.startedAt + state.flight.durationMs) return;
+    const grip = this.festivalGrip;
+    if (!firstPerson && !node.avatar?.getSparklerGrip(grip)) {
+      grip.set(pose.x + Math.cos(pose.yaw) * 0.24, this.deckHeight(pose.x, pose.z) + 0.78, pose.z - Math.sin(pose.yaw) * 0.24);
+    }
+    this.festivalToys.hold(state.held, grip, pose.yaw, pid, firstPerson ? this.camera : undefined, state.balloonHue ?? undefined);
   }
 
   applyUyuniMoments(events: UyuniMoment[], serverTime: number, ownPid?: string) {
@@ -933,8 +984,20 @@ export class BeachEngine {
       capacity: PAVILION_SEAT_CAPACITY, available: reachable.some((seat) => !used.has(seat.slot)), spotId: pavilion.spotId, name: pavilion.name, kind: pavilion.kind };
   }
 
+  setGuestbookEntries(entries: readonly BambooNote[]) { this.bamboo?.setGuestbookEntries(entries); }
+
   private updatePavilionState() {
     if (!this.bamboo) return;
+    const inSight = Math.hypot(this.self.x - BAMBOO_GUESTBOOK.x, this.self.z - BAMBOO_GUESTBOOK.z) < 30;
+    if (inSight !== this.guestbookInSight) {
+      this.guestbookInSight = inSight;
+      this.handlers.onGuestbookInSight?.(inSight);
+    }
+    const near = isNearBambooGuestbook(this.self.x, this.self.z);
+    if (near !== this.nearGuestbook) {
+      this.nearGuestbook = near;
+      this.handlers.onGuestbookRangeChange?.(near);
+    }
     const state = this.getPavilionState();
     const key = `${state.spotId}:${state.near}:${state.seated}:${state.occupied}:${state.available}`;
     if (key === this.lastPavilionState) return;
@@ -996,7 +1059,8 @@ export class BeachEngine {
       this.onsenSeat = onsen;
       this.pavilionSeat = pavilion;
       this.self.x = seat.x; this.self.z = seat.z;
-      this.self.yaw = seat.yaw; this.self.pitch = -0.08;
+      this.self.yaw = seat.yaw;
+      this.self.pitch = pavilion?.pavilionId === "summit" ? -0.20 : -0.08;
       this.eyeHeight = seat.avatarY + 0.78;
       this.setView("third");
       this.orbitYaw = seat.yaw;
@@ -1356,6 +1420,7 @@ export class BeachEngine {
     const now = performance.now();
     const stamp = (this.remoteClock ??= new RemoteSnapshotClock()).accept(timing, now);
     if (!stamp) return; // An old room response must not rewind people or remove newer arrivals.
+    if (this.bamboo && stamp.serverOffset !== null) this.festivalClockOffset = -stamp.serverOffset;
     const seen = new Set<string>();
     for (const incoming of list) {
       const wrongMap = incoming.spotId != null && !mapSupportsSpot(this.mapId, incoming.spotId);
@@ -1374,6 +1439,9 @@ export class BeachEngine {
       const sameUpdate = updatedAt !== undefined && node.motionUpdatedAt === updatedAt
         && node.data.pose === p.pose && node.data.spotId === p.spotId && node.data.slot === p.slot;
       node.data = p;
+      if (this.bamboo && (p.festival?.held || p.festival?.flight)) {
+        this.prepareFestival(p.festival.flight, timing?.serverTime ?? now + this.festivalClockOffset);
+      }
       if (!sameUpdate || !node.motion) {
         node.motion ??= new RemoteMotionBuffer();
         node.target = resting ? { x: resting.x, z: resting.z, yaw: resting.yaw, moving: false } : { x: p.x, z: p.z, yaw: p.yaw, moving: p.moving };
@@ -1656,6 +1724,8 @@ export class BeachEngine {
 
   start() {
     if (this.running || this.disposed) return;
+    this.fireworkAudio?.setSceneRunning(true);
+    this.lastStarView = null;
     this.remoteClock?.resetPlayback();
     for (const player of this.players.values()) {
       player.motion?.reset();
@@ -1675,6 +1745,7 @@ export class BeachEngine {
 
   stop() {
     this.running = false;
+    this.fireworkAudio?.setSceneRunning(false);
     cancelAnimationFrame(this.raf);
     this.keys.clear();
     this.move = { x: 0, y: 0 };
@@ -1741,6 +1812,7 @@ export class BeachEngine {
     }
 
     this.updateSelf(dt);
+    if (this.mapId === "beach") this.fireworkAudio?.updateBeachSound(this.self, FIRE, this.fireState?.logs ?? 0, dt);
     this.syncSkyResolution();
     this.updatePlayers(dt);
     this.updateFx(dt);
@@ -1965,8 +2037,12 @@ export class BeachEngine {
       if (ceiling !== null) wanted.y = Math.min(wanted.y, ceiling - 0.18);
       if (this.cameraFree(wanted) && (!this.uyuni || this.hotelCameraSightClear(wanted, focusY))) break;
     }
+    this.bamboo?.clipGuestbookCamera(x, focusY, z, wanted);
     if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
-    else this.followCam.lerp(wanted, Math.min(1, dt * 10));
+    else {
+      this.followCam.lerp(wanted, Math.min(1, dt * 10));
+      this.bamboo?.clipGuestbookCamera(x, focusY, z, this.followCam);
+    }
     // An interpolated orbit must not cut through the curved roof between two valid positions.
     if (this.uyuni && (!this.cameraFree(this.followCam) || !this.hotelCameraSightClear(this.followCam, focusY))) this.followCam.copy(wanted);
     this.camera.position.copy(this.followCam);
@@ -2216,12 +2292,26 @@ export class BeachEngine {
   }
 
   private updateWorld(dt: number) {
-    void dt;
     this.skyMat.uniforms.uTime.value = this.time;
+    const motion = this.skyMat.uniforms.uStarMotion;
+    if ((this.uyuni || this.bamboo) && motion && this.skyMat.uniforms.uStars.value > 0) {
+      const orientation = this.camera.quaternion;
+      const turn = this.lastStarView ? this.lastStarView.angleTo(orientation) / Math.max(dt, 0.001) : 0;
+      const strength = Math.max(this.self.moving ? 0.72 : 0, THREE.MathUtils.smoothstep(turn, 0.025, 0.7));
+      motion.value = THREE.MathUtils.damp(motion.value, strength, strength > motion.value ? 12 : 4, dt);
+      (this.lastStarView ??= new THREE.Quaternion()).copy(orientation);
+    }
     if (this.uyuni) {
       this.uyuni.update(this.time, this.camera, this.self);
     } else if (this.bamboo) {
       this.bamboo.update(this.time, this.camera, this.self);
+      if (this.festivalToys) {
+        const now = performance.now() + this.festivalClockOffset;
+        this.festivalToys.beginFrame(this.time);
+        this.drawFestivalToy(this.festivalOwnPid, this.selfNode, this.ownFestival, this.fixedSeat ?? this.self, now, this.view === "first");
+        for (const [pid, node] of this.players) this.drawFestivalToy(pid, node, node.data.festival, node.cur, now);
+        this.festivalToys.endFrame(now);
+      }
     } else {
       this.seaMat.uniforms.uTime.value = this.time;
       this.fire?.setPowder(this.firePowder.sample(performance.now()));
@@ -2279,6 +2369,8 @@ export class BeachEngine {
     this.lanterns = null;
     this.fireworks?.dispose();
     this.fireworks = null;
+    this.fireworkAudio?.dispose();
+    this.fireworkAudio = null;
     this.uyuniMoments?.dispose();
     this.uyuniMoments = null;
     this.sparklerActors.clear();
@@ -2286,6 +2378,7 @@ export class BeachEngine {
     this.fire?.dispose();
     this.fire = null;
     this.bamboo?.dispose();
+    this.festivalToys?.dispose();
     this.bamboo = null;
     const textures = new Set<THREE.Texture>();
     for (const texture of Object.values(this.fxTex ?? {})) textures.add(texture);

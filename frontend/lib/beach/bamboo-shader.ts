@@ -11,9 +11,13 @@ varying vec3 vDir;
 ${UYUNI_SKY_FUNCTIONS}
 void main() {
   vec3 d = normalize(vDir);
+  if (d.y < 0.0) {
+    gl_FragColor = vec4(uHorizonFog * mix(0.42, 1.0, exp(6.0 * d.y)), 1.0);
+    return;
+  }
   // The canopy hides most of this; only the gaps between leaves and the open summit ever show it.
   float night = smoothstep(0.55, 1.0, uStars);
-  vec3 up = vec3(d.x, abs(d.y), d.z);
+  vec3 up = d;
   vec4 day = vec4(0.0);
   if (night < 1.0) {
     day = uyuniDay(up);
@@ -26,6 +30,18 @@ void main() {
   vec3 sky = uyuniHorizonAir(mix(day.rgb, dark, night), up, night);
   // The low sky dissolves into the same haze as the far stalks, so the forest never shows a horizon line.
   sky = mix(sky, uHorizonFog, 1.0 - smoothstep(0.0, 0.26, up.y));
+  if (night > 0.0) {
+    sky += vec3(0.022, 0.030, 0.065) * night * smoothstep(-0.2, 0.75, d.z) * exp(-3.9 * d.y);
+    vec3 moonDir = normalize(vec3(-0.50 + 0.08 * uMoon.x, 0.27 + 0.08 * max(0.0, uMoon.y), 1.0));
+    vec3 lunar = (d - moonDir) / 0.026;
+    float radius = length(lunar);
+    sky += vec3(0.13, 0.15, 0.21) * night * exp(-radius * radius * 0.15);
+    if (radius < 1.04) {
+      float maria = skyNoise3D(lunar * 4.0 + 8.0) * 0.76 + skyNoise3D(lunar * 11.0) * 0.24;
+      vec3 moon = vec3(0.98, 0.95, 0.89) * (0.77 + 0.23 * maria);
+      sky = mix(sky, moon, night * (1.0 - smoothstep(0.95, 1.02, radius)));
+    }
+  }
   gl_FragColor = vec4(sky, 1.0);
 }
 `;
@@ -125,7 +141,11 @@ void main() {
   color = mix(color, uMoss, edge * 0.35 * (1.0 - clearing));
   float dapple = mix(1.0 - uDapple * (1.0 - clearing), 1.0, bambooNoise(p * 0.75 + vec2(uTime * 0.02, uTime * 0.013)));
   color *= bambooLight(vWorld, normalize(vNormal), dapple);
-  color += uPoolColor * mask.b * uNight;
+  // Beyond the deck lanterns the unlit slope recedes into cool moonlight.
+  float riverBank = smoothstep(uClearings[0].y + 9.0, uClearings[0].y + 16.0, p.y) * clearing * uNight;
+  float leafLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(color, leafLuma * vec3(0.16, 0.29, 0.42), riverBank * 0.89);
+  color += uPoolColor * mask.b * uNight * (1.0 - 0.55 * riverBank);
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -269,41 +289,6 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
-}`;
-
-/** The city beyond the far slope: a distant panel never touched by the forest fog, lit up as the lanterns come on. */
-export const BAMBOO_CITY_VERT = `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-
-export const BAMBOO_CITY_FRAG = `
-uniform sampler2D uCity;
-uniform float uNight;
-uniform float uLights;
-uniform float uTime;
-uniform vec3 uHaze;
-uniform vec3 uHazeNight;
-varying vec2 vUv;
-void main() {
-  // r: hill silhouettes (far to near), g: windows and street lights, b: glow over the centre.
-  vec4 c = texture2D(uCity, vUv);
-  // The glow belongs to the valley floor; above the ridge line the panel must stay clear so stars show through.
-  float hills = c.r, lights = c.g, glow = c.b * (1.0 - smoothstep(0.40, 0.52, vUv.y));
-  vec3 haze = mix(uHaze, uHazeNight, uNight);
-  vec3 dayHills = mix(haze * 1.08, haze * 0.72, hills);
-  vec3 nightHills = mix(vec3(0.010, 0.015, 0.030), vec3(0.024, 0.03, 0.05), hills);
-  float twinkle = 0.86 + 0.14 * sin(uTime * 1.7 + vUv.x * 240.0) * sin(uTime * 2.3 + vUv.y * 170.0);
-  vec3 lamps = vec3(1.0, 0.74, 0.44) * lights * uLights * twinkle * 1.9 + vec3(0.95, 0.62, 0.42) * glow * uLights * 0.2;
-  vec3 color = mix(dayHills, nightHills, uNight) + lamps;
-  float body = max(hills, max(lights * uLights, glow * uLights * 0.5));
-  float alpha = body * smoothstep(0.0, 0.14, vUv.y);
-  if (alpha < 0.012) discard;
-  gl_FragColor = vec4(color, alpha);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
 }`;
 
 /** Additive billboard halos around each lantern; exactly zero at the edge of the quad. */

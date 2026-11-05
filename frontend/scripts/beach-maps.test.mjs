@@ -141,6 +141,8 @@ test("reconnection keeps Uyuni and a response from a departed visit only release
     const ctx = { communityId: "ours", mapId: "uyuni", enterBeach: (...args) => { requests.push(args); return pending.promise; }, leaveBeach: ticket => left.push(ticket) };
     for (const name of ["aliveRef", "engineRef", "visitGenerationRef", "requestEpochRef", "resumeRecordRef", "sequenceRef", "blockedRef", "meRef", "pendingCareRef", "careBusyRef", "ticketRef", "lightingRef", "lightingBusyRef", "fireEnabledRef", "restEnabledRef", "bedEnabledRef", "benchEnabledRef", "onsenEnabledRef", "pavilionEnabledRef"]) ctx[name] = { current: null };
     ctx.aliveRef.current = true; ctx.engineRef.current = engine; ctx.visitGenerationRef.current = 4;
+    ctx.setMusicControl = () => {};
+    ctx.applyMusic = () => {};
     ctx.requestEpochRef.current = 8; ctx.sequenceRef.current = 0;
     for (const name of ["setCareBusy", "resetFireworks", "setFireworksControl", "applyFireworks", "resetMoments", "setMomentsEnabled", "applyMoments", "setLightingBusy", "setLightingOpen", "setLightingControl", "setLighting", "applyLighting", "adoptCharacter", "setCareCapabilities", "setCount", "setCapacity", "setCommunity", "setFireEnabled", "setRestEnabled", "setBedEnabled", "setBenchEnabled", "setOnsenEnabled", "setPavilionEnabled", "applyFire", "rememberVisit"]) ctx[name] = () => {};
     vm.runInNewContext(compile(`globalThis.run = ${reenter.arguments[0].getText(sceneAst)};`), ctx);

@@ -3,10 +3,13 @@ import { stripTypeScriptTypes } from "node:module";
 import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 async function load(file, dependencies, exports) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
   const source = stripTypeScriptTypes(typed).replace(/^import\s+[^\n]+\n/gm, "")
+    .replace(/^export \{[^\n]+\} from [^\n]+$/gm, "")
     .replace(/\bexport\s+(?=function\b|const\b|class\b)/g, "");
   const context = { ...dependencies };
   vm.runInNewContext(`${source}\nglobalThis.api = { ${exports.join(",")} };`, context);
@@ -17,13 +20,175 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
   "BAMBOO_BOUNDS", "TRAIL_WALK_HALF", "PAVILION_REACH", "PAVILION_SEAT_CAPACITY", "PAVILION_RISE", "DECK_RISE", "DECK_BENCH_HEIGHT",
   "MOUNTAIN", "SUMMIT", "MEADOW", "SUMMIT_HEIGHT",
   "BAMBOO_PAVILIONS", "BAMBOO_PAVILION_SEATS", "BAMBOO_PAVILION_OBSTACLES", "BAMBOO_PAVILION_COLLIDERS", "BAMBOO_LANTERNS", "BAMBOO_FENCES",
-  "TRAIL_POLYLINES", "pavilionWorld", "pavilionLocal", "pavilionSeat", "claimedPavilionSeat", "nearbyBambooPavilion",
+  "BAMBOO_GUESTBOOK", "BAMBOO_GUESTBOOK_OBSTACLES", "isNearBambooGuestbook",
+  "TRAIL_POLYLINES", "pavilionWorld", "pavilionLocal", "pavilionSeat", "claimedPavilionSeat", "nearbyBambooPavilion", "summitGroveSites",
   "mountainHeight", "groundHeight", "bambooFloorHeight", "bambooCeilingHeight", "nearestOnTrail", "onTrail", "resolveTrail", "bambooStalkSites", "trailLength",
 ]);
 const { daylightAt, bambooDaylightAt } = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "bambooDaylightAt"]);
 const maps = await load("../lib/beach/maps.ts", {}, ["MAPS", "mapHref"]);
 const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: ${actual} vs ${expected}`);
 const byId = id => trail.BAMBOO_PAVILIONS.find(p => p.id === id);
+
+const { BambooFestivalToys } = await load("../lib/beach/bamboo-festival-toys.ts", { THREE }, ["BambooFestivalToys"]);
+
+test("the held balloon and fan stay inside the first-person frame in portrait and landscape", () => {
+  const scene = new THREE.Scene(), toys = new BambooFestivalToys(scene);
+  const world = new THREE.Matrix4(), point = new THREE.Vector3();
+  for (const aspect of [320/932, 390/844, 16/9, 844/390]) {
+    const camera = new THREE.PerspectiveCamera(82, aspect, .1, 520);
+    camera.position.set(3, 22, 98);
+    camera.rotation.set(.4, 2.6, 0, "YXZ");
+    for (const kind of ["fan", "balloon"]) {
+      toys.beginFrame(3.2);
+      toys.hold(kind, point, 0, "visitor", camera, 215);
+      toys.endFrame(3200);
+      const batch = scene.getObjectByName(kind === "fan" ? "festival-taegeuk-fan" : "festival-balloon-film");
+      batch.getMatrixAt(0, world);
+      assert.equal(batch.geometry.getAttribute("firstPersonToy").getX(0), 1);
+      const vertices = batch.geometry.getAttribute("position");
+      for (let i = 0; i < vertices.count; i++) {
+        point.fromBufferAttribute(vertices, i).applyMatrix4(world).project(camera);
+        assert.ok(Math.abs(point.x) < .88 && point.y > -.71 && point.y < .75, `${kind} screen bounds at ${aspect}`);
+        assert.ok(Math.abs(point.z) < 1);
+      }
+    }
+  }
+  toys.dispose();
+});
+
+test("other visitors see a shared colored globe above the avatar and a fan extending out from the palm", () => {
+  const scene = new THREE.Scene(), toys = new BambooFestivalToys(scene);
+  const grip = new THREE.Vector3(.24, .51, 0), world = new THREE.Matrix4(), point = new THREE.Vector3();
+  toys.beginFrame(2);
+  for (const [id, hue] of [["one", 320], ["two", 320], ["three", 45]]) toys.hold("balloon", grip, 0, id, undefined, hue);
+  toys.hold("fan", grip, 0, "visitor");
+  toys.endFrame(2000);
+  const shell = scene.getObjectByName("festival-balloon-film"), halo = scene.getObjectByName("festival-balloon-leds");
+  const colors = [0, 1, 2].map(i => { const c = new THREE.Color(); shell.getColorAt(i, c); return c.getHex(); });
+  assert.equal(colors[0], colors[1]); assert.notEqual(colors[0], colors[2]);
+  assert.deepEqual(halo.instanceColor.array.slice(0, 9), shell.instanceColor.array.slice(0, 9));
+  assert.equal(shell.geometry.getAttribute("firstPersonToy").getX(0), 0, "remote toys retain ordinary scene depth");
+  shell.getMatrixAt(0, world);
+  shell.geometry.computeBoundingBox();
+  assert.ok(shell.geometry.boundingBox.clone().applyMatrix4(world).min.y > 1.9);
+  const fan = scene.getObjectByName("festival-taegeuk-fan");
+  fan.getMatrixAt(0, world);
+  assert.ok(point.setFromMatrixPosition(world).distanceTo(grip) < 1e-6);
+  const paper = fan.geometry.getAttribute("paper"), vertices = fan.geometry.getAttribute("position");
+  for (let i = 0; i < vertices.count; i++) if (paper.getX(i) === 1) {
+    assert.ok(point.fromBufferAttribute(vertices, i).applyMatrix4(world).x > .31, "the paper clears the chest");
+  }
+  toys.dispose();
+});
+
+test("the festival board stands beside the deck and can be approached from the trail", async () => {
+  const board = trail.BAMBOO_GUESTBOOK;
+  const deck = trail.BAMBOO_PAVILIONS.find(p => p.kind === "deck");
+  const obstacles = trail.BAMBOO_GUESTBOOK_OBSTACLES;
+  const radius = 0.25;
+  for (const post of obstacles) assert.ok(post.x - post.r > deck.x + 4.5);
+  const clear = (x, z) => obstacles.every(o => Math.hypot(x - o.x, z - o.z) > o.r + radius);
+  near(Math.sin(board.yaw), -1, "the front faces the viewer looking left from the deck");
+  near(Math.cos(board.yaw), 0, "the panel runs parallel to the rail");
+  near(board.z, deck.z, "turning exactly left from the middle centres the panel");
+  const boardFloor = trail.bambooFloorHeight(board.x, board.z);
+  const { buildBambooGuestbook } = await load("../lib/beach/bamboo-guestbook.ts", { ...trail, THREE, mergeGeometries }, ["buildBambooGuestbook"]);
+  const parent = new THREE.Group(), model = buildBambooGuestbook(parent);
+  const physical = parent.getObjectByName("bamboo-summit-guestbook");
+  const frame = physical.children[0].geometry, stone = new THREE.Color(0x807773);
+  const vertices = frame.getAttribute("position"), colors = frame.getAttribute("color");
+  for (const end of [-1, 1]) {
+    const corners = [];
+    for (let i = 0; i < vertices.count; i++) {
+      if (Math.sign(vertices.getX(i)) !== end || Math.abs(colors.getX(i) - stone.r) > 1e-6) continue;
+      corners.push(physical.localToWorld(new THREE.Vector3().fromBufferAttribute(vertices, i)));
+    }
+    assert.ok(corners.length > 0);
+    const low = Math.min(...corners.map(p => p.y));
+    const high = Math.max(...corners.map(p => p.y));
+    for (const p of corners) {
+      const ground = trail.bambooFloorHeight(p.x, p.z);
+      assert.ok(low < ground && high > ground, "the stone extends into the hillside at every corner");
+    }
+  }
+  model.dispose();
+  for (const [width, height] of [[360, 800], [390, 844]]) {
+    const camera = new THREE.PerspectiveCamera(82, width / height, 0.1, 500);
+    camera.position.set(deck.x, deck.floorY + 1.55, deck.z);
+    camera.rotation.y = -Math.PI / 2;
+    camera.updateMatrixWorld();
+    for (const sign of [-1, 1]) {
+      const lampEdge = new THREE.Vector3(board.x - 0.22, boardFloor + 1.62 * board.scale, board.z + sign * 2.22 * board.scale);
+      assert.ok(Math.abs(lampEdge.project(camera).x) < 0.97, "both lanterns fit a straight left turn on a portrait phone");
+    }
+  }
+  for (let along = -board.halfWidth; along <= board.halfWidth; along += 0.05) {
+    assert.equal(clear(board.x + along * Math.cos(board.yaw), board.z - along * Math.sin(board.yaw)), false);
+  }
+  const x = board.x + Math.sin(board.yaw) * 1.4;
+  const z = board.z + Math.cos(board.yaw) * 1.4;
+  assert.ok(clear(x, z) && Math.hypot(x - board.x, z - board.z) < board.reach);
+  assert.ok(trail.onTrail(x, z));
+  for (const dz of [-board.halfWidth, 0, board.halfWidth]) {
+    assert.ok(trail.isNearBambooGuestbook(x, board.z + dz), "both ends can be read up close");
+  }
+  assert.ok(trail.isNearBambooGuestbook(deck.x + 4.1, deck.z), "the prompt reaches the left rail");
+  assert.equal(trail.isNearBambooGuestbook(deck.x, deck.z), false);
+  assert.equal(trail.isNearBambooGuestbook(board.x + 4.0, board.z), false, "the longer reading distance applies only in front");
+  assert.equal(trail.isNearBambooGuestbook(deck.x + 4.1, board.z + board.halfWidth + 2.0), false);
+  const lamp = trail.BAMBOO_LANTERNS.find(p => p.pavilionId === deck.id && p.x > deck.x);
+  for (const seat of trail.BAMBOO_PAVILION_SEATS.filter(p => p.pavilionId === deck.id)) {
+    const lampFraction = (lamp.x - seat.x) / (board.x - seat.x);
+    const visibleZ = seat.z + (lamp.z - seat.z) / lampFraction;
+    assert.ok(Math.abs(visibleZ - board.z) > board.halfWidth + 0.4, "the near deck lantern stays clear of the notes");
+  }
+  for (const seat of trail.BAMBOO_PAVILION_SEATS) assert.ok(clear(seat.x, seat.z));
+});
+
+test("the follow camera stops before the large board even when its target lies beyond it", async () => {
+  const { buildBambooGuestbook } = await load("../lib/beach/bamboo-guestbook.ts", { ...trail, THREE, mergeGeometries }, ["buildBambooGuestbook"]);
+  const model = buildBambooGuestbook(new THREE.Group());
+  const board = trail.BAMBOO_GUESTBOOK, y = trail.bambooFloorHeight(board.x, board.z) + 1.25;
+  for (const side of [-1, 1]) {
+    const fromX = board.x + side * 2.3;
+    const camera = new THREE.Vector3(board.x - side * 2.67, y + 1.6, board.z);
+    model.clipCamera(fromX, y, board.z, camera);
+    assert.ok(side * (camera.x - board.x) > 0.15, "the board never cuts between the camera and the visitor");
+    assert.ok(Math.abs(camera.x - fromX) > 0.5, "leave room for the avatar");
+  }
+  const outside = new THREE.Vector3(board.x + 3, y, board.z + board.halfWidth + 2);
+  const before = outside.clone();
+  model.clipCamera(board.x - 2, y, outside.z, outside);
+  assert.ok(outside.equals(before), "the orbit stays free beyond the end of the board");
+  model.dispose();
+});
+
+test("the summit's bamboo frames the river from the book, both ends of the bench and the front rail", () => {
+  const sites = trail.summitGroveSites(trail.groundHeight);
+  const radians = Math.PI / 180;
+  assert.ok(sites.length <= 255, "the mobile grove fits in the existing instanced batches");
+  for (const side of [-1, 1]) {
+    const grove = sites.filter(site => Math.sign(site.x) === side);
+    for (const site of grove) {
+      assert.equal(trail.onTrail(site.x, site.z), false);
+      for (const eyeX of [-3.75, 0, 3.75]) for (const eyeZ of [97.6, 102.2, 109.4]) {
+        const angle = Math.abs(Math.atan2(site.x-eyeX, site.z-eyeZ));
+        const crown = Math.asin(3.8 / Math.hypot(site.x-eyeX, site.z-eyeZ));
+        assert.ok(angle - crown > 36 * radians, "the central bridge and tower remain open");
+      }
+    }
+    for (const [eyeX, eyeZ] of [[3.1, 98.25], [-3.75, 102.2], [3.75, 102.2], [0, 109.4]]) {
+      for (const bearing of [80, 90, 100]) {
+        const flanking = grove.filter(site =>
+          Math.abs(side * Math.atan2(site.x - eyeX, site.z - eyeZ) - bearing * radians) < 8 * radians);
+        assert.ok(flanking.some(site => site.height < 6) && flanking.some(site => site.height > 10),
+          "young and mature stems screen the bare lateral slope");
+        const depths = flanking.map(site => Math.hypot(site.x - eyeX, site.z - eyeZ));
+        assert.ok(Math.max(...depths) - Math.min(...depths) > 7, "the stands overlap at different distances");
+      }
+    }
+  }
+});
 
 test("the loop is a long climb that starts at the shared arrival point and stays inside the wider room", () => {
   const loop = trail.TRAIL_POLYLINES.find(line => line.id === "loop");
@@ -166,7 +331,7 @@ test("lanterns, fences and stalks keep off the walkway, the yards and the open c
   }
   const sites = trail.bambooStalkSites();
   assert.ok(sites.length > 2500 && sites.length < 8000, `stalk count ${sites.length}`);
-  assert.ok(sites.every(site => site.z < trail.SUMMIT.z + 1 || Math.abs(site.x) >= 70), "the north face below the summit is bare");
+  assert.ok(sites.every(site => site.z <= trail.SUMMIT.z + 1), "the river-facing northern slopes have no distant leafless stalks against the skyline");
   for (const site of sites) {
     assert.ok(trail.nearestOnTrail(site.x, site.z).distance >= 2.6, "no stalk stands on the lanterns, fence or brush");
     assert.equal(trail.onTrail(site.x, site.z), false);

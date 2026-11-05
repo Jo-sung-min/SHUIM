@@ -48,7 +48,7 @@ const pool = kind => ({ ready: true, canLoad: true, create() {
   return { kind, root: new THREE.Group(), states: [], update(dt, state) { this.states.push({ dt, ...state }); }, dispose() {} };
 } });
 
-test("only Uyuni opts into the grand reflected show and allocates it after a confirmed event", () => {
+test("each confirmed map launches the grand show on its own stage", () => {
   for (const mapId of ["uyuni", "beach", "bamboo"]) {
     const engine = Object.assign(Object.create(BeachEngine.prototype), {
       mapId, mobile: true, disposed: false, scene: new THREE.Scene(), fireworks: null,
@@ -59,7 +59,10 @@ test("only Uyuni opts into the grand reflected show and allocates it after a con
     engine.applyFireworks(events, 101);
     const show = engine.fireworks;
     assert.equal(show.scene, engine.scene);
-    assert.deepEqual(plain(show.options), mapId === "uyuni" ? { mobile: true, grand: true, reflectWater: true } : { mobile: true });
+    assert.equal(show.options.mobile, true);
+    assert.equal(show.options.grand, true);
+    assert.equal(show.options.reflectWater, mapId === "uyuni");
+    assert.equal(Boolean(show.options.summitDisplay), mapId === "bamboo");
     assert.equal(show.events[0].events, events);
     engine.applyFireworks(events, 102);
     assert.equal(engine.fireworks, show, "reuses the renderer for shared snapshots");

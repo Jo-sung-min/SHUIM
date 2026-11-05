@@ -111,6 +111,51 @@ test("fireworks receive the current physical buffer height across sky and world 
   assert.deepEqual(heights, [1688, 717], "particle sizes follow physical resolution rather than shrinking at DPR2");
 });
 
+test("beach field audio receives the avatar position and the last confirmed log count", () => {
+  const { engine } = fixture();
+  const heard = [], avatar = { x: 1, z: 12 };
+  Object.assign(engine, {
+    self: avatar, fireState: null, time: 0, lastRender: 10_000, lastDaylightAt: 10_000,
+    clock: { update() {}, getDelta: () => 0.016 },
+    updateSelf() {}, syncSkyResolution() {}, updatePlayers() {}, updateFx() {}, updateWorld() {},
+    cove: { setFireState() {} },
+    firePowder: { sync(state) { return { accepted: state.serverTime >= 1 }; } },
+    fireworkAudio: { updateBeachSound(position, fire, logs) {
+      assert.equal(position, avatar);
+      assert.equal(fire, context.CAMPFIRE);
+      heard.push(logs);
+    } },
+  });
+  engine.frame();
+  for (const [serverTime, logs] of [[1, 1], [2, 0], [0, 3]]) {
+    engine.setFireState({ serverTime, logs, color: "amber" });
+    engine.frame();
+  }
+  engine.mapId = "uyuni";
+  engine.frame();
+  assert.deepEqual(heard, [0, 1, 0, 0], "only an accepted beach snapshot can supply fuel to the crackle");
+});
+
+test("walking and camera turns brighten stars, then settle independently in both night skies", () => {
+  for (const map of ["bamboo", "uyuni"]) {
+    const { engine } = fixture();
+    const motion = { value: 0 };
+    Object.assign(engine, { mapId: map, [map]: { update() {} }, self: { moving: false },
+      skyMat: { uniforms: { uTime: {}, uStars: { value: 1 }, uStarMotion: motion } } });
+    engine.updateWorld(1 / 60);
+    assert.equal(motion.value, 0);
+    engine.camera.rotateY(0.1);
+    engine.updateWorld(1 / 60);
+    assert.ok(motion.value > 0.1);
+    engine.self.moving = true;
+    for (let i = 0; i < 30; i++) engine.updateWorld(1 / 30);
+    assert.ok(motion.value > 0.7);
+    engine.self.moving = false;
+    for (let i = 0; i < 60; i++) engine.updateWorld(1 / 30);
+    assert.ok(motion.value < 0.001);
+  }
+});
+
 test("asset warmup, hidden tabs and long interruptions cannot permanently downgrade the scene", () => {
   for (const scenario of ["warmup", "hidden", "interrupted", "visible-slow"]) {
     const { engine, qualityChanges } = fixture();

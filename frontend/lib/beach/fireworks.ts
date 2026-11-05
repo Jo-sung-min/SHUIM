@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
 import type { FireworkEvent, FireworkVariant } from "./net";
 import { festivalVariantGeometry } from "./firework-festival-variants";
+import type { FireworkAudio } from "./firework-audio";
 
 export const FIREWORK_SPARK_URL = "/beach/fx/firework-spark-v1.webp";
 const PALETTE = [0xffc777, 0xff83b1, 0x87eaff, 0xb89aff, 0x95ffd1, 0xffb88c];
@@ -178,6 +179,22 @@ function grandFireworkGeometry(seed: number, mobile: boolean, variant: "festival
 }
 
 const PERSONAL_TEXT_CENTER = [0, 66, -205] as const;
+// Lookout bench faces +Z at z=102.2. The main display lies 285–335 m
+// across the river, in front of the far bank, with the finale above it.
+const SUMMIT_STAGE_Z = 190;
+const SUMMIT_STAGE_Y = 6;
+const SUMMIT_TEXT_CENTER = [0, PERSONAL_TEXT_CENTER[1] + SUMMIT_STAGE_Y, SUMMIT_STAGE_Z - PERSONAL_TEXT_CENTER[2]] as const;
+
+function stageSummitFireworks(geometry: THREE.BufferGeometry) {
+  const positions = geometry.getAttribute("position"), velocities = geometry.getAttribute("velocity"), timing = geometry.getAttribute("timing");
+  for (let i = 0; i < positions.count; i++) {
+    const z = positions.getZ(i);
+    // The two open maps have overhead finale shells. Here they join the city display.
+    positions.setXYZ(i, -positions.getX(i), positions.getY(i) + SUMMIT_STAGE_Y, SUMMIT_STAGE_Z - z + (z > 0 ? 210 : 0));
+    if (timing.getW(i) !== 4) velocities.setXYZ(i, -velocities.getX(i), velocities.getY(i), -velocities.getZ(i));
+    // Mode 4 stores letter strokes in camera-facing XY; rotating them would mirror the writing.
+  }
+}
 const HEART_SHELLS = [
   [0,65,-212,1.35,29], [-38,55,-205,3.0,20], [38,61,-222,4.35,23],
   [0,81,-239,6.0,32], [-15,51,-194,7.15,15],
@@ -331,15 +348,16 @@ export class BeachFireworks {
   private textureReady = false;
   private disposed = false;
   private scene: THREE.Scene;
-  private options: { mobile: boolean; grand?: boolean; reflectWater?: boolean };
+  private options: { mobile: boolean; grand?: boolean; reflectWater?: boolean; summitDisplay?: boolean };
   private cameraRight = new THREE.Vector3(1, 0, 0);
   private cameraUp = new THREE.Vector3(0, 1, 0);
   private cameraForward = new THREE.Vector3(0, 0, -1);
   private cameraPosition = new THREE.Vector3();
   private textCenter = new THREE.Vector3(...FIREWORK_TEXT_CENTER);
   private textFromCamera = new THREE.Vector3();
-  constructor(scene: THREE.Scene, options: { mobile: boolean; grand?: boolean; reflectWater?: boolean } = { mobile: false }) {
-    this.scene = scene; this.options = options;
+  private audio?: FireworkAudio;
+  constructor(scene: THREE.Scene, options: { mobile: boolean; grand?: boolean; reflectWater?: boolean; summitDisplay?: boolean } = { mobile: false }, audio?: FireworkAudio) {
+    this.scene = scene; this.options = options; this.audio = audio;
   }
 
   apply(events: readonly FireworkEvent[], serverTime: number) {
@@ -506,6 +524,7 @@ export class BeachFireworks {
         transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, toneMapped: false,
       });
       const object = new THREE.Points(fireworkGeometry(event.seed, this.options.mobile, event.variant ?? "festival", this.options.grand), material);
+      if (this.options.summitDisplay) stageSummitFireworks(object.geometry);
       if(this.options.grand && (event.variant==="songi" || event.variant==="love")) personalMaterial(material,event.variant);
       material.uniforms.uTextWidth.value=object.geometry.userData.textWidth;
       object.name = "beach-fireworks-" + event.id;
@@ -524,6 +543,7 @@ export class BeachFireworks {
         this.scene.add(reflection);
       }
       this.shows.set(event.id, { event: { ...event }, object, reflection });
+      this.audio?.addShow(object.geometry, event.startedAt, currentServerTime, event.seed);
     }
   }
 
@@ -543,6 +563,7 @@ export class BeachFireworks {
       this.textFromCamera.copy(this.textCenter).sub(this.cameraPosition);
     }
     const serverNow = now + this.clockOffset;
+    this.audio?.update(serverNow);
     for (const [id, show] of this.shows) {
       const age = (serverNow - show.event.startedAt) / 1000;
       if (age >= show.event.durationMs / 1000) { this.remove(show); this.shows.delete(id); continue; }
@@ -554,7 +575,7 @@ export class BeachFireworks {
       if(show.reflection) show.reflection.visible=Boolean(camera && camera.layers.mask!==2 && this.cameraPosition.y>.03);
       if (camera) {
         if(this.options.grand && show.event.variant==="songi") {
-          const anchor=camera.layers.mask===2?FIREWORK_SKY_TEXT_CENTER:PERSONAL_TEXT_CENTER;
+          const anchor=this.options.summitDisplay ? SUMMIT_TEXT_CENTER : camera.layers.mask===2 ? FIREWORK_SKY_TEXT_CENTER : PERSONAL_TEXT_CENTER;
           this.textCenter.set(anchor[0],anchor[1],anchor[2]);
           this.textFromCamera.copy(this.textCenter).sub(this.cameraPosition);
         } else {

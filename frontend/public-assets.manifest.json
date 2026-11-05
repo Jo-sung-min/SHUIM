@@ -27,6 +27,36 @@
       "contentType": "image/webp"
     },
     {
+      "key": "beach/fx/bamboo-field-crickets-v1.mp3",
+      "bytes": 1668620,
+      "sha256": "4408c164a024debfe3a5f4d71d0c2d7bdb561285ec8f0b531369340c5715c757",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/beach-campfire-crackle-v1.mp3",
+      "bytes": 559148,
+      "sha256": "0d1444c4bcacaf15da2831bf86228494d4881eb7c91ada8a32229aa21bcdf72c",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/beach-shore-waves-v1.mp3",
+      "bytes": 991580,
+      "sha256": "c9caa0d5bfaa855a9814ea40a0b96192b8ffb2982478a829c5967b9ae10ca4d5",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/firework-boom-v1.mp3",
+      "bytes": 23752,
+      "sha256": "5462136e9e41e26fc1c11fc3c2ba231f09b207607c7710f7be430d2e6d689f10",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/firework-crackle-v1.mp3",
+      "bytes": 22962,
+      "sha256": "32a8814248b6e1969b4d412c5131d0b2658d931aaec2f0578307e5141cb2da2b",
+      "contentType": "audio/mpeg"
+    },
+    {
       "key": "beach/fx/firework-spark-v1.webp",
       "bytes": 15150,
       "sha256": "1e2c3408ddc730e157fd5c16a8f9a7272befe91771e0814c9d1a759229917d26",
@@ -103,6 +133,24 @@
       "bytes": 3227,
       "sha256": "90a6093a5cd75caec64418a99f336b7fae2fae6a98058da9a0e8c22f432c9bad",
       "contentType": "image/png"
+    },
+    {
+      "key": "beach/real/bamboo-summit-city-v1.webp",
+      "bytes": 477770,
+      "sha256": "1ac9827e526606fd6c1f5521e12cf7609ee1f2f5de6a36f177530fe4e4ccc977",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/bamboo-summit-river-v3.webp",
+      "bytes": 488802,
+      "sha256": "afc8eb8e02e17728e6729b3c1c73fcc3560402b8bd2d6fdbc531ab91854fb656",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/bamboo-summit-seoul-v4.webp",
+      "bytes": 600820,
+      "sha256": "9c8e72eb8204d5f0bdff9a3b9dfce4a47154068387b28996e74d98c6e89f7ed3",
+      "contentType": "image/webp"
     },
     {
       "key": "beach/real/cove-panorama.png",
