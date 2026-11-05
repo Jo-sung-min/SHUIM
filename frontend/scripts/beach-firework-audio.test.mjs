@@ -96,7 +96,7 @@ test("only a bamboo gesture streams the long loop; hide, mute, return and leave 
   h.unlock("keydown"); h.unlock(); await settle();
   const media=h.streams[0];
   assert.equal(h.streams.length,1); assert.equal(h.contexts.length,1); assert.equal(h.requests.length,0);
-  assert.equal(media.src,"https://cdn.sorow.co.kr/beach/fx/bamboo-field-crickets-v1.mp3");
+  assert.equal(media.src,"https://cdn.sorow.co.kr/beach/fx/bamboo-field-crickets-v2.mp3");
   assert.ok(media.loop); assert.equal(media.crossOrigin,"anonymous"); assert.equal(media.gain.gain.value,.43);
   assert.equal(media.plays,1); media.currentTime=78;
   h.visibility(true,1000); assert.ok(media.paused);

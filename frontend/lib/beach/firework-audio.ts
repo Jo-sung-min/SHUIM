@@ -76,7 +76,7 @@ export class FireworkAudio {
     this.sceneRunning = running;
     this.backgroundGain = map === "beach" ? DISTANT_SURF : 1;
     this.volumeKey = `sorow:${map}-field-volume`;
-    this.recording = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-crickets-v1.mp3")
+    this.recording = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-crickets-v2.mp3")
       : map === "beach" ? new FieldRecording("/beach/fx/beach-shore-waves-v1.mp3") : null;
     this.crackle = map === "beach" ? new FieldRecording("/beach/fx/beach-campfire-crackle-v1.mp3") : null;
     this.uyuniMusic = map === "uyuni" ? new FieldRecording("/beach/fx/uyuni-calm-night-v1.mp3", 1) : null;

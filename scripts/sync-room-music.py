@@ -55,7 +55,7 @@ def main():
     cdn = (env.get("CDN_BASE_URL") or "https://cdn.sorow.co.kr").rstrip("/")
     s3_url = f"https://{bucket}.s3.{region}.amazonaws.com"
     s3 = session.create_client("s3", region_name=region, config=Config(connect_timeout=8, read_timeout=20))
-    if not cdn.startswith("https://") or public_status(cdn + "/beach/fx/bamboo-field-crickets-v1.mp3") not in (200, 206):
+    if not cdn.startswith("https://") or public_status(cdn + "/beach/fx/bamboo-field-crickets-v2.mp3") not in (200, 206):
         raise SystemExit("Public CDN control failed; stopping before any upload.")
 
     def put(key, body, digest):
