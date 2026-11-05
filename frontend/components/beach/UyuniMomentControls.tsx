@@ -147,7 +147,7 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
           <button type="button" className={styles.close} aria-label="닫기" onClick={() => setPanel(null)}><IconClose /></button>
         </header>
         <p id={`${id}-description`} className={styles.description}>{panel === "sparkler"
-          ? "모양을 고르면 캐릭터가 불꽃 막대를 빠르게 휘둘러 그려요. 손끝을 따라 짧은 빛줄기가 남아요." : "작은 바람을 적어 하늘에 보내요."}</p>
+          ? "글자나 모양을 고르면 불꽃 막대로 다섯 번 겹쳐 그려요. 손이 지나간 자리마다 빛줄기가 조금씩 포개져요." : "작은 바람을 적어 하늘에 보내요."}</p>
         {panel === "sparkler" ? <>
           <div className={styles.letters} role="group" aria-label="불꽃으로 그릴 글자와 모양">
             {LETTERS.map((letter, index) => <button key={letter} type="button" data-initial-focus={index === 0 || undefined}

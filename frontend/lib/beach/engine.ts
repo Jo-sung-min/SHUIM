@@ -825,13 +825,13 @@ export class BeachEngine {
     }
     this.uyuniMoments ??= new UyuniMoments(this.scene, {
       floorHeight: uyuniHotelFloorHeight,
-      poseSparkler: (pid, tip, age, gripTarget) => this.poseSparkler(pid, tip, age, gripTarget),
+      poseSparkler: (pid, _tip, age, gripTarget) => this.poseSparkler(pid, age, gripTarget),
     });
     this.uyuniMoments.setQuality(this.quality);
     this.uyuniMoments.apply(events, serverTime);
   }
 
-  private poseSparkler(pid: string, tip: THREE.Vector3, age: number, gripTarget: THREE.Vector3) {
+  private poseSparkler(pid: string, age: number, gripTarget: THREE.Vector3) {
     if (this.disposed || this.mapId !== "uyuni") return null;
     const event = this.sparklerActors.get(pid);
     if (!event) return null;
@@ -843,9 +843,8 @@ export class BeachEngine {
       || Math.hypot(state.x - event.x, state.z - event.z) > 0.8) return null;
     const turn = state.yaw - event.yaw;
     if (Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) > Math.PI / 2) return null;
-    const grip = actor.poseSparkler(gripTarget, age);
-    // A disconnected/missing actor must never leave a floating rod behind.
-    return grip && grip.distanceTo(tip) < 1.5 ? grip : null;
+    // The renderer bounds rod length. A wide sweep is still a valid hand pose.
+    return actor.poseSparkler(gripTarget, age);
   }
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */

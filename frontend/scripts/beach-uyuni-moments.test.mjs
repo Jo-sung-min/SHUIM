@@ -4,6 +4,7 @@ import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
+import * as timing from "../lib/beach/sparkler-timing.ts";
 
 const source=stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-moments.ts",import.meta.url),"utf8"))
   .replace(/^import\s+[^\n]+\n/gm,"").replace(/\bexport\s+(?=function\b|class\b|const\b)/g,"");
@@ -12,13 +13,13 @@ const event=(id="one",kind="sparkler",extra={})=>({id,kind,fromPid:"visitor",fro
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} ≈ ${b}`);
 function fixture({dom=false,floor=()=>0,poseSparkler}={}) {
   let now=100000; const drawn=[];
-  const context={THREE,Date:{now:()=>now}};
+  const context={THREE,Date:{now:()=>now},...timing};
   if(dom) context.document={createElement(tag) {
     assert.equal(tag,"canvas");
     const ctx={fillRect(){},strokeRect(){},beginPath(){},arc(){},fill(){},measureText:s=>({width:Array.from(s).length*(parseFloat(ctx.font)||32)}),fillText:s=>drawn.push(s)};
     return {getContext:()=>ctx};
   }};
-  vm.runInNewContext(`${source}\nglobalThis.api={UyuniMoments,sparklerPath,sampleWishLantern,sampleSparklerTip,sparklerTrailOpacity};`,context);
+  vm.runInNewContext(`${source}\nglobalThis.api={UyuniMoments,sparklerPath,sparklerHand,sampleWishLantern,sampleSparklerTip,sparklerTrailOpacity};`,context);
   const scene=new THREE.Scene(), moments=new context.api.UyuniMoments(scene,{floorHeight:floor,now:()=>now,poseSparkler});
   const camera=new THREE.PerspectiveCamera(62,1, .1,520); camera.position.set(0,1.6,5);
   return {scene,moments,camera,drawn,...context.api,setTime:value=>now=value,
@@ -45,10 +46,11 @@ test("all four paths form readable uppercase letters with no diagonal E pen-up c
 test("handheld writing stays at arm's reach and does not mirror when the camera crosses its plane",()=>{
   const f=fixture({floor:()=>.48}); f.moments.apply([event(),event("two","sparkler",{letter:"L",x:2})],100000);
   const [one,two]=f.sparks(); assert.equal(one.geometry,two.geometry);
-  close(one.position.y,1.86); close(one.position.z,2.28);
+  close(one.position.x,.10); close(one.position.y,1.86); close(one.position.z,2.40);
   f.camera.aspect=390/844; f.camera.position.set(0,2.03,-2); f.camera.lookAt(0,1.6,3); f.camera.updateProjectionMatrix(); f.camera.updateMatrixWorld();
-  for(const letter of ["L","O","V","E","heart","star"]) for(const p of f.sparklerPath(letter)) {
-    const projected=new THREE.Vector3(-p.x*.88,p.y*.88,0).add(one.position).project(f.camera);
+  for(const letter of ["L","O","V","E","heart","star"]) for(let i=0;i<=240;i++) {
+    const p=f.sampleSparklerTip(letter,timing.SPARKLER_DRAW_START+i*.01,f.sparklerHand("one"));
+    const projected=new THREE.Vector3(-p.x,p.y,0).add(one.position).project(f.camera);
     assert.ok(Math.abs(projected.x)<.9 && Math.abs(projected.y)<.9,"the portrait photo view contains the complete handheld drawing");
   }
   f.setTime(102600); f.moments.update(f.camera,102600,844);
@@ -59,21 +61,22 @@ test("handheld writing stays at arm's reach and does not mirror when the camera 
   f.moments.setQuality("low"); f.moments.update(f.camera,102600,844);
   assert.equal(one.material.uniforms.uSprays.value,2);
   assert.ok(one.geometry.getAttribute("position").count<3000,"bounded shared particle pool per shape");
-  const lowSparks=Array.from({length:256},(_,i)=>details.getX(1024+i));
-  assert.ok(Math.min(...lowSparks)<.05 && Math.max(...lowSparks)>.95,"every spray family spans the entire shape");
+  const sprays=Array.from({length:details.count},(_,i)=>i).filter(i=>details.getY(i)===2);
+  assert.ok(timing.SPARKLER_PASSES===5 && [0,1,2,3,4].every(lap=>sprays.some(i=>Math.floor(details.getX(i)*5)===lap)),"even on low quality, sparks can light all five laps");
   f.moments.dispose();
 });
 
 test("absolute server time does not restart on duplicate snapshots, late arrival or backwards local clock",()=>{
-  const f=fixture(); f.setTime(1000); f.moments.apply([event()],103000);
-  const spark=f.sparks()[0]; close(spark.material.uniforms.uAge.value,3);
-  f.setTime(2000); f.moments.apply([event()],104000); assert.equal(f.sparks()[0],spark); close(spark.material.uniforms.uAge.value,4);
-  f.moments.apply([],103500); assert.equal(f.sparks()[0],spark,"older empty snapshots cannot remove a current effect");
-  f.moments.update(f.camera,500); close(spark.material.uniforms.uAge.value,4);
-  f.setTime(3000); f.moments.apply([],105000); assert.equal(f.sparks().length,0);
-  f.setTime(4000); f.moments.apply([event()],106000); close(f.sparks()[0].material.uniforms.uAge.value,6);
-  f.setTime(10000); f.moments.update(f.camera,10000); assert.equal(f.sparks().length,0);
-  f.moments.apply([event()],112000); assert.equal(f.sparks().length,0,"expired IDs cannot be replayed");
+  const f=fixture(); f.setTime(1000); f.moments.apply([event()],101200);
+  const spark=f.sparks()[0]; close(spark.material.uniforms.uAge.value,1.2);
+  f.setTime(1500); f.moments.apply([event()],101700); assert.equal(f.sparks()[0],spark); close(spark.material.uniforms.uAge.value,1.7);
+  f.moments.apply([],101400); assert.equal(f.sparks()[0],spark,"older empty snapshots cannot remove a current effect");
+  f.moments.update(f.camera,500); close(spark.material.uniforms.uAge.value,1.7);
+  f.setTime(2000); f.moments.apply([],102200); assert.equal(f.sparks().length,0);
+  f.setTime(2400); f.moments.apply([event()],102600); close(f.sparks()[0].material.uniforms.uAge.value,2.6);
+  let disposals=0; f.sparks()[0].material.addEventListener("dispose",()=>disposals++);
+  f.setTime(4800); f.moments.update(f.camera,4800); assert.equal(f.sparks().length,0); assert.equal(disposals,1);
+  f.moments.apply([event(),event("unknown")],105000); assert.equal(f.sparks().length,0,"even never-seen but server-active IDs cannot replay the spent sparkler");
   f.moments.dispose();
 });
 
@@ -153,7 +156,7 @@ test("malformed and changed-ID events cannot inject geometry, text or unbounded 
   f.moments.dispose();
 });
 
-test("hearts and stars close in one continuous stroke and the live tip uses the same path",()=>{
+test("all five laps follow the same seeded shader vertices as the hand, without jumping between laps",()=>{
   const f=fixture();
   for(const shape of ["L","O","V","E","heart","star"]) {
     const path=f.sparklerPath(shape,256);
@@ -161,25 +164,65 @@ test("hearts and stars close in one continuous stroke and the live tip uses the 
     if(["O","heart","star"].includes(shape)) {
       close(path[0].x,path.at(-1).x); close(path[0].y,path.at(-1).y);
     }
-    for(let i=0;i<path.length;i+=17) {
-      const tip=f.sampleSparklerTip(shape,.25+5.6*i/255);
-      close(tip.x,path[i].x*.88); close(tip.y,path[i].y*.88);
-    }
+    const hand=f.sparklerHand(shape);
     f.moments.apply([event(shape,"sparkler",{letter:shape})],100000);
-    assert.equal(f.sparks().length,1);
+    const spark=f.sparks()[0], positions=spark.geometry.attributes.position, detail=spark.geometry.attributes.detail;
+    const uniforms=spark.material.uniforms;
+    for(let i=0;i<480;i+=7) {
+      const progress=detail.getX(i), sweep=progress*5, lap=Math.min(4,Math.floor(sweep)), phase=sweep-lap;
+      const x=positions.getX(i), y=positions.getY(i), basis=new THREE.Vector4(x,y,1,x*y);
+      const blend=THREE.MathUtils.smoothstep(phase,0,1);
+      const projected=rows=>rows[lap].clone().lerp(rows[lap+1],blend).dot(basis);
+      const tip=f.sampleSparklerTip(shape,timing.SPARKLER_DRAW_START+timing.SPARKLER_DRAW_SECONDS*progress,hand);
+      assert.ok(Math.hypot(tip.x-projected(uniforms.uHandX.value),tip.y-projected(uniforms.uHandY.value))<.00001,"arm and GPU Float32 vertex agree within ten micrometers");
+    }
+    const launch=(age,handPose=hand)=>f.sampleSparklerTip(shape,age,handPose);
+    for(let lap=1;lap<5;lap++) {
+      const border=timing.SPARKLER_DRAW_START+lap*timing.SPARKLER_PASS_SECONDS;
+      const left=launch(border-.00001), right=launch(border+.00001);
+      assert.ok(Math.hypot(left.x-right.x,left.y-right.y)<.001,"wrist stays continuous at the turn");
+    }
+    const midpoints=Array.from({length:5},(_,lap)=>launch(timing.SPARKLER_DRAW_START+(lap+.5)*timing.SPARKLER_PASS_SECONDS));
+    assert.ok(midpoints.slice(1).every((p,i)=>Math.hypot(p.x-midpoints[i].x,p.y-midpoints[i].y)>.005),"each lap has its own hand placement");
+    const different=launch(1.14,f.sparklerHand(shape+"-other"));
+    assert.ok(Math.hypot(different.x-midpoints[0].x,different.y-midpoints[0].y)>.01,"each launch's variation comes from its event ID");
   }
   assert.equal(f.sampleSparklerTip("heart",6).drawing,false);
   f.moments.dispose();
 });
 
-test("older segments fade during drawing and the final stroke lingers briefly for a photograph",()=>{
+test("the fine core and halo connect consecutive hand samples without bridging across a lap",()=>{
   const f=fixture();
-  assert.equal(f.sparklerTrailOpacity(.1,0),0);
-  assert.ok(f.sparklerTrailOpacity(3,0)<f.sparklerTrailOpacity(3,.4));
-  assert.ok(f.sparklerTrailOpacity(5.8,0)>.25,"the complete outline remains readable for a photograph");
-  assert.equal(f.sparklerTrailOpacity(8.5,0),0);
-  assert.ok(f.sparklerTrailOpacity(8.5,1)>.5,"newer embers linger after drawing ends");
-  assert.equal(f.sparklerTrailOpacity(12,1),0);
+  for (const letter of ["L","O","V","E","heart","star"]) {
+    f.moments.apply([event(letter,"sparkler",{letter})],100000);
+    const {position,detail,nextKnot}=f.sparks()[0].geometry.attributes;
+    let segments=0, ends=0;
+    for(let i=0;i<detail.count;i++) {
+      if(detail.getY(i)>=.75) continue;
+      if(nextKnot.getZ(i)===detail.getX(i)) { ends++; continue; }
+      close(nextKnot.getZ(i),detail.getX(i+1));
+      close(nextKnot.getX(i),position.getX(i+1)); close(nextKnot.getY(i),position.getY(i+1));
+      assert.equal(detail.getY(i),detail.getY(i+1));
+      segments++;
+    }
+    assert.equal(ends,2*timing.SPARKLER_PASSES);
+    assert.equal(segments,2*timing.SPARKLER_PASSES*95);
+  }
+  f.moments.dispose();
+});
+
+test("rapid laps overlap visibly, then the glow and sparse embers die in stroke order",()=>{
+  const f=fixture();
+  const {SPARKLER_DRAW_START:start, SPARKLER_DRAW_END:end, SPARKLER_DRAW_SECONDS:seconds}=timing;
+  assert.ok(start>=.8 && timing.SPARKLER_PASS_SECONDS<=.5 && timing.SPARKLER_PASSES===5);
+  assert.equal(f.sparklerTrailOpacity(start-.01,0),0);
+  assert.ok(f.sparklerTrailOpacity(start+seconds*.5,0)<f.sparklerTrailOpacity(start+seconds*.5,.49));
+  assert.ok(f.sparklerTrailOpacity(end,.80)>.60,"last complete loop remains bright at burnout");
+  assert.ok(f.sparklerTrailOpacity(end,.60)>.10,"traces of the prior loop overlap the new one");
+  assert.equal(f.sparklerTrailOpacity(end,0),0,"the opening stroke has disappeared by the final pass");
+  close(f.sparklerTrailOpacity(end,1),1);
+  assert.equal(f.sparklerTrailOpacity(end+.65,0),0); assert.ok(f.sparklerTrailOpacity(end+.65,1)>0);
+  assert.equal(f.sparklerTrailOpacity(end+1.61,1),0);
   f.moments.dispose();
 });
 
@@ -188,7 +231,7 @@ test("one held stick joins the actual palm to the burning tip and a new shape st
   const grip=new THREE.Vector3(.3,1.2,2.65);
   const f=fixture({poseSparkler:(pid,tip,age,target)=>{poses.push({pid,tip:tip.clone(),age,target:target.clone()}); return grip;}});
   f.moments.apply([event("old","sparkler",{letter:"heart"})],100000);
-  f.setTime(102800); f.moments.update(f.camera,102800);
+  f.setTime(101440); f.moments.update(f.camera,101440);
   const rods=f.object("uyuni-held-sparklers"); assert.equal(rods.count,1);
   const matrix=new THREE.Matrix4(); rods.getMatrixAt(0,matrix);
   const endpoint=new THREE.Vector3(0,.5,0).applyMatrix4(matrix);
@@ -196,9 +239,9 @@ test("one held stick joins the actual palm to the burning tip and a new shape st
   const last=poses.at(-1), direction=last.tip.clone().sub(grip).normalize();
   const bottom=new THREE.Vector3(0,-.5,0).applyMatrix4(matrix);
   assert.ok(bottom.distanceTo(grip.clone().addScaledVector(direction,-.05))<1e-6,"the grip is inside the bottom five centimeters of the stick");
-  f.setTime(104000); f.moments.apply([event("old","sparkler",{letter:"heart"}),event("new","sparkler",{letter:"star",startedAt:104000})],104000);
+  f.setTime(101760); f.moments.apply([event("old","sparkler",{letter:"heart"}),event("new","sparkler",{letter:"star",startedAt:101760})],101760);
   assert.equal(rods.count,1); assert.equal(f.sparks().length,2,"old embers remain while the next stroke starts");
-  assert.equal(f.object("uyuni-sparkler-old").material.uniforms.uStop.value,4);
+  assert.equal(f.object("uyuni-sparkler-old").material.uniforms.uStop.value,1.76);
   assert.equal(f.object("uyuni-sparkler-old").material.uniforms.uHeld.value,0);
   assert.equal(f.object("uyuni-sparkler-new").material.uniforms.uHeld.value,1);
   const calls=poses.length; f.setTime(110000); f.moments.update(f.camera,110000);
@@ -212,11 +255,68 @@ test("leaving a drawing stops new strokes but keeps its fading embers, without c
   const f=fixture({poseSparkler:()=>present?new THREE.Vector3(.3,1.2,2.65):null});
   f.moments.apply([event("held","sparkler",{letter:"heart"})],100000);
   const spark=f.sparks()[0], rods=f.object("uyuni-held-sparklers");
-  assert.equal(spark.material.uniforms.uStop.value,5.85,"loading a model is not a cancelled stroke");
-  present=true; f.setTime(102000); f.moments.update(f.camera,102000); assert.equal(rods.count,1);
-  present=false; f.setTime(104000); f.moments.update(f.camera,104000);
-  assert.equal(spark.material.uniforms.uStop.value,2); assert.equal(rods.count,0); assert.equal(f.sparks().length,1);
-  present=true; f.setTime(105000); f.moments.update(f.camera,105000);
+  assert.equal(spark.material.uniforms.uStop.value,timing.SPARKLER_DRAW_END,"loading a model is not a cancelled stroke");
+  present=true; f.setTime(101130); f.moments.update(f.camera,101130); assert.equal(rods.count,1);
+  present=false; f.setTime(101470); f.moments.update(f.camera,101470);
+  assert.equal(spark.material.uniforms.uStop.value,1.13); assert.equal(rods.count,0); assert.equal(f.sparks().length,1);
+  present=true; f.setTime(101760); f.moments.update(f.camera,101760);
   assert.equal(rods.count,0,"walking back does not restart an interrupted hand stroke");
+  f.setTime(102740); f.moments.update(f.camera,102740); assert.equal(f.sparks().length,0);
+  f.moments.apply([event("held","sparkler",{letter:"heart"})],102740);
+  assert.equal(f.sparks().length,0,"a later full snapshot cannot recreate a cancelled drawing before its nominal end");
   f.moments.dispose();
+});
+
+test("a wide wrist sweep still lights the tip when a real grip briefly reaches farther from it",()=>{
+  let distance=.48;
+  const f=fixture({poseSparkler:(_pid,tip)=>tip.clone().addScaledVector(new THREE.Vector3(0,-1,0),distance)});
+  f.moments.apply([event("large","sparkler",{letter:"V"})],100000);
+  const drawing=f.sparks()[0], rods=f.object("uyuni-held-sparklers");
+  distance=1.43; f.moments.update(f.camera,102480);
+  assert.equal(rods.count,1); assert.equal(drawing.material.uniforms.uHeld.value,1);
+  distance=.48; f.moments.update(f.camera,103100);
+  assert.equal(rods.count,1); assert.equal(drawing.material.uniforms.uStop.value,timing.SPARKLER_DRAW_END);
+  f.moments.dispose();
+});
+
+test("the hand follows the same tip at 60 fps, 8 fps, and a spectator's first mid-stroke snapshot",()=>{
+  const frames=step=>{
+    const poses=[];
+    const f=fixture({poseSparkler:(_pid,tip,age,target)=>{poses.push([age,...tip.toArray()]);return target;}});
+    const heart=event("heart","sparkler",{letter:"heart",yaw:.72});
+    if(step>0) {
+      f.moments.apply([heart],100000);
+      for(let tick=step;tick<1640;tick+=step) f.moments.update(f.camera,100000+tick);
+    }
+    f.setTime(101640); f.moments.apply([heart],101640);
+    assert.equal(f.object("uyuni-held-sparklers").count,1);
+    assert.equal(f.sparks()[0].material.uniforms.uAge.value,1.64);
+    const pose=poses.at(-1); f.moments.dispose(); return pose;
+  };
+  assert.deepEqual(frames(16),frames(125));
+  assert.deepEqual(frames(125),frames(0));
+});
+
+test("only a previously held sparkler eases down after burnout, without a burning tip or stick",()=>{
+  const poses=[];
+  const f=fixture({poseSparkler:(_pid,tip,age,target)=>{poses.push({age,tip:tip.clone()});return target;}});
+  const e=event("release","sparkler",{letter:"star"});
+  f.moments.apply([e],100000);
+  const end=100000+Math.round(timing.SPARKLER_DRAW_END*1000);
+  f.moments.update(f.camera,end); assert.equal(f.object("uyuni-held-sparklers").count,1);
+  const finalTip=poses.at(-1).tip;
+  f.moments.update(f.camera,end+90);
+  assert.equal(f.object("uyuni-held-sparklers").count,0);
+  assert.equal(f.sparks()[0].material.uniforms.uHeld.value,0);
+  assert.ok(poses.at(-1).tip.distanceTo(finalTip)<1e-8);
+  close(poses.at(-1).age,timing.SPARKLER_DRAW_END+.09);
+  const count=poses.length;
+  f.moments.update(f.camera,end+210);
+  assert.equal(poses.length,count);
+  f.moments.dispose();
+
+  const spectator=fixture({poseSparkler:()=>assert.fail("late arrival during release cannot raise an idle arm")});
+  spectator.setTime(end+90); spectator.moments.apply([e],end+90);
+  assert.equal(spectator.sparks().length,1); assert.equal(spectator.object("uyuni-held-sparklers").count,0);
+  spectator.moments.dispose();
 });

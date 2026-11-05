@@ -27,6 +27,7 @@ import RoomMusicControls from "./RoomMusicControls";
 import { readRoomMusic, type RoomMusicState } from "@/lib/beach/room-music";
 import { chooseBambooToy, type BambooFestivalState, type BambooToy } from "@/lib/beach/net";
 import { launchUyuniMoment, type UyuniMoment, type UyuniMomentInput, type UyuniMomentCooldowns } from "@/lib/beach/net";
+import { SPARKLER_DRAW_END } from "@/lib/beach/sparkler-timing";
 import styles from "./beach.module.css";
 
 const CARE_LABEL: Record<CareKind, string> = { comfort: "위로를 건넸어요", hug: "안아 줬어요", wave: "인사를 건넸어요" };
@@ -893,7 +894,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       if (!belongsToVisit()) return false;
       momentRequestRef.current = null;
       const previous = momentClockRef.current;
-      const live = result.event.startedAt + result.event.durationMs > Math.max(result.serverTime, previous.time);
+      const actionDuration = result.event.kind === "sparkler" ? SPARKLER_DRAW_END * 1000 : result.event.durationMs;
+      const live = result.event.startedAt + actionDuration > Math.max(result.serverTime, previous.time);
       const newlyConfirmed = result.serverTime >= previous.time && !previous.events.some(event => event.id === result.event.id);
       applyMoments([result.event], result.serverTime, result.cooldowns, true);
       if (!live)

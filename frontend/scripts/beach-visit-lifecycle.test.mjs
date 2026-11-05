@@ -6,6 +6,7 @@ import ts from "typescript";
 import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { randomUUID } from "node:crypto";
+import * as sparklerTiming from "../lib/beach/sparkler-timing.ts";
 
 const compile = text => ts.transpileModule(text, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -115,6 +116,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name === "next/link") return { default: "a" };
     if (name.endsWith("/net")) return net;
     if (name.endsWith("/room-music")) return roomMusic;
+    if (name.endsWith("/sparkler-timing")) return sparklerTiming;
     if (name.endsWith("/continuity")) return continuity;
     if (name.endsWith("/maps")) return maps;
     if (name.endsWith("/appearance")) return appearance;
@@ -213,6 +215,20 @@ test("local heart and star confirmations show the handheld drawing and announce 
     assert.equal(h.toasts.at(-1), `손끝의 불꽃으로 ${label} 그리기를 시작해요`);
     await h.unmount();
   }
+});
+
+test("an acknowledged sparkler whose hand motion has finished leaves the camera alone", async () => {
+  const h = harness(), engine = await joined(h, entry(moments(h.now)));
+  const action = momentControls(h).onSparkler("L"); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose, moments(h.now))); await h.flush();
+  const startedAt = h.now - Math.ceil(sparklerTiming.SPARKLER_DRAW_END * 1000) - 100;
+  of(h, "moments").at(-1).resolve({ event: { id: randomUUID(), kind: "sparkler", fromPid: "self", fromNick: "나",
+    x: 0, z: 3, yaw: 0, startedAt, durationMs: 12000, letter: "L" }, serverTime: h.now,
+    cooldowns: { sparkler: startedAt + 4000, lantern: 0 } });
+  assert.equal(await action, true); await h.flush();
+  assert.ok(!engine.events.some(event => event[0] === "sparklerView"));
+  assert.ok(h.toasts.at(-1).includes("앞서 보낸 빛"));
+  await h.unmount();
 });
 
 test("remote and resumed sparkler snapshots never choose a camera and carry the current presence ID", async () => {

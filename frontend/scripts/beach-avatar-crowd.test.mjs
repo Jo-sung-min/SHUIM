@@ -15,9 +15,16 @@ const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/rigged-
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 function runtime(legacy = false) {
   // The prior implementation recalculated every descendant before each aimed limb.
-  const code = legacy ? source.replace("this.root.getWorldQuaternion(this.q1);", "this.root.updateMatrixWorld(true);\nthis.root.getWorldQuaternion(this.q1);") : source;
   const context = { THREE, cloneSkeleton };
-  vm.runInNewContext(`${code}\nglobalThis.api = { BeachAvatar, prepareAvatarTemplate };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { BeachAvatar, prepareAvatarTemplate };`, context);
+  if (legacy) {
+    const prototype = context.api.BeachAvatar.prototype;
+    const aim = prototype.aim;
+    prototype.aim = function (...args) {
+      this.root.updateMatrixWorld(true);
+      return aim.apply(this, args);
+    };
+  }
   return context.api;
 }
 const { BeachAvatar: CurrentAvatar, prepareAvatarTemplate } = runtime(), { BeachAvatar: PriorAvatar } = runtime(true);

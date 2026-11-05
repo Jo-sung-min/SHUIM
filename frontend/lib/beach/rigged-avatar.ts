@@ -275,6 +275,9 @@ export class BeachAvatar {
     shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), grip: new THREE.Vector3(),
     direction: new THREE.Vector3(), pole: new THREE.Vector3(), end: new THREE.Vector3(),
     lower: new THREE.Vector3(), result: new THREE.Vector3(),
+    forward: new THREE.Vector3(),
+    forearmFrame: new THREE.Matrix4(), restFrameInverse: new THREE.Quaternion(),
+    forearmAxis: new THREE.Vector3(), elbowNormal: new THREE.Vector3(),
     upperBefore: new THREE.Quaternion(), lowerBefore: new THREE.Quaternion(),
   };
 
@@ -352,14 +355,12 @@ export class BeachAvatar {
     else s.direction.multiplyScalar(1 / requested);
     const reach = THREE.MathUtils.clamp(requested, Math.abs(upperLength - lowerLength) + 0.002, upperLength + lowerLength - 0.002);
     s.end.copy(s.shoulder).addScaledVector(s.direction, reach);
-    // A stable outward/downward elbow plane avoids a sudden flip at full reach.
-    s.pole.set(-0.8, -0.65, 0.2).applyQuaternion(this.root.getWorldQuaternion(this.q1));
-    s.pole.addScaledVector(s.direction, -s.pole.dot(s.direction));
-    if (s.pole.lengthSq() < 1e-6) {
-      s.pole.set(0, 0, 1).applyQuaternion(this.q1);
-      s.pole.addScaledVector(s.direction, -s.pole.dot(s.direction));
-    }
-    s.pole.normalize();
+    // Carry the outward elbow bend through the sweep. Projecting a fixed pole
+    // onto the reach plane flips the elbow when a wide loop crosses that pole.
+    this.root.getWorldQuaternion(this.q1);
+    s.forward.set(0, 0, 1).applyQuaternion(this.q1);
+    s.pole.set(-0.8, -0.65, 0).normalize().applyQuaternion(this.q1);
+    s.pole.applyQuaternion(this.q2.setFromUnitVectors(s.forward, s.direction));
     const along = (upperLength * upperLength - lowerLength * lowerLength + reach * reach) / (2 * reach);
     s.elbow.copy(s.shoulder).addScaledVector(s.direction, along)
       .addScaledVector(s.pole, Math.sqrt(Math.max(0, upperLength * upperLength - along * along)));
@@ -369,7 +370,23 @@ export class BeachAvatar {
     s.upperBefore.copy(upper.bone.quaternion);
     s.lowerBefore.copy(lower.bone.quaternion);
     this.aimWorld(upper, lower.bone.position, this.v1.copy(s.elbow).sub(s.shoulder));
-    this.aimWorld(lower, s.lower, this.v1.copy(s.end).sub(s.elbow));
+    // Aim the forearm and keep its roll aligned with the elbow hinge. Matching
+    // just its direction lets the palm spin when the arm folds past its bind axis.
+    const axis = s.forearmAxis.copy(s.lower).normalize().applyQuaternion(lower.quaternion);
+    const normal = s.elbowNormal.crossVectors(lower.bone.position, axis);
+    if (normal.lengthSq() < 1e-8) {
+      normal.set(0, 0, 1);
+      if (Math.abs(axis.z) > .9) normal.set(0, 1, 0);
+      normal.addScaledVector(axis, -normal.dot(axis));
+    }
+    normal.normalize();
+    s.forearmFrame.makeBasis(axis, normal, this.v2.crossVectors(axis, normal));
+    s.restFrameInverse.setFromRotationMatrix(s.forearmFrame).invert();
+    const toParent = upper.bone.getWorldQuaternion(this.q2).invert();
+    axis.subVectors(s.end, s.elbow).normalize().applyQuaternion(toParent);
+    normal.crossVectors(s.pole, s.direction).normalize().applyQuaternion(toParent);
+    s.forearmFrame.makeBasis(axis, normal, this.v2.crossVectors(axis, normal));
+    lower.bone.quaternion.setFromRotationMatrix(s.forearmFrame).multiply(s.restFrameInverse).multiply(lower.quaternion);
     if (reachWeight < 1) {
       upper.bone.quaternion.slerp(s.upperBefore, 1 - reachWeight);
       lower.bone.quaternion.slerp(s.lowerBefore, 1 - reachWeight);

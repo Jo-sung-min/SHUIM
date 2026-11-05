@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SparklerLetter, UyuniMoment } from "./net";
+import { SPARKLER_DRAW_START, SPARKLER_DRAW_SECONDS, SPARKLER_DRAW_END, SPARKLER_RELEASE_END, SPARKLER_PASSES } from "./sparkler-timing";
 
 type Letter = SparklerLetter;
 type Quality = "high" | "medium" | "low";
@@ -7,15 +8,16 @@ type Point = readonly [number, number];
 export const UYUNI_MOMENT_LIMIT = 32;
 const COLORS = { amber: 0xffc377, rose: 0xffa0b7, mint: 0xa6eed0, sky: 0x9edcff, violet: 0xcbb1ff };
 const SAMPLES = 128;
-const DRAW_SAMPLES = 256;
-export const SPARKLER_DRAW_START = .25;
-export const SPARKLER_DRAW_SECONDS = 5.6;
-const DRAW_SCALE = .88;
+const DRAW_SAMPLES = 96;
+const HOT_TRAIL_SECONDS = 1.12;
+const LAST_EMBER_SECONDS = 1.60;
+const EMBER_BRIGHTNESS = .12;
+const DRAW_SCALE = 1.02;
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const letterStrokes: Record<Letter, readonly (readonly Point[])[]> = {
   L: [[[-.5, .75], [-.5, -.75], [.5, -.75]]],
-  O: [Array.from({ length: 65 }, (_, i): Point => [Math.sin(i / 64 * Math.PI * 2) * .55, Math.cos(i / 64 * Math.PI * 2) * .75])],
+  O: [Array.from({ length: 65 }, (_, i): Point => [Math.sin(i / 64 * Math.PI * 2) * .75, Math.cos(i / 64 * Math.PI * 2) * .75])],
   V: [[[-.58, .75], [0, -.75], [.58, .75]]],
   // Retrace the bottom and stem so even E is drawn without a floating pen-up jump.
   E: [[[.5, .75], [-.5, .75], [-.5, -.75], [.5, -.75], [-.5, -.75], [-.5, 0], [.34, 0]]],
@@ -54,20 +56,44 @@ function drawingPath(letter: Letter) {
   return path;
 }
 
-/** The arm and the shader share the same arc-length samples and server-time clock. */
-export function sampleSparklerTip(letter: Letter, age: number) {
+// Six gently different hand positions meet at the five lap boundaries. Interpolating
+// the transforms keeps the wrist continuous even when L, V, or E reverse direction.
+export function sparklerHand(id: string) {
+  const x: THREE.Vector4[] = [], y: THREE.Vector4[] = [];
+  let seed = Math.floor(seedOf(id) * 4294967296);
+  const signed = () => { seed = (Math.imul(seed,1664525) + 1013904223) >>> 0; return seed / 2147483648 - 1; };
+  for(let i=0;i<=SPARKLER_PASSES;i++) {
+    const tilt=signed()*.17, c=Math.cos(tilt), s=Math.sin(tilt);
+    const width=1+signed()*.09, height=1+signed()*.08;
+    x.push(new THREE.Vector4(c*width,-s*height,signed()*.11,signed()*.055));
+    y.push(new THREE.Vector4(s*width,c*height,signed()*.09,signed()*.055));
+  }
+  return {x,y};
+}
+const neutralHand = sparklerHand("preview");
+function reversedLap(letter: Letter, lap: number) {
+  return lap % 2 === 1 && (letter === "L" || letter === "V" || letter === "E");
+}
+
+/** The arm, tip and painted filaments follow the same seeded arc at the room event's age. */
+export function sampleSparklerTip(letter: Letter, age: number, hand=neutralHand) {
   const path = drawingPath(letter);
   const progress = clamp((age - SPARKLER_DRAW_START) / SPARKLER_DRAW_SECONDS, 0, 1);
-  const at = progress * (path.length - 1), index = Math.min(path.length - 2, Math.floor(at)), mix = at - index;
+  const laps = progress * SPARKLER_PASSES, lap = Math.min(Math.floor(laps),SPARKLER_PASSES-1);
+  const phase=laps-lap, blend=smooth(0,1,phase), stroke=reversedLap(letter,lap)?1-phase:phase;
+  const at = stroke * (path.length - 1), index = Math.min(path.length - 2, Math.floor(at)), mix = at - index;
   const a = path[index], b = path[index + 1];
-  return { x: (a.x + (b.x - a.x) * mix) * DRAW_SCALE, y: (a.y + (b.y - a.y) * mix) * DRAW_SCALE,
-    progress, drawing: age >= 0 && age <= SPARKLER_DRAW_START + SPARKLER_DRAW_SECONDS };
+  const x=(a.x+(b.x-a.x)*mix)*DRAW_SCALE, y=(a.y+(b.y-a.y)*mix)*DRAW_SCALE;
+  const transform=(row: THREE.Vector4)=>row.x*x+row.y*y+row.z+row.w*x*y;
+  const interpolate=(rows: THREE.Vector4[])=>THREE.MathUtils.lerp(transform(rows[lap]),transform(rows[lap+1]),blend);
+  return { x:interpolate(hand.x), y:interpolate(hand.y), progress, drawing: age >= 0 && age <= SPARKLER_DRAW_END };
 }
 
 /** Old strokes dim while the hand is still drawing, then dissolve in drawing order. */
 export function sparklerTrailOpacity(age: number, progress: number) {
   const elapsed = age - (SPARKLER_DRAW_START + clamp(progress, 0, 1) * SPARKLER_DRAW_SECONDS);
-  return elapsed < 0 ? 0 : (1 - smooth(1.6, 8.0, elapsed)) * (1 - smooth(10.9, 12, age));
+  return elapsed < 0 ? 0 : (1 - EMBER_BRIGHTNESS) * (1 - smooth(.24, HOT_TRAIL_SECONDS, elapsed))
+    + EMBER_BRIGHTNESS * (1 - smooth(.72, LAST_EMBER_SECONDS, elapsed));
 }
 
 function seedOf(id: string) { let n = 2166136261; for (const c of id) n = Math.imul(n ^ c.charCodeAt(0), 16777619); return (n >>> 0) / 4294967296; }
@@ -100,50 +126,74 @@ function validEvent(value: UyuniMoment): boolean {
 function fingerprint(event: UyuniMoment) {
   return JSON.stringify([event.kind, event.fromPid, event.fromNick, event.x, event.z, event.yaw, event.startedAt, event.durationMs, event.letter, event.color, event.wish]);
 }
+function sparklerExpired(age: number, stop: number) {
+  return age >= (stop < SPARKLER_DRAW_START ? stop : stop + LAST_EMBER_SECONDS);
+}
 function sparkGeometry(letter: Letter) {
-  const path = drawingPath(letter), points: number[] = [], detail: number[] = [];
-  // Three thin irregular filaments plus a soft halo; all quality levels keep the complete drawing.
-  for (let strand = 0; strand < 4; strand++) for (let i = 0; i < path.length; i++) {
-    const p = path[i], phase = i * 2.399963 + strand * 17.3;
-    const jitter = strand === 0 || strand === 3 ? 0 : .007;
-    points.push(p.x * DRAW_SCALE + Math.sin(phase * .19) * jitter, p.y * DRAW_SCALE + Math.cos(phase * .17) * jitter, 0);
-    detail.push(p.progress, strand === 3 ? 1 : 0, phase);
-  }
-  // Each successive block covers the whole stroke so reduced quality never loses its ending.
-  for (let spray = 0; spray < 6; spray++) for (let i = 0; i < path.length; i++) {
-    const index = (i * 97) % path.length, p = path[index];
-    points.push(p.x * DRAW_SCALE, p.y * DRAW_SCALE, 0);
-    detail.push(p.progress, 2, index * 2.399963 + spray * 37.19);
+  const path = drawingPath(letter), points: number[] = [], detail: number[] = [], nextKnots: number[] = [];
+  // Shared points for all five passes: a continuous core, its halo, embers and three
+  // spray families. Per-launch wrist variations are small shader uniforms.
+  for(let family=0;family<6;family++) for(let lap=0;lap<SPARKLER_PASSES;lap++) {
+    for(let i=0;i<path.length;i++) {
+      const reversed=reversedLap(letter,lap), next=Math.min(i+1,path.length-1);
+      const p=path[reversed?path.length-1-i:i], q=path[reversed?path.length-1-next:next];
+      const progress=(lap+i/(path.length-1))/SPARKLER_PASSES;
+      const phase=(lap*path.length+i)*2.399963+family*37.19, jitter=family===2?.019:0;
+      points.push(p.x*DRAW_SCALE+Math.sin(phase*.19)*jitter, p.y*DRAW_SCALE+Math.cos(phase*.17)*jitter,0);
+      nextKnots.push(q.x*DRAW_SCALE,q.y*DRAW_SCALE,(lap+next/(path.length-1))/SPARKLER_PASSES);
+      detail.push(progress,family===0?0:family===1?.5:family===2?1:2,phase);
+    }
   }
   // The live burning tip is part of this same draw call.
-  for (let i = 0; i < 3; i++) { points.push(0, 0, 0); detail.push(0, 3, i); }
+  for (let i = 0; i < 3; i++) { points.push(0, 0, 0); detail.push(0, 3, i); nextKnots.push(0,0,0); }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
   geometry.setAttribute("detail", new THREE.Float32BufferAttribute(detail, 3));
+  geometry.setAttribute("nextKnot", new THREE.Float32BufferAttribute(nextKnots, 3));
   return geometry;
 }
-function sparkMaterial(yaw: number) {
+function sparkMaterial(yaw: number, hand: ReturnType<typeof sparklerHand>) {
   return new THREE.ShaderMaterial({
     uniforms: { uAge: { value: 0 }, uViewport: { value: 844 }, uYaw: { value: Math.atan2(Math.sin(yaw),Math.cos(yaw)) }, uSide: { value: -1 },
-      uTip: { value: new THREE.Vector3() }, uHeld: { value: 0 }, uSprays: { value: 6 }, uStop: { value: SPARKLER_DRAW_START + SPARKLER_DRAW_SECONDS } },
+      uTip: { value: new THREE.Vector3() }, uHeld: { value: 0 }, uSprays: { value: 6 }, uStop: { value: SPARKLER_DRAW_END },
+      uHandX: { value: hand.x }, uHandY: { value: hand.y } },
     vertexShader: `
-      attribute vec3 detail; uniform float uAge, uViewport, uYaw, uSide, uHeld, uSprays, uStop;
+      attribute vec3 detail, nextKnot; uniform float uAge, uViewport, uYaw, uSide, uHeld, uSprays, uStop;
       uniform vec3 uTip;
-      varying float vAlpha, vMode, vHot;
-      varying vec2 vDirection;
+      uniform vec4 uHandX[${SPARKLER_PASSES+1}], uHandY[${SPARKLER_PASSES+1}];
+      varying float vAlpha, vMode, vHot, vRose;
+      varying vec2 vDirection, vFilament;
+      vec3 handPoint(vec2 xy,float progress) {
+        float laps=progress*${SPARKLER_PASSES.toFixed(1)};
+        int lap=min(int(laps),${SPARKLER_PASSES-1});
+        float blend=smoothstep(0.,1.,laps-float(lap));
+        vec4 basis=vec4(xy,1.,xy.x*xy.y);
+        return vec3(dot(mix(uHandX[lap],uHandX[lap+1],blend),basis),
+                    dot(mix(uHandY[lap],uHandY[lap+1],blend),basis),0.);
+      }
+      vec3 orient(vec3 p) {
+        p.x*=uSide;
+        return vec3(cos(uYaw)*p.x+sin(uYaw)*p.z,p.y,-sin(uYaw)*p.x+cos(uYaw)*p.z);
+      }
       void main() {
         float birth = ${SPARKLER_DRAW_START.toFixed(2)} + detail.x * ${SPARKLER_DRAW_SECONDS.toFixed(2)}, age = uAge - birth;
-        vec3 p = position; vMode = detail.y;
-        float endFade = 1.0 - smoothstep(10.9, 12.0, uAge);
+        vFilament=vec2(0.); vAlpha=0.;
+        if(detail.y<2.5 && (age<0. || birth>uStop || age>${LAST_EMBER_SECONDS.toFixed(2)})) {
+          gl_Position=vec4(2.,2.,2.,1.); gl_PointSize=1.; return;
+        }
+        vec3 p=handPoint(position.xy,detail.x);
+        vMode = detail.y;
         vHot = exp(-max(0.0, age) * 8.0);
-        vAlpha = step(0.0, age) * step(birth,uStop) * endFade;
+        vRose = smoothstep(.50,.90,fract(sin(detail.z*5.73)*6183.16));
+        vAlpha = step(0.0, age) * step(birth,uStop);
         float size = detail.y < 0.5 ? 0.017 : 0.075;
         vec3 velocity = vec3(0.0);
         if (detail.y > 2.5) {
           p = uTip; vAlpha = uHeld * (.84 + .16*sin(uAge*83.0)*sin(uAge*83.0));
-          size = detail.z < .5 ? .045 : detail.z < 1.5 ? .13 : .23;
+          float lit = .55 + .45 * smoothstep(.00, ${SPARKLER_DRAW_START.toFixed(2)}, uAge);
+          size = (detail.z < .5 ? .055 : detail.z < 1.5 ? .14 : .23) * lit;
           vAlpha *= detail.z < .5 ? 1.0 : detail.z < 1.5 ? .22 : .055;
-          vMode = 1.0; vHot = 1.0;
+          vMode = 1.0; vHot = 1.0; vRose = detail.z < .5 ? .20 : .85;
         } else if (detail.y > 1.5) {
           float t = max(0.0, age);
           float speed = .18 + .56 * fract(sin(detail.z * 7.17) * 13758.54);
@@ -151,41 +201,71 @@ function sparkMaterial(yaw: number) {
           p += velocity * t;
           p.y -= .48 * t * t;
           velocity.y -= .96 * t;
-          float life = .18 + .48 * fract(sin(detail.z * 3.61) * 9271.27);
+          float life = .09 + .25 * fract(sin(detail.z * 3.61) * 9271.27);
           vAlpha *= (1.0 - smoothstep(life * .35, life, t)) * (.52 + .48 * sin(t * 71.0 + detail.z) * sin(t * 71.0 + detail.z));
           size = .045 + speed * .075; vHot = 1.0 - smoothstep(0.0, life, t);
           // Suppress whole evenly distributed spray families without shortening the lettering.
           vAlpha *= step(fract(sin(detail.z*11.79)*5171.17),uSprays/6.0);
         } else {
-          vAlpha *= (1.0 - smoothstep(1.6, 8.0, age)) * (detail.y < .5 ? .56 : .085);
-          vAlpha *= .86 + .14 * sin(uAge * 9.0 + detail.z);
-          p.y -= max(0.0,age-2.0) * .007;
+          float trail = mix(1.0-smoothstep(.24,${HOT_TRAIL_SECONDS.toFixed(2)},age),
+            1.0-smoothstep(.72,${LAST_EMBER_SECONDS.toFixed(2)},age), ${EMBER_BRIGHTNESS.toFixed(3)});
+          // Cool specks break up the tail instead of leaving a complete neon sign.
+          float grain = fract(sin(detail.z*9.87)*7341.27);
+          if(detail.y<.75) {
+            vAlpha *= trail * mix(1.0,.40+.60*grain,smoothstep(.72,1.35,age)) * (detail.y<.25?.80:.21);
+          } else {
+            vAlpha *= trail * .25 * smoothstep(.65,.93,grain);
+          }
+          p.y -= max(0.0,age-.60) * .012;
           size += vHot * (detail.y < .5 ? .025 : .045);
         }
-        p.x *= uSide;
-        velocity.x *= uSide;
-        p = vec3(cos(uYaw)*p.x + sin(uYaw)*p.z, p.y, -sin(uYaw)*p.x + cos(uYaw)*p.z);
-        velocity = vec3(cos(uYaw)*velocity.x + sin(uYaw)*velocity.z, velocity.y, -sin(uYaw)*velocity.x + cos(uYaw)*velocity.z);
-        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vec4 mv = modelViewMatrix * vec4(orient(p), 1.0);
         gl_Position = projectionMatrix * mv;
-        vec2 direction = (modelViewMatrix * vec4(velocity,0.0)).xy;
+        vec2 direction = (modelViewMatrix * vec4(orient(velocity),0.0)).xy;
         vDirection = length(direction) > .0001 ? normalize(direction) : vec2(0.0,1.0);
         gl_PointSize = clamp(size * projectionMatrix[1][1] * uViewport / max(.1, -mv.z), 1.0, 48.0);
+        if(detail.y<.75) {
+          // This point covers the actual segment between two hand positions. The
+          // fragment mask is a narrow capsule, independent of sample spacing.
+          float interval=(nextKnot.z-detail.x)*${SPARKLER_DRAW_SECONDS.toFixed(2)};
+          float done=clamp((min(uAge,uStop)-birth)/max(.00001,interval),0.,1.);
+          vec3 end=handPoint(nextKnot.xy,nextKnot.z);
+          end.y-=max(0.,age-interval-.60)*.012;
+          vec4 endClip=projectionMatrix*modelViewMatrix*vec4(orient(mix(p,end,done)),1.);
+          vec2 viewport=.5*uViewport*vec2(projectionMatrix[1][1]/projectionMatrix[0][0],1.);
+          vec2 segment=(endClip.xy/max(.01,endClip.w)-gl_Position.xy/max(.01,gl_Position.w))*viewport;
+          float span=length(segment);
+          vDirection=segment/max(.00001,span);
+          float pixelsPerMeter=projectionMatrix[1][1]*uViewport/(2.*max(.1,-mv.z));
+          float radius=detail.y<.25?max(.72,.0055*pixelsPerMeter):max(1.35,.015*pixelsPerMeter);
+          gl_Position=mix(gl_Position,endClip,.5);
+          gl_PointSize=clamp(span+5.*radius,2.,96.);
+          vFilament=vec2(span/gl_PointSize,2.*radius/gl_PointSize);
+          vAlpha*=step(.00001,interval)*step(.02,span);
+        }
         if (vAlpha < .002) gl_Position = vec4(2.0,2.0,2.0,1.0);
       }`,
     fragmentShader: `
-      varying float vAlpha, vMode, vHot; varying vec2 vDirection;
+      varying float vAlpha, vMode, vHot, vRose; varying vec2 vDirection, vFilament;
       void main() {
         vec2 uv = (gl_PointCoord - .5) * 2.0; uv.y = -uv.y;
         float r = length(uv);
         float glow = exp(-r*r*5.0) * (1.0-smoothstep(.75,1.0,r));
-        if(vMode > 1.5) {
+        if(vFilament.y>0.) {
+          float along=abs(dot(uv,vDirection)), across=dot(uv,vec2(-vDirection.y,vDirection.x));
+          float cap=max(0.,along-vFilament.x);
+          glow=exp(-1.7*(across*across+cap*cap)/(vFilament.y*vFilament.y));
+          // Adjacent capsules share their end cap without bright beads at every knot.
+          glow*=1.-.55*smoothstep(max(0.,vFilament.x-vFilament.y),vFilament.x+vFilament.y,along);
+        } else if(vMode > 1.5) {
           float along = dot(uv,vDirection), across = dot(uv,vec2(-vDirection.y,vDirection.x));
           glow = exp(-across*across*160.0) * (1.0-smoothstep(.25,1.0,abs(along)));
         }
         float a = glow * vAlpha;
         if (a < .003) discard;
-        gl_FragColor = vec4(mix(vec3(1.0,.37,.055), vec3(1.0,.93,.65), vMode < .5 ? .88 : vHot*.86)*1.65, a);
+        vec3 ember = mix(vec3(1.0,.49,.17),vec3(1.0,.49,.72),vRose);
+        vec3 hot = mix(vec3(1.0,.95,.80),vec3(1.0,.82,.91),vRose);
+        gl_FragColor = vec4(mix(ember, hot, vHot)*1.70, a);
         #include <colorspace_fragment>
       }`,
     transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, toneMapped: false,
@@ -254,13 +334,13 @@ function wishTexture(wish: string): THREE.CanvasTexture | null {
   return texture;
 }
 
-type Active = { event: UyuniMoment; floor: number; stop?: number; heldUntil?: number; spark?: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
+type Active = { event: UyuniMoment; floor: number; hand?: ReturnType<typeof sparklerHand>; stop?: number; heldUntil?: number; spark?: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
   tag?: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>; texture?: THREE.CanvasTexture };
 type SparklerPose = (pid: string, tip: THREE.Vector3, age: number, gripTarget: THREE.Vector3) => THREE.Vector3 | null;
 export class UyuniMoments {
   private readonly group = new THREE.Group();
   private readonly active = new Map<string, Active>();
-  private readonly seen = new Map<string, string>();
+  private readonly seen = new Map<string, { fingerprint: string; stop?: number }>();
   private readonly letters = new Map<Letter, THREE.BufferGeometry>();
   private readonly tagGeometry = new THREE.PlaneGeometry(.76, .475);
   private readonly fades = new THREE.InstancedBufferAttribute(new Float32Array(UYUNI_MOMENT_LIMIT), 1);
@@ -320,24 +400,27 @@ export class UyuniMoments {
     for(const event of events.slice(0,128)) {
       if(!validEvent(event) || now<event.startedAt || now>=event.startedAt+event.durationMs || accepted.has(event.id)) continue;
       const old=this.seen.get(event.id), key=fingerprint(event);
-      if(old!==undefined && old!==key) continue;
+      if(old && old.fingerprint!==key) continue;
+      if(event.kind==="sparkler" && sparklerExpired((now-event.startedAt)/1000,old?.stop??SPARKLER_DRAW_END)) continue;
       if(event.kind==="sparkler" ? sparkCount>=UYUNI_MOMENT_LIMIT : lanternCount>=UYUNI_MOMENT_LIMIT) continue;
       if(event.kind==="sparkler") sparkCount++; else lanternCount++;
       accepted.set(event.id,event);
     }
     for(const [id,item] of this.active) if(!accepted.has(id)) { this.remove(item); this.active.delete(id); }
     for(const [id,event] of accepted) if(!this.active.has(id)) {
-      this.seen.set(id,fingerprint(event));
+      if(!this.seen.has(id)) this.seen.set(id,{fingerprint:fingerprint(event)});
       const rawFloor=this.floorHeight(event.x,event.z), floor=Number.isFinite(rawFloor)?clamp(rawFloor,0,40):0;
       const item:Active={event:{...event},floor};
       if(event.kind==="sparkler") {
         const letter=event.letter!;
         if(!this.letters.has(letter)) this.letters.set(letter,sparkGeometry(letter));
-        item.spark=new THREE.Points(this.letters.get(letter)!,sparkMaterial(event.yaw));
+        item.hand=sparklerHand(id);
+        item.spark=new THREE.Points(this.letters.get(letter)!,sparkMaterial(event.yaw,item.hand));
         item.spark.name="uyuni-sparkler-"+id;
         // A fixed writing plane at arm's reach. It never flips when an observer changes sides.
-        item.spark.position.set(event.x-Math.sin(event.yaw)*.72,floor+1.38,event.z-Math.cos(event.yaw)*.72);
-        item.stop = SPARKLER_DRAW_START + SPARKLER_DRAW_SECONDS;
+        const sin=Math.sin(event.yaw), cos=Math.cos(event.yaw);
+        item.spark.position.set(event.x-sin*.60+cos*.10,floor+1.38,event.z-cos*.60-sin*.10);
+        item.stop = this.seen.get(id)?.stop ?? SPARKLER_DRAW_END;
         item.spark.frustumCulled=false; item.spark.layers.enable(1); this.group.add(item.spark);
       } else {
         const texture=wishTexture(event.wish!);
@@ -353,7 +436,7 @@ export class UyuniMoments {
     // while its already-painted embers remain in the air and continue fading.
     for (const item of this.active.values()) if (item.spark) {
       for (const next of this.active.values()) if (next.spark && next.event.fromPid === item.event.fromPid
-        && next.event.startedAt > item.event.startedAt) item.stop = Math.min(item.stop!, (next.event.startedAt - item.event.startedAt) / 1000);
+        && next.event.startedAt > item.event.startedAt) this.stopSparkler(item,(next.event.startedAt - item.event.startedAt) / 1000);
     }
     while(this.seen.size>512) this.seen.delete(this.seen.keys().next().value!);
     this.update(undefined,local);
@@ -372,22 +455,24 @@ export class UyuniMoments {
     }
     for(const [id,item] of this.active) {
       const event=item.event, age=(time-event.startedAt)/1000;
-      if(age>=event.durationMs/1000) { this.remove(item); this.active.delete(id); continue; }
+      if(age>=event.durationMs/1000 || (item.spark && sparklerExpired(age,item.stop!))) { this.remove(item); this.active.delete(id); continue; }
       if(item.spark) {
         const uniforms=item.spark.material.uniforms;
         uniforms.uAge.value=age; uniforms.uViewport.value=Number.isFinite(viewportHeight)?clamp(viewportHeight,1,1800):844;
         uniforms.uStop.value=item.stop; uniforms.uSprays.value=this.quality==="low"?2:this.quality==="medium"?4:6;
         uniforms.uHeld.value=0;
-        const sample=sampleSparklerTip(event.letter!,age);
+        const sample=sampleSparklerTip(event.letter!,age,item.hand);
         uniforms.uTip.value.set(sample.x,sample.y,0);
-        if(sample.drawing && age<=item.stop! && this.newestSparkler.get(event.fromPid)===item) {
+        const holding=sample.drawing && age<=item.stop!;
+        const releasing=age>SPARKLER_DRAW_END && age<SPARKLER_RELEASE_END && item.stop===SPARKLER_DRAW_END && item.heldUntil!==undefined;
+        if((holding || releasing) && this.newestSparkler.get(event.fromPid)===item) {
           const c=Math.cos(event.yaw),s=Math.sin(event.yaw);
           this.tip.set(-sample.x*c,sample.y,sample.x*s).add(item.spark.position);
           this.gripTarget.set(event.x,item.floor+.92,event.z).sub(this.tip).normalize().multiplyScalar(.48).add(this.tip);
           const grip=this.poseSparkler?.(event.fromPid,this.tip,age,this.gripTarget);
-          if(grip && [grip.x,grip.y,grip.z].every(Number.isFinite)) {
+          if(holding && grip && [grip.x,grip.y,grip.z].every(Number.isFinite)) {
             const length=this.stickDirection.subVectors(this.tip,grip).length();
-            if(length>.03 && length<1.4) {
+            if(length>.03 && length<1.75) {
               this.stickDirection.multiplyScalar(1/length);
               this.transform.position.copy(grip).add(this.tip).multiplyScalar(.5).addScaledVector(this.stickDirection,-.025);
               this.transform.quaternion.setFromUnitVectors(this.up,this.stickDirection);
@@ -398,7 +483,8 @@ export class UyuniMoments {
           }
           // Walking away or resting leaves only the strokes already painted by the hand.
           // Do not cancel a newly received event while its avatar is still loading.
-          if(uniforms.uHeld.value===0 && item.heldUntil!==undefined) item.stop=Math.min(item.stop!,item.heldUntil);
+          if(holding && !grip && item.heldUntil!==undefined) this.stopSparkler(item,item.heldUntil);
+          if(releasing && !grip) item.heldUntil=undefined;
         }
         uniforms.uStop.value=item.stop;
       } else {
@@ -423,6 +509,12 @@ export class UyuniMoments {
   }
 
   setQuality(quality: Quality) { if(quality==="high"||quality==="medium"||quality==="low") this.quality=quality; }
+  private stopSparkler(item: Active, age: number) {
+    if(age>=item.stop!) return;
+    item.stop=age;
+    const seen=this.seen.get(item.event.id);
+    if(seen) seen.stop=age;
+  }
   private remove(item: Active) { item.spark?.removeFromParent(); item.spark?.material.dispose(); item.tag?.removeFromParent(); item.tag?.material.dispose(); item.texture?.dispose(); }
   dispose() {
     if(this.disposed) return; this.disposed=true;

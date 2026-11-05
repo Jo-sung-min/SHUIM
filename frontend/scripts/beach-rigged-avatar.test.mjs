@@ -9,7 +9,8 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { assets } from "./assets-fixture.mjs";
 import { readAssetBytes } from "./asset-bytes-fixture.mjs";
-import { SPARKLER_DRAW_END, SPARKLER_RELEASE_END } from "../lib/beach/sparkler-timing.ts";
+import * as sparklerTiming from "../lib/beach/sparkler-timing.ts";
+const { SPARKLER_DRAW_END, SPARKLER_RELEASE_END } = sparklerTiming;
 
 const bytes = await readAssetBytes("/beach/models/tripo-male-rigged-mobile-v3.glb");
 const modelFiles = { male: "tripo-male-rigged-mobile-v3.glb", female: "tripo-female-rigged-mobile-v2.glb", "male-onsen": "tripo-male-onsen-mobile-v2.glb", "female-onsen": "tripo-female-onsen-mobile-v2.glb" };
@@ -92,6 +93,76 @@ for (const kind of ["male", "female"]) test(`${kind} holds the sparkler at its r
   assert.ok(maximumRod < 1.5, "all agreed letter extremes remain attached to the posed hand");
   context.diagnostic(JSON.stringify({ kind, rodLength: { min: minimumRod, max: maximumRod } }));
   pool.dispose();
+});
+
+for (const kind of ["male", "female"]) test(`${kind} sweeps the real arm through every pass of each sparkler glyph`, async context => {
+  const typedMoments = await readFile(new URL("../lib/beach/uyuni-moments.ts", import.meta.url), "utf8");
+  const momentSource = stripTypeScriptTypes(typedMoments).replace(/^import\s+[^\n]+\n/gm, "")
+    .replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
+  const momentsRuntime = { THREE, ...sparklerTiming };
+  vm.runInNewContext(`${momentSource}\nglobalThis.Renderer = UyuniMoments`, momentsRuntime);
+  const rig = runtime(() => model(kind), kind), pool = new rig.BeachAvatarModels(kind);
+  await pool.load();
+  const actor = pool.create(), current = state({ x: 2.2, y: .15, z: -3.4, yaw: .67 });
+  const upper = actor.bones.get("RightArm").bone, forearm = actor.bones.get("RightForeArm").bone;
+  const right = new THREE.Vector3(Math.cos(current.yaw), 0, -Math.sin(current.yaw));
+  const up = new THREE.Vector3(0, 1, 0), start = 100000;
+  const metrics = {};
+  for (const letter of ["L", "O", "V", "E", "heart", "star"]) {
+    const scene = new THREE.Scene(), tip = new THREE.Vector3();
+    let time = start, previous;
+    let maxTwist = 0, maxSwing = 0, maxStep = 0, longestRod = 0;
+    const moments = new momentsRuntime.Renderer(scene, { now: () => time, floorHeight: () => current.y,
+      poseSparkler(_pid, actualTip, age, gripTarget) {
+        tip.copy(actualTip);
+        return actor.poseSparkler(gripTarget, age);
+      },
+    });
+    actor.update(0, current);
+    moments.apply([{ id: "hand-" + letter, kind: "sparkler", fromPid: "actor", fromNick: kind, letter,
+      x: current.x, z: current.z, yaw: current.yaw, startedAt: start, durationMs: 12000 }], start);
+    const stick = scene.getObjectByName("uyuni-held-sparklers"), matrix = new THREE.Matrix4();
+    const min = { width: Infinity, height: Infinity, elbow: Infinity };
+    for (let pass = 0; pass < sparklerTiming.SPARKLER_PASSES; pass++) {
+      const palmBounds = new THREE.Box2(), elbowBounds = new THREE.Box2();
+      for (let i = 0; i < 30; i++) {
+        const age = sparklerTiming.SPARKLER_DRAW_START + (pass + i / 30) * sparklerTiming.SPARKLER_PASS_SECONDS;
+        time = start + age * 1000;
+        actor.update(1 / 60, current);
+        moments.update(undefined, time);
+        assert.equal(stick.count, 1, `${letter} pass ${pass + 1} keeps the lit rod in the palm`);
+        stick.getMatrixAt(0, matrix);
+        const grip = actor.getSparklerGrip(), elbow = forearm.getWorldPosition(new THREE.Vector3());
+        palmBounds.expandByPoint(new THREE.Vector2(grip.dot(right), grip.dot(up)));
+        elbowBounds.expandByPoint(new THREE.Vector2(elbow.dot(right), elbow.dot(up)));
+        assert.ok(new THREE.Vector3(0, .5, 0).applyMatrix4(matrix).distanceTo(tip) < 1e-5);
+        assert.ok(Math.abs(new THREE.Vector3(0, -.5, 0).applyMatrix4(matrix).distanceTo(grip) - .05) < 1e-5);
+        longestRod = Math.max(longestRod, grip.distanceTo(tip));
+        const upperAxis = elbow.clone().sub(upper.getWorldPosition(new THREE.Vector3())).normalize();
+        const forearmAxis = grip.clone().sub(elbow).normalize();
+        if (previous) {
+          maxSwing = Math.max(maxSwing, upperAxis.angleTo(previous.upperAxis), forearmAxis.angleTo(previous.forearmAxis));
+          maxTwist = Math.max(maxTwist, upper.quaternion.angleTo(previous.upper), forearm.quaternion.angleTo(previous.forearm));
+          maxStep = Math.max(maxStep, previous.grip.distanceTo(grip));
+        }
+        previous = { grip, upperAxis, forearmAxis, upper: upper.quaternion.clone(), forearm: forearm.quaternion.clone() };
+      }
+      const palmSpan = palmBounds.getSize(new THREE.Vector2()), elbowSpan = elbowBounds.getSize(new THREE.Vector2());
+      min.width = Math.min(min.width, palmSpan.x); min.height = Math.min(min.height, palmSpan.y);
+      min.elbow = Math.min(min.elbow, elbowSpan.length());
+    }
+    metrics[letter] = { ...min, maxTwist, maxSwing, maxStep, longestRod };
+    moments.dispose();
+  }
+  pool.dispose();
+  context.diagnostic(`${kind} O palm sweep: ${metrics.O.width.toFixed(3)}m × ${metrics.O.height.toFixed(3)}m, elbow ${metrics.O.elbow.toFixed(3)}m`);
+  for (const [letter, m] of Object.entries(metrics)) {
+    // The two imported skeletons have different sleeve and forearm proportions.
+    const [width, height, elbow] = kind === "male" ? [.15, .12, .12] : [.27, .29, .20];
+    assert.ok(m.width > width && m.height > height && m.elbow > elbow, `${letter}: both joints sweep on every pass`);
+    assert.ok(m.maxSwing < Math.PI / 2 && m.maxTwist < Math.PI * 2 / 3 && m.maxStep < .22, `${letter}: no frame flips or jumps`);
+    assert.ok(m.longestRod < 1.75, `${letter}: the real palm stays within reach of the visible rod`);
+  }
 });
 
 for (const kind of ["male", "female"]) test(`${kind} resets hidden sparkler poses and refuses rest, movement, expired or invalid targets`, async () => {
