@@ -35,7 +35,7 @@ function walkElements(tree, visit) {
 /** Execute the real component and effects; only the renderer and external HTTP transport are replaced. */
 function harness({ sessionStorage = storage(), component = "scene", props = { communityId: "ours", mapId: "uyuni" } } = {}) {
   let now = 1_700_000_000_000, nextTimer = 1, cursor = 0, dirty = true, mounted = false, tree;
-  const slots = [], effects = [], pendingEffects = [], timers = new Map(), requests = [], engines = [], refs = new WeakMap();
+  const slots = [], effects = [], pendingEffects = [], timers = new Map(), requests = [], engines = [], toasts = [], refs = new WeakMap();
   const document = Object.assign(eventTarget(), { hidden: false, visibilityState: "visible", body: { style: { overflow: "" } } });
   const localStorage = storage(), navigator = { onLine: true };
   const schedule = (fn, delay, interval = false) => { const id = nextTimer++; timers.set(id, { fn, at: now + delay, delay, interval }); return id; };
@@ -82,7 +82,8 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     setInputPaused() {} setSkin() {} setHourOverride() {} resize() {}
     setFireState(value) { this.events.push(["fire", plain(value)]); }
     applyFireworks() {} select() {} playCare() {}
-    applyUyuniMoments(events, serverTime) { this.events.push(["moments", plain(events), serverTime]); }
+    applyUyuniMoments(events, serverTime, ownPid) { this.events.push(["moments", plain(events), serverTime, ownPid]); }
+    showSparklerDrawing() { this.events.push(["sparklerView"]); }
     applyRest(value) { this.events.push(["rest", plain(value)]); }
     setPlayers(value) { this.events.push(["players", plain(value)]); }
   }
@@ -115,7 +116,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name.endsWith("/daylight")) return { hourLabel: () => "낮", hourOverride: () => null };
     if (name.endsWith("/assets")) return { assetCssUrl: () => "none" };
     if (name.endsWith("/routes")) return { route: path => path };
-    if (name.endsWith("/toast")) return { showToast() {}, toastSuccess() {}, tick() {} };
+    if (name.endsWith("/toast")) return { showToast(message) { toasts.push(message); }, toastSuccess(message) { toasts.push(message); }, tick() {} };
     if (name.endsWith(".css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
     return new Proxy({ default: "section" }, { get: (object, key) => object[key] ?? "i" });
   });
@@ -132,7 +133,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     while (pendingEffects.length) pendingEffects.shift()();
   }
   async function flush() { for (let i = 0; i < 20; i++) { await Promise.resolve(); render(); } }
-  return { requests, engines, document, window, navigator, sessionStorage, continuity, net,
+  return { requests, engines, toasts, document, window, navigator, sessionStorage, continuity, net,
     get tree() { return tree; }, get now() { return now; },
     async mount() { mounted = true; render(); await flush(); }, flush,
     async unmount() { mounted = false; for (const effect of effects) effect?.cleanup?.(); await flush(); },
@@ -168,6 +169,35 @@ function momentControls(h) {
   walkElements(h.tree, node => { if (typeof node.props.onLantern === "function") controls = node; });
   assert.ok(controls, "a supported Uyuni visit exposes the actions"); return controls.props;
 }
+
+test("local heart and star confirmations show the handheld drawing and announce Korean shape names", async () => {
+  for (const [letter, label] of [["heart", "하트"], ["star", "별"]]) {
+    const h = harness(), engine = await joined(h, entry(moments(h.now)));
+    assert.equal(engine.events.filter(event => event[0] === "moments").at(-1)[3], "self");
+    const action = momentControls(h).onSparkler(letter); await h.flush();
+    const pose = of(h, "tick").at(-1); pose.resolve(tick(pose, moments(h.now))); await h.flush();
+    of(h, "moments").at(-1).resolve({ event: { id: randomUUID(), kind: "sparkler", fromPid: "self", fromNick: "나",
+      x: 0, z: 3, yaw: 0, startedAt: h.now, durationMs: 12000, letter }, serverTime: h.now,
+      cooldowns: { sparkler: h.now + 4000, lantern: 0 } });
+    assert.equal(await action, true); await h.flush();
+    assert.equal(engine.events.filter(event => event[0] === "sparklerView").length, 1);
+    assert.equal(h.toasts.at(-1), `손끝의 불꽃으로 ${label} 그리기를 시작해요`);
+    await h.unmount();
+  }
+});
+
+test("remote and resumed sparkler snapshots never choose a camera and carry the current presence ID", async () => {
+  const h = harness(), event = { id: randomUUID(), kind: "sparkler", fromPid: "other", fromNick: "친구",
+    x: 0, z: 3, yaw: 0, startedAt: h.now, durationMs: 12000, letter: "heart" };
+  const engine = await joined(h, entry(moments(h.now, [event])));
+  assert.equal(engine.events.filter(value => value[0] === "sparklerView").length, 0);
+  await h.visibility(true); await h.advance(1000); await h.visibility(false); await h.advance(0);
+  of(h, "enter").at(-1).resolve(entry({ ...moments(h.now, [event]), me: { id: "user-1", pid: "self-new", nick: "나", skin: 0 }, resumed: true }));
+  await h.flush();
+  assert.equal(engine.events.filter(value => value[0] === "moments").at(-1)[3], "self-new");
+  assert.equal(engine.events.filter(value => value[0] === "sparklerView").length, 0);
+  await h.unmount();
+});
 
 test("uncertain wish launch retains its UUID across same-account mobile reentry and merges one confirmed event", async () => {
   const h = harness(), engine = await joined(h, entry(moments(h.now)));
@@ -207,6 +237,7 @@ test("a late moment acknowledgement cannot restore an event removed by a newer r
     cooldowns: { sparkler: start + 4000, lantern: 0 } });
   await pending; await h.flush();
   assert.equal(engine.events.filter(e => e[0] === "moments").at(-1)[1].length, 0);
+  assert.equal(engine.events.filter(e => e[0] === "sparklerView").length, 0, "a stale acknowledgement must not change the camera");
   await h.unmount();
 });
 

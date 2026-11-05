@@ -33,8 +33,8 @@ test("Uyuni actions require explicit capability and a supported server snapshot,
   assert.equal(entered.uyuniMomentsEnabled, true); assert.equal(entered.uyuniMoments.length, 1);
 });
 
-test("all letters and five wish colors round-trip with stable retry IDs and escaped plain-text wishes", async () => {
-  const inputs = [...["L", "O", "V", "E"].map(letter => ({ kind: "sparkler", letter })),
+test("all letters, heart, star and five wish colors round-trip with stable retry IDs and escaped plain-text wishes", async () => {
+  const inputs = [...["L", "O", "V", "E", "heart", "star"].map(letter => ({ kind: "sparkler", letter })),
     ...["amber", "rose", "mint", "sky", "violet"].map(color => ({ kind: "lantern", color, wish: lantern.wish }))];
   for (const input of inputs) {
     const calls = [], event = { ...(input.kind === "sparkler" ? sparkler : lantern), ...input };
@@ -51,6 +51,20 @@ test("all letters and five wish colors round-trip with stable retry IDs and esca
   }
 });
 
+test("heart and star survive enter and live snapshots without changing their lifetime or retry payload", async () => {
+  for (const letter of ["heart", "star"]) {
+    const event = { ...sparkler, letter };
+    const api = setup(async () => reply({ ...snapshot, uyuniMoments: [event] }));
+    const entered = await api.enterBeach("room", undefined, "uyuni");
+    const live = await api.tickBeach({ ticket: "observer" });
+    assert.deepEqual(plain(entered.uyuniMoments), [event]);
+    assert.deepEqual(plain(live.uyuniMoments), [event]);
+    assert.equal(live.uyuniMoments[0].durationMs, 12_000);
+    await assert.rejects(setup(async () => reply({ event: { ...event, letter: letter === "heart" ? "star" : "heart" }, serverTime: 1_001_000, cooldowns }))
+      .launchUyuniMoment("mine", uuid, { kind: "sparkler", letter }), /시작을 확인/);
+  }
+});
+
 test("live snapshots deduplicate, preserve server starts, and expire both kinds on their original clock", async () => {
   const second = { ...lantern, id: "3684c17d-35de-437d-a728-6324d996d09e" };
   for (const [time, count] of [[1_001_000, 2], [1_012_000, 1], [1_040_000, 0]]) {
@@ -64,7 +78,8 @@ test("live snapshots deduplicate, preserve server starts, and expire both kinds 
 
 test("invalid and oversized events cannot allocate effects or text textures", async () => {
   const bad = [null, {}, { ...sparkler, x: Infinity }, { ...sparkler, z: -51 }, { ...sparkler, yaw: 4 },
-    { ...sparkler, durationMs: 999999 }, { ...sparkler, letter: "LOVE" }, { ...sparkler, color: "rose" },
+    { ...sparkler, durationMs: 999999 }, { ...sparkler, letter: "LOVE" }, { ...sparkler, letter: "Heart" },
+    { ...sparkler, letter: "★" }, { ...sparkler, letter: "heart " }, { ...sparkler, color: "rose" },
     { ...lantern, wish: "" }, { ...lantern, wish: "a".repeat(81) }, { ...lantern, wish: "a\nb" },
     { ...lantern, color: "red" }, { ...lantern, fromNick: "a".repeat(101) },
     { ...sparkler, startedAt: 1_002_000 }, { ...sparkler, unexpected: true }];
@@ -79,7 +94,8 @@ test("invalid and oversized events cannot allocate effects or text textures", as
 
 test("invalid choices are rejected before transport and mismatched acknowledgements remain unconfirmed", async () => {
   const api = setup(async () => { throw new Error("unexpected transport"); });
-  for (const input of [{ kind: "sparkler", letter: "A" }, { kind: "lantern", color: "rose", wish: " " },
+  for (const input of [{ kind: "sparkler", letter: "A" }, { kind: "sparkler", letter: "Star" },
+    { kind: "sparkler", letter: "♡" }, { kind: "lantern", color: "rose", wish: " " },
     { kind: "lantern", color: "rose", wish: "💫".repeat(81) }]) {
     await assert.rejects(api.launchUyuniMoment("mine", uuid, input), /다시 골라/);
   }

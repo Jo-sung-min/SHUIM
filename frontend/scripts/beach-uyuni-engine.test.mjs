@@ -33,6 +33,11 @@ const { BeachEngine } = await load("../lib/beach/engine.ts", {
     constructor(scene, options) { this.scene = scene; this.options = options; this.events = []; }
     apply(events, serverTime) { this.events.push({ events, serverTime }); }
   },
+  UyuniMoments: class {
+    constructor(scene, options) { this.scene = scene; this.options = options; this.events = []; }
+    setQuality(quality) { this.quality = quality; }
+    apply(events, serverTime) { this.events.push({ events, serverTime }); }
+  },
 }, ["BeachEngine"]);
 const { STARGAZING, stargazingSlot } = stars;
 const { UYUNI_HOTELS, UYUNI_HOTEL_DECK, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS,
@@ -109,6 +114,7 @@ function fixture(mapId = "uyuni") {
   camera.rotation.order = "YXZ";
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
     mapId, uyuni, disposed: false, inputPaused: false, scene: new THREE.Scene(), camera, sky: new THREE.Mesh(),
+    sparklerActors: new Map(), momentOwnPid: null, uyuniMoments: null,
     self: { x: 0, z: 3, yaw: 0.2, pitch: 0.07, moving: false, bobT: 0 }, orbitYaw: 0.2,
     view: "first", mobile: true, followCam: new THREE.Vector3(), followSnap: true,
     skyRest: null, onsenSeat: null, benchSeat: null, beforeSkyRest: null, restSeat: null, returnFromSeat: null,
@@ -131,6 +137,68 @@ function fixture(mapId = "uyuni") {
   engine.selfNode = engine.createSelfAvatar();
   return { engine, camera, events, uyuni };
 }
+
+test("sparkler drawing view opens only for a standing Uyuni visitor and remains manually controllable", () => {
+  for (const mapId of ["uyuni", "beach", "bamboo"]) {
+    const { engine } = fixture(mapId), changes = [];
+    engine.handlers.onViewChange = view => changes.push(view);
+    const yaw = engine.self.yaw;
+    engine.showSparklerDrawing();
+    assert.equal(engine.view, mapId === "uyuni" ? "third" : "first");
+    if (mapId === "uyuni") {
+      close(engine.orbitYaw, yaw + Math.PI); close(engine.self.yaw, yaw);
+      assert.equal(engine.followSnap, true); assert.deepEqual(changes, ["third"]);
+      engine.toggleView(); assert.equal(engine.view, "first", "the user can choose first person afterward");
+    }
+  }
+  for (const resting of ["skyRest", "restSeat", "benchSeat", "onsenSeat", "pavilionSeat"]) {
+    const { engine } = fixture(); engine[resting] = { x: 0, z: 3, yaw: 0 };
+    engine.showSparklerDrawing(); assert.equal(engine.view, "first", resting);
+  }
+});
+
+test("held sparklers resolve the current visit pid and reject missing, resting, walking or departed actors", () => {
+  const { engine } = fixture(), posed = [];
+  const actor = label => ({ poseSparkler(target, age) { posed.push({ label, target, age }); return target.clone(); } });
+  engine.selfNode.avatar = actor("self");
+  engine.players.set("remote", { avatar: actor("remote"), cur: { x: 2, z: 3, yaw: .2, moving: false }, target: { moving: false }, data: {} });
+  const events = [
+    { id: "self-event", kind: "sparkler", fromPid: "own-visit", x: 0, z: 3, yaw: .2, startedAt: 100 },
+    { id: "remote-event", kind: "sparkler", fromPid: "remote", x: 2, z: 3, yaw: .2, startedAt: 100 },
+  ];
+  engine.applyUyuniMoments(events, 101, "own-visit");
+  assert.equal(engine.view, "first", "a received snapshot never changes the camera");
+  const callback = engine.uyuniMoments.options.poseSparkler;
+  const tip = new THREE.Vector3(0, 1.5, 2.3), grip = new THREE.Vector3(0, 1.2, 2.6);
+  assert.ok(callback("own-visit", tip, 2, grip)); assert.ok(callback("remote", tip, 2, grip));
+  assert.deepEqual(posed.map(value => value.label), ["self", "remote"]);
+  assert.equal(callback("unknown", tip, 2, grip), null);
+  engine.self.moving = true; assert.equal(callback("own-visit", tip, 2, grip), null); engine.self.moving = false;
+  engine.self.z = 5; assert.equal(callback("own-visit", tip, 2, grip), null); engine.self.z = 3;
+  engine.skyRest = {}; assert.equal(callback("own-visit", tip, 2, grip), null); engine.skyRest = null;
+  const remote = engine.players.get("remote");
+  remote.data.pose = "lying"; assert.equal(callback("remote", tip, 2, grip), null); delete remote.data.pose;
+  remote.target.moving = true; assert.equal(callback("remote", tip, 2, grip), null); remote.target.moving = false;
+  remote.cur.yaw += Math.PI; assert.equal(callback("remote", tip, 2, grip), null); remote.cur.yaw -= Math.PI;
+  remote.avatar = null; assert.equal(callback("remote", tip, 2, grip), null, "pixel fallback has no rigged hand");
+  engine.applyUyuniMoments(events, 102, "new-visit");
+  assert.equal(callback("own-visit", tip, 2, grip), null, "re-entry never attaches an old pid to the new self actor");
+  engine.disposed = true; assert.equal(callback("new-visit", tip, 2, grip), null);
+});
+
+test("one frame poses both actors before updating the handheld effect and renders afterward", () => {
+  const order = [];
+  const engine = Object.assign(Object.create(BeachEngine.prototype), {
+    mapId: "uyuni", quality: "high", qualityWarmupUntil: Infinity, lastRender: 0, lastDaylightAt: Infinity,
+    time: 0, clock: { update() {}, getDelta: () => .016 }, camera: new THREE.PerspectiveCamera(),
+    skyMat: { uniforms: { uTime: { value: 0 } } }, uyuni: { update() {} },
+    updateSelf() { order.push("self pose"); }, syncSkyResolution() {}, updatePlayers() { order.push("remote pose"); }, updateFx() {},
+    uyuniMoments: { update() { order.push("handheld IK"); } },
+    renderer: { domElement: { height: 844 }, render() { order.push("render"); } },
+  });
+  engine.frame();
+  assert.deepEqual(order, ["self pose", "remote pose", "handheld IK", "render"]);
+});
 
 test("Uyuni has no inherited beach colliders, raised floors or ceilings outside the new hotels", () => {
   const { engine } = fixture(), beach = fixture("beach").engine;

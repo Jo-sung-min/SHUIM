@@ -261,14 +261,14 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setMomentDeadlines({ sparkler: 0, lantern: 0 });
   }, []);
 
-  const applyMoments = useCallback((events: UyuniMoment[] | undefined, serverTime: number | undefined, cooldowns: UyuniMomentCooldowns | undefined, append = false) => {
+  const applyMoments = useCallback((events: UyuniMoment[] | undefined, serverTime: number | undefined, cooldowns: UyuniMomentCooldowns | undefined, append = false, ownPid = meRef.current?.pid) => {
     if (!Number.isSafeInteger(serverTime) || !cooldowns) return;
     const time = serverTime!, previous = momentClockRef.current;
     if (time < previous.time) return;
     const live = new Map((append ? previous.events : []).map(event => [event.id, event]));
     for (const event of events ?? []) live.set(event.id, event);
     const current = [...live.values()].filter(event => event.startedAt + event.durationMs > time);
-    engineRef.current?.applyUyuniMoments(current, time);
+    engineRef.current?.applyUyuniMoments(current, time, ownPid);
     momentClockRef.current = { time, events: current, cooldowns };
     if (previous.cooldowns.sparkler !== cooldowns.sparkler || previous.cooldowns.lantern !== cooldowns.lantern || previous.time < 0) {
       const deadline = (until: number) => until > time ? Date.now() + until - time : 0;
@@ -428,7 +428,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     applyFireworks(entered.fireworks, entered.serverTime, entered.fireworksCooldownUntil);
     resetMoments(sameAccount);
     setMomentsEnabled(entered.uyuniMomentsEnabled === true);
-    applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns);
+    applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns, false, entered.me.pid);
     lightingRef.current = null;
     lightingBusyRef.current = false;
     setLightingBusy(null); setLightingOpen(false);
@@ -824,10 +824,17 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       const result = await launchUyuniMoment(ticket, request.id, request.input);
       if (!belongsToVisit()) return false;
       momentRequestRef.current = null;
+      const previous = momentClockRef.current;
+      const live = result.event.startedAt + result.event.durationMs > Math.max(result.serverTime, previous.time);
+      const newlyConfirmed = result.serverTime >= previous.time && !previous.events.some(event => event.id === result.event.id);
       applyMoments([result.event], result.serverTime, result.cooldowns, true);
-      if (result.event.startedAt + result.event.durationMs <= result.serverTime)
+      if (!live)
         showToast("앞서 보낸 빛을 확인했어요. 다시 고르면 새로 시작해요.", { kind: "info" });
-      else toastSuccess(result.event.kind === "sparkler" ? `${result.event.letter}를 빛으로 그려요` : "소원을 담은 등이 떠올라요");
+      else if (result.event.kind === "sparkler") {
+        if (sameChoice && newlyConfirmed && result.event.fromPid === meRef.current?.pid) engine.showSparklerDrawing();
+        const label = result.event.letter === "heart" ? "하트" : result.event.letter === "star" ? "별" : result.event.letter;
+        toastSuccess(`손끝의 불꽃으로 ${label} 그리기를 시작해요`);
+      } else toastSuccess("소원을 담은 등이 떠올라요");
       if (sameChoice) { setActionsOpen(false); setCarePrompt(null); engine.select(null); }
       return sameChoice;
     } catch (cause) {

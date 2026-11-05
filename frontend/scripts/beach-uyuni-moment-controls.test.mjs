@@ -59,10 +59,17 @@ function harness(initial = {}) {
     unmount() { effects.forEach(effect => effect?.cleanup?.()); } };
 }
 
-test("four letters are explicit actions, portal opens accessibly, and immediate repeated clicks launch once", async () => {
+test("four letters and two outlined shapes are explicit actions, portal opens accessibly, and immediate repeated clicks launch once", async () => {
   const h = harness(); h.click(h.button("불꽃 막대"));
   assert.equal(h.find(node => node.props.role === "dialog")[0].props["aria-modal"], "true");
-  assert.deepEqual(h.find(node => node.type === "button" && /^불꽃으로 /.test(node.props["aria-label"] ?? "")).map(node => node.props.children), ["L", "O", "V", "E"]);
+  const choices = h.find(node => node.type === "button" && /^불꽃으로 /.test(node.props["aria-label"] ?? ""));
+  assert.deepEqual(choices.map(node => node.props["aria-label"]), ["L", "O", "V", "E", "하트", "별"].map(label => `불꽃으로 ${label} 그리기`));
+  assert.deepEqual(choices.slice(0, 4).map(node => node.props.children), ["L", "O", "V", "E"]);
+  for (const choice of choices.slice(4)) {
+    const symbol = choice.props.children;
+    assert.equal(symbol.type, "svg"); assert.equal(symbol.props.fill, "none");
+    assert.equal(symbol.props["aria-hidden"], "true"); assert.ok(symbol.props.children.props.d.endsWith("Z"));
+  }
   assert.ok(h.portals.every(target => target === h.document.body));
   const letter = h.button("불꽃으로 V 그리기"); h.click(letter); h.click(letter); h.render();
   assert.equal(h.requests.length, 1); assert.deepEqual(h.requests[0].values, ["V"]);
@@ -70,6 +77,19 @@ test("four letters are explicit actions, portal opens accessibly, and immediate 
   h.requests[0].resolve(true); await h.settle();
   assert.equal(h.find(node => node.props.role === "dialog").length, 0);
   assert.deepEqual(h.opened, [false, true, false]); h.unmount();
+});
+
+test("heart and star send canonical shape names, announce a started drawing, and stay locked while pending", async () => {
+  for (const [shape, label] of [["heart", "하트"], ["star", "별"]]) {
+    const h = harness(); h.click(h.button("불꽃 막대"));
+    h.click(h.button(`불꽃으로 ${label} 그리기`)); h.render();
+    assert.deepEqual(h.requests[0].values, [shape]);
+    assert.equal(h.button("불꽃으로 하트 그리기").props.disabled, true);
+    assert.equal(h.button("불꽃으로 별 그리기").props.disabled, true);
+    h.requests[0].resolve(true); await h.settle();
+    assert.equal(h.find(node => node.props.role === "status")[0].props.children, `손에 든 스파클러로 ${label} 그리기를 시작했어요.`);
+    assert.equal(h.find(node => node.props.role === "dialog").length, 0); h.unmount();
+  }
 });
 
 test("all five named lantern colors remain selectable and only confirmed success clears a wish", async () => {

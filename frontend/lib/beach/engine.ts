@@ -338,6 +338,8 @@ export class BeachEngine {
   private lanterns: SkyLanterns | null = null;
   private fireworks: BeachFireworks | null = null;
   private uyuniMoments: UyuniMoments | null = null;
+  private momentOwnPid: string | null = null;
+  private sparklerActors = new Map<string, UyuniMoment>();
   private fireState: FireState = { logs: 3, maxLogs: 12, intensity: 0.25, color: "amber", serverTime: 0, queuedPops: 0, powder: null };
   private firePowder = new FirePowderPlayback();
   private nearFire = false;
@@ -706,6 +708,14 @@ export class BeachEngine {
     this.setView(this.view === "first" ? "third" : "first");
   }
 
+  /** Only the local confirmed launch opens a readable front view of the drawing. */
+  showSparklerDrawing() {
+    if (this.disposed || this.mapId !== "uyuni" || this.skyRest || this.fixedSeat || this.restSeat) return;
+    this.setView("third");
+    this.orbitYaw = this.self.yaw + Math.PI;
+    this.followSnap = true;
+  }
+
   /** Stable IDs select either model or either atlas row without rejoining the room. */
   setSkin(skin: number) {
     if (this.disposed || !Number.isInteger(skin) || skin < 0 || skin > 3) return;
@@ -751,11 +761,37 @@ export class BeachEngine {
     this.fireworks.apply(events, serverTime);
   }
 
-  applyUyuniMoments(events: UyuniMoment[], serverTime: number) {
+  applyUyuniMoments(events: UyuniMoment[], serverTime: number, ownPid?: string) {
     if (this.disposed || this.mapId !== "uyuni" || (!this.uyuniMoments && events.length === 0)) return;
-    this.uyuniMoments ??= new UyuniMoments(this.scene, { floorHeight: uyuniHotelFloorHeight });
+    this.momentOwnPid = ownPid ?? null;
+    this.sparklerActors.clear();
+    for (const event of events) if (event.kind === "sparkler") {
+      const prior = this.sparklerActors.get(event.fromPid);
+      if (!prior || event.startedAt > prior.startedAt || (event.startedAt === prior.startedAt && event.id > prior.id)) this.sparklerActors.set(event.fromPid, event);
+    }
+    this.uyuniMoments ??= new UyuniMoments(this.scene, {
+      floorHeight: uyuniHotelFloorHeight,
+      poseSparkler: (pid, tip, age, gripTarget) => this.poseSparkler(pid, tip, age, gripTarget),
+    });
     this.uyuniMoments.setQuality(this.quality);
     this.uyuniMoments.apply(events, serverTime);
+  }
+
+  private poseSparkler(pid: string, tip: THREE.Vector3, age: number, gripTarget: THREE.Vector3) {
+    if (this.disposed || this.mapId !== "uyuni") return null;
+    const event = this.sparklerActors.get(pid);
+    if (!event) return null;
+    const isSelf = pid === this.momentOwnPid, remote = isSelf ? null : this.players.get(pid);
+    const actor = isSelf ? this.selfNode?.avatar : remote?.avatar;
+    const state = isSelf ? this.self : remote?.cur;
+    if (!actor || !state || state.moving || (remote?.target.moving ?? false)
+      || (isSelf ? this.skyRest || this.fixedSeat || this.restSeat : remote?.data.pose === "lying" || remote?.data.pose === "sitting")
+      || Math.hypot(state.x - event.x, state.z - event.z) > 0.8) return null;
+    const turn = state.yaw - event.yaw;
+    if (Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) > Math.PI / 2) return null;
+    const grip = actor.poseSparkler(gripTarget, age);
+    // A disconnected/missing actor must never leave a floating rod behind.
+    return grip && grip.distanceTo(tip) < 1.5 ? grip : null;
   }
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
@@ -2245,6 +2281,8 @@ export class BeachEngine {
     this.fireworks = null;
     this.uyuniMoments?.dispose();
     this.uyuniMoments = null;
+    this.sparklerActors.clear();
+    this.momentOwnPid = null;
     this.fire?.dispose();
     this.fire = null;
     this.bamboo?.dispose();

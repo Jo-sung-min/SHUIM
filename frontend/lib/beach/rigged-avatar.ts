@@ -267,6 +267,14 @@ export class BeachAvatar {
   private q1 = new THREE.Quaternion();
   private q2 = new THREE.Quaternion();
   private q3 = new THREE.Quaternion();
+  private lastState: BeachAvatarState | null = null;
+  private sparklerPosed = false;
+  private sparklerGripOffset = new THREE.Vector3();
+  private sparklerScratch = {
+    shoulder: new THREE.Vector3(), elbow: new THREE.Vector3(), grip: new THREE.Vector3(),
+    direction: new THREE.Vector3(), pole: new THREE.Vector3(), end: new THREE.Vector3(),
+    lower: new THREE.Vector3(), result: new THREE.Vector3(),
+  };
 
   constructor(template: THREE.Object3D, clips: THREE.AnimationClip[], onDispose: (actor: BeachAvatar) => void = () => {}, kind: AvatarKind = "male", prepared?: AvatarTemplateData) {
     this.kind = kind;
@@ -292,6 +300,12 @@ export class BeachAvatar {
       });
     });
     this.root.updateMatrixWorld(true);
+    const hand = this.bones.get("RightHand")?.bone;
+    const knuckles = hand?.children.filter(child => child instanceof THREE.Bone && /(?:Index|Middle|Mid|Ring|Pinky)1$/.test(child.name)) ?? [];
+    // The wrist joint is behind the visible palm. Locate the middle of the palm
+    // from the real model's finger roots, preserving every corrected hand joint.
+    for (const knuckle of knuckles) this.sparklerGripOffset.add(knuckle.position);
+    if (knuckles.length) this.sparklerGripOffset.multiplyScalar(0.65 / knuckles.length);
     const hips = this.bones.get("Hips");
     if (hips) this.restHipHeight = hips.bone.getWorldPosition(new THREE.Vector3()).y;
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -305,6 +319,62 @@ export class BeachAvatar {
   playGesture(kind: "wave" | "hug", target?: { x: number; z: number }) {
     if (this.disposed) return;
     this.gesture = { kind, age: 0, target: target ? { ...target } : undefined };
+  }
+
+  getSparklerGrip(target = new THREE.Vector3()): THREE.Vector3 | null {
+    const hand = this.bones.get("RightHand")?.bone;
+    return !this.disposed && hand ? hand.localToWorld(target.copy(this.sparklerGripOffset)) : null;
+  }
+
+  /** Solve two real limb lengths; only upper/lower arm rotations may change. */
+  poseSparkler(target: THREE.Vector3, age: number): THREE.Vector3 | null {
+    const state = this.lastState, upper = this.bones.get("RightArm"), lower = this.bones.get("RightForeArm"), hand = this.bones.get("RightHand");
+    if (this.disposed || !state || state.moving || state.lying || state.seated || !upper || !lower || !hand
+      || ![target.x, target.y, target.z, age].every(Number.isFinite) || age < 0.25 || age > 5.85) return null;
+    if (!state.visible) {
+      // A first-person actor is hidden, but its hand still anchors the real rod.
+      // Run the ordinary pose at dt=0 so hidden frames cannot accumulate IK.
+      this.update(0, { ...state, visible: true });
+      this.root.visible = false;
+      this.lastState = state;
+    }
+    const s = this.sparklerScratch;
+    upper.bone.getWorldPosition(s.shoulder);
+    lower.bone.getWorldPosition(s.elbow);
+    this.getSparklerGrip(s.grip);
+    const upperLength = s.shoulder.distanceTo(s.elbow), lowerLength = s.elbow.distanceTo(s.grip);
+    if (upperLength < 1e-5 || lowerLength < 1e-5) return null;
+    s.direction.copy(target).sub(s.shoulder);
+    const requested = s.direction.length();
+    if (requested < 1e-6) s.direction.set(0, 0, 1).applyQuaternion(this.root.getWorldQuaternion(this.q1));
+    else s.direction.multiplyScalar(1 / requested);
+    const reach = THREE.MathUtils.clamp(requested, Math.abs(upperLength - lowerLength) + 0.002, upperLength + lowerLength - 0.002);
+    s.end.copy(s.shoulder).addScaledVector(s.direction, reach);
+    // A stable outward/downward elbow plane avoids a sudden flip at full reach.
+    s.pole.set(-0.8, -0.65, 0.2).applyQuaternion(this.root.getWorldQuaternion(this.q1));
+    s.pole.addScaledVector(s.direction, -s.pole.dot(s.direction));
+    if (s.pole.lengthSq() < 1e-6) {
+      s.pole.set(0, 0, 1).applyQuaternion(this.q1);
+      s.pole.addScaledVector(s.direction, -s.pole.dot(s.direction));
+    }
+    s.pole.normalize();
+    const along = (upperLength * upperLength - lowerLength * lowerLength + reach * reach) / (2 * reach);
+    s.elbow.copy(s.shoulder).addScaledVector(s.direction, along)
+      .addScaledVector(s.pole, Math.sqrt(Math.max(0, upperLength * upperLength - along * along)));
+    s.lower.copy(this.sparklerGripOffset).multiply(hand.bone.scale).applyQuaternion(hand.bone.quaternion).add(hand.bone.position);
+    this.aimWorld(upper, lower.bone.position, this.v1.copy(s.elbow).sub(s.shoulder));
+    this.aimWorld(lower, s.lower, this.v1.copy(s.end).sub(s.elbow));
+    upper.bone.updateWorldMatrix(true, true);
+    this.sparklerPosed = true;
+    return this.getSparklerGrip(s.result);
+  }
+
+  private aimWorld(rest: BoneRest, localEnd: THREE.Vector3, direction: THREE.Vector3) {
+    if (!rest.bone.parent) return;
+    rest.bone.parent.getWorldQuaternion(this.q2).invert();
+    this.v1.copy(direction).normalize().applyQuaternion(this.q2);
+    this.v2.copy(localEnd).normalize().applyQuaternion(rest.quaternion);
+    rest.bone.quaternion.copy(this.q3.setFromUnitVectors(this.v2, this.v1).multiply(rest.quaternion));
   }
 
   /** Aim a limb in avatar coordinates without assuming Tripo's local bone axes. */
@@ -381,6 +451,7 @@ export class BeachAvatar {
 
   update(dt: number, state: BeachAvatarState) {
     if (this.disposed) return;
+    this.lastState = state;
     const step = Number.isFinite(dt) ? THREE.MathUtils.clamp(dt, 0, 0.1) : 0;
     this.time += step;
     this.root.visible = state.visible;
@@ -413,7 +484,8 @@ export class BeachAvatar {
       }
       this.normalized.position.y += Math.sin(this.time * 1.8) * 0.006 * (1 - this.walkWeight);
     }
-    if (!state.visible) return;
+    if (!state.visible && !this.sparklerPosed) return;
+    this.sparklerPosed = false;
     for (const rest of this.bones.values()) {
       // Restore the last mixer result before applying a procedural pose. Restoring
       // bind pose instead would bypass PropertyMixer's unchanged-value cache.

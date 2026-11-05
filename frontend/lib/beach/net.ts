@@ -43,7 +43,7 @@ export interface EnterResponse {
   serverTime?: number;
 }
 
-export type SparklerLetter = "L" | "O" | "V" | "E";
+export type SparklerLetter = "L" | "O" | "V" | "E" | "heart" | "star";
 export type WishLanternColor = "amber" | "rose" | "mint" | "sky" | "violet";
 export type UyuniMomentInput = { kind: "sparkler"; letter: SparklerLetter }
   | { kind: "lantern"; color: WishLanternColor; wish: string };
@@ -55,7 +55,7 @@ export interface UyuniMoment {
 export interface UyuniMomentCooldowns { sparkler: number; lantern: number }
 export interface UyuniMomentLaunch { event: UyuniMoment; serverTime: number; cooldowns: UyuniMomentCooldowns }
 
-const isSparklerLetter = (value: unknown): value is SparklerLetter => ["L", "O", "V", "E"].includes(value as string);
+const isSparklerLetter = (value: unknown): value is SparklerLetter => ["L", "O", "V", "E", "heart", "star"].includes(value as string);
 const isWishLanternColor = (value: unknown): value is WishLanternColor => ["amber", "rose", "mint", "sky", "violet"].includes(value as string);
 const validWish = (value: unknown): value is string => typeof value === "string" && value === value.trim()
   && Array.from(value).length >= 1 && Array.from(value).length <= 80 && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);

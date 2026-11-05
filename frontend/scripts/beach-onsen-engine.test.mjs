@@ -47,7 +47,7 @@ function pool(kind) {
 function fixture(skin = 0) {
   const changes = [], camera = new THREE.PerspectiveCamera(78, 390 / 844, 0.1, 520);
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
-    mapId: "beach", uyuni: null,
+    mapId: "beach", uyuni: null, sparklerActors: new Map(), momentOwnPid: null,
     scene: new THREE.Scene(), camera, sky: new THREE.Mesh(), followCam: new THREE.Vector3(), followSnap: true,
     self: { x: 0, z: 45, yaw: 0.2, pitch: 0.07, moving: false, bobT: 0 }, view: "first", mobile: false,
     skyRest: null, onsenSeat: null, benchSeat: null, beforeSkyRest: null, restSeat: null, returnFromSeat: null,

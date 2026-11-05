@@ -49,6 +49,80 @@ function finiteSkin(actor) {
   }
 }
 
+for (const kind of ["male", "female"]) test(`${kind} holds the sparkler at its real palm with a length-preserving two-bone pose`, async context => {
+  const gltf = await model(kind), api = runtime(() => Promise.resolve(gltf), kind), pool = new api.BeachAvatarModels(kind);
+  await pool.load();
+  const actor = pool.create(), upper = actor.bones.get("RightArm").bone, lower = actor.bones.get("RightForeArm").bone;
+  const hand = actor.bones.get("RightHand").bone;
+  const position = object => object.getWorldPosition(new THREE.Vector3());
+  let maximumRod = 0, minimumRod = Infinity;
+  for (const yaw of [0, Math.PI / 2, -1.2]) {
+    const current = state({ x: 3, z: -5, y: .2, yaw });
+    actor.update(0, current);
+    const neutral = new Map([...actor.bones.values()].map(rest => [rest.bone, rest.bone.quaternion.clone()]));
+    const shoulder = position(upper), elbow = position(lower), grip = actor.getSparklerGrip();
+    assert.ok(grip.distanceTo(position(hand)) > .004, "grip is inside the visible palm, not the wrist joint");
+    const a = shoulder.distanceTo(elbow), b = elbow.distanceTo(grip);
+    const target = shoulder.clone().add(new THREE.Vector3(.12, .04, .22).applyQuaternion(actor.root.quaternion));
+    const result = actor.poseSparkler(target, 2);
+    assert.ok(result.distanceTo(target) < 1e-5, "reachable world target is reached by the actual palm");
+    assert.ok(result.distanceTo(actor.getSparklerGrip()) < 1e-8);
+    assert.ok(Math.abs(position(upper).distanceTo(position(lower)) - a) < 1e-7);
+    assert.ok(Math.abs(position(lower).distanceTo(result) - b) < 1e-7);
+    for (const [joint, quaternion] of neutral) if (joint !== upper && joint !== lower) {
+      assert.ok(joint.quaternion.equals(quaternion), `${joint.name} keeps its original local pose`);
+    }
+    finiteSkin(actor);
+    actor.update(0, current);
+    for (const [joint, quaternion] of neutral) assert.ok(joint.quaternion.equals(quaternion), `${joint.name} restores without a new mixer tick`);
+    // The agreed drawing plane spans all letter extrema. The rod reaches from
+    // the returned palm to the exact fixed tip even when the arm is clamped.
+    for (const x of [-.58, 0, .58]) for (const y of [-.75, 0, .75]) {
+      actor.update(0, current);
+      const tip = new THREE.Vector3(-x, 1.38 + y, -.72).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(new THREE.Vector3(current.x, current.y, current.z));
+      const anchor = new THREE.Vector3(current.x, current.y + .92, current.z);
+      const wanted = tip.clone().addScaledVector(anchor.sub(tip).normalize(), .48);
+      const actual = actor.poseSparkler(wanted, 2);
+      assert.ok(actual.toArray().every(Number.isFinite));
+      assert.ok(position(upper).distanceTo(actual) <= a + b + 1e-6, "no limb stretching at the top/opposite corner");
+      maximumRod = Math.max(maximumRod, actual.distanceTo(tip)); minimumRod = Math.min(minimumRod, actual.distanceTo(tip));
+    }
+  }
+  assert.ok(maximumRod < 1.5, "all agreed letter extremes remain attached to the posed hand");
+  context.diagnostic(JSON.stringify({ kind, rodLength: { min: minimumRod, max: maximumRod } }));
+  pool.dispose();
+});
+
+for (const kind of ["male", "female"]) test(`${kind} resets hidden sparkler poses and refuses rest, movement, expired or invalid targets`, async () => {
+  const gltf = await model(kind), api = runtime(() => Promise.resolve(gltf), kind), pool = new api.BeachAvatarModels(kind);
+  await pool.load();
+  const actor = pool.create(), current = state();
+  actor.update(0, current);
+  const upper = actor.bones.get("RightArm").bone, lower = actor.bones.get("RightForeArm").bone;
+  const upperRest = upper.quaternion.clone(), lowerRest = lower.quaternion.clone();
+  const target = upper.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(.1, 0, -.25));
+  let expected;
+  for (let frame = 0; frame < 30; frame++) {
+    actor.update(0, { ...current, visible: false });
+    const grip = actor.poseSparkler(target, 2)?.clone();
+    assert.ok(grip); assert.equal(actor.root.visible, false, "first-person stays visually hidden");
+    if (expected) assert.ok(grip.distanceTo(expected) < 1e-8, "hidden skeleton never accumulates previous IK");
+    expected = grip;
+  }
+  actor.update(0, { ...current, visible: false });
+  assert.ok(upper.quaternion.angleTo(upperRest) < 1e-7 && lower.quaternion.angleTo(lowerRest) < 1e-7, "first normal hidden frame restores the arm");
+  for (const changed of [{ moving: true }, { lying: { x: 0, z: 0, yaw: 0 } }, { seated: { x: 0, z: 0, yaw: 0, avatarY: .5 } }]) {
+    actor.update(0, state(changed));
+    assert.equal(actor.poseSparkler(target, 2), null);
+  }
+  actor.update(0, current);
+  for (const age of [0, 5.86, NaN]) assert.equal(actor.poseSparkler(target, age), null);
+  assert.equal(actor.poseSparkler(new THREE.Vector3(NaN, 0, 0), 2), null);
+  pool.dispose();
+  assert.equal(actor.poseSparkler(target, 2), null);
+  assert.equal(actor.getSparklerGrip(), null);
+});
+
 function pelvisSurfacePoint(actor) {
   actor.root.updateMatrixWorld(true);
   const lowest = new THREE.Vector3(0, Infinity, 0), point = new THREE.Vector3();

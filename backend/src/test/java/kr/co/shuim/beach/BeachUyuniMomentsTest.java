@@ -108,6 +108,28 @@ class BeachUyuniMomentsTest {
         assertEquals(7_000, event.startedAt() + event.durationMs() - (long) late.get("serverTime"));
     }
 
+    @Test void allSixSparklerShapesKeepTheirLifetimePublicPayloadAndActorScopedRetryRules() throws Exception {
+        var author = visitor("author"); var observer = visitor("observer");
+        var mapper = new ObjectMapper();
+        for (String letter : List.of("L", "O", "V", "E", "heart", "star")) {
+            String id = UUID.randomUUID().toString();
+            var body = new BeachController.MomentBody(author.ticket(), id, "sparkler", letter, null, null);
+            var first = controller.moment(body, request);
+            var retry = controller.moment(body, request);
+            assertEquals(first.event(), retry.event());
+            assertEquals(letter, first.event().letter()); assertEquals(12_000, first.event().durationMs());
+            assertEquals(clock.get() + 4_000, first.cooldowns().sparkler());
+            var json = mapper.valueToTree(first.event());
+            assertEquals(10, json.size()); assertEquals(letter, json.get("letter").textValue());
+            assertFalse(json.has("wish")); assertFalse(json.has("color"));
+            assertTrue(poll(observer).uyuniMoments().contains(first.event()));
+            String different = letter.equals("heart") ? "star" : "heart";
+            assertEquals(409, assertThrows(ApiException.class, () -> launch(author, id, "sparkler", different, null, null)).status());
+            assertEquals(429, assertThrows(ApiException.class, () -> launch(author, UUID.randomUUID().toString(), "sparkler", letter, null, null)).status());
+            advance(4_000, author, observer);
+        }
+    }
+
     @Test void eventUsesTrustedCurrentPositionCanonicalYawAndOnlyTheRelevantPublicFields() throws Exception {
         var p = visitor("author");
         beach.tick(p.ticket(), 2.125, -17.25, Math.PI * 20 + .7, true, null, null);
@@ -232,7 +254,7 @@ class BeachUyuniMomentsTest {
 
     @Test void malformedChoicesWishControlsAndOversizeUnicodeFailWithoutConsumingCooldown() {
         var p = visitor("author"); String id = UUID.randomUUID().toString();
-        for (String invalid : new String[]{null, "", "love", "l", " O", "F"})
+        for (String invalid : new String[]{null, "", "love", "l", " O", "F", "Heart", "star ", "♡", "★"})
             assertEquals(400, assertThrows(ApiException.class, () -> launch(p, id, "sparkler", invalid, null, null)).status());
         for (String invalid : new String[]{null, "", "red", "Amber", "rose "})
             assertEquals(400, assertThrows(ApiException.class, () -> launch(p, id, "lantern", null, invalid, "소원")).status());

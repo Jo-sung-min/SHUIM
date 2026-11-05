@@ -92,8 +92,8 @@ final class BeachUyuniMoments {
 
     private static Payload payload(String kind, String letter, String color, String wish) {
         if ("sparkler".equals(kind)) {
-            if (letter == null || !Set.of("L", "O", "V", "E").contains(letter) || color != null || wish != null)
-                throw ApiException.badRequest("반짝이 글자는 L, O, V, E 중에서 골라 주세요.");
+            if (letter == null || !Set.of("L", "O", "V", "E", "heart", "star").contains(letter) || color != null || wish != null)
+                throw ApiException.badRequest("스파클러로 그릴 L, O, V, E, 하트, 별 중에서 골라 주세요.");
             return new Payload(kind, letter, null, null);
         }
         if (!"lantern".equals(kind) || letter != null || color == null

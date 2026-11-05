@@ -6,7 +6,8 @@ import { IconClose, IconSparkle } from "@/components/Icons";
 import type { SparklerLetter, WishLanternColor } from "@/lib/beach/net";
 import styles from "./UyuniMomentControls.module.css";
 
-const LETTERS: readonly SparklerLetter[] = ["L", "O", "V", "E"];
+const LETTERS: readonly SparklerLetter[] = ["L", "O", "V", "E", "heart", "star"];
+const sparklerLabel = (letter: SparklerLetter) => letter === "heart" ? "하트" : letter === "star" ? "별" : letter;
 const COLORS: readonly { color: WishLanternColor; label: string; tint: string }[] = [
   { color: "amber", label: "주황", tint: "#f1bd77" },
   { color: "rose", label: "장밋빛", tint: "#eea4b8" },
@@ -109,7 +110,7 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
       if (!mounted.current) return;
       if (confirmed) {
         if (kind === "lantern") setWish("");
-        setNotice(kind === "lantern" ? "소원을 담은 등을 날렸어요." : `${letter}을 불꽃으로 그렸어요.`);
+        setNotice(kind === "lantern" ? "소원을 담은 등을 날렸어요." : `손에 든 스파클러로 ${sparklerLabel(letter!)} 그리기를 시작했어요.`);
         setPanel(null);
       } else setError("시작을 확인하지 못했어요. 같은 선택으로 다시 눌러 주세요.");
     } catch {
@@ -126,7 +127,7 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
       aria-label={remaining.sparkler ? `불꽃 막대, ${remaining.sparkler}초 후 가능` : "불꽃 막대"}
       onClick={event => open("sparkler", event.currentTarget)}>
       <span className={styles.sparklerIcon}><IconSparkle /></span><strong>불꽃 막대</strong>
-      <small>{pending === "sparkler" ? "그리는 중…" : remaining.sparkler ? `${remaining.sparkler}초 후` : "빛으로 한 글자"}</small>
+      <small>{pending === "sparkler" ? "그리는 중…" : remaining.sparkler ? `${remaining.sparkler}초 후` : "손끝에 남는 빛"}</small>
     </button>
     <button type="button" className={styles.tile} disabled={locked || remaining.lantern > 0}
       aria-haspopup="dialog" aria-expanded={visible && panel === "lantern"} aria-controls={`${id}-dialog`}
@@ -146,14 +147,18 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
           <button type="button" className={styles.close} aria-label="닫기" onClick={() => setPanel(null)}><IconClose /></button>
         </header>
         <p id={`${id}-description`} className={styles.description}>{panel === "sparkler"
-          ? "한 글자씩 골라 밤하늘에 그려요." : "작은 바람을 적어 하늘에 보내요."}</p>
+          ? "손에 든 스파클러를 움직여요. 튀는 불씨를 따라 빛의 잔상이 천천히 사라져요." : "작은 바람을 적어 하늘에 보내요."}</p>
         {panel === "sparkler" ? <>
-          <div className={styles.letters} role="group" aria-label="불꽃으로 그릴 글자">
+          <div className={styles.letters} role="group" aria-label="불꽃으로 그릴 글자와 모양">
             {LETTERS.map((letter, index) => <button key={letter} type="button" data-initial-focus={index === 0 || undefined}
-              disabled={locked || remaining.sparkler > 0} aria-label={`불꽃으로 ${letter} 그리기`}
-              onClick={() => void send("sparkler", letter)}>{letter}</button>)}
+              disabled={locked || remaining.sparkler > 0} aria-label={`불꽃으로 ${sparklerLabel(letter)} 그리기`}
+              onClick={() => void send("sparkler", letter)}>{letter === "heart" || letter === "star"
+                ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d={letter === "heart" ? "M12 20S3 14.4 3 8.5C3 3.9 9 2.4 12 7c3-4.6 9-3.1 9 1.5C21 14.4 12 20 12 20Z"
+                    : "m12 3 2.8 5.7 6.3.9-4.5 4.4 1.1 6.2-5.7-3-5.7 3 1.1-6.2-4.5-4.4 6.3-.9L12 3Z"} />
+                </svg> : letter}</button>)}
           </div>
-          <p className={styles.hint}>{remaining.sparkler ? `${remaining.sparkler}초 뒤에 다시 그릴 수 있어요.` : "글자를 누르면 불꽃 막대가 움직여요."}</p>
+          <p className={styles.hint}>{remaining.sparkler ? `${remaining.sparkler}초 뒤에 다시 그릴 수 있어요.` : "글자나 모양을 고르면 한 획씩 그리기 시작해요."}</p>
         </> : <form onSubmit={event => { event.preventDefault(); void send("lantern"); }}>
           <fieldset className={styles.colors} disabled={locked}>
             <legend>등 색</legend><div className={styles.swatches}>

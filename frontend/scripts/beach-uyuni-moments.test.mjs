@@ -10,7 +10,7 @@ const source=stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-mom
 const event=(id="one",kind="sparkler",extra={})=>({id,kind,fromPid:"visitor",fromNick:"방문자",x:0,z:3,yaw:0,
   startedAt:100000,durationMs:kind==="sparkler"?12000:40000,...(kind==="sparkler"?{letter:"L"}:{wish:"모두 평안하기를",color:"amber"}),...extra});
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} ≈ ${b}`);
-function fixture({dom=false,floor=()=>0}={}) {
+function fixture({dom=false,floor=()=>0,poseSparkler}={}) {
   let now=100000; const drawn=[];
   const context={THREE,Date:{now:()=>now}};
   if(dom) context.document={createElement(tag) {
@@ -18,8 +18,8 @@ function fixture({dom=false,floor=()=>0}={}) {
     const ctx={fillRect(){},strokeRect(){},beginPath(){},arc(){},fill(){},measureText:s=>({width:Array.from(s).length*(parseFloat(ctx.font)||32)}),fillText:s=>drawn.push(s)};
     return {getContext:()=>ctx};
   }};
-  vm.runInNewContext(`${source}\nglobalThis.api={UyuniMoments,sparklerPath,sampleWishLantern};`,context);
-  const scene=new THREE.Scene(), moments=new context.api.UyuniMoments(scene,{floorHeight:floor,now:()=>now});
+  vm.runInNewContext(`${source}\nglobalThis.api={UyuniMoments,sparklerPath,sampleWishLantern,sampleSparklerTip,sparklerTrailOpacity};`,context);
+  const scene=new THREE.Scene(), moments=new context.api.UyuniMoments(scene,{floorHeight:floor,now:()=>now,poseSparkler});
   const camera=new THREE.PerspectiveCamera(62,1, .1,520); camera.position.set(0,1.6,5);
   return {scene,moments,camera,drawn,...context.api,setTime:value=>now=value,
     object:name=>scene.getObjectByName(name), sparks:()=>scene.getObjectByName("uyuni-moments").children.filter(o=>o.isPoints)};
@@ -42,24 +42,25 @@ test("all four paths form readable uppercase letters with no diagonal E pen-up c
   f.moments.dispose();
 });
 
-test("progressive sparks use shared letter buffers, hotel floor height and readable faces from both sides",()=>{
+test("handheld writing stays at arm's reach and does not mirror when the camera crosses its plane",()=>{
   const f=fixture({floor:()=>.48}); f.moments.apply([event(),event("two","sparkler",{letter:"L",x:2})],100000);
   const [one,two]=f.sparks(); assert.equal(one.geometry,two.geometry);
-  close(one.position.y,2.28); close(one.position.z,.5);
-  f.camera.aspect=390/844; f.camera.position.set(0,2.03,3); f.camera.updateProjectionMatrix(); f.camera.updateMatrixWorld();
-  for(const letter of ["L","O","V","E"]) for(const p of f.sparklerPath(letter)) {
-    const projected=new THREE.Vector3(p.x,p.y,0).add(one.position).project(f.camera);
-    assert.ok(Math.abs(projected.x)<.9 && Math.abs(projected.y)<.9,"the owner's portrait view contains the entire letter");
+  close(one.position.y,1.86); close(one.position.z,2.28);
+  f.camera.aspect=390/844; f.camera.position.set(0,2.03,-2); f.camera.lookAt(0,1.6,3); f.camera.updateProjectionMatrix(); f.camera.updateMatrixWorld();
+  for(const letter of ["L","O","V","E","heart","star"]) for(const p of f.sparklerPath(letter)) {
+    const projected=new THREE.Vector3(-p.x*.88,p.y*.88,0).add(one.position).project(f.camera);
+    assert.ok(Math.abs(projected.x)<.9 && Math.abs(projected.y)<.9,"the portrait photo view contains the complete handheld drawing");
   }
   f.setTime(102600); f.moments.update(f.camera,102600,844);
-  close(one.material.uniforms.uAge.value,2.6); assert.equal(one.material.uniforms.uSide.value,1);
+  close(one.material.uniforms.uAge.value,2.6); assert.equal(one.material.uniforms.uSide.value,-1);
   const details=one.geometry.getAttribute("detail");
   assert.ok(Array.from({length:128},(_,i)=>details.getX(i)).filter(progress=>progress<=.5).length>60);
-  f.camera.position.z=-4; f.moments.update(f.camera,102600,844); assert.equal(one.material.uniforms.uSide.value,-1);
+  f.camera.position.z=8; f.moments.update(f.camera,102600,844); assert.equal(one.material.uniforms.uSide.value,-1);
   f.moments.setQuality("low"); f.moments.update(f.camera,102600,844);
-  assert.equal(one.geometry.drawRange.count,288);
-  const lowSparks=Array.from({length:32},(_,i)=>details.getX(256+i));
-  assert.ok(Math.min(...lowSparks)<.05 && Math.max(...lowSparks)>.95,"low quality still emits throughout the whole letter");
+  assert.equal(one.material.uniforms.uSprays.value,2);
+  assert.ok(one.geometry.getAttribute("position").count<3000,"bounded shared particle pool per shape");
+  const lowSparks=Array.from({length:256},(_,i)=>details.getX(1024+i));
+  assert.ok(Math.min(...lowSparks)<.05 && Math.max(...lowSparks)>.95,"every spray family spans the entire shape");
   f.moments.dispose();
 });
 
@@ -134,7 +135,7 @@ test("room budgets are bounded, repeated snapshots allocate nothing and disposal
   f.moments.apply(events,100000); assert.equal(f.sparks().length,32); assert.equal(f.object("uyuni-wish-paper").count,32);
   const geometries=new Set(),materials=new Set(),textures=new Set();
   f.scene.traverse(o=>{if(o.geometry) geometries.add(o.geometry); if(o.material) {materials.add(o.material);if(o.material.map)textures.add(o.material.map);}});
-  assert.equal(geometries.size,9); assert.equal(textures.size,32);
+  assert.equal(geometries.size,10); assert.equal(textures.size,32);
   const before=[...f.object("uyuni-moments").children]; f.moments.apply(events,100000); assert.deepEqual(f.object("uyuni-moments").children,before);
   let disposed=0; for(const resource of [...geometries,...materials,...textures]) resource.addEventListener("dispose",()=>disposed++);
   f.moments.dispose(); assert.equal(disposed,geometries.size+materials.size+textures.size); assert.equal(f.scene.children.length,0);
@@ -149,5 +150,73 @@ test("malformed and changed-ID events cannot inject geometry, text or unbounded 
   f.moments.apply(malformed,100000); assert.equal(f.sparks().length,0); assert.equal(f.object("uyuni-wish-paper").count,0); assert.equal(f.drawn.length,0);
   f.moments.apply([event()],100000); f.moments.apply([event("one","sparkler",{letter:"E"})],100000); assert.equal(f.sparks().length,0);
   f.moments.apply(null,100000); f.moments.apply([],NaN); f.moments.update(f.camera,NaN);
+  f.moments.dispose();
+});
+
+test("hearts and stars close in one continuous stroke and the live tip uses the same path",()=>{
+  const f=fixture();
+  for(const shape of ["L","O","V","E","heart","star"]) {
+    const path=f.sparklerPath(shape,256);
+    for(let i=1;i<path.length;i++) assert.ok(Math.hypot(path[i].x-path[i-1].x,path[i].y-path[i-1].y)<.04,"no teleport between strokes");
+    if(["O","heart","star"].includes(shape)) {
+      close(path[0].x,path.at(-1).x); close(path[0].y,path.at(-1).y);
+    }
+    for(let i=0;i<path.length;i+=17) {
+      const tip=f.sampleSparklerTip(shape,.25+5.6*i/255);
+      close(tip.x,path[i].x*.88); close(tip.y,path[i].y*.88);
+    }
+    f.moments.apply([event(shape,"sparkler",{letter:shape})],100000);
+    assert.equal(f.sparks().length,1);
+  }
+  assert.equal(f.sampleSparklerTip("heart",6).drawing,false);
+  f.moments.dispose();
+});
+
+test("older segments fade during drawing and the final stroke lingers briefly for a photograph",()=>{
+  const f=fixture();
+  assert.equal(f.sparklerTrailOpacity(.1,0),0);
+  assert.ok(f.sparklerTrailOpacity(3,0)<f.sparklerTrailOpacity(3,.4));
+  assert.ok(f.sparklerTrailOpacity(5.8,0)>.25,"the complete outline remains readable for a photograph");
+  assert.equal(f.sparklerTrailOpacity(8.5,0),0);
+  assert.ok(f.sparklerTrailOpacity(8.5,1)>.5,"newer embers linger after drawing ends");
+  assert.equal(f.sparklerTrailOpacity(12,1),0);
+  f.moments.dispose();
+});
+
+test("one held stick joins the actual palm to the burning tip and a new shape stops the old hand motion",()=>{
+  const poses=[];
+  const grip=new THREE.Vector3(.3,1.2,2.65);
+  const f=fixture({poseSparkler:(pid,tip,age,target)=>{poses.push({pid,tip:tip.clone(),age,target:target.clone()}); return grip;}});
+  f.moments.apply([event("old","sparkler",{letter:"heart"})],100000);
+  f.setTime(102800); f.moments.update(f.camera,102800);
+  const rods=f.object("uyuni-held-sparklers"); assert.equal(rods.count,1);
+  const matrix=new THREE.Matrix4(); rods.getMatrixAt(0,matrix);
+  const endpoint=new THREE.Vector3(0,.5,0).applyMatrix4(matrix);
+  assert.ok(endpoint.distanceTo(poses.at(-1).tip)<1e-6,"the glowing tip is physically the end of the held rod");
+  const last=poses.at(-1), direction=last.tip.clone().sub(grip).normalize();
+  const bottom=new THREE.Vector3(0,-.5,0).applyMatrix4(matrix);
+  assert.ok(bottom.distanceTo(grip.clone().addScaledVector(direction,-.05))<1e-6,"the grip is inside the bottom five centimeters of the stick");
+  f.setTime(104000); f.moments.apply([event("old","sparkler",{letter:"heart"}),event("new","sparkler",{letter:"star",startedAt:104000})],104000);
+  assert.equal(rods.count,1); assert.equal(f.sparks().length,2,"old embers remain while the next stroke starts");
+  assert.equal(f.object("uyuni-sparkler-old").material.uniforms.uStop.value,4);
+  assert.equal(f.object("uyuni-sparkler-old").material.uniforms.uHeld.value,0);
+  assert.equal(f.object("uyuni-sparkler-new").material.uniforms.uHeld.value,1);
+  const calls=poses.length; f.setTime(110000); f.moments.update(f.camera,110000);
+  assert.equal(poses.length,calls); assert.equal(rods.count,0,"hand props stop after the drawing while trails finish fading");
+  f.moments.apply([],110000); assert.equal(rods.count,0);
+  f.moments.dispose();
+});
+
+test("leaving a drawing stops new strokes but keeps its fading embers, without cancelling avatar loading",()=>{
+  let present=false;
+  const f=fixture({poseSparkler:()=>present?new THREE.Vector3(.3,1.2,2.65):null});
+  f.moments.apply([event("held","sparkler",{letter:"heart"})],100000);
+  const spark=f.sparks()[0], rods=f.object("uyuni-held-sparklers");
+  assert.equal(spark.material.uniforms.uStop.value,5.85,"loading a model is not a cancelled stroke");
+  present=true; f.setTime(102000); f.moments.update(f.camera,102000); assert.equal(rods.count,1);
+  present=false; f.setTime(104000); f.moments.update(f.camera,104000);
+  assert.equal(spark.material.uniforms.uStop.value,2); assert.equal(rods.count,0); assert.equal(f.sparks().length,1);
+  present=true; f.setTime(105000); f.moments.update(f.camera,105000);
+  assert.equal(rods.count,0,"walking back does not restart an interrupted hand stroke");
   f.moments.dispose();
 });
