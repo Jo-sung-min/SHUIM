@@ -407,7 +407,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setOnsenEnabled(onsenEnabledRef.current);
     // Only the server may preserve a rest slot; a live local walk keeps its most recent position.
     engine.restoreVisit(entered.spawn, entered.selfRest, camera,
-      sameAccount && !engine.isLying && !engine.isBenchSeated && !engine.onsenState.sitting);
+      sameAccount && !engine.isLying && !engine.isBenchSeated && !engine.onsenState.sitting, entered.bounds);
     rememberVisit(true);
     applyFire(entered.fire);
     return true;

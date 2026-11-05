@@ -98,7 +98,7 @@ export default function CirclePage() {
             <div style={{ minWidth: 0 }}>
               <h2>{c.name}{c.verified && <Verified />}{c.sample && <SampleTag />}</h2>
               <p className={styles.meta}>
-                {kindLabel(c.kind)} · 멤버 {c.memberCount}명 · 리스너 {c.listenerCount}명 · 사연 {c.postCount}개
+                {c.privateTest ? `비공개 · 공간별 최대 ${c.spaceCapacity ?? 4}명` : `${kindLabel(c.kind)} · 멤버 ${c.memberCount}명 · 리스너 ${c.listenerCount}명`} · 사연 {c.postCount}개
               </p>
             </div>
           </div>
@@ -152,11 +152,12 @@ export default function CirclePage() {
 
       <Sheet open={more} onClose={() => setMore(false)} title={c.name}>
         <div className="stack">
-          {member && !c.me.primary && (
+          {member && !c.privateTest && !c.me.primary && (
             <button className="btn ghost" disabled={busy} onClick={() => { setMore(false); act(() => setPrimaryCircle(c.slug), "대표 소로우로 정했어요"); }}>대표 소로우로 정하기</button>
           )}
           {member && <button className={`btn ghost`} disabled={busy} onClick={() => { setMore(false); act(() => toggleCircleFollow(c.slug), c.me.listening ? "리스닝을 취소했어요" : "이제 이 소로우의 사연이 내 소로우에 보여요"); }}>{c.me.listening ? "리스닝 취소" : "리스닝하기"}</button>}
-          {c.me.role !== "owner" && <button className="btn ghost danger" onClick={() => { setMore(false); setLeaving(true); }}>{waiting ? "가입 신청 취소" : "소로우 나가기"}</button>}
+          {c.privateTest && <p className="tiny muted">지정된 두 계정만 참여하는 비공개 테스트 소로우예요.</p>}
+          {!c.privateTest && c.me.role !== "owner" && <button className="btn ghost danger" onClick={() => { setMore(false); setLeaving(true); }}>{waiting ? "가입 신청 취소" : "소로우 나가기"}</button>}
           <button className="btn ghost" onClick={() => setMore(false)}>닫기</button>
         </div>
       </Sheet>

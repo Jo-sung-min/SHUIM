@@ -143,7 +143,7 @@ public class TossLoginService {
         Optional<String> existing = jdbc.sql("SELECT id FROM users WHERE toss_user_key = ?").param(userKey).query(String.class).optional();
         if (existing.isPresent()) return existing.get();
         if (!policies.hasSignupConsent(anonUserId)) throw new ConsentRequiredException();
-        int n = jdbc.sql("UPDATE users SET toss_user_key = ?, is_anonymous = FALSE WHERE id = ? AND is_anonymous = TRUE")
+        int n = jdbc.sql("UPDATE users SET toss_user_key = ?, is_anonymous = FALSE, registered_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = ? AND is_anonymous = TRUE")
             .param(userKey).param(anonUserId).update();
         if (n > 0) return anonUserId;
         throw new ConsentRequiredException();

@@ -56,7 +56,7 @@ export default function CircleAdminPage() {
             </a>
           ))}
         </nav>
-        {tab === "queue" ? <Queue slug={c.slug} onCount={load} /> : tab === "members" ? <Members slug={c.slug} owner={c.me.role === "owner"} onCount={load} /> : <Settings c={c} onSaved={setC} />}
+        {tab === "queue" ? <Queue slug={c.slug} onCount={load} /> : tab === "members" ? <Members slug={c.slug} owner={c.me.role === "owner"} fixed={c.privateTest === true} onCount={load} /> : <Settings c={c} onSaved={setC} />}
       </div>
     </>
   );
@@ -184,7 +184,7 @@ function QueueItem({ slug, sub, onDone }: { slug: string; sub: Submission; onDon
   );
 }
 
-function Members({ slug, owner, onCount }: { slug: string; owner: boolean; onCount: () => void }) {
+function Members({ slug, owner, fixed, onCount }: { slug: string; owner: boolean; fixed: boolean; onCount: () => void }) {
   const [list, setList] = useState<CircleMember[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -212,6 +212,7 @@ function Members({ slug, owner, onCount }: { slug: string; owner: boolean; onCou
   return (
     <div>
       <p className={styles.sub}>멤버 목록과 사연은 이어지지 않아요. 누가 어떤 사연을 보냈는지는 여기서도 알 수 없어요.</p>
+      {fixed && <p className={styles.sub}>테스트 소로우는 지정된 두 계정만 참여해요.</p>}
       {list.map((m) => (
         <div key={m.userId} className={styles.member}>
           <b>
@@ -221,7 +222,7 @@ function Members({ slug, owner, onCount }: { slug: string; owner: boolean; onCou
             {m.verified && <span className={`${styles.pill} ${styles.ok}`}>인증</span>}
             {m.status === "pending" && <span className={`${styles.pill} ${styles.warn}`}>승인 대기</span>}
           </b>
-          {m.role !== "owner" && (
+          {!fixed && m.role !== "owner" && (
             <div className={styles.memberBtns}>
               {m.status === "pending" && <button className="btn sm" disabled={busy === m.userId} onClick={() => act(m, "approve")}>승인</button>}
               {owner && m.status === "active" && (
@@ -266,7 +267,8 @@ function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) 
       )}
       <button className="btn block" disabled={busy} onClick={() => save(owner ? { notice, intro } : { notice })}>저장</button>
 
-      {owner && (
+      {c.privateTest && <p className={styles.sub}>지정된 두 계정만 사용하는 비공개 소로우예요. 최상단 고정 · 공간별 최대 {c.spaceCapacity ?? 4}명</p>}
+      {owner && !c.privateTest && (
         <>
           <div className={styles.field}>
             <span>사연 공개</span>

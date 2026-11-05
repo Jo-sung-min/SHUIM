@@ -141,10 +141,10 @@ public class AuthService {
         String role = "user";
         Optional<DbUser> cur = currentUser(req);
         if (cur.isPresent() && cur.get().anonymous()) {
-            return jdbc.sql("UPDATE users SET email = ?, nick = ?, password_hash = ?, password_salt = ?, role = ?, is_anonymous = FALSE WHERE id = ? RETURNING *")
+            return jdbc.sql("UPDATE users SET email = ?, nick = ?, password_hash = ?, password_salt = ?, role = ?, is_anonymous = FALSE, registered_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = ? RETURNING *")
                 .param(e).param(nick.strip()).param(hash).param(salt).param(role).param(cur.get().id()).query(DbUser.MAPPER).single();
         }
-        DbUser u = jdbc.sql("INSERT INTO users (id, email, nick, password_hash, password_salt, role, is_anonymous) VALUES (?, ?, ?, ?, ?, ?, FALSE) RETURNING *")
+        DbUser u = jdbc.sql("INSERT INTO users (id, email, nick, password_hash, password_salt, role, is_anonymous, registered_at) VALUES (?, ?, ?, ?, ?, ?, FALSE, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) RETURNING *")
             .param(Ids.uid()).param(e).param(nick.strip()).param(hash).param(salt).param(role).query(DbUser.MAPPER).single();
         setSessionCookie(res, u.id());
         return u;

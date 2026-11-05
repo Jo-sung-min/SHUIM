@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.community.CommunityConsentService;
+import kr.co.shuim.config.ApiException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -27,14 +28,14 @@ public class CircleController {
 
     /** GET /api/circles?kind=&q= — 둘러보기 (멤버 10명 이상) */
     @GetMapping("/api/circles")
-    public Map<String, Object> browse(@RequestParam(required = false) String kind, @RequestParam(required = false) String q) {
-        return Map.of("circles", circles.browse(kind, q));
+    public Map<String, Object> browse(@RequestParam(required = false) String kind, @RequestParam(required = false) String q, HttpServletRequest req) {
+        return Map.of("circles", circles.browse(auth.currentUser(req).orElse(null), kind, q));
     }
 
     /** GET /api/circles/warm — 이번 주 가장 따뜻한 소로우 (순위만) */
     @GetMapping("/api/circles/warm")
-    public Map<String, Object> warm() {
-        return Map.of("circles", circles.warmest());
+    public Map<String, Object> warm(HttpServletRequest req) {
+        return Map.of("circles", circles.warmest(auth.currentUser(req).orElse(null)));
     }
 
     /** GET /api/circles/mine — 내 소로우(대표 먼저)와 리스닝 중인 소로우 */
@@ -49,6 +50,19 @@ public class CircleController {
         DbUser me = auth.requireUser(req, res);
         consent.requireAccepted(me);
         return circles.create(me, new CircleService.CreateInput(s(b, "name"), s(b, "slug"), s(b, "kind"), s(b, "intro"), s(b, "joinMode"), s(b, "visibility"), s(b, "domain")));
+    }
+
+    @PostMapping("/api/circles/private-test")
+    public Map<String, Object> createPrivateTest(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req, HttpServletResponse res) {
+        DbUser me = auth.requireUser(req, res);
+        consent.requireAccepted(me);
+        return circles.createPrivateTest(me, s(b, "peerId"));
+    }
+
+    @GetMapping("/api/circles/private-test/status")
+    public Map<String, Object> privateTestStatus(HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("운영자 계정으로 로그인해 주세요"));
+        return circles.privateTestStatus(me);
     }
 
     /** GET /api/circles/{slug} — 소로우 하나 + 나와의 관계 */

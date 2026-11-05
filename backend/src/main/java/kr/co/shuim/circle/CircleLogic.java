@@ -23,7 +23,15 @@ public final class CircleLogic {
     public static final List<String> VISIBILITIES = List.of("public", "members");
     /** 한 사람(관리자)이 열 수 있는 소로우 */
     public static final int MAX_OWNED = 30;
+    public static final String PRIVATE_TEST_SLUG = "haesongmin-private-test";
+    public static final String PRIVATE_TEST_NAME = "헤송민의 소로우";
+    public static final int PRIVATE_TEST_CAPACITY = 4;
     public static final String MASK = "○○";
+
+    /** A private test circle has no administrator, keeper or author exception. */
+    public static boolean canAccessPrivate(boolean privateTest, boolean registeredAndUnblocked, boolean allowlisted) {
+        return !privateTest || registeredAndUnblocked && allowlisted;
+    }
 
     private static final Pattern SLUG = Pattern.compile("^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$");
     private static final Pattern DOMAIN = Pattern.compile("^(?=.{3,100}$)([a-z0-9-]+\\.)+[a-z]{2,}$");

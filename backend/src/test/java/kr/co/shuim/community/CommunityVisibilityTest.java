@@ -14,6 +14,39 @@ class CommunityVisibilityTest {
     }
 
     @Test
+    void privateCircleFilterOverridesAuthorAdminMembershipAndRemovesNestedMediaAndReplies() {
+        var secret = new Post("secret", "misfortune", "private text", "me", 0, List.of("reactor"), List.of(), false, null,
+            List.of("https://cdn.example/private.webp"), "private", 1, "private circle", "private-slug");
+        var comment = new Comment("reply", secret.id(), "private reply", "peer", 0, List.of(), List.of(), false, null);
+        var source = store(List.of(), List.of(secret), List.of(comment), List.of(),
+            List.of(new RankRow(1, "me", "me", 1, 1, secret.id(), secret.text(), 1, 0)));
+        for (boolean admin : List.of(false, true)) {
+            var hidden = CommunityService.visibleStore(source, Set.of(), admin, Set.of("private"),
+                Map.of("private", "members"), 1_000, Set.of("private"));
+            assertTrue(hidden.posts().isEmpty());
+            assertTrue(hidden.comments().isEmpty());
+            assertTrue(hidden.weekly().values().stream().allMatch(w -> w.rows().isEmpty()));
+        }
+        var allowed = CommunityService.visibleStore(source, Set.of(), false, Set.of("private"),
+            Map.of("private", "members"), 1_000, Set.of());
+        assertEquals(List.of(secret), allowed.posts());
+        assertEquals(List.of(comment), allowed.comments());
+    }
+
+    @Test
+    void privateCircleActivityNeverGeneratesSimulatedRepliesOrPublicWeeklyRanks() {
+        long then = System.currentTimeMillis() - 60_000;
+        var secret = new Post("private", "misfortune", "private", "me", then, List.of("v"), List.of(), false, null,
+            List.of(), "circle", 1, "private", "private");
+        var stranger = new Post("other", "free", "private other", "peer", then, List.of(), List.of(), false, null,
+            List.of(), "circle", 2, "private", "private");
+        var ownReply = new Comment("reply", stranger.id(), "private reply", "me", then, List.of(), List.of(), false, null);
+        var source = store(List.of(new User("bot", "bot", "user", null, null)), List.of(secret, stranger), List.of(ownReply), List.of(), List.of());
+        assertTrue(CommunityLogic.pendingSimulatedReplies(source, List.of("bot"), Set.of("private", "other")).isEmpty());
+        assertTrue(CommunityLogic.computeWeekly(source, kr.co.shuim.common.Dates.weekKeyOf(then), false).rows().isEmpty());
+    }
+
+    @Test
     void excludedAuthorsAndTheirRepliesCannotLeakThroughNestedListsOrRanks() {
         User me = new User("me", "me", "user", null, null);
         Post visible = new Post("p", "free", "hello", "ok", 0, List.of(), List.of(), false, null);

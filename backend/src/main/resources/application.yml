@@ -36,6 +36,8 @@ app:
   community:
     # 개발용 샘플 유저 자동 답글 (운영에서는 false)
     simulate: ${COMMUNITY_SIMULATE:true}
+  circle:
+    private-test-creation-enabled: ${PRIVATE_TEST_CIRCLES_ENABLED:false}
   kakao:
     # Kakao Developers › 내 애플리케이션 › 앱 키 › REST API 키. 비우면 카카오 로그인이 꺼지고 버튼이 숨겨진다 (/api/auth/me 의 kakao: false)
     client-id: ${KAKAO_CLIENT_ID:}

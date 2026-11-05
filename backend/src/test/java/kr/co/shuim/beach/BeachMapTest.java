@@ -27,6 +27,36 @@ class BeachMapTest {
     private BeachRoom.Presence enter(String map, String user) { return service.enter("room", user, user, Set.of(), null, map); }
     private BeachRoom.TickResult tick(BeachRoom.Presence p) { return service.tick(p.ticket(), 7, 12, .5, false, null, null); }
 
+    @Test void uyuniPromenadeExtendsOnlyTheFrontBoundaryAndStillClampsInvalidCoordinates() {
+        var salt = enter("uyuni", "walker");
+        var coast = enter("beach", "walker");
+        assertTrue(salt.z() >= 2.8 && salt.z() < 4, "The arrival point stays beside the existing hotel approach.");
+        service.tick(salt.ticket(), 0, -45, .5, true, null, null);
+        service.tick(coast.ticket(), 0, -45, .5, true, null, null);
+        assertEquals(-45, salt.z());
+        assertEquals(-1, coast.z());
+        service.tick(salt.ticket(), 100, -100, .5, true, null, null);
+        assertEquals(22, salt.x()); assertEquals(-50, salt.z());
+        service.tick(salt.ticket(), Double.NaN, Double.NEGATIVE_INFINITY, .5, false, null, null);
+        assertEquals(22, salt.x()); assertEquals(-50, salt.z());
+        service.tick(salt.ticket(), -100, 100, .5, true, null, null);
+        assertEquals(-22, salt.x()); assertEquals(55, salt.z());
+    }
+
+    @Test void uyuniSuspendAndExpiredResumeKeepTheNewPromenadePosition() {
+        var salt = enter("uyuni", "returning-walker");
+        service.tick(salt.ticket(), -6, -45, .5, true, null, null, null, false, 1L);
+        service.suspend(salt.ticket(), -6, -48, .75, 2L);
+        assertEquals(-48, salt.z());
+        clock.addAndGet(BeachRoom.IDLE_MS + 1);
+        var restored = service.enter("room", "returning-walker", "returning-walker", Set.of(), null, "uyuni", salt.ticket(), 3L);
+        assertTrue(restored.resumed());
+        assertEquals(-6, restored.presence().x()); assertEquals(-48, restored.presence().z());
+        assertEquals("standing", service.tick(restored.presence().ticket(), -6, -48, .75, false, null, null, null, false, 4L).selfRest().pose());
+        assertEquals(-48, restored.presence().z());
+        verifyNoInteractions(fire);
+    }
+
     @Test void theSameCommunityAndMemberHaveIndependentPlayersCareCountsAndVisitScopes() {
         var coast = enter("beach", "same-member"); var coastFriend = enter("beach", "coast-friend");
         var salt = enter("uyuni", "same-member"); var saltFriend = enter("uyuni", "salt-friend");

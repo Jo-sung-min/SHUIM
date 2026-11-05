@@ -165,6 +165,44 @@ test("restoration rejects unsafe coordinates and clears lost claims instead of l
   close(engine.self.x, -6); close(engine.self.pitch, 0.07); assert.equal(engine.camera.layers.mask, 1);
 });
 
+test("a resumed Uyuni visit adopts expanded server bounds before restoring or preserving a walk", () => {
+  const expanded = { minX: -22, maxX: 22, minZ: -50, maxZ: 55 };
+  const oldBounds = { ...expanded, minZ: -1 };
+  const { engine, camera } = fixture("uyuni");
+  engine.bounds = { ...oldBounds };
+  engine.restoreVisit({ x: 0, z: -45, yaw: 0 }, undefined, undefined, false, expanded);
+  close(engine.self.z, -45); close(camera.position.z, -45);
+  engine.setMove(0, 1); engine.updateSelf(20);
+  close(engine.self.z, -49.7);
+  engine.restoreVisit({ x: 0, z: -100, yaw: 0 });
+  close(engine.self.z, -49.7);
+
+  engine.bounds = { ...oldBounds }; engine.self.z = -45;
+  engine.restoreVisit({ x: 0, z: 3, yaw: 0 }, undefined, undefined, true, expanded);
+  close(engine.self.z, -45); close(camera.position.z, -45);
+  expanded.minZ = -1;
+  engine.restoreVisit({ x: 0, z: -45, yaw: 0 });
+  close(engine.self.z, -45, "the live bounds do not retain a mutable response object");
+});
+
+test("invalid resume bounds retain the last valid limits and the beach still stops at its own shoreline", () => {
+  const bounds = { minX: -22, maxX: 22, minZ: -1, maxZ: 55 };
+  const { engine } = fixture("beach");
+  engine.bounds = { ...bounds };
+  for (const invalid of [
+    { ...bounds, minZ: NaN }, { ...bounds, maxX: Infinity },
+    { ...bounds, minZ: "-50" }, { ...bounds, minZ: 60 },
+    { ...bounds, maxX: -21.5 }, { ...bounds, maxZ: -0.5 },
+  ]) {
+    engine.restoreVisit({ x: 0, z: -45, yaw: 0 }, undefined, undefined, false, invalid);
+    close(engine.self.z, -0.7);
+    assert.deepEqual(plain(engine.bounds), bounds);
+  }
+  engine.restoreVisit({ x: 0, z: 3, yaw: 0 }, undefined, undefined, false, bounds);
+  engine.setMove(0, 1); engine.updateSelf(20);
+  close(engine.self.z, -0.7);
+});
+
 test("confirmed rest keeps the chosen star or bed view, and only that server claim may restore a rest place", () => {
   const { engine } = fixture("uyuni"), slot = stargazingSlot(2);
   engine.applyRest({ ...slot, pose: "lying" }); engine.setView("first");

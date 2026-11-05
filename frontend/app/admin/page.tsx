@@ -13,10 +13,11 @@ import { run } from "@/components/CommunityUI";
 import SiteAdmin from "./SiteAdmin";
 import SafetyAdmin from "@/components/SafetyAdmin";
 import QuoteAdmin from "./QuoteAdmin";
+import UsersAdmin from "./UsersAdmin";
 import styles from "./admin.module.css";
 
-type View = "reports" | "prompts" | "quotes" | "site";
-const VIEW_EYEBROW: Record<View, string> = { reports: "외침 · 신고된 글", prompts: "AI 답변 설정", quotes: "명언 · 출처 검수", site: "서비스 소개" };
+type View = "reports" | "users" | "prompts" | "quotes" | "site";
+const VIEW_EYEBROW: Record<View, string> = { reports: "외침 · 신고된 글", users: "가입 사용자 · 회원 설정", prompts: "AI 답변 설정", quotes: "명언 · 출처 검수", site: "서비스 소개" };
 
 export default function AdminPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
@@ -70,11 +71,12 @@ export default function AdminPage() {
     <>
       <TopBar title="관리자" eyebrow={VIEW_EYEBROW[view]} right={<Link href="/shout" className="icon-btn" aria-label="외침으로"><IconChevronL /></Link>} />
       <div className="screen">
-        <div className={styles.tabs}><Segmented value={view} onChange={setView} options={[{ value: "reports", label: `신고${flagged.length ? ` ${flagged.length}` : " 검토"}` }, { value: "prompts", label: "AI 답변" }, { value: "quotes", label: "명언" }, { value: "site", label: "서비스 소개" }]} /></div>
+        <div className={styles.tabs}><Segmented value={view} onChange={setView} options={[{ value: "reports", label: `신고${flagged.length ? ` ${flagged.length}` : " 검토"}` }, { value: "users", label: "회원 설정" }, { value: "prompts", label: "AI 답변" }, { value: "quotes", label: "명언" }, { value: "site", label: "서비스 소개" }]} /></div>
         <div style={{ height: 12 }} />
 
         {view === "prompts" && <PromptAdmin />}
         {view === "quotes" && <QuoteAdmin />}
+        {view === "users" && <UsersAdmin currentUserId={me.user?.id ?? ""} />}
         {view === "site" && <SiteAdmin />}
 
         {view === "reports" && (

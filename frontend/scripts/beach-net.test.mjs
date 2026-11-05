@@ -35,6 +35,17 @@ test("invalid ordering acknowledgements and unconfirmed rest data are rejected",
   await assert.rejects(setup(async () => response({ selfRest: { pose: "lying", slot: 99 } })).enterBeach("ours"), /머물던 자리/);
 });
 
+test("map entry preserves server walking bounds and resumed positions without sharing the beach limit", async () => {
+  for (const [mapId, minZ, z] of [["uyuni", -50, -45], ["beach", -1, 3]]) {
+    const bounds = { minX: -22, maxX: 22, minZ, maxZ: 55 };
+    const spawn = { x: 0, z, yaw: 0.2 };
+    const api = setup(async () => response({ mapId, resumed: true, sequence: 51, bounds, spawn }));
+    const entered = await api.enterBeach("ours", "male", mapId, { ticket: "previous-visit", sequence: 50 });
+    assert.deepEqual(JSON.parse(JSON.stringify(entered.bounds)), bounds);
+    assert.deepEqual(JSON.parse(JSON.stringify(entered.spawn)), spawn);
+  }
+});
+
 test("a cancelled lifecycle request aborts both entry and tick transport", async () => {
   for (const method of ["enter", "tick"]) {
     const controller = new AbortController(); let transport;

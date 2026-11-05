@@ -10,7 +10,7 @@ import type { Circle } from "@/lib/circles";
 import { IconChevronR, IconLock, IconUsers } from "@/components/Icons";
 import styles from "./BeachCard.module.css";
 
-type BeachCircle = Pick<Circle, "id" | "name" | "slug"> & { primary?: boolean };
+type BeachCircle = Pick<Circle, "id" | "name" | "slug" | "pinned" | "spaceCapacity" | "privateTest"> & { primary?: boolean };
 const rgb = (c: readonly number[]) => `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`;
 
 /** 선택한 소로우와 풍경의 인원만 표시한다. */
@@ -22,7 +22,8 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
   const [d, setD] = useState<Daylight | null>(null);
   const [occupancy, setOccupancy] = useState<BeachCount | null>(null);
   const [countError, setCountError] = useState(false);
-  const chosen = circles.find((c) => c.id === chosenId) ?? circles.find((c) => c.primary) ?? circles[0];
+  const ordered = [...circles].sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
+  const chosen = ordered.find((c) => c.id === chosenId) ?? ordered.find((c) => c.pinned) ?? ordered.find((c) => c.primary) ?? ordered[0];
   const communityId = chosen?.id;
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
   }, [communityId, mapId]);
 
   const day = d ?? daylightAt(12);
-  const current = occupancy?.communityId === communityId && occupancy.mapId === mapId ? occupancy : null;
+  const current = occupancy && occupancy.communityId === communityId && occupancy.mapId === mapId ? occupancy : null;
   const full = current !== null && current.count >= current.capacity;
 
   return (
@@ -82,7 +83,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
           <div className={styles.selector}>
             <label htmlFor={selectId}>함께 쉴 소로우</label>
             <select id={selectId} value={chosen.id} onChange={(e) => setChosenId(e.target.value)}>
-              {circles.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {ordered.map((c) => <option key={c.id} value={c.id}>{c.pinned ? "고정 · " : ""}{c.name}</option>)}
             </select>
           </div>
         ) : chosen ? <span className={styles.community}>{chosen.name}</span> : null}
@@ -90,7 +91,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
       <div className={styles.footer}>
         <div className={styles.details}>
           <span className={styles.count} aria-live="polite"><IconUsers />{chosen ? current ? <><strong>{current.count}</strong><span>/ {current.capacity}명</span></> : countError ? "인원 확인 불가" : "인원 확인 중…" : "소로우마다 우리만의 풍경"}</span>
-          <small>{chosen ? full ? "지금은 가득 찼어요. 잠시 후 다시 와 주세요." : "멤버 전용 · 최대 100명" : "멤버가 되면 함께 쉴 곳이 열려요 · 최대 100명"}</small>
+          <small>{chosen ? full ? "지금은 가득 찼어요. 잠시 후 다시 와 주세요." : `${chosen.privateTest ? "초대된 두 사람만" : "멤버 전용"} · 최대 ${current?.capacity ?? chosen.spaceCapacity ?? 100}명` : "멤버가 되면 함께 쉴 곳이 열려요 · 최대 100명"}</small>
         </div>
         {full ? <span className={styles.full}>만석</span> : <Link href={chosen ? mapHref(mapId, chosen.id) : "/c"} className={styles.enter} aria-label={chosen ? `${chosen.name} ${map.name} 들어가기` : "소로우 찾기"}>{chosen ? "들어가기" : "소로우 찾기"}<IconChevronR /></Link>}
       </div>

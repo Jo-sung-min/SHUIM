@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleLogic;
+import kr.co.shuim.circle.PrivateCircleAccess;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.community.Model.*;
@@ -71,7 +72,8 @@ public class CommunityService {
         Set<String> myCircles = new HashSet<>(jdbc.sql("SELECT community_id FROM community_members WHERE user_id = ? AND status = 'active'").param(me.id()).query(String.class).list());
         Map<String, String> circleVisibility = new HashMap<>();
         jdbc.sql("SELECT id, visibility FROM communities").query(rs -> { circleVisibility.put(rs.getString("id"), rs.getString("visibility")); });
-        return visibleStore(store, blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked(), myCircles, circleVisibility, System.currentTimeMillis());
+        return visibleStore(store, blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked(),
+            myCircles, circleVisibility, System.currentTimeMillis(), PrivateCircleAccess.inaccessibleCircles(jdbc, me.id()));
     }
 
     private Store loadUnfilteredStore(DbUser me) {
@@ -141,7 +143,9 @@ public class CommunityService {
 
         // 프로토타입: 샘플 유저의 자동 답글
         if (simulate) {
-            for (Comment c : CommunityLogic.pendingSimulatedReplies(store, SAMPLE_USER_IDS)) {
+            Set<String> privatePostIds = new HashSet<>(jdbc.sql("SELECT p.id FROM shout_posts p JOIN communities c ON c.id=p.community_id WHERE c.private_test")
+                .query(String.class).list());
+            for (Comment c : CommunityLogic.pendingSimulatedReplies(store, SAMPLE_USER_IDS, privatePostIds)) {
                 boolean isPost = store.posts().stream().anyMatch(p -> p.id().equals(c.postId()));
                 jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
                     .param(c.id()).param(isPost ? "post" : "feed").param(c.postId()).param(c.authorId()).param(c.text()).update();
@@ -169,8 +173,14 @@ public class CommunityService {
      * 차단 목록으로 거르지 않고(걸러지면 누가 보냈는지 짐작된다) 작성자는 "c:<소로우 id>" 로 가린다.
      */
     static Store visibleStore(Store store, Set<String> excluded, boolean admin, Set<String> myCircles, Map<String, String> circleVisibility, long now) {
+        return visibleStore(store, excluded, admin, myCircles, circleVisibility, now, Set.of());
+    }
+
+    static Store visibleStore(Store store, Set<String> excluded, boolean admin, Set<String> myCircles,
+                              Map<String, String> circleVisibility, long now, Set<String> inaccessibleCircles) {
         String viewer = store.me().id();
         List<Post> posts = store.posts().stream()
+            .filter(p -> !p.inCircle() || !inaccessibleCircles.contains(p.communityId()))
             .filter(p -> p.inCircle()
                 ? (admin || CommunityLogic.isVisible(store, p)) && CircleLogic.canSee(p.communityId(), circleVisibility.get(p.communityId()), myCircles, admin, viewer.equals(p.authorId()), p.createdAt(), now)
                 : !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
@@ -305,6 +315,7 @@ public class CommunityService {
     @Transactional
     public Store deletePost(DbUser me, String id) {
         Db.lockCommunity(jdbc);
+        PrivateCircleAccess.requireTarget(jdbc, me.id(), "post", id);
         Optional<List<String>> removed = jdbc.sql("DELETE FROM shout_posts WHERE id = ? AND author_id = ? RETURNING images").param(id).param(me.id())
             .query((rs, i) -> Db.textArray(rs, "images")).optional();
         if (removed.isPresent()) {
@@ -334,6 +345,7 @@ public class CommunityService {
                 .query((rs, i) -> new Parent(rs.getString("post_id"), rs.getString("parent_id"))).optional()
                 .orElseThrow(() -> ApiException.notFound("답글을 달 댓글을 찾을 수 없어요"));
             if (!postId.equals(p.postId())) throw ApiException.badRequest("다른 글의 댓글에는 답글을 달 수 없어요");
+            assertTargetAccessible(me, "comment", parentId);
             parent = p.parentId() != null ? p.parentId() : parentId;
         }
         String commentId = Ids.uid();
@@ -348,6 +360,7 @@ public class CommunityService {
     @Transactional
     public Store deleteComment(DbUser me, String id) {
         Db.lockCommunity(jdbc);
+        PrivateCircleAccess.requireTarget(jdbc, me.id(), "comment", id);
         jdbc.sql("DELETE FROM comments WHERE id = ? AND author_id = ?").param(id).param(me.id()).update();
         return loadStore(me);
     }
@@ -357,6 +370,7 @@ public class CommunityService {
     public Store acceptComment(DbUser me, String postId, String commentId) {
         Db.lockCommunity(jdbc);
         assertNotBlocked(me);
+        assertTargetAccessible(me, "post", postId);
         points.acceptComment(me, postId, commentId);
         return loadStore(me);
     }
@@ -381,6 +395,7 @@ public class CommunityService {
     public Store report(DbUser me, Target target, Object reason) {
         Db.lockCommunity(jdbc);
         String kind = assertKind(target.kind());
+        PrivateCircleAccess.requireTarget(jdbc, me.id(), kind, target.id());
         if (!(reason instanceof String r) || !CommunityLogic.REPORT_REASON_IDS.contains(r)) throw ApiException.badRequest("신고 사유가 올바르지 않아요");
         jdbc.sql("INSERT INTO reports (id, reporter_id, target_kind, target_id, reason) VALUES (?, ?, ?, ?, ?) ON CONFLICT (reporter_id, target_kind, target_id) DO NOTHING")
             .param(Ids.uid()).param(me.id()).param(kind).param(target.id()).param(r).update();
@@ -549,6 +564,7 @@ public class CommunityService {
     }
 
     private void assertTargetAccessible(DbUser me, String kind, String id) {
+        PrivateCircleAccess.requireTarget(jdbc, me.id(), kind, id);
         String author = jdbc.sql("SELECT author_id FROM " + tableOf(kind) + " WHERE id = ? AND hidden = FALSE").param(id)
             .query(String.class).optional().orElseThrow(() -> ApiException.notFound("글을 찾을 수 없어요"));
         // 소로우 사연(또는 그 댓글): 볼 수 있는 사람만, 차단 여부는 보지 않는다 (막히면 보낸 사람이 짐작된다)
@@ -575,6 +591,7 @@ public class CommunityService {
     @Transactional
     public Store adminHide(DbUser me, Target target) {
         Db.lockCommunity(jdbc);
+        PrivateCircleAccess.requireTarget(jdbc, me.id(), assertKind(target.kind()), target.id());
         jdbc.sql("UPDATE " + tableOf(assertKind(target.kind())) + " SET hidden = TRUE WHERE id = ?").param(target.id()).update();
         return loadStore(me);
     }
@@ -582,6 +599,7 @@ public class CommunityService {
     @Transactional
     public Store adminDismiss(DbUser me, Target target) {
         Db.lockCommunity(jdbc);
+        PrivateCircleAccess.requireTarget(jdbc, me.id(), assertKind(target.kind()), target.id());
         jdbc.sql("UPDATE " + tableOf(assertKind(target.kind())) + " SET reviewed_at = now() WHERE id = ?").param(target.id()).update();
         return loadStore(me);
     }

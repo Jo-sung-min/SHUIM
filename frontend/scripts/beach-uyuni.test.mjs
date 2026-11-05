@@ -16,7 +16,8 @@ async function load(file, dependencies, exports) {
 }
 
 const sky = await load("../lib/beach/sky-shader.ts", {}, ["SKY_UNIFORMS", "SKY_FUNCTIONS"]);
-const shader = await load("../lib/beach/uyuni-shader.ts", sky, ["UYUNI_SURFACE", "UYUNI_SKY_UNIFORMS", "UYUNI_SKY_FUNCTIONS", "UYUNI_SKY_FRAGMENT", "UYUNI_WATER_VERTEX", "UYUNI_WATER_FRAGMENT", "uyuniDryAmount"]);
+const coast = await load("../lib/beach/uyuni-coast.ts", {}, ["UYUNI_COAST_FUNCTIONS"]);
+const shader = await load("../lib/beach/uyuni-shader.ts", { ...sky, ...coast }, ["UYUNI_SURFACE", "UYUNI_SKY_UNIFORMS", "UYUNI_SKY_FUNCTIONS", "UYUNI_SKY_FRAGMENT", "UYUNI_WATER_VERTEX", "UYUNI_WATER_FRAGMENT", "uyuniDryAmount"]);
 const { UyuniWorld } = await load("../lib/beach/uyuni.ts", { THREE, ...shader, uyuniHotelFloorHeight: hotSpring.uyuniHotelFloorHeight }, ["UyuniWorld"]);
 const { daylightAt } = await load("../lib/beach/daylight.ts", {}, ["daylightAt"]);
 const { STARGAZING, stargazingSlot, stargazingBodyPoint } = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "stargazingSlot", "stargazingBodyPoint"]);
@@ -65,19 +66,20 @@ test("the endless salt mirror is two triangles, tracks the camera and covers its
   world.dispose();
 });
 
-test("sky and water share every sky uniform and the exact same longitude, image seam and star functions", () => {
+test("sky and water share the procedural stars, clock and reflected world directions", () => {
   const { world, uniforms, sand, camera } = fixture();
   for (const [key, uniform] of Object.entries(uniforms)) assert.equal(world.surface.material.uniforms[key], uniform, key);
   assert.equal(world.surface.material.uniforms.uSand.value, sand);
   assert.ok(shader.UYUNI_SKY_FRAGMENT.includes(shader.UYUNI_SKY_FUNCTIONS));
   assert.ok(shader.UYUNI_WATER_FRAGMENT.includes(shader.UYUNI_SKY_FUNCTIONS));
   assert.ok(shader.UYUNI_SKY_FUNCTIONS.includes(sky.SKY_FUNCTIONS));
-  uniforms.uGalaxyReady.value = 1;
-  uniforms.uGalaxyYaw.value = 0.75;
+  assert.equal(shader.UYUNI_SKY_UNIFORMS, sky.SKY_UNIFORMS);
+  assert.ok(!Object.keys(uniforms).some(key => key.startsWith("uGalaxy")), "night sky has no image-ready dependency");
+  uniforms.uStars.value = 0.85;
   world.update(12.25, camera);
   assert.equal(uniforms.uTime.value, 12.25);
-  assert.equal(world.surface.material.uniforms.uGalaxyReady.value, 1);
-  assert.equal(world.surface.material.uniforms.uGalaxyYaw.value, 0.75);
+  assert.equal(world.surface.material.uniforms.uTime.value, 12.25);
+  assert.equal(world.surface.material.uniforms.uStars.value, 0.85);
   const waterMain = shader.UYUNI_WATER_FRAGMENT.slice(shader.UYUNI_WATER_FRAGMENT.lastIndexOf("void main()"));
   assert.match(waterMain, /incoming = normalize\(vWorld - uCamPos\)/);
   assert.match(waterMain, /uyuniSky\(reflect\(incoming, normal\)\)/);
@@ -216,7 +218,7 @@ test("world disposal releases only its own geometry and material once, retaining
   let geometryDisposals = 0, materialDisposals = 0, textureDisposals = 0;
   world.surface.geometry.addEventListener("dispose", () => geometryDisposals++);
   world.surface.material.addEventListener("dispose", () => materialDisposals++);
-  for (const texture of [sand, uniforms.uPhoto.value, uniforms.uGalaxy.value]) texture.addEventListener("dispose", () => textureDisposals++);
+  for (const texture of [sand, uniforms.uPhoto.value]) texture.addEventListener("dispose", () => textureDisposals++);
   world.dispose(); world.dispose();
   world.update(20, camera, { x: 0, z: 12, moving: true });
   world.applyDaylight(daylightAt(12)); world.setQuality(true);

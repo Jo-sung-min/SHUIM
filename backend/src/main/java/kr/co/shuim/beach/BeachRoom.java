@@ -31,6 +31,13 @@ public class BeachRoom {
     public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -1, MAX_Z = 55;
     /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
     public static final int CAPACITY = 100;
+    private int capacity = CAPACITY;
+
+    /** Admission limits come from the community policy, never from the visitor's request. */
+    public synchronized void setCapacity(int capacity) {
+        if (capacity < 1 || capacity > CAPACITY) throw ApiException.badRequest("입장 정원을 확인해 주세요.");
+        this.capacity = capacity;
+    }
     /** 이만큼 tick 이 없으면 나간 것 */
     public static final long IDLE_MS = 10_000;
     /** Position bookmarks do not reserve capacity or rest slots, and never survive a server restart. */
@@ -460,7 +467,7 @@ public class BeachRoom {
                 return new Entry(previous, restoredPosition);
             }
         }
-        if (byTicket.size() >= CAPACITY) throw new ApiException(409, "바닷가에 100명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
+        if (byTicket.size() >= capacity) throw new ApiException(409, "지금 " + capacity + "명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
         ThreadLocalRandom r = ThreadLocalRandom.current();
         double x = bookmark == null ? r.nextDouble(-1.5, 1.5) : bookmark.x;
         double z = bookmark == null ? r.nextDouble(2.8, 4) : bookmark.z;
@@ -598,7 +605,7 @@ public class BeachRoom {
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
                     me.x = clamp(me.standingX, MIN_X, MAX_X, REST_X);
-                    me.z = clamp(me.standingZ, MIN_Z, MAX_Z, REST_Z + REST_REACH);
+                    me.z = clamp(me.standingZ, map.minZ(), MAX_Z, REST_Z + REST_REACH);
                     me.yaw = me.standingYaw;
                     me.restSlot = null;
                     me.restSpot = null;
@@ -729,9 +736,9 @@ public class BeachRoom {
             care, null, fireworks.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence);
     }
 
-    private static void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
+    private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
         double nextX = p.restSlot == null ? clamp(x, MIN_X, MAX_X, p.x) : p.x;
-        double nextZ = p.restSlot == null ? clamp(z, MIN_Z, MAX_Z, p.z) : p.z;
+        double nextZ = p.restSlot == null ? clamp(z, map.minZ(), MAX_Z, p.z) : p.z;
         double nextYaw = p.restSlot == null && Double.isFinite(yaw) ? yaw : p.yaw;
         boolean nextMoving = p.restSlot == null && moving;
         if (nextX != p.x || nextZ != p.z || nextYaw != p.yaw || nextMoving != p.moving || (skin != null && skin != p.skin))
@@ -840,7 +847,7 @@ public class BeachRoom {
             double vz = 1.5 * Math.cos(az) / 13;
             double speed = Math.hypot(vx, vz);
             b.x = clamp(BOT_CENTERS[i - 1][0] + 2 * Math.sin(ax), MIN_X, MAX_X, b.x);
-            b.z = clamp(BOT_CENTERS[i - 1][1] + 1.5 * Math.sin(az), MIN_Z, MAX_Z, b.z);
+            b.z = clamp(BOT_CENTERS[i - 1][1] + 1.5 * Math.sin(az), map.minZ(), MAX_Z, b.z);
             b.moving = speed > 0.15;
             if (speed > 0.01) b.yaw = Math.atan2(-vx, -vz);
             b.lastSeen = now;

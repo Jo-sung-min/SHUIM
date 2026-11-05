@@ -1,32 +1,87 @@
 import { SKY_FUNCTIONS, SKY_UNIFORMS } from "./sky-shader";
+import { UYUNI_COAST_FUNCTIONS } from "./uyuni-coast";
 
-/** One longitude convention for the sky and its water reflection; yaw is in radians. */
-export const UYUNI_SKY_UNIFORMS = `${SKY_UNIFORMS}
-uniform sampler2D uGalaxy;
-uniform float uGalaxyReady;
-uniform float uGalaxyYaw;
-`;
+/** Sky and water share the same direction, star clock and daylight palette. */
+export const UYUNI_SKY_UNIFORMS = SKY_UNIFORMS;
 
 export const UYUNI_SKY_FUNCTIONS = `${SKY_FUNCTIONS}
-vec2 uyuniSkyUv(vec3 direction) {
-  vec3 d = normalize(direction);
-  return vec2(fract(atan(d.x, -d.z) / 6.2831853 + 0.5 + uGalaxyYaw / 6.2831853),
-    asin(clamp(d.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+${UYUNI_COAST_FUNCTIONS}
+
+// These bands use elevation above a level plane, never distance from the map
+// centre. Turning or walking therefore cannot reveal a circular enclosing wall.
+vec3 uyuniHorizonAir(vec3 color, vec3 direction, float night) {
+  float air = 1.0 - smoothstep(0.002, 0.05, max(direction.y, 0.0));
+  vec3 horizon = mix(uSkyHorizon, vec3(0.045, 0.075, 0.13), night);
+  return mix(color, horizon, air * mix(0.48, 0.94, night));
 }
 
-vec3 uyuniGalaxy(vec3 direction) {
-  vec3 d = normalize(direction);
-  vec2 uv = uyuniSkyUv(d);
-  vec3 photo = textureLod(uGalaxy, uv, 0.0).rgb;
-  // The generated panorama's ends differ slightly. Join only the last 9 degrees,
-  // keeping the main Milky Way sharp and using the very same join in reflection.
-  float seam = min(uv.x, 1.0 - uv.x);
-  if (seam < 0.025) {
-    vec3 edge = (textureLod(uGalaxy, vec2(0.001, uv.y), 0.0).rgb
-      + textureLod(uGalaxy, vec2(0.999, uv.y), 0.0).rgb) * 0.5;
-    photo = mix(edge, photo, smoothstep(0.0, 0.025, seam));
+vec3 uyuniWaterHorizon(vec3 color, vec3 direction, float night) {
+  // Only the distant grazing-angle water becomes still and slightly darker.
+  // Below this narrow strip, keep the original detailed mirror unchanged.
+  float farWater = 1.0 - smoothstep(0.004, 0.045, max(-direction.y, 0.0));
+  vec3 water = mix(uSkyHorizon * vec3(0.72, 0.83, 0.90), vec3(0.026, 0.047, 0.085), night);
+  return mix(color, water, farWater * mix(0.68, 0.90, night));
+}
+
+vec3 uyuniStars(vec3 d, float scale, float threshold, float salt) {
+  // Equal-area hemisphere cells have no longitude join or pinched pole.
+  // Angular-sized points also stay round instead of stretching with the cells.
+  vec2 sp = d.xz / sqrt(1.0 + max(d.y, 0.0)) * scale + salt;
+  float footprint = max(length(dFdx(d)), length(dFdy(d)));
+  vec2 cell = floor(sp);
+  float seed = beachSkyHash(cell);
+  vec2 jitter = (vec2(beachSkyHash(cell + 7.3), beachSkyHash(cell + 3.1)) - 0.5) * 0.42;
+  vec2 point = (cell + 0.5 + jitter - salt) / scale;
+  float r2 = dot(point, point);
+  float y = 1.0 - r2;
+  float ring = sqrt(max(0.0, 2.0 - r2));
+  vec3 starDirection = vec3(point.x * ring, y, point.y * ring);
+  float radius = mix(0.0007, 0.0015, beachSkyHash(cell + 1.7));
+  float aa = max(footprint * 0.5, 0.00015);
+  float core = 1.0 - smoothstep(max(0.0, radius - aa), radius + aa, length(d - starDirection));
+  float energy = radius * radius / (radius * radius + footprint * footprint * 0.12);
+  float twinkle = 0.78 + 0.22 * sin(uTime * (0.42 + seed * 0.38) + seed * 60.0);
+  vec3 tint = mix(vec3(0.78, 0.87, 1.0), vec3(1.0, 0.90, 0.77), beachSkyHash(cell + 4.2));
+  return tint * step(threshold, seed) * core * energy * twinkle
+    * (0.65 + 0.65 * beachSkyHash(cell + 1.7)) * smoothstep(0.015, 0.14, d.y);
+}
+
+float uyuniNebulaNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float n = dot(i, vec3(1.0, 57.0, 113.0));
+  vec4 low = fract(sin(n + vec4(0.0, 1.0, 57.0, 58.0)) * 43758.5453);
+  vec4 high = fract(sin(n + vec4(113.0, 114.0, 170.0, 171.0)) * 43758.5453);
+  return mix(mix(mix(low.x, low.y, f.x), mix(low.z, low.w, f.x), f.y),
+    mix(mix(high.x, high.y, f.x), mix(high.z, high.w, f.x), f.y), f.z);
+}
+
+vec3 uyuniNight(vec3 d) {
+  float up = max(d.y, 0.0);
+  vec3 dark = mix(vec3(0.022, 0.039, 0.075), vec3(0.006, 0.012, 0.029),
+    smoothstep(0.0, 0.85, up));
+  vec3 stars = uyuniStars(d, 220.0, 0.988, 0.0)
+    + uyuniStars(d, 70.0, 0.992, 19.7) * 0.85;
+
+  // A tilted galactic cloud, evaluated on world directions rather than an
+  // equirectangular image. Both ends and the zenith are continuous by construction.
+  vec3 axis = normalize(vec3(0.82, 0.48, 0.30));
+  float across = dot(d, axis);
+  float band = exp(-across * across / 0.026);
+  if (band > 0.003) {
+    vec3 p = d * 7.0 + vec3(3.1, -2.7, 8.4);
+    float wisps = uyuniNebulaNoise(p * 9.7 + 13.2);
+    float dust = uyuniNebulaNoise(p) * 0.45 + uyuniNebulaNoise(p * 2.1 + 7.4) * 0.30
+      + uyuniNebulaNoise(p * 4.6 - 3.8) * 0.17 + wisps * 0.08;
+    float laneNoise = uyuniNebulaNoise(p * 1.8 + vec3(12.0, 4.3, -7.1));
+    float core = exp(-across * across / 0.0045);
+    float darkLane = smoothstep(0.45, 0.72, laneNoise) * core;
+    vec3 cloud = mix(vec3(0.10, 0.14, 0.24), vec3(0.25, 0.16, 0.26), dust);
+    cloud *= band * (0.20 + dust * 0.95 + wisps * 0.22) * (1.0 - darkLane * 0.68);
+    cloud += vec3(0.15, 0.17, 0.23) * core * smoothstep(0.38, 0.72, dust) * 0.36;
+    dark += cloud * smoothstep(0.02, 0.18, up);
   }
-  return mix(photo, vec3(0.018, 0.035, 0.095), smoothstep(0.97, 1.0, d.y));
+  return dark + stars;
 }
 
 vec3 uyuniSky(vec3 direction) {
@@ -41,6 +96,14 @@ vec3 uyuniSky(vec3 direction) {
     // never become a baked horizon on this entirely open salt flat.
     vec2 photoUv = vec2(fract(azimuth / 6.2831853 + 0.5), mix(0.72, 0.98, up));
     vec3 photo = textureLod(uPhoto, photoUv, 0.0).rgb;
+    // The rear coast sits across the panorama's join. Blend its two ends in
+    // both sky and reflection so a vertical photograph edge cannot frame it.
+    float photoSeam = min(photoUv.x, 1.0 - photoUv.x);
+    if (photoSeam < 0.025) {
+      vec3 edge = (textureLod(uPhoto, vec2(0.001, photoUv.y), 0.0).rgb
+        + textureLod(uPhoto, vec2(0.999, photoUv.y), 0.0).rgb) * 0.5;
+      photo = mix(edge, photo, smoothstep(0.0, 0.025, photoSeam));
+    }
     float warmHour = clamp((uSkyHorizon.r - uSkyHorizon.b) * 2.3, 0.0, 1.0);
     day = mix(gradient, photo * uPhotoTint,
       smoothstep(0.015, 0.24, up) * (0.68 - warmHour * 0.5));
@@ -55,37 +118,28 @@ vec3 uyuniSky(vec3 direction) {
     day += uSunColor * (sunDisc * 0.65 + sunHalo) * smoothstep(-0.025, 0.05, uSun.y);
   }
 
-  vec3 dark = mix(vec3(0.025, 0.035, 0.08), vec3(0.012, 0.022, 0.065), up);
-  if (night > 0.0) {
-    if (uGalaxyReady > 0.5) {
-      dark = uyuniGalaxy(vec3(d.x, up, d.z));
-    } else {
-      // A quiet, complete sky remains visible while the image is loading.
-      float band = exp(-pow(abs(dot(d, normalize(vec3(0.82, -0.48, 0.3)))) / 0.16, 2.0));
-      float dust = beachSkyCloud(vec2(azimuth * 5.0, asin(up) * 6.0));
-      dark += mix(vec3(0.055, 0.07, 0.18), vec3(0.27, 0.15, 0.3), dust)
-        * band * (0.3 + dust * 0.65) * smoothstep(0.02, 0.2, up);
-    }
-    // Exactly the beach's existing star-cell distribution, with restrained twinkle.
-    vec2 sp = d.xz / (up + 0.25) * 90.0;
-    vec2 cell = floor(sp);
-    float seed = beachSkyHash(cell);
-    vec2 off = fract(sp) - 0.5 - (vec2(beachSkyHash(cell + 7.3), beachSkyHash(cell + 3.1)) - 0.5) * 0.6;
-    float star = step(0.988, seed) * (1.0 - smoothstep(0.0, 0.16, length(off)));
-    float twinkle = 0.88 + 0.12 * sin(uTime * 0.42 + seed * 60.0);
-    dark += star * twinkle * smoothstep(0.0, 0.16, up)
-      * (0.46 + 0.38 * beachSkyHash(cell + 1.7)) * mix(1.0, 0.32, uGalaxyReady);
-    // Keep a quiet horizon without flattening the low Milky Way into a fog band.
-    dark = mix(vec3(0.025, 0.035, 0.08), dark, smoothstep(-0.02, 0.035, d.y));
-  }
-  return mix(day, dark, night);
+  vec3 dark = night > 0.0 ? uyuniNight(d) : vec3(0.0);
+  vec3 sky = uyuniHorizonAir(mix(day, dark, night), d, night);
+  return uyuniCoast(d, sky, night);
 }
 `;
 
 export const UYUNI_SKY_FRAGMENT = `${UYUNI_SKY_UNIFORMS}
 varying vec3 vDir;
 ${UYUNI_SKY_FUNCTIONS}
-void main() { gl_FragColor = vec4(uyuniSky(vDir), 1.0); }
+void main() {
+  vec3 d = normalize(vDir);
+  vec3 color;
+  if (d.y >= 0.0) {
+    color = uyuniSky(d);
+  } else {
+    // Continue the water beyond the camera's geometry range. This removes the
+    // dark crease where a finite floor used to meet the lower sky hemisphere.
+    float night = smoothstep(0.03, 0.92, uStars);
+    color = uyuniWaterHorizon(uyuniSky(vec3(d.x, -d.y, d.z)), d, night);
+  }
+  gl_FragColor = vec4(color, 1.0);
+}
 `;
 
 export const UYUNI_SURFACE = {
@@ -161,6 +215,7 @@ void main() {
   // transparent plane, render target, depth read, blur pass or avatar reflection.
   vec3 color = mix(salt, reflection, clamp(reflectionAmount, 0.0, 1.0));
   color += vec3(0.35, 0.43, 0.55) * rings * (1.0 - dry) * mix(0.45, 0.2, night);
+  color = uyuniWaterHorizon(color, incoming, night);
   gl_FragColor = vec4(color, 1.0);
 }
 `;

@@ -24,20 +24,34 @@ public class BadgeService {
 
     Counts counts(String userId) {
         return jdbc.sql("""
+            WITH public_comments AS (
+              SELECT c.* FROM comments c
+              LEFT JOIN shout_posts p ON c.post_kind='post' AND p.id=c.post_id
+              LEFT JOIN communities pc ON pc.id=p.community_id
+              WHERE NOT COALESCE(pc.private_test,FALSE)
+            ), public_cheers AS (
+              SELECT ch.* FROM cheers ch
+              LEFT JOIN comments c ON ch.target_kind='comment' AND c.id=ch.target_id
+              LEFT JOIN shout_posts p ON (ch.target_kind='post' AND p.id=ch.target_id)
+                   OR (ch.target_kind='comment' AND c.post_kind='post' AND p.id=c.post_id)
+              LEFT JOIN communities pc ON pc.id=p.community_id
+              WHERE NOT COALESCE(pc.private_test,FALSE)
+            )
             SELECT
-              (SELECT count(*) FROM comments WHERE author_id = :u AND hidden = FALSE)::int AS comments,
-              (SELECT count(*) FROM cheers WHERE user_id = :u)::int AS cheers_sent,
-              (SELECT count(*) FROM cheers ch JOIN comments c ON ch.target_kind = 'comment' AND ch.target_id = c.id
+              (SELECT count(*) FROM public_comments WHERE author_id = :u AND hidden = FALSE)::int AS comments,
+              (SELECT count(*) FROM public_cheers WHERE user_id = :u)::int AS cheers_sent,
+              (SELECT count(*) FROM public_cheers ch JOIN public_comments c ON ch.target_kind = 'comment' AND ch.target_id = c.id
                  WHERE c.author_id = :u AND c.hidden = FALSE AND ch.user_id <> :u)::int AS cheers_on_comments,
-              EXISTS (SELECT 1 FROM comments WHERE author_id = :u AND hidden = FALSE
+              EXISTS (SELECT 1 FROM public_comments WHERE author_id = :u AND hidden = FALSE
                         AND EXTRACT(HOUR FROM created_at + INTERVAL '9 hours') < 5) AS night_comment,
               (SELECT count(*) FROM shout_posts WHERE author_id = :u AND hidden = FALSE AND community_id IS NULL)::int AS shout_posts,
               (SELECT count(*) FROM feed_posts WHERE author_id = :u AND hidden = FALSE)::int AS feed_posts,
               (SELECT count(*) FROM follows WHERE creator_id = :u)::int AS listeners,
               EXISTS (SELECT 1 FROM weekly_batches w, jsonb_array_elements(w.rows) r
                         WHERE w.finalized AND r->>'userId' = :u AND (r->>'rank')::int <= 10) AS weekly_top10,
-              EXISTS (SELECT 1 FROM community_members WHERE user_id = :u AND status = 'active' AND role IN ('owner', 'keeper')) AS keeper,
-              (SELECT count(*) FROM comments c JOIN shout_posts sp ON c.post_kind = 'post' AND sp.id = c.post_id
+              EXISTS (SELECT 1 FROM community_members m JOIN communities pc ON pc.id=m.community_id
+                        WHERE m.user_id = :u AND m.status = 'active' AND m.role IN ('owner', 'keeper') AND NOT pc.private_test) AS keeper,
+              (SELECT count(*) FROM public_comments c JOIN shout_posts sp ON c.post_kind = 'post' AND sp.id = c.post_id
                  WHERE c.author_id = :u AND c.hidden = FALSE AND sp.community_id IS NOT NULL
                    AND NOT EXISTS (SELECT 1 FROM community_members m WHERE m.user_id = :u AND m.community_id = sp.community_id))::int AS neighbor_comments
             """).param("u", userId)

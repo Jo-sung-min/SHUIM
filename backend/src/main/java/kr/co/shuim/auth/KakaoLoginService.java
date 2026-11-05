@@ -182,7 +182,7 @@ public class KakaoLoginService {
         // 이미 이메일 계정이 쓰는 주소면 비워 둔다 (users.email UNIQUE)
         String email = p.email() != null && jdbc.sql("SELECT count(*) FROM users WHERE email = ?").param(p.email()).query(Long.class).single() == 0 ? p.email() : null;
         if (anonUserId != null) {
-            int n = jdbc.sql("UPDATE users SET kakao_id = ?, email = COALESCE(?, email), nick = COALESCE(?, nick), is_anonymous = FALSE WHERE id = ? AND is_anonymous = TRUE")
+            int n = jdbc.sql("UPDATE users SET kakao_id = ?, email = COALESCE(?, email), nick = COALESCE(?, nick), is_anonymous = FALSE, registered_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = ? AND is_anonymous = TRUE")
                 .param(p.kakaoId()).param(email).param(nick).param(anonUserId).update();
             if (n > 0) return anonUserId;
         }

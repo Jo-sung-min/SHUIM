@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 소로우 바닷가의 방문과 공유 모닥불 API. 방문은 메모리, 모닥불과 구매 효과는 DB에 저장한다.
@@ -37,6 +38,8 @@ public class BeachController {
     private final BlockService blocks;
     private final BeachService beach;
     private final CircleService circles;
+    // Privacy is immutable after creation. All live visits are admitted here; restart clears both indexes.
+    private final Set<String> privateCommunities = ConcurrentHashMap.newKeySet();
 
     public BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles) {
         this.auth = auth;
@@ -99,10 +102,22 @@ public class BeachController {
         if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
         if (me.blocked()) throw ApiException.forbidden("이용이 제한된 계정이에요.");
         CircleService.Circle circle = circles.byId(communityId.strip());
+        circles.requireAccess(circle, me);
         if (circles.member(circle.id(), me.id()).filter(CircleService.Member::active).isEmpty()) {
             throw ApiException.forbidden("이 소로우의 멤버만 바닷가에 들어갈 수 있어요.");
         }
         return circle;
+    }
+
+    /** Public position/rest requests keep the existing ticket-only path without auth/database reads. */
+    private DbUser requirePrivateVisit(String ticket, HttpServletRequest req) {
+        String communityId = beach.communityIdForTicket(ticket);
+        if (communityId == null || !privateCommunities.contains(communityId)) return null;
+        DbUser me = req == null ? null : auth.currentUser(req).orElse(null);
+        if (me == null || me.anonymous()) throw ApiException.unauthorized("비공개 소로우에 참여한 계정으로 다시 로그인해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(ticket, me.id());
+        requireMember(visit.communityId(), me);
+        return me;
     }
 
     /**
@@ -113,9 +128,10 @@ public class BeachController {
     public Map<String, Object> enter(@RequestBody(required = false) EnterBody body, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
         CircleService.Circle circle = requireMember(body == null ? null : body.communityId(), me);
+        if (circle.privateTest()) privateCommunities.add(circle.id());
         BeachMap map = BeachMap.from(body.mapId());
         Set<String> excluded = blocks.excludedIds(me.id());
-        BeachRoom.Entry entry = beach.enter(circle.id(), me.id(), me.nick(), excluded, body.character(), map.id(), body.resumeTicket(), body.sequence());
+        BeachRoom.Entry entry = beach.enter(circle.id(), me.id(), me.nick(), excluded, body.character(), map.id(), body.resumeTicket(), body.sequence(), circle.spaceCapacity());
         BeachRoom.Presence p = entry.presence();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ticket", p.ticket());
@@ -125,7 +141,7 @@ public class BeachController {
         out.put("communityId", circle.id());
         out.put("mapId", map.id());
         out.put("community", Map.of("id", circle.id(), "slug", circle.slug(), "name", circle.name()));
-        out.put("capacity", BeachRoom.CAPACITY);
+        out.put("capacity", circle.spaceCapacity());
         out.put("restEnabled", true);
         out.put("bedEnabled", true);
         out.put("benchEnabled", map.hasBeachFacilities());
@@ -140,7 +156,7 @@ public class BeachController {
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
-        out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", BeachRoom.MIN_Z, "maxZ", BeachRoom.MAX_Z));
+        out.put("bounds", Map.of("minX", BeachRoom.MIN_X, "maxX", BeachRoom.MAX_X, "minZ", map.minZ(), "maxZ", BeachRoom.MAX_Z));
         out.put("count", beach.count(circle.id(), map.id()));
         BeachFireService.FireView fire = beach.fire(circle.id(), map.id());
         out.put("fire", fire);
@@ -157,6 +173,7 @@ public class BeachController {
     @PostMapping("/api/beach/tick")
     public BeachRoom.TickResult tick(@RequestBody(required = false) TickBody body, HttpServletRequest req) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
+        DbUser privateActor = requirePrivateVisit(body.ticket(), req);
         String careTo = body.care() == null ? null : body.care().to();
         String careKind = body.care() == null ? null : body.care().kind();
         BeachRoom.CareCapabilities capabilities = null;
@@ -164,9 +181,9 @@ public class BeachController {
         if (body.care() != null) {
             // Read the current session role, never a client flag or the role at entry.
             // Ordinary position polls retain the existing credential-ticket flow without a database lookup.
-            DbUser actor = auth.currentUser(req).orElse(null);
-            boolean ownedMember = false;
-            if (actor != null) {
+            DbUser actor = privateActor != null ? privateActor : auth.currentUser(req).orElse(null);
+            boolean ownedMember = privateActor != null;
+            if (actor != null && !ownedMember) {
                 try {
                     BeachService.Visit visit = beach.requireVisit(body.ticket(), actor.id());
                     requireMember(visit.communityId(), actor);
@@ -188,9 +205,12 @@ public class BeachController {
     }
 
     /** POST /api/beach/rest: lie on the map's starlight/hut/hotel spots, sit, or stand. Ticket scopes the visit. */
+    public BeachRoom.RestPresence rest(RestBody body) { return rest(body, null); }
+
     @PostMapping("/api/beach/rest")
-    public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body) {
+    public BeachRoom.RestPresence rest(@RequestBody(required = false) RestBody body, HttpServletRequest req) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
+        requirePrivateVisit(body.ticket(), req);
         return beach.rest(body.ticket(), body.action(), body.spotId());
     }
 
@@ -240,7 +260,7 @@ public class BeachController {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 바닷가를 이용해 주세요."));
         CircleService.Circle circle = requireMember(communityId, me);
         BeachMap map = BeachMap.from(mapId);
-        return Map.of("communityId", circle.id(), "mapId", map.id(), "count", beach.count(circle.id(), map.id()), "capacity", BeachRoom.CAPACITY);
+        return Map.of("communityId", circle.id(), "mapId", map.id(), "count", beach.count(circle.id(), map.id()), "capacity", circle.spaceCapacity());
     }
 
     public BeachFireService.FireView fire(String communityId, HttpServletRequest req) { return fire(communityId, null, req); }

@@ -31,6 +31,9 @@ export const JOIN_MODE_LABEL: Record<JoinMode, string> = {
 };
 
 export interface Circle {
+  privateTest?: boolean;
+  pinned?: boolean;
+  spaceCapacity?: number;
   id: string;
   slug: string;
   name: string;
@@ -117,6 +120,13 @@ export const browseCircles = (kind?: CircleKind | "", q?: string) => {
 export const fetchWarmCircles = () => get<{ circles: Circle[] }>("/api/circles/warm").then((r) => r.circles);
 export const fetchMyCircles = () => get<{ member: MyCircle[]; listening: Circle[] }>("/api/circles/mine");
 export const fetchCircle = (slug: string) => get<CircleDetail>(at(slug));
+
+export const createPrivateTestCircle = (peerId: string) => post<CircleDetail>("/api/circles/private-test", { peerId });
+export const fetchPrivateTestStatus = async (signal?: AbortSignal): Promise<{ enabled: boolean }> => {
+  const result = await fetch("/api/circles/private-test/status", { ...opts("GET"), signal }).then((response) => j<{ enabled?: unknown }>(response));
+  if (typeof result.enabled !== "boolean") throw new Error("테스트 소로우 만들기 상태를 확인하지 못했어요.");
+  return { enabled: result.enabled };
+};
 
 export async function createCircle(input: { name: string; slug: string; kind: CircleKind; intro: string; joinMode: JoinMode; visibility: Visibility; domain?: string }) {
   await requireCommunityConsent();

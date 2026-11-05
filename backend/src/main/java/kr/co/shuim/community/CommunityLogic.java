@@ -72,7 +72,7 @@ public final class CommunityLogic {
     public static WeeklyBatch computeWeekly(Store s, String week, boolean finalized) {
         Map<String, Agg> byUser = new LinkedHashMap<>();
         for (Post p : s.posts()) {
-            if (!"misfortune".equals(p.cat()) || !week.equals(Dates.weekKeyOf(p.createdAt())) || !isVisible(s, p)) continue;
+            if (p.inCircle() || !"misfortune".equals(p.cat()) || !week.equals(Dates.weekKeyOf(p.createdAt())) || !isVisible(s, p)) continue;
             int n = p.cheers().size();
             Agg cur = byUser.get(p.authorId());
             if (cur == null) byUser.put(p.authorId(), new Agg(n, 1, p, p.createdAt()));
@@ -113,7 +113,7 @@ public final class CommunityLogic {
         String cur = Dates.currentWeekKey();
         Set<String> weeks = new LinkedHashSet<>();
         weeks.add(cur);
-        for (Post p : s.posts()) if ("misfortune".equals(p.cat())) weeks.add(Dates.weekKeyOf(p.createdAt()));
+        for (Post p : s.posts()) if (!p.inCircle() && "misfortune".equals(p.cat())) weeks.add(Dates.weekKeyOf(p.createdAt()));
         for (Donation d : s.donations()) weeks.add(Dates.weekKeyOf(d.at()));
         List<WeekTodo> out = new ArrayList<>();
         long now = System.currentTimeMillis();
@@ -154,18 +154,24 @@ public final class CommunityLogic {
 
     /** 아직 답글이 없는 내 글·댓글에 붙일 샘플 답글 목록 (저장은 호출자가) */
     public static List<Comment> pendingSimulatedReplies(Store s, List<String> sampleUserIds) {
+        return pendingSimulatedReplies(s, sampleUserIds, Set.of());
+    }
+
+    public static List<Comment> pendingSimulatedReplies(Store s, List<String> sampleUserIds, Set<String> privatePostIds) {
         String me = s.me().id();
         long now = System.currentTimeMillis();
         List<User> samples = s.users().stream().filter(u -> sampleUserIds.contains(u.id()) && !u.blocked()).toList();
         if (samples.isEmpty()) return List.of();
         List<Comment> added = new ArrayList<>();
         for (Post p : s.posts()) {
+            if (privatePostIds.contains(p.id())) continue;
             if (!p.authorId().equals(me) || Boolean.TRUE.equals(p.hidden()) || now - p.createdAt() < SIM_DELAY) continue;
             if (s.comments().stream().anyMatch(c -> c.postId().equals(p.id()) && !c.authorId().equals(me))) continue;
             User actor = pickBySeed(samples, p.id());
             added.add(new Comment("sim-" + p.id(), p.id(), pickBySeed(List.of(REPLY_POOL), p.id() + actor.id()), actor.id(), now, new ArrayList<>(), new ArrayList<>(), null, null));
         }
         for (Comment c : s.comments()) {
+            if (privatePostIds.contains(c.postId())) continue;
             if (!c.authorId().equals(me) || now - c.createdAt() < SIM_DELAY) continue;
             String owner = s.posts().stream().filter(p -> p.id().equals(c.postId())).map(Post::authorId).findFirst()
                 .orElseGet(() -> s.feed().stream().filter(f -> f.id().equals(c.postId())).map(FeedPost::authorId).findFirst().orElse(null));

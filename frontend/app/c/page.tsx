@@ -39,6 +39,10 @@ export default function CircleBrowsePage() {
     <>
       <div className={`screen ${styles.list}`}>
         <ShoutTabs />
+        {!loadError && list?.some(c => c.pinned) && <section aria-label="고정된 소로우">
+          <ul className={styles.circles}>{list.filter(c => c.pinned).map(c => <li key={c.id}><CircleRow c={c} /></li>)}</ul>
+          <div className={styles.band} aria-hidden="true" />
+        </section>}
         <div className={shout.searchBar}>
           <form role="search" className={shout.searchBox} onSubmit={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur(); }}>
             <IconSearch aria-hidden="true" />
@@ -74,7 +78,7 @@ export default function CircleBrowsePage() {
             회사·학교 이름 대신 즐기는 일, 살아가는 일로 모여요. 미식, 자취, 싱글, 자영업처럼 찾아보세요.
           </Empty>
         ) : (
-          <ul className={styles.circles}>{list.map((c) => <li key={c.id}><CircleRow c={c} /></li>)}</ul>
+          <ul className={styles.circles}>{list.filter(c => !c.pinned).map((c) => <li key={c.id}><CircleRow c={c} /></li>)}</ul>
         )}
       </div>
     </>

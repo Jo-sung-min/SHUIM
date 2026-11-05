@@ -42,4 +42,15 @@ class PaymentControllerTest {
         controller.catalog("c1", "web", request);
         verify(payments).catalog(user, "c1", "web");
     }
+
+    @Test void inaccessiblePrivateCircleIsHiddenBeforeMembershipOrPaymentLookup() {
+        when(auth.currentUser(request)).thenReturn(Optional.of(user));
+        var circle = new CircleService.Circle("private", "private", "비공개", "life", null, false, "invite", "members", "", "", "owner", 0, 0, 2, 0, false);
+        when(circles.byId("private")).thenReturn(circle);
+        doThrow(ApiException.notFound("소로우를 찾을 수 없어요.")).when(circles).requireAccess(circle, user);
+        assertEquals(404, assertThrows(ApiException.class, () -> controller.catalog("private", "web", request)).status());
+        assertEquals(404, assertThrows(ApiException.class, () -> controller.create(new PaymentController.Create("private", "rose", "web", UUID.randomUUID().toString()), request)).status());
+        verify(circles, never()).member(anyString(), anyString());
+        verifyNoInteractions(payments);
+    }
 }

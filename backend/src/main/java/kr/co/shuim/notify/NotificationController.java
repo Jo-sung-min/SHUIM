@@ -1,4 +1,5 @@
 package kr.co.shuim.notify;
+import kr.co.shuim.circle.PrivateCircleAccess;
 
 import jakarta.servlet.http.HttpServletRequest;
 import kr.co.shuim.auth.AuthService;
@@ -54,15 +55,20 @@ public class NotificationController {
               JOIN users u ON u.id = c.author_id
               LEFT JOIN shout_posts sp ON c.post_kind = 'post' AND sp.id = c.post_id AND sp.hidden = FALSE
               LEFT JOIN feed_posts fp ON c.post_kind = 'feed' AND fp.id = c.post_id AND fp.hidden = FALSE
+              LEFT JOIN communities cc ON cc.id = sp.community_id
               LEFT JOIN first_on f ON f.post_id = c.post_id
              WHERE c.author_id <> :me AND c.hidden = FALSE AND u.blocked_at IS NULL
                AND (sp.id IS NOT NULL OR fp.id IS NOT NULL)
+               AND (cc.id IS NULL OR (%s AND (sp.author_id=:me OR :admin OR
+                    (sp.created_at<=now() AND (cc.visibility='public' OR EXISTS
+                      (SELECT 1 FROM community_members cm WHERE cm.community_id=cc.id AND cm.user_id=:me AND cm.status='active'))))))
                AND (c.parent_id IN (SELECT id FROM mine)
                     OR COALESCE(sp.author_id, fp.author_id) = :me
                     OR (f.first_at IS NOT NULL AND c.created_at > f.first_at))
              ORDER BY c.created_at DESC
              LIMIT :lim
-            """).param("me", uid).param("lim", LIMIT * 2)
+            """.formatted(PrivateCircleAccess.visibleTo("cc", ":me"))).param("me", uid).param("lim", LIMIT * 2)
+            .param("admin", "admin".equals(me.get().role()) && !me.get().anonymous() && !me.get().blocked())
             .query((rs, i) -> {
                 long at = Db.msReq(rs, "created_at");
                 return new Item(rs.getString("id"), rs.getString("kind"), rs.getString("post_kind"), rs.getString("post_id"),

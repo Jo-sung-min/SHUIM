@@ -1,4 +1,4 @@
-.tabs :global(.segmented) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tabs :global(.segmented) { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .tabs :global(.segmented button) { min-width: 0; padding-inline: 3px; font-size: 12px; min-height: 44px; }
 .toolbar { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin: 16px 0 12px; }
 .filters { display: grid; gap: 12px; margin-bottom: 16px; }
@@ -22,5 +22,17 @@
 .notice { margin: 0; padding: 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; line-height: 1.6; }
 .success { color: var(--tone-mint); }
 .empty { padding: 24px 16px; text-align: center; color: var(--text-2); font-size: 14px; line-height: 1.6; }
+.userCard { display: grid; gap: 12px; overflow-wrap: anywhere; }
+.userCard p, .privateCircle p { margin: 0; }
+.userName { font-size: 16px; margin: 0; line-height: 1.5; }
+.userDetails { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px; margin: 0; font-size: 13px; line-height: 1.6; }
+.userDetails dt { color: var(--text-2); }
+.userDetails dd { margin: 0; }
+.memberControls, .userSearch { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.memberControls .field, .userSearch .field { margin: 0; min-width: 0; }
+.memberControls button, .userSearch button { min-height: 44px; }
+.userSearch { margin: 16px 0; }
+.privateCircle { display: grid; gap: 12px; }
+.pagination { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 16px; }
 @media (min-width: 400px) { .tabs :global(.segmented button) { font-size: 13px; } }
-@media (max-width: 360px) { .tabs :global(.segmented button) { font-size: 11px; padding-inline: 2px; } }
+@media (max-width: 360px) { .tabs :global(.segmented) { grid-template-columns: repeat(3, minmax(0, 1fr)); } .tabs :global(.segmented button) { font-size: 12px; padding-inline: 2px; } }

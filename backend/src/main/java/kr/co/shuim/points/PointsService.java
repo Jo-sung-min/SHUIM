@@ -1,6 +1,7 @@
 package kr.co.shuim.points;
 
 import kr.co.shuim.auth.DbUser;
+import kr.co.shuim.circle.PrivateCircleAccess;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.config.ApiException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -88,7 +89,7 @@ public class PointsService {
         if (user == null || user.anonymous() || user.blocked() || !registered(user.id())) throw ApiException.forbidden("로그인한 작성자만 위로를 채택할 수 있어요.");
         Content post = content("post", postId);
         long now = clock.getAsLong();
-        if (post == null || !visible(post)) throw ApiException.notFound("외침을 찾을 수 없어요.");
+        if (post == null || !canAccess(post, user.id(), now)) throw ApiException.notFound("외침을 찾을 수 없어요.");
         if (!user.id().equals(post.author())) throw ApiException.forbidden("이 외침의 작성자만 위로를 채택할 수 있어요.");
         var previous = jdbc.sql("SELECT comment_id FROM comment_acceptances WHERE post_id=?").param(postId).query(String.class).optional();
         if (previous.isPresent()) {
@@ -142,6 +143,7 @@ public class PointsService {
         boolean anonymousCirclePost = "post".equals(c.kind()) && c.communityId() != null;
         if (!anonymousCirclePost && blocked(viewer, c.author())) return false;
         if ("comment".equals(c.kind())) return canAccess(content(c.postKind(), c.postId()), viewer, now);
+        if (c.communityId() != null && !PrivateCircleAccess.canAccess(jdbc, c.communityId(), viewer)) return false;
         if (c.communityId() == null || viewer.equals(c.author())) return true;
         boolean admin = jdbc.sql("SELECT EXISTS(SELECT 1 FROM users WHERE id=? AND role='admin' AND blocked_at IS NULL AND is_anonymous=FALSE)")
             .param(viewer).query(Boolean.class).single();
@@ -168,6 +170,7 @@ public class PointsService {
         String conditions = "";
         if (root.communityId() == null && !target.author().equals(root.author())) conditions += " AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=u.id AND b.blocked_id=:rootAuthor) OR (b.blocker_id=:rootAuthor AND b.blocked_id=u.id))";
         if (root.communityId() != null) {
+            conditions += " AND EXISTS (SELECT 1 FROM communities pc WHERE pc.id=:circle AND " + PrivateCircleAccess.visibleTo("pc", "u.id") + ")";
             if (root.createdAt() > now) conditions += " AND (u.id=:rootAuthor OR u.role='admin')";
             if ("members".equals(root.visibility())) conditions += " AND (u.id=:rootAuthor OR u.role='admin' OR EXISTS(SELECT 1 FROM community_members m WHERE m.community_id=:circle AND m.user_id=u.id AND m.status='active'))";
         }

@@ -9,6 +9,8 @@ public enum BeachMap {
     private final String id;
     BeachMap(String id) { this.id = id; }
     public String id() { return id; }
+    /** Hotels face -Z; the salt-flat promenade is about three times the original frontward reach. */
+    public double minZ() { return this == UYUNI ? -50 : BeachRoom.MIN_Z; }
     public boolean hasBeachFacilities() { return this == BEACH; }
     boolean supportsRestSpot(String spotId) {
         return switch (spotId) {

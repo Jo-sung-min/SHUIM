@@ -61,7 +61,8 @@ class BeachMapControllerTest {
             .andExpect(jsonPath("$.fire.color").value("amber")).andExpect(jsonPath("$.fire.powderEnabled").value(false))
             .andExpect(jsonPath("$.fire.serverTime").value(clock.get())).andExpect(jsonPath("$.lightingControl").value(true))
             .andExpect(jsonPath("$.fireworksControl").value(true)).andExpect(jsonPath("$.me.skin").value(3))
-            .andExpect(jsonPath("$.bounds.maxZ").value(55));
+            .andExpect(jsonPath("$.bounds.minZ").value(-50)).andExpect(jsonPath("$.bounds.maxZ").value(55))
+            .andExpect(jsonPath("$.bounds.minX").value(-22)).andExpect(jsonPath("$.bounds.maxX").value(22));
         mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "uyuni"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("uyuni")).andExpect(jsonPath("$.count").value(1));
         mvc.perform(get("/api/beach/count").param("communityId", "room"))
@@ -72,6 +73,7 @@ class BeachMapControllerTest {
         mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("beach"))
             .andExpect(jsonPath("$.fireEnabled").value(true)).andExpect(jsonPath("$.fire.logs").value(3))
+            .andExpect(jsonPath("$.bounds.minZ").value(-1)).andExpect(jsonPath("$.bounds.maxZ").value(55))
             .andExpect(jsonPath("$.count").value(1));
     }
 

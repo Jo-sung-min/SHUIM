@@ -1,4 +1,5 @@
 package kr.co.shuim.profile;
+import kr.co.shuim.circle.PrivateCircleAccess;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -132,10 +133,12 @@ public class ProfileController {
                   LEFT JOIN feed_posts fp ON c.post_kind = 'feed' AND fp.id = c.post_id AND fp.hidden = FALSE
                   LEFT JOIN communities cc ON cc.id = sp.community_id
                  WHERE c.author_id = ? AND c.hidden = FALSE AND (sp.id IS NOT NULL OR fp.id IS NOT NULL)
+                   AND (cc.id IS NULL OR %s)
                    AND (cc.id IS NULL OR (sp.created_at <= now() AND (cc.visibility = 'public'
                         OR EXISTS (SELECT 1 FROM community_members m WHERE m.community_id = cc.id AND m.user_id = ? AND m.status = 'active'))))
                  ORDER BY c.created_at DESC LIMIT 50
-                """).param(id).param(viewer.map(DbUser::id).orElse("")).query((rs, i) -> {
+                """.formatted(PrivateCircleAccess.visibleTo("cc", "?"))).param(id)
+                .param(viewer.map(DbUser::id).orElse("")).param(viewer.map(DbUser::id).orElse("")).query((rs, i) -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", rs.getString("id"));
                     m.put("postKind", rs.getString("post_kind"));

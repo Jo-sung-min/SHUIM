@@ -56,7 +56,8 @@ export default function CircleHomePage() {
     );
   }
 
-  const chips = [...mine.member, ...mine.listening.filter((l) => !mine.member.some((m) => m.id === l.id))];
+  const chips = [...mine.member, ...mine.listening.filter((l) => !mine.member.some((m) => m.id === l.id))]
+    .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
   return (
     <>
       <div className={`screen ${styles.list}`}>
@@ -70,6 +71,7 @@ export default function CircleHomePage() {
           {chips.map((c) => (
             <Link key={c.id} href={route(`/c/${c.slug}`)} className={styles.mineChip} data-primary={"primary" in c && c.primary ? "" : undefined}>
               {c.name}
+              {c.pinned && <small>고정</small>}
               {"status" in c && c.status === "pending" && <small>승인 대기</small>}
               {"role" in c && c.role !== "member" && <small>소로우지기</small>}
               {!("role" in c) && <small>리스닝</small>}

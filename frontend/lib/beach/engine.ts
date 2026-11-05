@@ -438,7 +438,6 @@ export class BeachEngine {
     this.femaleOnsenAvatarModels = new BeachAvatarModels("female-onsen");
     this.ready = Promise.all([this.loadAtlases(), this.avatarModels.load(), this.femaleAvatarModels.load(), ...this.assetLoads]).then(async () => {
       if (this.disposed) return;
-      if (this.uyuni) this.skyMat.uniforms.uGalaxyReady.value = 1;
       this.buildProps();
       this.applyDaylight(this.daylight);
       this.updateSelfAvatar(0);
@@ -478,8 +477,6 @@ export class BeachEngine {
   private buildSky() {
     this.photo = this.loadEnvironmentTexture("/beach/real/paradise-panorama-v1.webp", false);
     this.photo.wrapS = THREE.RepeatWrapping;
-    const galaxy = this.mapId === "uyuni" ? this.loadEnvironmentTexture("/beach/real/uyuni-milky-way-v1.webp", false) : null;
-    if (galaxy) galaxy.wrapS = THREE.RepeatWrapping;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
         uPhoto: { value: this.photo }, uPhotoTint: { value: new THREE.Vector3(1, 1, 1) },
@@ -487,7 +484,6 @@ export class BeachEngine {
         uDeepNight: { value: 0 }, uSkyTop: { value: new THREE.Vector3() }, uSkyHorizon: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() },
         uSun: { value: new THREE.Vector3() }, uSunColor: { value: new THREE.Vector3() },
         uCloudColor: { value: new THREE.Vector3() }, uCloudAmount: { value: 0.45 },
-        ...(galaxy ? { uGalaxy: { value: galaxy }, uGalaxyReady: { value: 0 }, uGalaxyYaw: { value: 1.1 } } : {}),
       },
       vertexShader: SKY_VERT,
       fragmentShader: this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : SKY_FRAGMENT,
@@ -1468,8 +1464,13 @@ export class BeachEngine {
   }
 
   /** Restore the same visitor, while only the server may restore a shared resting-place claim. */
-  restoreVisit(spawn: { x: number; z: number; yaw: number }, selfRest?: RestPresence, cameraState?: ContinuityView, preserveLocal = false) {
+  restoreVisit(spawn: { x: number; z: number; yaw: number }, selfRest?: RestPresence, cameraState?: ContinuityView, preserveLocal = false, bounds?: Bounds) {
     if (this.disposed) return;
+    // A resumed room may have expanded since this engine was created.
+    if (bounds && [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ].every(Number.isFinite)
+      && bounds.maxX - bounds.minX > 0.8 && bounds.maxZ - bounds.minZ > 0.7) {
+      this.bounds = { ...bounds };
+    }
     const saved = cameraState ?? this.getContinuityView();
     const origin = preserveLocal ? this.returnFromSeat ?? this.self : spawn;
     const finite = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;

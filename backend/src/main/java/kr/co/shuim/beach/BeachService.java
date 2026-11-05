@@ -76,6 +76,12 @@ public class BeachService {
 
     public BeachRoom.Entry enter(String communityId, String userId, String nick, Set<String> excluded, String character,
                                  String mapId, String resumeTicket, Long sequence) {
+        return enter(communityId, userId, nick, excluded, character, mapId, resumeTicket, sequence, BeachRoom.CAPACITY);
+    }
+
+    public BeachRoom.Entry enter(String communityId, String userId, String nick, Set<String> excluded, String character,
+                                 String mapId, String resumeTicket, Long sequence, int capacity) {
+        if (capacity < 1 || capacity > BeachRoom.CAPACITY) throw ApiException.badRequest("입장 정원을 확인해 주세요.");
         BeachMap map = BeachMap.from(mapId);
         BeachRoom.selectedSkin(character);
         BeachRoom.validateSequence(sequence);
@@ -83,19 +89,20 @@ public class BeachService {
             throw ApiException.badRequest("이전 방문 정보를 다시 확인해 주세요.");
         if (resumeTicket != null) {
             synchronized (resumeLocks[Math.floorMod(resumeTicket.hashCode(), resumeLocks.length)]) {
-                return enterScoped(communityId, userId, nick, excluded, character, map, resumeTicket, sequence);
+                return enterScoped(communityId, userId, nick, excluded, character, map, resumeTicket, sequence, capacity);
             }
         }
-        return enterScoped(communityId, userId, nick, excluded, character, map, null, sequence);
+        return enterScoped(communityId, userId, nick, excluded, character, map, null, sequence, capacity);
     }
 
     private BeachRoom.Entry enterScoped(String communityId, String userId, String nick, Set<String> excluded, String character,
-                                        BeachMap map, String resumeTicket, Long sequence) {
+                                        BeachMap map, String resumeTicket, Long sequence, int capacity) {
         sweepTickets();
         RoomKey key = new RoomKey(communityId, map);
         RoomBinding original = resumeTicket == null ? null : tickets.get(resumeTicket);
         if (original != null && !original.key.equals(key)) throw ApiException.forbidden("같은 소로우와 지도로 돌아가 주세요.");
         RoomBinding binding = rooms.computeIfAbsent(key, id -> new RoomBinding(id, new BeachRoom(clock, false, id.map())));
+        binding.room().setCapacity(capacity);
         BeachRoom.Entry entry = binding.room().enter(userId, nick, excluded, character, resumeTicket, sequence);
         tickets.put(entry.presence().ticket(), binding);
         if (resumeTicket != null && binding.room().retainsTicket(resumeTicket)) tickets.put(resumeTicket, binding);
@@ -197,6 +204,12 @@ public class BeachService {
         RoomBinding binding = tickets.get(ticket);
         if (binding == null) throw ApiException.gone(BeachController.GONE);
         return binding.room().setLighting(mode);
+    }
+
+    /** Read only the existing in-memory binding; this does not validate or refresh a visit. */
+    String communityIdForTicket(String ticket) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        return binding == null ? null : binding.communityId();
     }
 
     /** The authenticated user must own an active ticket; a ticket cannot choose another community. */

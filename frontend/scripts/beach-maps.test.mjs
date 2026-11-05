@@ -21,7 +21,7 @@ function elements(tree, type) {
   return [...(tree.type === type ? [tree] : []), ...React.Children.toArray(tree.props.children).flatMap(child => elements(child, type))];
 }
 
-function cardHarness() {
+function cardHarness(customCircles) {
   const values = [], effects = [], queued = [], requests = [];
   let cursor = 0;
   const hooks = {
@@ -56,13 +56,32 @@ function cardHarness() {
     },
   };
   vm.runInNewContext(compile(cardSource), context);
-  const circles = [{ id: "circle / one", name: "우리", slug: "one", primary: true }, { id: "circle-two", name: "둘", slug: "two" }];
+  const circles = customCircles ?? [{ id: "circle / one", name: "우리", slug: "one", primary: true }, { id: "circle-two", name: "둘", slug: "two" }];
   return { requests, render() {
     cursor = 0; const tree = context.exports.default({ circles });
     while (queued.length) queued.shift()();
     return tree;
   } };
 }
+
+test("visitors with no joined circles render the discovery card without dereferencing an empty count", () => {
+  const harness = cardHarness([]), tree = harness.render();
+  assert.equal(harness.requests.length, 0);
+  assert.equal(elements(tree, "a")[0].props.href, "/c");
+});
+
+test("a pinned private circle precedes the primary circle and respects its four-place limit", async () => {
+  const harness = cardHarness([{ id: "ordinary", name: "기존", slug: "ordinary", primary: true },
+    { id: "test", name: "헤송민의 소로우", slug: "test", pinned: true, privateTest: true, spaceCapacity: 4 }]);
+  let tree = harness.render();
+  assert.equal(elements(tree, "option")[0].props.value, "test");
+  assert.equal(harness.requests[0].communityId, "test");
+  assert.match(elements(tree, "small")[0].props.children, /최대 4명/);
+  harness.requests[0].resolve({ communityId: "test", mapId: "beach", count: 4, capacity: 4 });
+  await settle(); tree = harness.render();
+  assert.equal(elements(tree, "a").length, 0, "the fifth visit has no enter link");
+  assert.equal(elements(tree, "strong")[0].props.children, 4);
+});
 
 test("map links preserve the community and encode it without changing the beach route", () => {
   assert.equal(maps.mapHref("beach", "circle / one"), "/beach?communityId=circle%20%2F%20one");

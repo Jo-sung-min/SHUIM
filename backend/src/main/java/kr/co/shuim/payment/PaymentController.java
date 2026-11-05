@@ -61,6 +61,7 @@ public class PaymentController {
     private void member(DbUser me, String communityId) {
         if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("소로우를 골라 주세요.");
         var circle = circles.byId(communityId);
+        circles.requireAccess(circle, me);
         if (circles.member(circle.id(), me.id()).filter(CircleService.Member::active).isEmpty()) throw ApiException.forbidden("이 소로우 멤버만 불씨팝을 이용할 수 있어요.");
     }
 }

@@ -13,6 +13,7 @@ import kr.co.shuim.config.ApiException;
 import kr.co.shuim.profile.BadgeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ public class CircleService {
     private final ClaudeClient claude;
     private final ObjectMapper json;
     private final BadgeService badges;
+    private boolean privateTestCreationEnabled;
 
     public CircleService(JdbcClient jdbc, MailService mail, ClaudeClient claude, ObjectMapper json, BadgeService badges) {
         this.jdbc = jdbc;
@@ -46,10 +48,27 @@ public class CircleService {
         this.badges = badges;
     }
 
+    @Value("${app.circle.private-test-creation-enabled:false}")
+    void setPrivateTestCreationEnabled(boolean enabled) {
+        this.privateTestCreationEnabled = enabled;
+    }
+
+    public Map<String, Object> privateTestStatus(DbUser me) {
+        if (!appAdmin(me)) throw ApiException.forbidden("운영진만 확인할 수 있어요");
+        return Map.of("enabled", privateTestCreationEnabled);
+    }
+
     /* ---------- 모양 ---------- */
 
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
-                         String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample) {}
+                         String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
+                         boolean privateTest, boolean pinned, int spaceCapacity) {
+        public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
+                      String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample) {
+            this(id, slug, name, kind, domain, verified, joinMode, visibility, intro, notice, createdBy, postSeq,
+                createdAt, memberCount, listenerCount, sample, false, false, 100);
+        }
+    }
 
     public record Member(String role, String status, boolean primary, boolean verified) {
         public boolean active() { return "active".equals(status); }
@@ -68,6 +87,9 @@ public class CircleService {
         m.put("verified", c.verified());
         m.put("joinMode", c.joinMode());
         m.put("visibility", c.visibility());
+        m.put("privateTest", c.privateTest());
+        m.put("pinned", c.pinned());
+        m.put("spaceCapacity", c.spaceCapacity());
         m.put("intro", c.intro());
         m.put("notice", c.notice());
         m.put("memberCount", c.memberCount());
@@ -87,7 +109,8 @@ public class CircleService {
     private static Circle circleRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Circle(rs.getString("id"), rs.getString("slug"), rs.getString("name"), rs.getString("kind"), rs.getString("domain"), rs.getBoolean("verified"),
             rs.getString("join_mode"), rs.getString("visibility"), rs.getString("intro"), rs.getString("notice"), rs.getString("created_by"), rs.getInt("post_seq"),
-            Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"), rs.getBoolean("sample"));
+            Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"), rs.getBoolean("sample"),
+            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"));
     }
 
     public Circle bySlug(String slug) {
@@ -103,13 +126,41 @@ public class CircleService {
 
     public Optional<Member> member(String circleId, String userId) {
         if (userId == null) return Optional.empty();
-        return jdbc.sql("SELECT role, status, is_primary, verified_at FROM community_members WHERE community_id = ? AND user_id = ?").param(circleId).param(userId)
+        return jdbc.sql("""
+            SELECT m.role, m.status, m.is_primary, m.verified_at FROM community_members m
+              JOIN communities c ON c.id = m.community_id
+             WHERE m.community_id = ? AND m.user_id = ? AND (NOT c.private_test OR EXISTS (
+                SELECT 1 FROM community_private_members pm JOIN users u ON u.id = pm.user_id
+                 WHERE pm.community_id = c.id AND pm.user_id = m.user_id AND NOT u.is_anonymous AND u.blocked_at IS NULL))
+            """).param(circleId).param(userId)
             .query((rs, i) -> new Member(rs.getString("role"), rs.getString("status"), rs.getBoolean("is_primary"), rs.getObject("verified_at") != null)).optional();
+    }
+
+    private static String viewerId(DbUser viewer) {
+        return viewer != null && !viewer.anonymous() && !viewer.blocked() ? viewer.id() : null;
+    }
+
+    private static final String VISIBLE_CIRCLE = PrivateCircleAccess.visibleTo("c", ":viewerId");
+
+    public boolean canAccess(Circle circle, DbUser viewer) {
+        if (!circle.privateTest()) return true;
+        String id = viewerId(viewer);
+        boolean allowed = id != null && jdbc.sql("""
+            SELECT count(*) FROM community_private_members pm JOIN users u ON u.id = pm.user_id
+             WHERE pm.community_id = ? AND pm.user_id = ? AND NOT u.is_anonymous AND u.blocked_at IS NULL
+            """).param(circle.id()).param(id).query(Long.class).single() > 0;
+        return CircleLogic.canAccessPrivate(true, id != null, allowed);
+    }
+
+    /** Used by map entry and every circle-specific operation, including administrative ones. */
+    public void requireAccess(Circle circle, DbUser viewer) {
+        if (!canAccess(circle, viewer)) throw ApiException.notFound("소로우를 찾을 수 없어요");
     }
 
     private static boolean appAdmin(DbUser u) { return u != null && "admin".equals(u.role()) && !u.anonymous() && !u.blocked(); }
 
     private Member requireKeeper(Circle c, DbUser me) {
+        requireAccess(c, me);
         Member m = member(c.id(), me.id()).orElse(null);
         if (m != null && m.keeper()) return m;
         if (appAdmin(me)) return new Member("keeper", "active", false, true);
@@ -117,6 +168,7 @@ public class CircleService {
     }
 
     private Member requireActiveMember(Circle c, DbUser me) {
+        requireAccess(c, me);
         Member m = member(c.id(), me.id()).orElseThrow(() -> ApiException.forbidden("이 소로우의 멤버만 할 수 있어요"));
         if (!m.active()) throw ApiException.forbidden("멤버 승인을 기다리는 중이에요");
         return m;
@@ -130,10 +182,14 @@ public class CircleService {
 
     /** 둘러보기: 모든 처지 소로우를 연 순서대로 (멤버 수로 줄 세우지 않는다). 처지 묶음·이름 검색 */
     public List<Map<String, Object>> browse(String kind, String q) {
+        return browse(null, kind, q);
+    }
+
+    public List<Map<String, Object>> browse(DbUser viewer, String kind, String q) {
         String k = kind != null && CircleLogic.KINDS.contains(kind) ? kind : null;
         String query = q == null ? "" : q.strip();
-        return jdbc.sql(CIRCLE_SELECT + " WHERE (CAST(:kind AS VARCHAR) IS NULL OR c.kind = :kind) AND (:q = '' OR c.name ILIKE '%' || :q || '%') ORDER BY c.created_at, c.slug LIMIT 60")
-            .param("kind", k).param("q", query)
+        return jdbc.sql(CIRCLE_SELECT + " WHERE " + VISIBLE_CIRCLE + " AND (CAST(:kind AS VARCHAR) IS NULL OR c.kind = :kind) AND (:q = '' OR c.name ILIKE '%' || :q || '%') ORDER BY c.pinned DESC, c.created_at, c.slug LIMIT 60")
+            .param("viewerId", viewerId(viewer)).param("kind", k).param("q", query)
             .query((rs, i) -> circleRow(rs)).list().stream()
             .map(this::view).toList();
     }
@@ -141,16 +197,16 @@ public class CircleService {
     /** 내가 속한 소로우 (대표 먼저) + 리스닝 중인 소로우 */
     public Map<String, Object> mine(DbUser me) {
         List<Map<String, Object>> member = new ArrayList<>();
-        jdbc.sql(CIRCLE_SELECT.replace("SELECT c.*,", "SELECT c.*, mm.role, mm.status, mm.is_primary,") + " JOIN community_members mm ON mm.community_id = c.id WHERE mm.user_id = ? ORDER BY mm.is_primary DESC, mm.joined_at")
-            .param(me.id()).query((rs, i) -> {
+        jdbc.sql(CIRCLE_SELECT.replace("SELECT c.*,", "SELECT c.*, mm.role, mm.status, mm.is_primary,") + " JOIN community_members mm ON mm.community_id = c.id WHERE mm.user_id = :userId AND " + VISIBLE_CIRCLE + " ORDER BY c.pinned DESC, mm.is_primary DESC, mm.joined_at")
+            .param("userId", me.id()).param("viewerId", viewerId(me)).query((rs, i) -> {
                 Map<String, Object> v = view(circleRow(rs));
                 v.put("role", rs.getString("role"));
                 v.put("status", rs.getString("status"));
                 v.put("primary", rs.getBoolean("is_primary"));
                 return v;
             }).list().forEach(member::add);
-        List<Map<String, Object>> listening = jdbc.sql(CIRCLE_SELECT + " JOIN community_follows ff ON ff.community_id = c.id WHERE ff.user_id = ? ORDER BY ff.created_at DESC")
-            .param(me.id()).query((rs, i) -> view(circleRow(rs))).list();
+        List<Map<String, Object>> listening = jdbc.sql(CIRCLE_SELECT + " JOIN community_follows ff ON ff.community_id = c.id WHERE ff.user_id = :userId AND " + VISIBLE_CIRCLE + " ORDER BY c.pinned DESC, ff.created_at DESC")
+            .param("userId", me.id()).param("viewerId", viewerId(me)).query((rs, i) -> view(circleRow(rs))).list();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("member", member);
         out.put("listening", listening);
@@ -159,14 +215,22 @@ public class CircleService {
 
     /** 이번 주 가장 따뜻한 소로우: 지난 7일 동안 멤버들이 다른 소로우·광장 글에 남긴 위로 댓글이 많은 순 (횟수는 내려보내지 않는다) */
     public List<Map<String, Object>> warmest() {
+        return warmest(null);
+    }
+
+    public List<Map<String, Object>> warmest(DbUser viewer) {
         List<String> ids = jdbc.sql("""
             SELECT m.community_id, count(*) AS n
-              FROM comments c
-              JOIN community_members m ON m.user_id = c.author_id AND m.status = 'active'
-              JOIN shout_posts sp ON c.post_kind = 'post' AND sp.id = c.post_id
-             WHERE c.created_at > now() - INTERVAL '7 days' AND c.hidden = FALSE AND sp.hidden = FALSE
+              FROM comments cm
+              JOIN community_members m ON m.user_id = cm.author_id AND m.status = 'active'
+              JOIN communities c ON c.id = m.community_id
+              JOIN shout_posts sp ON cm.post_kind = 'post' AND sp.id = cm.post_id
+              LEFT JOIN communities source_circle ON source_circle.id = sp.community_id
+             WHERE cm.created_at > now() - INTERVAL '7 days' AND cm.hidden = FALSE AND sp.hidden = FALSE
                AND (sp.community_id IS NULL OR sp.community_id <> m.community_id)
-             GROUP BY m.community_id ORDER BY n DESC LIMIT 40""").query((rs, i) -> rs.getString("community_id")).list();
+            """ + " AND " + VISIBLE_CIRCLE + " AND (source_circle.id IS NULL OR " + PrivateCircleAccess.visibleTo("source_circle", ":viewerId") + ")"
+            + " GROUP BY m.community_id, c.pinned ORDER BY c.pinned DESC, n DESC LIMIT 40")
+            .param("viewerId", viewerId(viewer)).query((rs, i) -> rs.getString("community_id")).list();
         if (ids.isEmpty()) return List.of();
         Map<String, Circle> byId = new HashMap<>();
         jdbc.sql(CIRCLE_SELECT + " WHERE c.id IN (:ids)").param("ids", ids).query((rs, i) -> circleRow(rs)).list().forEach(c -> byId.put(c.id(), c));
@@ -185,6 +249,7 @@ public class CircleService {
     /** 소로우 하나 + 보는 사람과의 관계 */
     public Map<String, Object> detail(DbUser viewer, String slug) {
         Circle c = bySlug(slug);
+        requireAccess(c, viewer);
         Map<String, Object> out = view(c);
         Optional<Member> m = viewer == null ? Optional.empty() : member(c.id(), viewer.id());
         Map<String, Object> me = new LinkedHashMap<>();
@@ -209,6 +274,53 @@ public class CircleService {
 
     public record CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain) {}
 
+    /** The allowlist is fixed at creation; no invite, domain, keeper or global-admin bypass exists. */
+    @Transactional
+    public Map<String, Object> createPrivateTest(DbUser me, String peerId) {
+        if (!appAdmin(me)) throw ApiException.forbidden("운영진만 테스트 소로우를 만들 수 있어요");
+        if (!privateTestCreationEnabled) throw ApiException.unavailable("비공개 테스트 소로우는 아직 준비 중이에요. 준비가 끝난 뒤 다시 시도해 주세요");
+        if (peerId == null || peerId.isBlank() || me.id().equals(peerId.strip())) {
+            throw ApiException.badRequest("함께할 가입 회원 한 명을 골라 주세요");
+        }
+        String peer = peerId.strip();
+        DbUser invited = jdbc.sql("SELECT * FROM users WHERE id = ?").param(peer).query(DbUser.MAPPER).optional()
+            .orElseThrow(() -> ApiException.badRequest("함께할 가입 회원을 찾을 수 없어요"));
+        if (invited.anonymous() || invited.blocked()) throw ApiException.badRequest("가입을 마친 이용 가능한 회원만 함께할 수 있어요");
+        boolean canSignIn = jdbc.sql("SELECT password_hash IS NOT NULL OR kakao_id IS NOT NULL OR toss_user_key IS NOT NULL FROM users WHERE id = ?")
+            .param(peer).query(Boolean.class).single();
+        if (!canSignIn) throw ApiException.badRequest("로그인할 수 있는 가입 회원을 골라 주세요");
+
+        // Serialize the fixed slug even before its first row exists, including lost-response retries.
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(?))").param(CircleLogic.PRIVATE_TEST_SLUG).query((rs, i) -> 1).single();
+        Optional<Circle> existing = jdbc.sql(CIRCLE_SELECT + " WHERE c.slug = ?").param(CircleLogic.PRIVATE_TEST_SLUG)
+            .query((rs, i) -> circleRow(rs)).optional();
+        if (existing.isPresent()) {
+            Circle circle = existing.get();
+            if (!circle.privateTest() || !me.id().equals(circle.createdBy())) throw ApiException.notFound("소로우를 찾을 수 없어요");
+            requireAccess(circle, me);
+            Set<String> members = new HashSet<>(jdbc.sql("SELECT user_id FROM community_private_members WHERE community_id = ?")
+                .param(circle.id()).query(String.class).list());
+            if (!members.equals(Set.of(me.id(), peer))) throw ApiException.badRequest("이미 정해진 두 회원의 테스트 소로우가 있어요");
+            return detail(me, circle.slug());
+        }
+        if (jdbc.sql("SELECT count(*) FROM communities WHERE name_key = ?").param(CircleLogic.nameKey(CircleLogic.PRIVATE_TEST_NAME)).query(Long.class).single() > 0) {
+            throw ApiException.badRequest("같은 이름의 소로우가 이미 있어요");
+        }
+        String id = Ids.uid();
+        jdbc.sql("""
+            INSERT INTO communities (id, slug, name, name_key, kind, join_mode, visibility, intro, created_by, private_test, pinned, space_capacity)
+            VALUES (?, ?, ?, ?, 'rest', 'invite', 'members', '두 사람이 함께 쉬어 가는 비공개 테스트 소로우예요.', ?, TRUE, TRUE, ?)
+            """).param(id).param(CircleLogic.PRIVATE_TEST_SLUG).param(CircleLogic.PRIVATE_TEST_NAME)
+            .param(CircleLogic.nameKey(CircleLogic.PRIVATE_TEST_NAME)).param(me.id()).param(CircleLogic.PRIVATE_TEST_CAPACITY).update();
+        for (String userId : List.of(me.id(), peer)) {
+            jdbc.sql("INSERT INTO community_private_members (community_id, user_id) VALUES (?, ?)").param(id).param(userId).update();
+            // A test membership must not replace either person's public primary circle.
+            jdbc.sql("INSERT INTO community_members (community_id, user_id, role, status, is_primary) VALUES (?, ?, ?, 'active', FALSE)")
+                .param(id).param(userId).param(me.id().equals(userId) ? "owner" : "member").update();
+        }
+        return detail(me, CircleLogic.PRIVATE_TEST_SLUG);
+    }
+
     @Transactional
     public Map<String, Object> create(DbUser me, CreateInput in) {
         // 처지 소로우는 서비스가 연다 (회사·학교 이름을 단 소로우가 생기지 않게)
@@ -217,6 +329,9 @@ public class CircleService {
         if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
         String slug = CircleLogic.normalizeSlug(in.slug());
         if (slug == null) throw ApiException.badRequest("주소는 영문 소문자·숫자·하이픈 3~40자로 해요 (예: korea-univ)");
+        if (CircleLogic.PRIVATE_TEST_SLUG.equals(slug) || CircleLogic.nameKey(CircleLogic.PRIVATE_TEST_NAME).equals(CircleLogic.nameKey(name))) {
+            throw ApiException.badRequest("이 이름과 주소는 비공개 테스트 소로우 전용이에요");
+        }
         String kind = in.kind() != null && CircleLogic.KINDS.contains(in.kind()) ? in.kind() : null;
         if (kind == null) throw ApiException.badRequest("종류를 골라 주세요");
         long owned = jdbc.sql("SELECT count(*) FROM communities WHERE created_by = ?").param(me.id()).query(Long.class).single();
@@ -254,6 +369,9 @@ public class CircleService {
     public Map<String, Object> update(DbUser me, String slug, Map<String, Object> b) {
         Circle c = bySlug(slug);
         Member m = requireKeeper(c, me);
+        if (c.privateTest() && List.of("visibility", "joinMode", "regenerateInvite", "privateTest", "pinned", "spaceCapacity").stream().anyMatch(b::containsKey)) {
+            throw ApiException.badRequest("비공개 테스트 소로우의 공개 범위와 참여 설정은 바꿀 수 없어요");
+        }
         if (b.get("notice") instanceof String n) {
             String t = n.strip();
             jdbc.sql("UPDATE communities SET notice = ? WHERE id = ?").param(t.length() > 200 ? t.substring(0, 200) : t).param(c.id()).update();
@@ -286,8 +404,10 @@ public class CircleService {
     public Map<String, Object> join(DbUser me, String slug, String code) {
         assertNotBlocked(me);
         Circle c = bySlug(slug);
+        requireAccess(c, me);
         Optional<Member> cur = member(c.id(), me.id());
         if (cur.isPresent()) return detail(me, slug);
+        if (c.privateTest()) throw ApiException.forbidden("테스트 소로우의 참여자는 고정돼 있어요");
         String status = switch (c.joinMode()) {
             case "open" -> "active";
             case "approve" -> "pending";
@@ -313,6 +433,8 @@ public class CircleService {
     @Transactional
     public Map<String, Object> leave(DbUser me, String slug) {
         Circle c = bySlug(slug);
+        requireAccess(c, me);
+        if (c.privateTest()) throw ApiException.badRequest("테스트 소로우의 참여자는 고정돼 있어요");
         Member m = member(c.id(), me.id()).orElseThrow(() -> ApiException.badRequest("멤버가 아니에요"));
         if ("owner".equals(m.role())) throw ApiException.badRequest("소로우를 연 사람은 나갈 수 없어요");
         jdbc.sql("DELETE FROM community_members WHERE community_id = ? AND user_id = ?").param(c.id()).param(me.id()).update();
@@ -323,6 +445,7 @@ public class CircleService {
     public Map<String, Object> setPrimary(DbUser me, String slug) {
         Circle c = bySlug(slug);
         requireActiveMember(c, me);
+        if (c.privateTest()) throw ApiException.badRequest("비공개 테스트 소로우는 공개 프로필의 대표로 정할 수 없어요");
         jdbc.sql("UPDATE community_members SET is_primary = FALSE WHERE user_id = ? AND is_primary").param(me.id()).update();
         jdbc.sql("UPDATE community_members SET is_primary = TRUE WHERE user_id = ? AND community_id = ?").param(me.id()).param(c.id()).update();
         return detail(me, slug);
@@ -331,6 +454,7 @@ public class CircleService {
     @Transactional
     public Map<String, Object> toggleFollow(DbUser me, String slug) {
         Circle c = bySlug(slug);
+        requireAccess(c, me);
         int del = jdbc.sql("DELETE FROM community_follows WHERE user_id = ? AND community_id = ?").param(me.id()).param(c.id()).update();
         if (del == 0) jdbc.sql("INSERT INTO community_follows (user_id, community_id) VALUES (?, ?)").param(me.id()).param(c.id()).update();
         return detail(me, slug);
@@ -342,6 +466,7 @@ public class CircleService {
     public Map<String, Object> verifyStart(DbUser me, String slug, String email) {
         assertNotBlocked(me);
         Circle c = bySlug(slug);
+        requireAccess(c, me);
         if (c.domain() == null) throw ApiException.badRequest("이 소로우는 메일 인증을 쓰지 않아요");
         if (!CircleLogic.emailMatchesDomain(email, c.domain())) throw ApiException.badRequest("@" + c.domain() + " 메일만 인증할 수 있어요");
         String hash = CircleLogic.emailHash(email);
@@ -376,6 +501,8 @@ public class CircleService {
     @Transactional
     public Map<String, Object> verifyConfirm(DbUser me, String slug, String code) {
         Circle c = bySlug(slug);
+        requireAccess(c, me);
+        if (c.privateTest()) throw ApiException.badRequest("이 소로우는 메일 인증을 쓰지 않아요");
         record Pending(String id, String emailHash, String codeHash, int attempts) {}
         Pending p = jdbc.sql("""
             SELECT id, email_hash, code_hash, attempts FROM community_email_codes
@@ -426,6 +553,7 @@ public class CircleService {
     public List<Map<String, Object>> memberAction(DbUser me, String slug, String userId, String action) {
         Circle c = bySlug(slug);
         Member actor = requireKeeper(c, me);
+        if (c.privateTest()) throw ApiException.badRequest("테스트 소로우의 참여자는 고정돼 있어요");
         Member target = member(c.id(), userId).orElseThrow(() -> ApiException.notFound("멤버를 찾을 수 없어요"));
         boolean owner = actor.owner() || appAdmin(me);
         switch (action == null ? "" : action) {
@@ -626,7 +754,8 @@ public class CircleService {
             SELECT s.id, s.cat, s.text, s.status, s.crisis, s.ai_draft, s.reason, s.reply, s.created_at, s.decided_at,
                    p.post_no, p.id AS post_id, p.created_at AS publish_at, c.name AS circle_name, c.slug AS circle_slug
               FROM submissions s JOIN communities c ON c.id = s.community_id LEFT JOIN shout_posts p ON p.id = s.post_id
-             WHERE s.author_id = ? ORDER BY s.created_at DESC LIMIT 100""").param(me.id())
+             WHERE s.author_id = :userId AND """ + VISIBLE_CIRCLE + " ORDER BY s.created_at DESC LIMIT 100")
+            .param("userId", me.id()).param("viewerId", viewerId(me))
             .query((rs, i) -> submissionRow(rs, true)).list();
     }
 }
