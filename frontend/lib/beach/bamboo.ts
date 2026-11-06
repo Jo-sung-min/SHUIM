@@ -241,7 +241,7 @@ function colored(geometry: THREE.BufferGeometry, hex: number): THREE.BufferGeome
 }
 
 /** A small stone lantern (석등): base, column, open light box between corner bars, hexagonal cap. */
-function stoneLanternGeometry(): THREE.BufferGeometry {
+export function stoneLanternGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const place = (geometry: THREE.BufferGeometry, x: number, y: number, z: number, hex: number) => {
     geometry.translate(x, y, z); parts.push(colored(geometry, hex));

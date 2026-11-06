@@ -37,7 +37,7 @@ export function roofTileTexture(): THREE.Texture {
 }
 
 /** Square hip roof with eaves lifting toward each corner and a gently concave slope. */
-function hipRoofGeometry(thickness = 0): THREE.BufferGeometry {
+export function hipRoofGeometry(thickness = 0): THREE.BufferGeometry {
   const half = PAVILION_HALF + PAVILION_EAVE, rise = 1.55, lift = 0.42, sag = 0.3;
   const nu = 10, nv = 5;
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
@@ -69,7 +69,7 @@ function hipRoofGeometry(thickness = 0): THREE.BufferGeometry {
   return geometry;
 }
 
-function hipRidgeGeometry(): THREE.BufferGeometry {
+export function hipRidgeGeometry(): THREE.BufferGeometry {
   const half = PAVILION_HALF + PAVILION_EAVE, rise = 1.55, lift = 0.42, sag = 0.3;
   const points: THREE.Vector3[] = [];
   for (let i = 0; i <= 10; i++) {

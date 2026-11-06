@@ -82,14 +82,23 @@ public class BeachRoom {
     private static final double[][] DECK_SEAT_LOCAL = {
         {-3.75, 2.2, 0, 1}, {-2.25, 2.2, 0, 1}, {-0.75, 2.2, 0, 1},
         {0.75, 2.2, 0, 1}, {2.25, 2.2, 0, 1}, {3.75, 2.2, 0, 1}};
-    /** Centre and the unit axis the steps (pavilion) or the view (deck) face. Right-hand axis is (-fz, fx). */
-    record Pavilion(String spot, double x, double z, int fx, int fz, double[][] seats) {}
+    /** The garden hall seats six per tier on a bench row, stairs in the middle, everyone facing the glass (lib/beach/garden-layout.ts HALL_SEAT_LX). */
+    private static final double[][] HALL_SEAT_LOCAL = {
+        {-10.8, 0, 0, 1}, {-7.2, 0, 0, 1}, {-3.6, 0, 0, 1}, {3.6, 0, 0, 1}, {7.2, 0, 0, 1}, {10.8, 0, 0, 1}};
+    /** Centre and the unit axis the steps (pavilion) or the view (deck, hall) face. Right-hand axis is (-fz, fx). Each pavilion belongs to one map. */
+    record Pavilion(String spot, double x, double z, int fx, int fz, double[][] seats, BeachMap map) {}
     static final List<Pavilion> PAVILIONS = List.of(
-        new Pavilion("pavilion-step", 14, 10, -1, 0, PAVILION_SEAT_LOCAL),
-        new Pavilion("pavilion-wind", -33, 50, 1, 0, PAVILION_SEAT_LOCAL),
-        new Pavilion("pavilion-pine", 31, 58, -1, 0, PAVILION_SEAT_LOCAL),
-        new Pavilion("pavilion-moon", -18, 80, 1, 0, PAVILION_SEAT_LOCAL),
-        new Pavilion("pavilion-summit", 0, 100, 0, 1, DECK_SEAT_LOCAL));
+        new Pavilion("pavilion-step", 14, 10, -1, 0, PAVILION_SEAT_LOCAL, BeachMap.BAMBOO),
+        new Pavilion("pavilion-wind", -33, 50, 1, 0, PAVILION_SEAT_LOCAL, BeachMap.BAMBOO),
+        new Pavilion("pavilion-pine", 31, 58, -1, 0, PAVILION_SEAT_LOCAL, BeachMap.BAMBOO),
+        new Pavilion("pavilion-moon", -18, 80, 1, 0, PAVILION_SEAT_LOCAL, BeachMap.BAMBOO),
+        new Pavilion("pavilion-summit", 0, 100, 0, 1, DECK_SEAT_LOCAL, BeachMap.BAMBOO),
+        // Spring-water garden: the island pavilion faces the bridge (west); hall tiers (glass at z=60) look south through the window.
+        new Pavilion("pavilion-island", -15, 36, -1, 0, PAVILION_SEAT_LOCAL, BeachMap.GARDEN),
+        new Pavilion("hall-tier-1", 0, 62.6, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
+        new Pavilion("hall-tier-2", 0, 67.4, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
+        new Pavilion("hall-tier-3", 0, 71.8, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
+        new Pavilion("hall-tier-4", 0, 77, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
@@ -98,7 +107,13 @@ public class BeachRoom {
         boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id) || pavilion(); }
     }
     record BenchSeat(double x, double z, double yaw) {}
-    private static final Map<String, RestSpot> REST_SPOTS = Map.ofEntries(
+    /** Fixed spots first, then every pavilion: declared after FIXED_REST_SPOTS so static initialisation sees both tables. */
+    private static Map<String, RestSpot> restSpots() {
+        Map<String, RestSpot> spots = new LinkedHashMap<>(FIXED_REST_SPOTS);
+        for (Pavilion p : PAVILIONS) spots.put(p.spot(), new RestSpot(p.spot(), p.x(), p.z(), PAVILION_SLOTS, false));
+        return Collections.unmodifiableMap(spots);
+    }
+    private static final Map<String, RestSpot> FIXED_REST_SPOTS = Map.ofEntries(
         Map.entry(REST_SPOT, new RestSpot(REST_SPOT, REST_X, REST_Z, REST_SLOTS, false)),
         Map.entry("hut-pine", new RestSpot("hut-pine", -13, 24.8, BED_SLOTS, true)),
         Map.entry("hut-wave", new RestSpot("hut-wave", 0, 26.8, BED_SLOTS, true)),
@@ -107,15 +122,18 @@ public class BeachRoom {
         Map.entry(ONSEN_BENCH_SPOT, new RestSpot(ONSEN_BENCH_SPOT, ONSEN_X, ONSEN_Z, ONSEN_BENCH_SLOTS, false)),
         Map.entry(ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false)),
         Map.entry(HOTEL_DAWN_SPOT, new RestSpot(HOTEL_DAWN_SPOT, -12, 23, HOTEL_BED_SLOTS, true)),
-        Map.entry(HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true)),
-        Map.entry(PAVILIONS.get(0).spot(), new RestSpot(PAVILIONS.get(0).spot(), PAVILIONS.get(0).x(), PAVILIONS.get(0).z(), PAVILION_SLOTS, false)),
-        Map.entry(PAVILIONS.get(1).spot(), new RestSpot(PAVILIONS.get(1).spot(), PAVILIONS.get(1).x(), PAVILIONS.get(1).z(), PAVILION_SLOTS, false)),
-        Map.entry(PAVILIONS.get(2).spot(), new RestSpot(PAVILIONS.get(2).spot(), PAVILIONS.get(2).x(), PAVILIONS.get(2).z(), PAVILION_SLOTS, false)),
-        Map.entry(PAVILIONS.get(3).spot(), new RestSpot(PAVILIONS.get(3).spot(), PAVILIONS.get(3).x(), PAVILIONS.get(3).z(), PAVILION_SLOTS, false)),
-        Map.entry(PAVILIONS.get(4).spot(), new RestSpot(PAVILIONS.get(4).spot(), PAVILIONS.get(4).x(), PAVILIONS.get(4).z(), PAVILION_SLOTS, false)));
+        Map.entry(HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true)));
+    private static final Map<String, RestSpot> REST_SPOTS = restSpots();
 
     static boolean isPavilionSpot(String spotId) {
         return spotId != null && PAVILIONS.stream().anyMatch(p -> p.spot().equals(spotId));
+    }
+    /** A pavilion (or hall tier) can only be claimed on the map it stands in. */
+    static boolean pavilionOn(BeachMap map, String spotId) {
+        return spotId != null && PAVILIONS.stream().anyMatch(p -> p.map() == map && p.spot().equals(spotId));
+    }
+    static boolean isHallSpot(String spotId) {
+        return spotId != null && spotId.startsWith("hall-tier-");
     }
 
     private static Pavilion pavilionOf(RestSpot spot) {
@@ -144,8 +162,9 @@ public class BeachRoom {
             nearby = true;
             if (!used[slot] && distance < closestDistance) { closest = slot; closestDistance = distance; }
         }
-        if (!nearby) throw ApiException.badRequest("정자 마루 끝 가까이에서 앉아 주세요.");
-        if (closest < 0) throw new ApiException(409, "가까운 자리가 모두 차 있어요. 마루의 다른 쪽으로 다가가 주세요.");
+        boolean hall = isHallSpot(spot.id());
+        if (!nearby) throw ApiException.badRequest(hall ? "벤치 가까이에서 앉아 주세요." : "정자 마루 끝 가까이에서 앉아 주세요.");
+        if (closest < 0) throw new ApiException(409, hall ? "가까운 자리가 모두 차 있어요. 벤치의 다른 자리로 다가가 주세요." : "가까운 자리가 모두 차 있어요. 마루의 다른 쪽으로 다가가 주세요.");
         return closest;
     }
 
@@ -667,7 +686,7 @@ public class BeachRoom {
         if (byTicket.size() >= capacity) throw new ApiException(409, "지금 " + capacity + "명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
         ThreadLocalRandom r = ThreadLocalRandom.current();
         double x = bookmark == null ? r.nextDouble(-1.5, 1.5) : bookmark.x;
-        double z = bookmark == null ? r.nextDouble(2.8, 4) : bookmark.z;
+        double z = bookmark == null ? r.nextDouble(map.spawnMinZ(), map.spawnMaxZ()) : bookmark.z;
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick,
             selectedSkin == null ? bookmark == null ? skinOf(userId) : bookmark.skin : selectedSkin, 0,
             excluded == null ? Set.of() : Set.copyOf(excluded), x, z,

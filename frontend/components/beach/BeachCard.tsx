@@ -63,7 +63,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
     <section className={styles.card} data-map={mapId} aria-label="소로우에서 함께 쉬기">
       <div className={styles.mapChoices} role="group" aria-label="함께 쉴 풍경">
         {Object.values(MAPS).map((choice) => <button key={choice.id} type="button" aria-pressed={mapId === choice.id}
-          onClick={() => setMapId(choice.id)}><span aria-hidden="true">{choice.id === "beach" ? "◡" : choice.id === "uyuni" ? "◇" : "〣"}</span>{choice.name}</button>)}
+          onClick={() => setMapId(choice.id)}><span aria-hidden="true">{choice.id === "beach" ? "◡" : choice.id === "uyuni" ? "◇" : choice.id === "bamboo" ? "〣" : "≋"}</span>{choice.name}</button>)}
       </div>
       <div className={styles.scene}>
         <div className={styles.landscape} aria-hidden="true">

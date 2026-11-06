@@ -1,4 +1,4 @@
-export type MapId = "beach" | "uyuni" | "bamboo";
+export type MapId = "beach" | "uyuni" | "bamboo" | "garden";
 
 export const MAPS = {
   beach: {
@@ -21,6 +21,13 @@ export const MAPS = {
     description: "댓잎 사이로 난 길을 걷고, 정자에 앉아 함께 쉬어요.",
     welcome: "대나무 사이로 난 길을 천천히 걸어요.",
     loading: "대나무숲으로 가는 중", loadingDetail: "댓잎 소리 곁으로",
+  },
+  garden: {
+    id: "garden", name: "봄물 정원", path: "/garden",
+    eyebrow: "비를 듣는 호숫가",
+    description: "버드나무 호수를 걷고, 통창 아래 앉아 비 내리는 물을 바라봐요.",
+    welcome: "봄물이 고인 호수를 천천히 걸어요.",
+    loading: "봄물 정원으로 가는 중", loadingDetail: "버드나무 그늘 곁으로",
   },
 } as const;
 

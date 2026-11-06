@@ -367,8 +367,8 @@ test("bamboo is a private fullscreen route that reuses the scene with its own ma
   assert.match(route, /<BeachScene[^>]+communityId=\{communityId\}[^>]+mapId="bamboo"/);
   assert.match(layout, /robots:\s*\{ index: false, follow: false \}/);
   assert.match(tabbar, /path === "\/bamboo"/);
-  assert.match(scene, /mapId === "bamboo" && \(pavilion\.near \|\| pavilion\.seated/, "the pavilion seat button only appears in the forest");
-  assert.match(scene, /전망대에 앉기/, "the summit deck has its own wording");
-  assert.match(net, /pavilionEnabled: mapId === "bamboo"/);
+  assert.match(scene, /\(mapId === "bamboo" \|\| mapId === "garden"\) && \(pavilion\.near \|\| pavilion\.seated/, "the pavilion seat button only appears in the forest and the garden");
+  assert.match(scene, /pavilion\.kind === "deck" \? "전망대" : pavilion\.kind === "hall" \? "자리" : "정자"/, "the summit deck and the garden hall have their own wording");
+  assert.match(net, /pavilionEnabled: \(mapId === "bamboo" \|\| mapId === "garden"\)/);
   assert.match(net, /"pavilion-wind", "pavilion-moon", "pavilion-pine", "pavilion-step", "pavilion-summit"/, "pavilion claims are validated like the other seats");
 });

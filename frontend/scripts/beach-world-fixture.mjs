@@ -59,6 +59,17 @@ vm.runInNewContext(`${trailSource}\nglobalThis.api = {
   BAMBOO_BOUNDS, TRAIL_WALK_HALF, BAMBOO_PAVILIONS, BAMBOO_PAVILION_SEATS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_COLLIDERS,
   BAMBOO_LANTERNS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, PAVILION_RISE, SUMMIT, MEADOW, SUMMIT_HEIGHT,
   bambooPavilionForSpot, pavilionSeat, claimedPavilionSeat, nearbyBambooPavilion, bambooFloorHeight, bambooCeilingHeight,
-  groundHeight, mountainHeight, nearestOnTrail, onTrail, resolveTrail
+  groundHeight, mountainHeight, nearestOnTrail, onTrail, resolveTrail,
+  PAVILION_HALF, PAVILION_STEP_HALF_WIDTH, PAVILION_STEP_LENGTH, PAVILION_EAVE, sampleCatmullRom, seededRandom
 };`, trailContext);
-export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...motionContext.api, ...trailContext.api, ...assets };
+// The spring-water garden shares the pavilion seat machinery; its layout is pure math on top of the trail helpers.
+const gardenSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/garden-layout.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const gardenContext = { ...trailContext.api };
+vm.runInNewContext(`${gardenSource}\nglobalThis.api = {
+  GARDEN_BOUNDS, GARDEN_SPAWN, BOAT_DECK_Y, PIER_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, GARDEN_PAVILIONS, BOAT_STOPS, HALL,
+  claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, nearbyGardenPavilion, pierEnd, resolveGardenWalk,
+  isWater, onGardenGround, boatPoseAt, lakeSigned
+};`, gardenContext);
+export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...assets };

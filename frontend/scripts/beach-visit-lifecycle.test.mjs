@@ -121,7 +121,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name.endsWith("/maps")) return maps;
     if (name.endsWith("/appearance")) return appearance;
     if (name.endsWith("/engine")) return { BeachEngine: Engine, webglSupported: () => true };
-    if (name.endsWith("/daylight")) return { hourLabel: () => "낮", hourOverride: () => null };
+    if (name.endsWith("/daylight")) return { hourLabel: () => "낮", hourOverride: () => null, rainOverride: () => null };
     if (name.endsWith("/assets")) return { assetCssUrl: () => "none" };
     if (name.endsWith("/routes")) return { route: path => path };
     if (name.endsWith("/toast")) return { showToast(message) { toasts.push(message); }, toastSuccess(message) { toasts.push(message); }, tick() {} };

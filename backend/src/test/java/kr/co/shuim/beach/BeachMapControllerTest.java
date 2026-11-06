@@ -97,6 +97,30 @@ class BeachMapControllerTest {
         verifyNoInteractions(fire);
     }
 
+    @Test void gardenEntryAdvertisesHallSeatsAndSpawnsInsideTheMoonGate() throws Exception {
+        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\",\"mapId\":\"garden\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("garden"))
+            .andExpect(jsonPath("$.restEnabled").value(false)).andExpect(jsonPath("$.bedEnabled").value(false))
+            .andExpect(jsonPath("$.pavilionEnabled").value(true)).andExpect(jsonPath("$.fireEnabled").value(false))
+            .andExpect(jsonPath("$.bounds.minZ").value(-30)).andExpect(jsonPath("$.bounds.maxZ").value(100))
+            .andExpect(jsonPath("$.bounds.minX").value(-60)).andExpect(jsonPath("$.bounds.maxX").value(60));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> spawn = (Map<String, Object>) controller.enter(new BeachController.EnterBody("room", null, "garden"), request, response).get("spawn");
+        assertTrue((Double) spawn.get("z") < -9.9 && (Double) spawn.get("z") >= -11.5, "newcomers stand inside the moon gate: " + spawn);
+        mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "garden"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("garden")).andExpect(jsonPath("$.count").value(2));
+        mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "bamboo"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.count").value(0));
+        String ticket = (String) controller.enter(new BeachController.EnterBody("room", null, "garden"), request, response).get("ticket");
+        service.tick(ticket, 3.4, 63.2, .75, false, null, null);
+        mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + ticket + "\",\"action\":\"sit\",\"spotId\":\"hall-tier-1\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.pose").value("sitting"))
+            .andExpect(jsonPath("$.spotId").value("hall-tier-1")).andExpect(jsonPath("$.slot").value(3))
+            .andExpect(jsonPath("$.x").value(3.6)).andExpect(jsonPath("$.z").value(62.6)).andExpect(jsonPath("$.yaw").value(0.0));
+        verifyNoInteractions(fire);
+    }
+
     @Test void pavilionRestApiUsesServerSeatsAndRejectsClaimsAwayFromTheDeck() throws Exception {
         String ticket = (String) controller.enter(new BeachController.EnterBody("room", null, "bamboo"), request, response).get("ticket");
         service.tick(ticket, -18, 75, .75, false, null, null);

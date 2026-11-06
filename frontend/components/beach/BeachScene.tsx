@@ -4,10 +4,10 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { assetCssUrl } from "@/lib/assets";
 import { MAPS, type MapId } from "@/lib/beach/maps";
-import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode } from "@/lib/beach/engine";
+import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode, type BoatRideState } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
-import { hourLabel, hourOverride } from "@/lib/beach/daylight";
+import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
@@ -91,6 +91,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const pavilionRef = useRef<PavilionState>(EMPTY_PAVILION);
   const benchActionRef = useRef<() => void>(() => {});
   const pavilionActionRef = useRef<() => void>(() => {});
+  const boatActionRef = useRef<() => void>(() => {});
+  const rainRef = useRef(0);
   const captureBusyRef = useRef(false);
   const cameraTriggerRef = useRef<HTMLButtonElement>(null);
   const photoFocusFrameRef = useRef(0);
@@ -179,6 +181,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [onsen, setOnsen] = useState<OnsenState>(EMPTY_ONSEN);
   const [pavilionEnabled, setPavilionEnabled] = useState(false);
   const [pavilion, setPavilion] = useState<PavilionState>(EMPTY_PAVILION);
+  const [boat, setBoat] = useState<BoatRideState | null>(null);
+  const [rain, setRain] = useState(0);
   const [photo, setPhoto] = useState<BeachPhoto | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [stargazing, setStargazing] = useState<StargazingState>({ near: false, lying: false, occupied: 0, capacity: 8 });
@@ -734,6 +738,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           skin: characterSkin(initialCharacter),
           view: initialView,
           hourOverride: hourOverride(window.location.search),
+          rainOverride: rainOverride(window.location.search),
           handlers: {
             onSelect: (p) => { setSelected(p); if (p) { setActionsOpen(true); setCarePrompt(null); } },
             onRestChange: (state) => setRest(state),
@@ -751,6 +756,13 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             onGuestbookRangeChange: setNearGuestbook,
             onGuestbookInSight: setGuestbookInSight,
             onPavilionAction: () => pavilionActionRef.current(),
+            onBoatChange: (state) => setBoat(state),
+            onBoatAction: () => boatActionRef.current(),
+            onRainChange: (amount) => {
+              if (rainRef.current === 0 && amount > 0.05) showToast("봄비가 내리기 시작해요. 청우헌 통창 아래에서 바라봐요.", { kind: "info" });
+              rainRef.current = amount;
+              setRain(amount);
+            },
           },
         });
         engineRef.current = engine;
@@ -1056,7 +1068,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const toggleStargazing = async (spotId = "starlight") => {
     const engine = engineRef.current;
     const isBench = spotId === "fire-benches";
-    const isPavilion = spotId.startsWith("pavilion-");
+    const isPavilion = spotId.startsWith("pavilion-") || spotId.startsWith("hall-tier-");
     const isOnsenSeat = spotId === "onsen-benches", isOnsenFloat = spotId === "onsen-float";
     const isOnsen = isOnsenSeat || isOnsenFloat;
     const isBed = !isBench && !isOnsen && !isPavilion && spotId !== "starlight";
@@ -1072,7 +1084,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     if (isPavilion && !pavilionSeated) {
       const nearby = engine.getPavilionState();
       if (!nearby.near || !nearby.available) {
-        showToast(nearby.near ? "가까운 자리가 찼어요. 마루의 다른 쪽으로 가 주세요." : "정자 마루 끝 가까이에서 앉을 수 있어요.", { kind: "info" });
+        showToast(nearby.near ? (nearby.kind === "hall" ? "가까운 자리가 찼어요. 벤치의 다른 자리로 가 주세요." : "가까운 자리가 찼어요. 마루의 다른 쪽으로 가 주세요.") : spotId.startsWith("hall-tier-") ? "벤치 가까이에서 앉을 수 있어요." : "정자 마루 끝 가까이에서 앉을 수 있어요.", { kind: "info" });
         return;
       }
     }
@@ -1158,6 +1170,15 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   };
   benchActionRef.current = () => { void toggleStargazing("fire-benches"); };
   pavilionActionRef.current = () => { const spot = pavilionRef.current.spotId; if (spot) void toggleStargazing(spot); };
+  boatActionRef.current = () => {
+    const engine = engineRef.current;
+    if (!engine || mapId !== "garden" || skyBusyRef.current || blockedRef.current) return;
+    const result = engine.toggleBoat();
+    if (!result) return;
+    haptic();
+    if (result === "boarded") showToast("나룻배가 곧 떠나요. 둘러보며 천천히 쉬어 가세요.", { kind: "info" });
+    else if (result === "alighted") showToast("잔교에 내렸어요.", { kind: "info" });
+  };
 
   /** 모닥불 앞까지 걸어간 뒤, 새 위치를 서버에 올리고(서버가 거리를 확인한다) 장작을 넣는다 */
   const onAddWood = useCallback(async (requestId: string, phase: (p: WoodPhase) => void) => {
@@ -1292,12 +1313,22 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const onsenPhase = restActionSpot?.startsWith("onsen-") ? skyPhase : null;
   const onsenResting = onsen.sitting || onsen.floating;
   const onsenContextVisible = mapId === "beach" && (onsenEnabled || onsenResting) && (onsen.inWater || onsenResting || Boolean(onsenPhase));
-  const pavilionPhase = restActionSpot?.startsWith("pavilion-") ? skyPhase : null;
-  const pavilionContextVisible = mapId === "bamboo" && (pavilion.near || pavilion.seated || Boolean(pavilionPhase));
+  const pavilionPhase = restActionSpot?.startsWith("pavilion-") || restActionSpot?.startsWith("hall-tier-") ? skyPhase : null;
+  const pavilionContextVisible = (mapId === "bamboo" || mapId === "garden") && (pavilion.near || pavilion.seated || Boolean(pavilionPhase)) && !boat?.riding;
+  const boatContextVisible = mapId === "garden" && Boolean(boat && (boat.near || boat.riding)) && !pavilion.seated;
+  const seatNoun = pavilion.kind === "deck" ? "전망대" : pavilion.kind === "hall" ? "자리" : "정자";
+  const pavilionTitle = pavilionPhase === "standing" ? "일어나는 중…" : pavilion.seated ? `${seatNoun}에서 일어나기` : pavilionPhase === "joining" ? "자리 잡는 중…" : !pavilion.available ? "가까운 자리가 찼어요" : `${seatNoun}에 앉기`;
+  const pavilionDetail = pavilion.seated
+    ? (pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : pavilion.kind === "hall" ? (rain > 0.05 ? `${pavilion.name} · 비 내리는 호수를 바라보며 머무는 중` : `${pavilion.name} · 통창 너머 호수를 바라보는 중`) : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`)
+    : !pavilionEnabled ? "앉을 자리를 준비하고 있어요"
+    : !pavilion.available ? (pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : pavilion.kind === "hall" ? "벤치의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요")
+    : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : pavilion.kind === "hall" ? `${pavilion.name} · 벤치에 앉아 통창 너머 호수를 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`;
+  const boatTitle = !boat ? "" : !boat.riding ? "나룻배 타기" : boat.docked ? "내리기" : boat.alightArmed ? "내리기 취소" : "다음 정류장에서 내리기";
+  const boatDetail = !boat ? "" : !boat.riding ? `${boat.near?.name ?? "잔교"} · 호수를 한 바퀴 천천히 떠가요` : boat.docked ? `${boat.stop?.name ?? "정류장"}에 서 있어요 · 잠시 뒤 출발` : boat.alightArmed ? `${boat.nextStop?.name ?? "다음 정류장"}에서 내려요` : `다음은 ${boat.nextStop?.name ?? "정류장"} · ${rain > 0.05 ? "빗속을 떠가는 중" : "호수를 떠가는 중"}`;
   const restContextVisible = !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
   const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
   const guestbookVisible = mapId === "bamboo" && nearGuestbook && Boolean(ticketRef.current);
-  const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || guestbookVisible || Boolean(rest) || walking;
+  const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || Boolean(rest) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
 
   return (
@@ -1332,17 +1363,17 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <p>{map.welcome}</p>
       </div>}
 
-      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
       <div className={styles.bottomHud} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
         {lost && <p className={styles.dockNotice} role="status">연결을 다시 이어 보는 중…</p>}
         {!actionsOpen && (skyPhase || woodBusy || powderPhase) && <p className={styles.dockNotice} role="status">잠깐만요, 행동을 마치고 있어요.</p>}
-        {hint && !actionsOpen && !selected && !lost && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && <p className={styles.dockHint}>{mapId === "bamboo" ? "둘레길을 걷다 정자에 앉아 함께 쉬어요." : "걷고, 둘러보고, 행동을 골라 함께 쉬어요."}</p>}
+        {hint && !actionsOpen && !selected && !lost && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && <p className={styles.dockHint}>{mapId === "bamboo" ? "둘레길을 걷다 정자에 앉아 함께 쉬어요." : mapId === "garden" ? "호수를 걷고, 청우헌에 앉아 비 내리는 물을 바라봐요." : "걷고, 둘러보고, 행동을 골라 함께 쉬어요."}</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
           <div className={styles.trayHeader}>
             <div className={styles.trayHeading}>
               <strong>{carePrompt ? "마음을 건넬 사람을 골라요" : selected ? selected.nick + "님에게" : "무엇을 해볼까요?"}</strong>
-              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : bench.seated ? "모닥불 곁에 앉아 쉬는 중" : pavilion.seated ? "정자에 걸터앉아 쉬는 중" : "옆으로 넘겨 더 골라요"}</small>
+              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : bench.seated ? "모닥불 곁에 앉아 쉬는 중" : pavilion.seated ? (pavilion.kind === "hall" ? (rain > 0.05 ? "비 내리는 호수를 바라보는 중" : "통창 너머 호수를 바라보는 중") : "정자에 걸터앉아 쉬는 중") : boat?.riding ? "나룻배를 타고 호수를 떠가는 중" : "옆으로 넘겨 더 골라요"}</small>
             </div>
             {selected && !carePrompt && <button type="button" className={styles.traySmallButton} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }} aria-label="다른 사람 고르기"><IconUsers /></button>}
             <button type="button" className={styles.traySmallButton} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
@@ -1383,8 +1414,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           </button>}
           {pavilionContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || (!pavilion.seated && (!pavilionEnabled || !pavilion.available))} aria-pressed={pavilion.seated} aria-keyshortcuts="E" onClick={() => { const spot = pavilion.spotId; if (spot) void toggleStargazing(spot); }}>
             <span className={styles.contextIcon}><IconSmile /></span>
-            <span className={styles.contextCopy}><strong>{pavilionPhase === "standing" ? "일어나는 중…" : pavilion.seated ? (pavilion.kind === "deck" ? "전망대에서 일어나기" : "정자에서 일어나기") : pavilionPhase === "joining" ? "자리 잡는 중…" : !pavilion.available ? "가까운 자리가 찼어요" : pavilion.kind === "deck" ? "전망대에 앉기" : "정자에 앉기"}</strong><small>{pavilion.seated ? (pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`) : !pavilionEnabled ? "앉을 자리를 준비하고 있어요" : !pavilion.available ? (pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요") : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`}</small></span>
-            <span className={styles.contextCount} aria-label={`정자 ${pavilion.capacity}석 중 ${pavilion.occupied}석 사용 중`}>{pavilion.occupied}/{pavilion.capacity}</span>
+            <span className={styles.contextCopy}><strong>{pavilionTitle}</strong><small>{pavilionDetail}</small></span>
+            <span className={styles.contextCount} aria-label={`${seatNoun} ${pavilion.capacity}석 중 ${pavilion.occupied}석 사용 중`}>{pavilion.occupied}/{pavilion.capacity}</span>
+          </button>}
+          {boatContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost} aria-pressed={boat?.riding === true} aria-keyshortcuts="E" onClick={() => boatActionRef.current()}>
+            <span className={styles.contextIcon}><IconLeaf /></span>
+            <span className={styles.contextCopy}><strong>{boatTitle}</strong><small>{boatDetail}</small></span>
           </button>}
           {restContextVisible && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!lying && (!areaEnabled || skyFull))} onClick={() => void toggleStargazing(areaSpot)}>
             <span className={styles.contextIcon}><IconMoon /></span>
@@ -1431,7 +1466,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
           {!lying && <button type="button" className={styles.dockButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
           <button ref={characterTriggerRef} type="button" className={styles.dockButton} aria-label="내 캐릭터 고르기" aria-expanded={characterPickerOpen} aria-controls={characterPickerId} onClick={() => { haptic(); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); setCharacterPickerOpen((open) => !open); }}><IconUser /><span>내 캐릭터</span></button>
-          {mapId !== "uyuni" ? <FieldSoundControl map={mapId} buttonClass={styles.dockButton} volume={fieldVolume} open={fieldOpen}
+          {mapId !== "uyuni" && mapId !== "garden" ? <FieldSoundControl map={mapId} buttonClass={styles.dockButton} volume={fieldVolume} open={fieldOpen}
             onOpenChange={open => {
               if (open) { setActionsOpen(false); setCharacterPickerOpen(false); setCarePrompt(null); engineRef.current?.select(null); }
               setFieldOpen(open);

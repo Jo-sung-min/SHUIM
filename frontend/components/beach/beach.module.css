@@ -36,6 +36,17 @@
   --beach-pad-active:rgba(38,62,42,.8);
 }
 .root[data-map="bamboo"][data-night="true"] { --beach-glass:rgba(14,26,18,.68); }
+.root[data-map="garden"] {
+  --beach-glass:rgba(38,54,58,.6);
+  --beach-ink:#f4f5ef;
+  --beach-muted:#d9e2d8;
+  --beach-edge:#e6efe757;
+  --beach-shadow:inset 0 1px 0 #ffffff1f,0 5px 20px #12262628;
+  --beach-label-shadow:0 1px 3px #0b1c1aa6;
+  --beach-pad-glass:rgba(38,54,58,.58);
+  --beach-pad-active:rgba(50,72,76,.8);
+}
+.root[data-map="garden"][data-night="true"] { --beach-glass:rgba(16,28,34,.66); }
 .canvas { display:block; width:100%; height:100%; touch-action:none; outline:none; }
 .glass, .dock, .fireContext, .actionTray, .contextButton, .characterPanel, .hideHud, .restoreHud, .roomClockPanel, .fireworksPanel {
   border:1px solid var(--beach-edge); background:var(--beach-glass); color:var(--beach-ink);
@@ -201,6 +212,9 @@
 .root[data-map="bamboo"] .center { background:radial-gradient(ellipse at 50% 18%,#d9ea9d66,transparent 42%),repeating-linear-gradient(90deg,#00000000 0 26px,#2b4a2133 26px 30px,#c6dd8c22 30px 32px,#00000000 32px 50px),linear-gradient(180deg,#7aa346 0%,#4b7530 58%,#5b4a33 100%); }
 .root[data-map="bamboo"] .fireworksPanel, .root[data-map="bamboo"] .roomClockPanel { background:rgba(28,46,30,.94); }
 .root[data-map="bamboo"] :is(.exitButton:hover,.contextButton:hover,.roomClockTrigger[aria-expanded="true"],.fireworksTrigger[aria-expanded="true"],.fireworksTrigger:hover:not(:disabled)) { background:rgba(38,62,42,.88); }
+.root[data-map="garden"] .center { background:radial-gradient(ellipse at 50% 22%,#ffffff88,transparent 46%),linear-gradient(180deg,#e9e4d6 0%,#c9d3c7 40%,#7f9f93 58%,#5f7f78 100%); }
+.root[data-map="garden"] .fireworksPanel, .root[data-map="garden"] .roomClockPanel { background:rgba(30,46,50,.94); }
+.root[data-map="garden"] :is(.exitButton:hover,.contextButton:hover,.roomClockTrigger[aria-expanded="true"],.fireworksTrigger[aria-expanded="true"],.fireworksTrigger:hover:not(:disabled)) { background:rgba(50,72,76,.88); }
 .loadingDots::after { content:"…"; animation:beachDots 1.2s steps(3,end) infinite; }
 @keyframes trayRise { from { opacity:0; transform:translateY(10px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes beachFlash { 0% { opacity:0; } 18% { opacity:1; } 100% { opacity:0; } }

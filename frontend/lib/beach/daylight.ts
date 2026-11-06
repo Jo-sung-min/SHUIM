@@ -229,6 +229,21 @@ export function bambooDaylightAt(hourIn: number): Daylight {
   return { ...base, fog, fogNear: 14, fogFar: 62, tint };
 }
 
+/**
+ * 봄물 정원: 담채 수묵이라 안개가 종이빛(낮)·복숭아빛(노을)·푸른 먹(밤)이고, 호수가 트여 있어 멀리까지 보인다.
+ * 캐릭터 색조는 살짝 탈색해 먹그림 위에 선 듯하게. 밤 팔레트·등불 타이밍은 다른 지도와 같다.
+ */
+export function gardenDaylightAt(hourIn: number): Daylight {
+  const base = daylightAt(hourIn);
+  const night = Math.max(0, Math.min(1, base.stars));
+  const paper: RGB = [0.95, 0.93, 0.88];
+  const inkNight: RGB = [0.05, 0.08, 0.13];
+  const fog = mixRgb(mixRgb(base.fog, paper, 0.72 * (1 - night)), inkNight, base.deepNight);
+  const grey = (base.tint[0] + base.tint[1] + base.tint[2]) / 3;
+  const washed: RGB = [mix(base.tint[0], grey, 0.18), mix(base.tint[1], grey, 0.18), mix(base.tint[2], grey, 0.18)];
+  return { ...base, fog, fogNear: 40, fogFar: 190, tint: washed };
+}
+
 /** 지금 시각 (분까지, 0~24) */
 export function currentHour(now = new Date()): number {
   return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
@@ -241,6 +256,15 @@ export function hourOverride(search: string): number | null {
   if (v === null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? ((n % 24) + 24) % 24 : null;
+}
+
+/** 개발 환경에서만 ?rain=1 (0~1) 로 봄물 정원의 비를 고정해 볼 수 있다 */
+export function rainOverride(search: string): number | null {
+  if (process.env.NODE_ENV === "production") return null;
+  const v = new URLSearchParams(search).get("rain");
+  if (v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
 }
 
 /** HUD 에 보여 주는 시각 ("저녁 7시", "낮 12시 반") */

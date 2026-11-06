@@ -25,6 +25,12 @@
 .card[data-map="bamboo"] .landscape::before { content:""; position:absolute; inset:0 0 18%; pointer-events:none; background:repeating-linear-gradient(90deg,#00000000 0 17px,#2f4f2466 17px 21px,#d6ea9955 21px 23px,#00000000 23px 36px),repeating-linear-gradient(91deg,#00000000 0 29px,#243d1b44 29px 32px,#00000000 32px 61px); }
 .card[data-map="bamboo"] .landscape::after { content:""; position:absolute; left:34%; right:34%; bottom:0; height:22%; pointer-events:none; background:linear-gradient(180deg,#b89b6a00,#b89b6ad9 45%,#c9ad7b); clip-path:polygon(38% 0,62% 0,100% 100%,0 100%); }
 .card[data-map="bamboo"] .scene::after { background:linear-gradient(180deg,#1b2e1a99,#1b2e1a2b 54%,transparent 78%); }
+.card[data-map="garden"] { border-color:#d3d9cf; background:#f6f7f2; }
+.card[data-map="garden"] .landscape { background:linear-gradient(180deg,#ece8dc 0%,#d8ddd3 34%,#9bb3a9 52%,#6f948a 70%,#587c74 100%); }
+.card[data-map="garden"] .landscape::before { content:""; position:absolute; inset:18% 0 46%; pointer-events:none; background:radial-gradient(ellipse 42% 60% at 50% 100%,#4a525a66 0%,#4a525a22 50%,transparent 72%),radial-gradient(ellipse 30% 50% at 16% 100%,#5c646b55 0%,transparent 70%),radial-gradient(ellipse 28% 46% at 84% 100%,#5c646b55 0%,transparent 70%); }
+.card[data-map="garden"] .landscape::after { content:""; position:absolute; left:30%; right:30%; bottom:34%; height:26%; pointer-events:none; background:linear-gradient(180deg,#3a4248 0 18%,#f1ece2 18% 100%); clip-path:polygon(0 0,100% 0,100% 100%,0 100%); box-shadow:0 10px 18px -6px #1a2a2a66; }
+.card[data-map="garden"] .scene::after { background:linear-gradient(180deg,#1f2f3099,#1f2f302b 54%,transparent 78%); }
+.card[data-map="garden"] .people { bottom:22px; }
 .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #17282799, #1728272b 54%, transparent 78%); z-index: -1; pointer-events: none; }
 .landscape { position: absolute; inset: 0; z-index: -2; overflow: hidden; background: var(--beach-landscape-image) center 60% / cover no-repeat; }
 .timeTint { position: absolute; inset: 0; mix-blend-mode: multiply; transition: background-color 2s, opacity 2s; }
