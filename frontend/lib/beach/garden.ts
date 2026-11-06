@@ -16,6 +16,7 @@ import { buildGardenStructures, toonGradient, type GardenStructures } from "./ga
 import { GardenBoats, type BoatRideState, type RemoteRider } from "./garden-boat";
 import { GardenRain } from "./garden-rain";
 import { PAVILION_POST_HEIGHT } from "./bamboo-trail";
+import { buildGardenLandscapeDetail } from "./garden-landscape-detail";
 
 export interface GardenWalker { x: number; z: number; moving: boolean }
 export type GardenSkyUniforms = Record<string, THREE.IUniform>;
@@ -65,7 +66,7 @@ export function bankHeight(x: number, z: number): number {
 
 /**
  * 봄물 정원 세계. 땅은 물가로 꺼지는 높이맵, 물은 평면 한 장(하늘 해석 반사 + 저해상도 반사 렌더 타깃),
- * 원경은 수묵 산 띠, 버드나무·연잎·갈대는 인스턴스 빌보드, 청우헌·정자·다리·잔교·남문은 토운 재질로 병합.
+ * 원경은 생성한 봄 산수 파노라마, 버드나무·연잎·갈대는 인스턴스 빌보드, 건축과 소품은 소재별로 병합.
  * 밤에는 석등·창·샹들리에가 켜지고 가까운 점광원 4개가 비춘다. 비는 세기 하나로 물·유리·빗줄기·안개·조명을 함께 바꾼다.
  */
 export class GardenWorld {
@@ -85,7 +86,7 @@ export class GardenWorld {
     uNight: { value: 0 },
     uLanternColor: { value: srgb(0xffb064) },
     uLanterns: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, -100, 0, 0)) },
-    uInkRim: { value: 0.32 },
+    uInkRim: { value: 0.07 },
   };
   private readonly groundMaterial: THREE.ShaderMaterial;
   private readonly water: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
@@ -94,6 +95,7 @@ export class GardenWorld {
   private readonly willowStrands: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   private readonly reeds: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   private readonly structures: GardenStructures;
+  private readonly landscapeDetail: ReturnType<typeof buildGardenLandscapeDetail>;
   private readonly boats: GardenBoats;
   private readonly rain: GardenRain;
   private readonly gradient: THREE.DataTexture;
@@ -111,7 +113,7 @@ export class GardenWorld {
   private lastLampAt = { x: NaN, z: NaN, t: -Infinity };
   private disposed = false;
 
-  constructor(private readonly scene: THREE.Scene, skyUniforms: GardenSkyUniforms, textures: { wood: THREE.Texture }, private readonly mobile = false) {
+  constructor(private readonly scene: THREE.Scene, skyUniforms: GardenSkyUniforms, textures: { wood: THREE.Texture; landscape?: THREE.Texture; willow?: THREE.Texture }, private readonly mobile = false) {
     this.root.name = "garden";
     scene.add(this.root);
     this.hemi.name = "garden-sky-light"; this.sun.name = "garden-sun";
@@ -123,7 +125,8 @@ export class GardenWorld {
       this.root.add(lamp); this.lamps.push(lamp);
     }
     this.gradient = toonGradient();
-    const mask = gardenGroundMaskTexture(), lake = lakeDistanceTexture(), ink = inkMountainTexture(), willow = willowTexture();
+    const mask = gardenGroundMaskTexture(), lake = lakeDistanceTexture();
+    const ink = textures.landscape ?? inkMountainTexture(), willow = textures.willow ?? willowTexture();
     const pad = lotusPadTexture(), flower = lotusFlowerTexture(), reed = reedTexture(), mistTex = mistTexture();
     this.textures.push(mask, lake, ink, willow, pad, flower, reed, mistTex, this.gradient);
     const shared = () => ({ ...this.light, uTime: this.time, uSway: this.sway, uWet: this.wet, ...this.fogUniforms });
@@ -134,14 +137,14 @@ export class GardenWorld {
       uniforms: {
         ...shared(), uMask: { value: mask }, uMaskRect: { value: new THREE.Vector4(GARDEN_MASK.minX, GARDEN_MASK.minZ, 1 / GARDEN_MASK.width, 1 / GARDEN_MASK.depth) },
         uLake: { value: lake }, uLakeRect: { value: lakeRect },
-        uGrass: { value: srgb(0x7f8f5a) }, uGrassLight: { value: srgb(0xa9b57c) }, uGrassDeep: { value: srgb(0x5f7249) },
-        uEarth: { value: srgb(0x8a7a5e) }, uEarthLight: { value: srgb(0xb7a888) }, uStone: { value: srgb(0x7b7d78) }, uStoneLight: { value: srgb(0xb3b5ad) },
-        uMud: { value: srgb(0x5c5a48) }, uPoolColor: { value: srgb(0xff9a3c).multiplyScalar(0.5) },
+        uGrass: { value: srgb(0x778766) }, uGrassLight: { value: srgb(0xa0ad85) }, uGrassDeep: { value: srgb(0x4e6852) },
+        uEarth: { value: srgb(0xaea390) }, uEarthLight: { value: srgb(0xd8cebb) }, uStone: { value: srgb(0x858b83) }, uStoneLight: { value: srgb(0xc2c2b4) },
+        uMud: { value: srgb(0x646953) }, uPoolColor: { value: srgb(0xffbf80).multiplyScalar(0.35) },
       },
       vertexShader: GARDEN_GROUND_VERT, fragmentShader: GARDEN_GROUND_FRAG, fog: true,
     });
     this.materials.push(this.groundMaterial);
-    const inner = heightfield(-64, 64, -34, 104, 1.5, bankHeight);
+    const inner = heightfield(-64, 64, -34, 104, mobile ? 1.0 : 0.75, bankHeight);
     // The skirt follows the same bank so it never rises above the lake; it only fills the far field out to the fog.
     const outer = heightfield(-200, 200, -120, 240, 6, (x, z) => bankHeight(x, z) - 0.12);
     this.geometries.push(inner, outer);
@@ -153,7 +156,7 @@ export class GardenWorld {
     }
 
     // 물과 반사
-    const target = new THREE.WebGLRenderTarget(256, 256, { depthBuffer: true, stencilBuffer: false });
+    const target = new THREE.WebGLRenderTarget(256, 256, { depthBuffer: true, stencilBuffer: false, samples: 2 });
     target.texture.colorSpace = THREE.NoColorSpace;
     target.texture.minFilter = THREE.LinearFilter; target.texture.magFilter = THREE.LinearFilter;
     this.reflection = { target, camera: new THREE.PerspectiveCamera(), matrix: new THREE.Matrix4() };
@@ -162,7 +165,7 @@ export class GardenWorld {
       uniforms: {
         ...skyUniforms, ...this.fogUniforms, uReflection: { value: target.texture }, uReflect: { value: 1 }, uReflectMatrix: { value: this.reflection.matrix },
         uLake: { value: lake }, uLakeRect: { value: lakeRect }, uCamPos: { value: new THREE.Vector3() }, uRain: { value: 0 }, uNight: this.light.uNight,
-        uRainTaps: { value: mobile ? 5 : 9 }, uJade: { value: srgb(0x6f9a8a) }, uJadeDeep: { value: srgb(0x3f6b62) }, uJadeShore: { value: srgb(0x9fb39a) },
+        uRainTaps: { value: mobile ? 5 : 9 }, uJade: { value: srgb(0x477d72) }, uJadeDeep: { value: srgb(0x274e49) }, uJadeShore: { value: srgb(0x9aa992) },
         uRipples: { value: this.ripples }, uRippleLimit: { value: GARDEN_RIPPLE_COUNT },
       },
       vertexShader: GARDEN_WATER_VERT, fragmentShader: GARDEN_WATER_FRAG, fog: true,
@@ -179,14 +182,15 @@ export class GardenWorld {
     const band = new THREE.CylinderGeometry(230, 230, 160, 64, 1, true);
     this.geometries.push(band);
     const mountainMaterial = new THREE.ShaderMaterial({
-      uniforms: { uInk: { value: ink }, uFogColor: { value: new THREE.Color(0.94, 0.92, 0.87) }, uInkColor: { value: new THREE.Color(0.2, 0.23, 0.27) }, uNight: this.light.uNight, uRain: { value: 0 } },
+      uniforms: { uInk: { value: ink }, uPhotographic: { value: textures.landscape ? 1 : 0 }, uFogColor: { value: new THREE.Color(0.9, 0.94, 0.93) }, uInkColor: { value: new THREE.Color(0.2, 0.23, 0.27) }, uNight: this.light.uNight, uRain: { value: 0 } },
       vertexShader: GARDEN_MOUNTAIN_VERT, fragmentShader: GARDEN_MOUNTAIN_FRAG, side: THREE.BackSide, toneMapped: false, transparent: true, depthWrite: false,
     });
     this.materials.push(mountainMaterial);
     this.mountains = new THREE.Mesh(band, mountainMaterial);
     this.mountains.name = "garden-mountains";
     this.mountains.position.set(0, 60 - 10, 40);
-    this.mountains.rotation.y = Math.PI;
+    // Keep the mirrored join away from the entrance/hall's central sight line.
+    this.mountains.rotation.y = Math.PI + 0.61;
     this.mountains.renderOrder = -5;
     this.mountains.frustumCulled = false;
     this.mountains.layers.enable(2);
@@ -198,6 +202,7 @@ export class GardenWorld {
     this.buildLotus(pad, flower, shared);
     this.mist = this.buildMist(mistTex);
     this.structures = buildGardenStructures(this.root, textures, this.gradient, mobile);
+    this.landscapeDetail = buildGardenLandscapeDetail(this.root, mobile);
     this.boats = new GardenBoats(this.root, this.gradient);
     this.rain = new GardenRain(this.root, this.time);
     const island = GARDEN_PAVILIONS[0];
@@ -218,7 +223,7 @@ export class GardenWorld {
     const placement = new Float32Array(GARDEN_WILLOWS.length * 3 * 4), seeds = new Float32Array(GARDEN_WILLOWS.length * 3 * 4);
     GARDEN_WILLOWS.forEach((tree, index) => {
       const height = 5.4 * tree.scale, lean = (rand() - 0.5) * 0.22;
-      const trunk = new THREE.CylinderGeometry(0.2 * tree.scale, 0.34 * tree.scale, height, 7, 1);
+      const trunk = new THREE.CylinderGeometry(0.17 * tree.scale, 0.3 * tree.scale, height, 9, 1);
       trunk.translate(0, height / 2, 0);
       trunk.rotateZ(lean); trunk.rotateY(tree.yaw);
       trunk.translate(tree.x, tree.y - 0.1, tree.z);
@@ -231,8 +236,9 @@ export class GardenWorld {
       }
       const topX = tree.x - Math.sin(lean) * height * 0.95 * Math.cos(tree.yaw), topZ = tree.z + Math.sin(lean) * height * 0.95 * Math.sin(tree.yaw);
       for (let k = 0; k < 3; k++) {
-        const i = index * 3 + k, size = 5.2 * tree.scale;
-        placement.set([topX, tree.y + height + 0.7, topZ, size], i * 4);
+        // Store one complete layer of trees at a time so low quality retains every tree.
+        const i = k * GARDEN_WILLOWS.length + index, size = (6.6 - k * 0.4) * tree.scale;
+        placement.set([topX, tree.y + height + 1.5 - k * 0.12, topZ, size], i * 4);
         seeds.set([tree.seed * 6.28 + k, 0.35 + rand() * 0.5, tree.yaw + k * Math.PI / 3, 1], i * 4);
       }
     });
@@ -243,13 +249,13 @@ export class GardenWorld {
     const trunkGeometry = mergeGeometries(trunks, false)!;
     for (const trunk of trunks) trunk.dispose();
     this.geometries.push(trunkGeometry);
-    const trunkMaterial = new THREE.MeshToonMaterial({ color: 0x4e4034, gradientMap: this.gradient });
+    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x776754, roughness: 0.98 });
     this.materials.push(trunkMaterial);
     const trunkMesh = new THREE.Mesh(trunkGeometry, trunkMaterial);
     trunkMesh.name = "garden-willow-trunks"; trunkMesh.layers.enable(2);
     this.root.add(trunkMesh);
     const material = new THREE.ShaderMaterial({
-      uniforms: { ...shared(), uLeaf: { value: willow }, uLeafShade: { value: srgb(0x8aa070) }, uLeafLit: { value: srgb(0xcfe0a0) }, uTransmit: { value: 0.25 } },
+      uniforms: { ...shared(), uLeaf: { value: willow }, uLeafShade: { value: srgb(0xa0baaa) }, uLeafLit: { value: srgb(0xc4d6be) }, uTransmit: { value: 0.035 } },
       vertexShader: GARDEN_FOLIAGE_VERT, fragmentShader: GARDEN_FOLIAGE_FRAG, fog: true, side: THREE.DoubleSide,
     });
     this.materials.push(material);
@@ -261,8 +267,9 @@ export class GardenWorld {
 
   private buildReeds(reed: THREE.Texture, shared: () => Record<string, THREE.IUniform>) {
     const sites = reedSites();
-    const quad = new THREE.PlaneGeometry(1, 1), crossed = mergeGeometries([quad, quad.clone().rotateY(Math.PI / 2)], false)!;
-    quad.dispose();
+    const quad = new THREE.PlaneGeometry(1, 1), other = quad.clone().rotateY(Math.PI / 2);
+    const crossed = mergeGeometries([quad, other], false)!;
+    quad.dispose(); other.dispose();
     this.geometries.push(crossed);
     const geometry = instanced(crossed, sites.length);
     const placement = new Float32Array(sites.length * 4), seeds = new Float32Array(sites.length * 4);
@@ -449,14 +456,16 @@ export class GardenWorld {
     this.nextRipple = (this.nextRipple + 1) % GARDEN_RIPPLE_COUNT;
   }
 
-  /** 메인 렌더 직전: 큰 물체(레이어 2)를 수면에 비춘 저해상도 반사를 그린다. 저화질에선 하늘만 비친다. */
+  /** 메인 렌더 직전: 큰 물체(레이어 2)를 수면에 비춘다. 저화질에서도 풍경은 유지하고 반사 해상도만 낮춘다. */
   renderReflection(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera) {
     if (this.disposed) return;
     const uniforms = this.water.material.uniforms;
-    if (this.low) { uniforms.uReflect.value = 0; return; }
     uniforms.uReflect.value = 1;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    const w = Math.max(64, Math.round(size.x / 4)), h = Math.max(64, Math.round(size.y / 4));
+    // The near water is the main view from every seat. Keep its silhouettes smooth,
+    // with a bounded half-resolution target rather than enlarging quarter-size pixels.
+    const scale = Math.min(this.low ? 0.25 : 0.5, (this.mobile ? 768 : 1280) / Math.max(size.x, size.y));
+    const w = Math.max(64, Math.round(size.x * scale)), h = Math.max(64, Math.round(size.y * scale));
     const { target, camera: mirror, matrix } = this.reflection;
     if (target.width !== w || target.height !== h) target.setSize(w, h);
     // 수면(y = WATER_Y)에 대한 거울 카메라
@@ -523,6 +532,7 @@ export class GardenWorld {
     if (this.disposed) return;
     this.disposed = true;
     this.structures.dispose();
+    this.landscapeDetail.dispose();
     this.boats.dispose();
     this.rain.dispose();
     this.reflection.target.dispose();

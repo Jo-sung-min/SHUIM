@@ -29,6 +29,9 @@ frontend/public/**/*.gif
 frontend/public/**/*.avif
 frontend/public/**/*.ico
 frontend/public/**/*.glb
+# Garden artwork is bundled with web and Apps-in-Toss until published to the CDN.
+!frontend/public/garden/art/spring-hills-panorama-v1.webp
+!frontend/public/garden/art/willow-canopy-v1.webp
 
 # backend (Spring Boot / Gradle)
 .gradle/

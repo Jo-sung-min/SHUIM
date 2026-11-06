@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { Daylight } from "./daylight";
 import { hipRidgeGeometry, hipRoofGeometry, roofTileTexture } from "./bamboo-pavilions";
 import { stoneLanternGeometry } from "./bamboo";
-import { PAVILION_HALF, PAVILION_POST_HEIGHT, PAVILION_RISE, PAVILION_STEP_LENGTH } from "./bamboo-trail";
+import { PAVILION_HALF, PAVILION_POST_HEIGHT, PAVILION_RISE, PAVILION_STEP_LENGTH, seededRandom } from "./bamboo-trail";
 import {
   BRIDGE_Y, GARDEN_BRIDGE, GARDEN_LANTERNS, GARDEN_PAVILIONS, GARDEN_PIERS, GATE_WALL_Z, GROUND_Y, HALL, HALL_BENCH_HEIGHT, HALL_SEAT_LX, HALL_STAIR_HALF, HALL_STAIR_RUN,
   HALL_TIERS, PIER_Y, WATER_Y, gardenPavilionWorld, pierEnd,
@@ -22,6 +23,35 @@ export function toonGradient(): THREE.DataTexture {
 }
 
 const srgb = (hex: number) => new THREE.Color(hex);
+
+/** Fine, low-contrast oak: the shared dark beach timber overpowers this quiet interior. */
+function gardenTimberTexture(): THREE.Texture {
+  if (typeof document === "undefined") return new THREE.Texture();
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 256;
+  const ctx = canvas.getContext("2d")!, rand = seededRandom(727);
+  ctx.fillStyle = "#dfcfb3"; ctx.fillRect(0, 0, 256, 256);
+  for (let plank = 0; plank < 4; plank++) {
+    ctx.fillStyle = `rgba(156, 132, 95, ${0.025 + rand() * 0.055})`;
+    ctx.fillRect(plank * 64, 0, 64, 256);
+    ctx.fillStyle = "rgba(121, 101, 73, 0.22)"; ctx.fillRect(plank * 64, 0, 0.65, 256);
+    ctx.fillStyle = "rgba(255, 249, 228, 0.22)"; ctx.fillRect(plank * 64 + 1, 0, 0.5, 256);
+  }
+  for (let i = 0; i < 185; i++) {
+    const x = rand() * 256, bend = rand() * Math.PI * 2;
+    ctx.strokeStyle = `rgba(119, 95, 58, ${0.018 + rand() * 0.06})`;
+    ctx.lineWidth = 0.3 + rand() * 0.45;
+    ctx.beginPath(); ctx.moveTo(x, 0);
+    for (let y = 8; y <= 256; y += 8) ctx.lineTo(x + Math.sin(y / 256 * Math.PI * 2 + bend) * 0.9, y);
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(3, 1);
+  texture.anisotropy = 4;
+  return texture;
+}
 
 /** 직사각 팔작 느낌의 모임지붕: 처마는 모서리로 갈수록 들리고 면은 살짝 오목하다. */
 function rectHipRoofGeometry(halfX: number, halfZ: number, rise: number, lift: number, sag: number, nx = 40, nz = 22): THREE.BufferGeometry {
@@ -76,29 +106,54 @@ export interface GardenStructures {
 interface Part { geometry: THREE.BufferGeometry; material: THREE.Material; name: string }
 
 /**
- * 청우헌·연향정·구곡교·잔교·남문·석등·샹들리에. 재질별로 지오메트리를 합쳐 드로우를 줄이고, 토운 재질로 먹그림처럼 평평하게 칠한다.
+ * 청우헌·연향정·구곡교·잔교·남문·석등·샹들리에. 자연 재료의 거친 표면과 부드러운 모서리,
+ * 작은 생활 소품을 재질별로 합쳐 정원의 실내를 차분하게 만든다.
  * 반사 레이어(2)에 올려 물에 비치게 한다. 글자·등불은 밤에 따뜻하게 켜진다.
  */
-export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: THREE.Texture }, gradient: THREE.DataTexture, mobile: boolean): GardenStructures {
+export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: THREE.Texture }, _gradient: THREE.DataTexture, mobile: boolean): GardenStructures {
   const root = new THREE.Group(); root.name = "garden-structures"; scene.add(root);
   let disposed = false;
-  const tiles = roofTileTexture(), plaster = plasterTexture(), lattice = latticeTexture();
-  const toon = (color: number, extra: Partial<THREE.MeshToonMaterialParameters> = {}) => new THREE.MeshToonMaterial({ color, gradientMap: gradient, ...extra });
-  const stone = toon(0x8d8a82), darkStone = toon(0x5f5e5a), plinth = toon(0x75736d);
-  const wood = toon(0xa9865e, { map: textures.wood }), darkWood = toon(0x5a4030, { map: textures.wood }), floorWood = toon(0xc3a070, { map: textures.wood });
-  const vermilion = toon(0x9c3a2a), tile = toon(0xb8c0ca, { map: tiles }), ridge = toon(0x323a45), frame = toon(0x2b2f36);
-  const plasterMat = toon(0xf1ece2, { map: plaster }), underside = toon(0x7a5a40, { side: THREE.BackSide }), ceiling = toon(0x6b4f38);
-  const latticeMat = new THREE.MeshBasicMaterial({ map: lattice, color: 0xe8dcc0, toneMapped: true });
+  const tiles = roofTileTexture(), plaster = plasterTexture(), lattice = latticeTexture(), timber = gardenTimberTexture();
+  const surface = (name: string, color: number, extra: THREE.MeshStandardMaterialParameters = {}) => {
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.86, metalness: 0, ...extra });
+    material.name = name;
+    return material;
+  };
+  const stone = surface("limestone", 0xb6b3a5), darkStone = surface("wet-stone", 0x656d68), plinth = surface("stone-foundation", 0x96998b);
+  const wood = surface("warm-oak", 0xdbc7a8, { map: timber, roughness: 0.73 });
+  const darkWood = surface("weathered-timber", 0x927858, { map: timber }), floorWood = surface("oak-floor", 0xe8d5b6, { map: timber, roughness: 0.78 });
+  const pavilionWood = surface("pavilion-timber", 0x998261, { map: timber });
+  const tile = surface("charcoal-tiles", 0x939b98, { map: tiles, bumpMap: tiles, bumpScale: 0.035, roughness: 0.76 });
+  const ridge = surface("slate-ridge", 0x434c49), frame = surface("bronze-window-frame", 0x807d68, { roughness: 0.65, metalness: 0.12 });
+  const plasterMat = surface("ivory-plaster", 0xf0ece0, { map: plaster, bumpMap: plaster, bumpScale: 0.025 });
+  const underside = surface("eave-underside", 0x927b59, { side: THREE.BackSide }), ceiling = surface("timber-ceiling", 0xc5b18b, { map: timber });
+  const linen = surface("linen-cushions", 0xe9e1ce, { roughness: 1 }), sageLinen = surface("sage-cushions", 0xaeb8a1, { roughness: 1 });
+  const ceramic = surface("ivory-ceramic", 0xe8e4d7, { roughness: 0.3 });
+  const deskShade = surface("ivory-lamp-shades", 0xf1e7d4, { roughness: 0.65, emissive: 0x000000 });
+  const latticeMat = new THREE.MeshBasicMaterial({ map: lattice, color: 0xeee6d2, toneMapped: true });
   const paper = new THREE.MeshBasicMaterial({ color: 0xfff1d6, toneMapped: false });
-  const crystal = new THREE.MeshToonMaterial({ color: 0xf2f4f8, gradientMap: gradient, emissive: 0x000000, transparent: true, opacity: 0.92 });
-  const brass = toon(0x6b5a3a);
+  const crystal = surface("champagne-glass", 0xf2e9d5, { roughness: 0.22, emissive: 0x000000, transparent: true, opacity: 0.72, depthWrite: false });
+  const brass = surface("aged-brass", 0x9c885d, { roughness: 0.42, metalness: 0.42 });
   const plaque = new THREE.MeshBasicMaterial({ map: plaqueTexture("聽雨軒 · 청우헌"), toneMapped: true });
-  const materials: THREE.Material[] = [stone, darkStone, plinth, wood, darkWood, floorWood, vermilion, tile, ridge, frame, plasterMat, underside, ceiling, latticeMat, paper, crystal, brass, plaque];
+  const materials: THREE.Material[] = [stone, darkStone, plinth, wood, darkWood, floorWood, pavilionWood, tile, ridge, frame, plasterMat, underside, ceiling, linen, sageLinen, ceramic, deskShade, latticeMat, paper, crystal, brass, plaque];
   const owned: THREE.BufferGeometry[] = [];
   const parts: Part[] = [];
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), euler = new THREE.Euler();
-  const box = new THREE.BoxGeometry(1, 1, 1), cylinder = new THREE.CylinderGeometry(1, 1, 1, 10, 1);
-  owned.push(box, cylinder);
+  const box = new THREE.BoxGeometry(1, 1, 1), cylinder = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
+  const softWood = new RoundedBoxGeometry(1, 1, 1, 1, 0.035);
+  const cushion = new RoundedBoxGeometry(1.12, 0.09, 0.48, 2, 0.042);
+  const saucer = new THREE.CylinderGeometry(0.15, 0.12, 0.022, 14);
+  const cup = new THREE.LatheGeometry([
+    new THREE.Vector2(0, 0), new THREE.Vector2(0.065, 0), new THREE.Vector2(0.085, 0.1),
+    new THREE.Vector2(0.074, 0.108), new THREE.Vector2(0.056, 0.025), new THREE.Vector2(0, 0.025),
+  ], 14);
+  const vase = new THREE.LatheGeometry([
+    new THREE.Vector2(0, 0), new THREE.Vector2(0.12, 0), new THREE.Vector2(0.18, 0.12),
+    new THREE.Vector2(0.16, 0.31), new THREE.Vector2(0.07, 0.42), new THREE.Vector2(0.062, 0.45),
+    new THREE.Vector2(0.047, 0.45), new THREE.Vector2(0.05, 0.4),
+  ], 12);
+  const bud = new THREE.SphereGeometry(0.042, 6, 4), lampShade = new THREE.SphereGeometry(1, 12, 8);
+  owned.push(box, cylinder, softWood, cushion, saucer, cup, vase, bud, lampShade);
   const place = (name: string, geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, ry = 0, rx = 0, rz = 0) => {
     const piece = geometry.clone();
     matrix.compose(new THREE.Vector3(x, y, z), quaternion.setFromEuler(euler.set(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
@@ -120,13 +175,28 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       const x0 = side * (HALL_STAIR_HALF + 0.6), x1 = side * (hx - 1.4);
       const centre = (x0 + x1) / 2, width = Math.abs(x1 - x0);
       const row = HALL.glassZ + (tier.from + tier.to) / 2;
-      place("bench", box, wood, HALL.x + centre, tier.y + HALL_BENCH_HEIGHT - 0.04, row, width, 0.08, 0.5);
+      // The linen top ends at the server's existing seat height; avatars still sit on the surface.
+      place("bench", softWood, wood, HALL.x + centre, tier.y + HALL_BENCH_HEIGHT - 0.13, row, width, 0.08, 0.5);
       for (const lx of HALL_SEAT_LX) if (Math.sign(lx) === side) place("bench-leg", box, darkWood, HALL.x + lx, tier.y + HALL_BENCH_HEIGHT / 2 - 0.04, row, 0.1, HALL_BENCH_HEIGHT - 0.08, 0.42);
-      place("desk", box, wood, HALL.x + centre, tier.y + 0.7, row - 0.95, width, 0.05, 0.55);
+      for (const lx of HALL_SEAT_LX) if (Math.sign(lx) === side) {
+        place("linen-seat", cushion, tier === HALL_TIERS[1] || tier === HALL_TIERS[3] ? sageLinen : linen,
+          HALL.x + lx, tier.y + HALL_BENCH_HEIGHT - 0.045, row);
+      }
+      place("desk", softWood, wood, HALL.x + centre, tier.y + 0.7, row - 0.95, width, 0.05, 0.55);
       for (const lx of [x0 + side * 0.2, x1 - side * 0.2]) place("desk-leg", box, darkWood, HALL.x + lx, tier.y + 0.35, row - 0.95, 0.08, 0.7, 0.45);
       for (const lx of HALL_SEAT_LX) if (Math.sign(lx) === side) {
         place("desk-lamp", cylinder, brass, HALL.x + lx + 0.5 * side, tier.y + 0.93, row - 1.05, 0.02, 0.4, 0.02);
-        place("desk-lamp-shade", cylinder, paper, HALL.x + lx + 0.5 * side, tier.y + 1.12, row - 1.05, 0.11, 0.1, 0.11);
+        place("desk-lamp-base", cylinder, brass, HALL.x + lx + 0.5 * side, tier.y + 0.74, row - 1.05, 0.1, 0.024, 0.1);
+        place("desk-lamp-shade", lampShade, deskShade, HALL.x + lx + 0.5 * side, tier.y + 1.12, row - 1.05, 0.16, 0.075, 0.16);
+        place("tea-saucer", saucer, ceramic, HALL.x + lx - 0.28 * side, tier.y + 0.736, row - 0.91);
+        place("tea-cup", cup, ceramic, HALL.x + lx - 0.28 * side, tier.y + 0.748, row - 0.91);
+      }
+      // A single small branch at the far end of each desk leaves the aisle and seat approaches open.
+      const vaseX = HALL.x + x1 - side * 0.3, vaseZ = row - 1.02;
+      place("ceramic-vase", vase, ceramic, vaseX, tier.y + 0.726, vaseZ);
+      place("flower-branch", cylinder, darkWood, vaseX + side * 0.03, tier.y + 1.35, vaseZ, 0.012, 0.55, 0.012, 0, 0, -side * 0.16);
+      for (let flower = 0; flower < 4; flower++) {
+        place("flower-bud", bud, linen, vaseX + side * (0.01 + flower * 0.025), tier.y + 1.24 + flower * 0.11, vaseZ + Math.sin(flower * 2.4) * 0.04, 1.25, 0.8, 1);
       }
     }
   }
@@ -177,7 +247,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   const paneW = (hx * 2) / 7, glassY0 = HALL_TIERS[0].y + 0.12, paneH = (eaveY - glassY0) / 4;
   const panes: THREE.BufferGeometry[] = [];
   for (let c = 0; c < 7; c++) for (let r = 0; r < 4; r++) {
-    const pane = new THREE.PlaneGeometry(paneW - 0.14, paneH - 0.12);
+    const pane = new THREE.PlaneGeometry(paneW - 0.07, paneH - 0.055);
     pane.translate(HALL.x - hx + paneW * (c + 0.5), glassY0 + paneH * (r + 0.5), HALL.glassZ);
     panes.push(pane);
   }
@@ -193,8 +263,8 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   glassMesh.name = "garden-hall-glass"; glassMesh.renderOrder = 6;
   glassMesh.layers.enable(2);
   root.add(glassMesh);
-  for (let c = 0; c <= 7; c++) place("mullion", box, frame, HALL.x - hx + paneW * c, (glassY0 + eaveY) / 2, HALL.glassZ, 0.16, eaveY - glassY0, 0.18);
-  for (let r = 0; r <= 4; r++) place("mullion", box, frame, HALL.x, glassY0 + paneH * r - (r === 4 ? 0.1 : 0), HALL.glassZ, hx * 2 + 0.2, 0.14, 0.18);
+  for (let c = 0; c <= 7; c++) place("mullion", box, frame, HALL.x - hx + paneW * c, (glassY0 + eaveY) / 2, HALL.glassZ, 0.08, eaveY - glassY0, 0.12);
+  for (let r = 0; r <= 4; r++) place("mullion", box, frame, HALL.x, glassY0 + paneH * r - (r === 4 ? 0.1 : 0), HALL.glassZ, hx * 2 + 0.2, 0.065, 0.12);
   place("sill", box, darkStone, HALL.x, glassY0 - 0.08, HALL.glassZ, hx * 2 + 0.4, 0.16, 0.5);
   // 지붕·천장·용마루
   const roofGeometry = rectHipRoofGeometry(hx + 1.8, depth / 2 + 1.8, HALL.roofRise, 0.9, 0.4);
@@ -208,6 +278,8 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   for (const side of [-1, 1]) place("ridge-end", cylinder, ridge, HALL.x + side * (hx - depth / 2 + 0.6), eaveY + 0.25 + HALL.roofRise + 0.35, cz, 0.32, 0.5, 0.32);
   place("ceiling", box, ceiling, HALL.x, eaveY - 0.05, cz, hx * 2, 0.1, depth);
   for (let i = 0; i < 6; i++) place("rafter", box, darkWood, HALL.x - 12.5 + i * 5, eaveY - 0.35, cz, 0.3, 0.5, depth);
+  // Fine ceiling slats read as crafted wood without additional materials or lights.
+  for (let i = 0; i < 37; i++) place("ceiling-slat", box, wood, HALL.x - hx + 0.4 + i * (hx * 2 - 0.8) / 36, eaveY - 0.16, cz, 0.075, 0.12, depth - 0.25);
   // 샹들리에 두 개: 고리 세 줄의 크리스털 + 중심 봉
   const bead = new THREE.OctahedronGeometry(0.065, 0);
   owned.push(bead);
@@ -226,7 +298,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
         for (let drop = 0; drop < 3; drop++) beadSites.push(new THREE.Vector3(x + Math.cos(a) * radius, y - 0.1 - drop * 0.14, z + Math.sin(a) * radius));
       }
     }
-    place("chandelier-bulb", new THREE.SphereGeometry(0.3, 10, 8), paper, x, top - 4.3, z);
+    place("chandelier-bulb", lampShade, paper, x, top - 4.3, z, 0.3, 0.3, 0.3);
   }
   const beads = new THREE.InstancedMesh(bead, crystal, beadSites.length);
   beads.name = "garden-chandelier-crystals";
@@ -255,11 +327,11 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
     local("trim", box, darkWood, 0, floorY - 0.2, 0, half * 2 + 0.1, 0.12, half * 2 + 0.1);
     for (const [lx, lz] of [[-2.15, -2.15], [2.15, -2.15], [-2.15, 2.15], [2.15, 2.15], [-2.15, 0], [2.15, 0]]) {
       local("stone", footing, stone, lx, GROUND_Y + 0.2, lz, 1, 0.42, 1);
-      local("post", cylinder, vermilion, lx, floorY + PAVILION_POST_HEIGHT / 2, lz, 0.14, PAVILION_POST_HEIGHT, 0.14);
+      local("post", cylinder, pavilionWood, lx, floorY + PAVILION_POST_HEIGHT / 2, lz, 0.14, PAVILION_POST_HEIGHT, 0.14);
     }
     for (const side of [-1, 1]) {
-      local("beam", box, vermilion, 0, postTop + 0.11, side * 2.15, half * 2 + 0.6, 0.22, 0.2);
-      local("beam", box, vermilion, side * 2.15, postTop + 0.11, 0, 0.2, 0.22, half * 2 + 0.6);
+      local("beam", box, pavilionWood, 0, postTop + 0.11, side * 2.15, half * 2 + 0.6, 0.22, 0.2);
+      local("beam", box, pavilionWood, side * 2.15, postTop + 0.11, 0, 0.2, 0.22, half * 2 + 0.6);
     }
     local("roof", roofSq, tile, 0, postTop + 0.22, 0);
     local("roof-underside", roofSqUnder, underside, 0, postTop + 0.22, 0, 0.985, 1, 0.985);
@@ -333,7 +405,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   /* ---------------- 석등 ---------------- */
   const lanternBody = stoneLanternGeometry();
   owned.push(lanternBody);
-  const lanternMaterial = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradient });
+  const lanternMaterial = surface("carved-stone-lanterns", 0xd2cebd, { vertexColors: true });
   materials.push(lanternMaterial);
   const lanterns = new THREE.InstancedMesh(lanternBody, lanternMaterial, GARDEN_LANTERNS.length);
   lanterns.name = "garden-stone-lanterns";
@@ -398,7 +470,8 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   }
   for (const part of parts) part.geometry.dispose();
 
-  const warm = new THREE.Color(0xffc27a), dim = new THREE.Color(0xe9dcc8), latticeDay = new THREE.Color(0xe8dcc0), latticeNight = new THREE.Color(0xffd9a0);
+  const warm = new THREE.Color(0xffd19b), dim = new THREE.Color(0xe9e2d4), latticeDay = new THREE.Color(0xeee6d2), latticeNight = new THREE.Color(0xffe3b7);
+  const crystalGlow = new THREE.Color(0xffd7a2);
   let lastRain = 0;
   return {
     root,
@@ -406,12 +479,13 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       if (disposed) return;
       const lamps = THREE.MathUtils.clamp(d.lanterns, 0, 1);
       const indoor = Math.max(lamps, rain * 0.55);
-      night.value = lamps;
+      night.value = indoor;
       glow.visible = indoor > 0.02;
       paper.color.copy(dim).lerp(warm, indoor);
+      deskShade.emissive.setHex(0x000000).lerp(warm, indoor * 0.26);
       windowMaterial.color.setHex(0x2a2622).lerp(warm, lamps);
       latticeMat.color.copy(latticeDay).lerp(latticeNight, indoor);
-      crystal.emissive.setHex(0x000000).lerp(new THREE.Color(0xffb45a), indoor * 0.5);
+      crystal.emissive.setHex(0x000000).lerp(crystalGlow, indoor * 0.25);
       glass.uniforms.uNight.value = indoor;
     },
     setRain(rain) {
@@ -428,7 +502,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       root.removeFromParent(); root.clear();
       for (const geometry of [...owned, ...merged]) geometry.dispose();
       for (const material of materials) material.dispose();
-      tiles.dispose(); plaster.dispose(); lattice.dispose();
+      tiles.dispose(); plaster.dispose(); lattice.dispose(); timber.dispose();
       (plaque.map as THREE.Texture | null)?.dispose();
     },
   };

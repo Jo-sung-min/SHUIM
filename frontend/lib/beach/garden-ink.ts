@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { seededRandom } from "./bamboo-trail";
-import { GARDEN_POLYLINES, GARDEN_PATH_WIDTH, GARDEN_LANTERNS, GATE_YARD, LAKE, lakeSigned, HALL, GARDEN_PIERS, pierEnd, GARDEN_BRIDGE } from "./garden-layout";
+import { GARDEN_POLYLINES, GARDEN_PATH_WIDTH, GARDEN_LANTERNS, GARDEN_WILLOWS, GATE_YARD, LAKE, lakeSigned, HALL, GARDEN_PIERS, pierEnd, GARDEN_BRIDGE } from "./garden-layout";
 
 /**
  * 봄물 정원의 수묵 텍스처. 전부 Canvas 2D 로 실행 시점에 그린다 (외부 이미지·CDN 없음).
@@ -306,7 +306,7 @@ export function latticeTexture(): THREE.Texture {
   return texture(canvas, true, true);
 }
 
-/** 월드 x −62~62, z −32~102 를 1024×1100 에 굽는 바닥 마스크. R: 흙길·마당, G: 돌판, B: 등불 웅덩이. */
+/** 월드 x −62~62, z −32~102 를 1024×1100 에 굽는 바닥 마스크. R: 길, G: 돌, B: 등불, A: 나무의 부드러운 접지·잎그늘. */
 export const GARDEN_MASK = { minX: -62, minZ: -32, width: 124, depth: 134, sizeX: 1024, sizeZ: 1100 } as const;
 export function gardenGroundMaskTexture(): THREE.Texture {
   if (typeof document === "undefined") return new THREE.Texture();
@@ -371,13 +371,41 @@ export function gardenGroundMaskTexture(): THREE.Texture {
     ctx.fillStyle = gradient;
     ctx.fillRect(lantern.x - radius, lantern.z - radius, radius * 2, radius * 2);
   }
-  const t = new THREE.CanvasTexture(canvas);
+  // Preserve the painted RGB exactly. Canvas alpha would premultiply away the path/stone/lamp
+  // data where there is no shadow, so pack this independent mask channel directly into RGBA.
+  const data = new Uint8Array(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+  for (let i = 3; i < data.length; i += 4) data[i] = 0;
+  for (const tree of GARDEN_WILLOWS) {
+    const radius = 3.7 * tree.scale, cx = tree.x - 0.45 * tree.scale, cz = tree.z + 0.55 * tree.scale;
+    const minX = Math.max(0, Math.floor((cx - radius * 1.2 - GARDEN_MASK.minX) * sx));
+    const maxX = Math.min(canvas.width - 1, Math.ceil((cx + radius * 1.2 - GARDEN_MASK.minX) * sx));
+    const minZ = Math.max(0, Math.floor((cz - radius - GARDEN_MASK.minZ) * sz));
+    const maxZ = Math.min(canvas.height - 1, Math.ceil((cz + radius - GARDEN_MASK.minZ) * sz));
+    const phase = tree.seed * Math.PI * 2;
+    for (let iz = minZ; iz <= maxZ; iz++) for (let ix = minX; ix <= maxX; ix++) {
+      const x = GARDEN_MASK.minX + (ix + 0.5) / sx, z = GARDEN_MASK.minZ + (iz + 0.5) / sz;
+      const dx = x - cx, dz = z - cz, angle = Math.atan2(dz, dx);
+      const edge = 1 + 0.1 * Math.sin(angle * 3 + phase) + 0.065 * Math.cos(angle * 5 - phase);
+      const d = Math.hypot(dx / radius, dz / (radius * 0.85)) / edge;
+      const envelope = Math.max(0, 1 - d * d);
+      const dapple = 0.78 + 0.12 * Math.sin(dx * 3.5 + dz * 1.8 + phase)
+        + 0.1 * Math.sin(dx * 6.7 - phase) * Math.cos(dz * 5.2 + phase);
+      const canopy = 0.38 * envelope * envelope * dapple;
+      const trunkDistance = Math.hypot(x - tree.x, z - tree.z);
+      const contact = 0.65 * Math.exp(-Math.pow(trunkDistance / 0.24, 2)) * Math.max(0, 1 - trunkDistance / 0.65);
+      const index = (iz * canvas.width + ix) * 4 + 3;
+      data[index] = Math.max(data[index], Math.round(Math.max(canopy, contact) * 255));
+    }
+  }
+  const t = new THREE.DataTexture(data, canvas.width, canvas.height, THREE.RGBAFormat);
   t.flipY = false;
   t.colorSpace = THREE.NoColorSpace;
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = true;
   t.anisotropy = 4;
+  t.needsUpdate = true;
   return t;
 }
 

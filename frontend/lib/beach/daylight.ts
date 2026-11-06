@@ -230,18 +230,18 @@ export function bambooDaylightAt(hourIn: number): Daylight {
 }
 
 /**
- * 봄물 정원: 담채 수묵이라 안개가 종이빛(낮)·복숭아빛(노을)·푸른 먹(밤)이고, 호수가 트여 있어 멀리까지 보인다.
- * 캐릭터 색조는 살짝 탈색해 먹그림 위에 선 듯하게. 밤 팔레트·등불 타이밍은 다른 지도와 같다.
+ * 봄물 정원: 차분한 진주빛 안개가 봄 산수와 호수를 잇는다. 가까운 소재의 색은 살리고
+ * 밤에는 푸른 산과 따뜻한 등불이 대비된다. 밤 팔레트·등불 타이밍은 다른 지도와 같다.
  */
 export function gardenDaylightAt(hourIn: number): Daylight {
   const base = daylightAt(hourIn);
   const night = Math.max(0, Math.min(1, base.stars));
-  const paper: RGB = [0.95, 0.93, 0.88];
+  const paper: RGB = [0.89, 0.94, 0.94];
   const inkNight: RGB = [0.05, 0.08, 0.13];
-  const fog = mixRgb(mixRgb(base.fog, paper, 0.72 * (1 - night)), inkNight, base.deepNight);
+  const fog = mixRgb(mixRgb(base.fog, paper, 0.64 * (1 - night)), inkNight, base.deepNight);
   const grey = (base.tint[0] + base.tint[1] + base.tint[2]) / 3;
-  const washed: RGB = [mix(base.tint[0], grey, 0.18), mix(base.tint[1], grey, 0.18), mix(base.tint[2], grey, 0.18)];
-  return { ...base, fog, fogNear: 40, fogFar: 190, tint: washed };
+  const washed: RGB = [mix(base.tint[0], grey, 0.06), mix(base.tint[1], grey, 0.06), mix(base.tint[2], grey, 0.06)];
+  return { ...base, fog, fogNear: 55, fogFar: 220, tint: washed };
 }
 
 /** 지금 시각 (분까지, 0~24) */

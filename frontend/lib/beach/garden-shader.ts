@@ -1,9 +1,8 @@
 import { UYUNI_SKY_FUNCTIONS, UYUNI_SKY_UNIFORMS } from "./uyuni-shader";
 
 /**
- * 봄물 정원 셰이더. 하늘은 우유니의 절차적 하늘에서 바다·해안을 빼고 지평선을 종이빛 안개로 풀었다.
- * 물체는 "먹 조명"(반구광 + 3단 토운 햇빛 + 실루엣 먹선 + 종이결)으로 직접 비추고, 색은 선형 공간에서 계산한 뒤
- * three 의 톤매핑·색공간·안개 조각을 붙여 기본 재질과 같은 결과를 낸다. 물만 반사 렌더 타깃을 추가로 읽는다.
+ * 봄 산수 이미지와 절차적 하늘을 안개로 연결한다. 가까운 식재는 부드러운 조명을 받고,
+ * 수면에는 건축·산·버드나무가 실제로 비친다. 색은 선형 공간에서 조명한 뒤 화면 색공간으로 변환한다.
  */
 export const GARDEN_SKY_GLSL = `${UYUNI_SKY_FUNCTIONS}
 uniform vec3 uHorizonFog;
@@ -14,7 +13,7 @@ vec3 gardenSky(vec3 direction) {
   float night = smoothstep(0.55, 1.0, uStars);
   vec4 day = vec4(0.0);
   if (night < 1.0) {
-    day = uyuniDay(d);
+    day = daylightSky(d, 0.1);
     if (uStars > 0.0) {
       vec3 firstStars = uyuniStars(d, 220.0, 0.988, 0.0) + uyuniStars(d, 70.0, 0.992, 19.7) * 0.85;
       day.rgb += firstStars * uStars * smoothstep(0.08, 0.34, up) * (1.0 - day.a * 0.92);
@@ -23,8 +22,8 @@ vec3 gardenSky(vec3 direction) {
   vec3 dark = night > 0.0 ? uyuniNight(d) : vec3(0.0);
   vec3 sky = uyuniHorizonAir(mix(day.rgb, dark, night), d, night);
   float luma = dot(sky, vec3(0.2126, 0.7152, 0.0722));
-  sky = mix(sky, vec3(luma), 0.16 * (1.0 - night));
-  sky = mix(sky, uHorizonFog, (1.0 - smoothstep(0.0, 0.3, up)) * 0.9);
+  sky = mix(sky, vec3(luma), 0.05 * (1.0 - night));
+  sky = mix(sky, uHorizonFog, (1.0 - smoothstep(0.0, 0.26, up)) * 0.85);
   if (night > 0.0) {
     vec3 moonDir = normalize(vec3(-0.46 + 0.08 * uMoon.x, 0.3 + 0.08 * max(0.0, uMoon.y), 1.0));
     vec3 lunar = (d - moonDir) / 0.026;
@@ -71,7 +70,7 @@ uniform vec4 uLanterns[4];
 uniform float uInkRim;
 ${GARDEN_NOISE_GLSL}
 float gardenToon(float nl) {
-  return smoothstep(0.02, 0.14, nl) * 0.42 + smoothstep(0.34, 0.5, nl) * 0.36 + smoothstep(0.74, 0.9, nl) * 0.22;
+  return smoothstep(-0.12, 1.0, nl);
 }
 vec3 gardenLight(vec3 world, vec3 normal, vec3 viewDir, float shade) {
   float up = normal.y * 0.5 + 0.5;
@@ -85,10 +84,11 @@ vec3 gardenLight(vec3 world, vec3 normal, vec3 viewDir, float shade) {
     light += uLanternColor * falloff * facing * uNight;
   }
   float rim = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-  return light * (1.0 - rim * uInkRim);
+  // Match the diffuse exposure of the physical timber/stone materials around the lake.
+  return light * (1.0 - rim * uInkRim) * mix(0.48, 0.92, uNight);
 }
 float gardenGrain() {
-  return 0.965 + 0.07 * gardenHash(floor(gl_FragCoord.xy * 0.5));
+  return 0.99 + 0.02 * gardenHash(floor(gl_FragCoord.xy));
 }`;
 
 export const GARDEN_GROUND_VERT = `
@@ -124,7 +124,7 @@ ${GARDEN_LIGHT_GLSL}
 void main() {
   vec2 p = vWorld.xz;
   vec2 uv = (p - uMaskRect.xy) * uMaskRect.zw;
-  vec3 mask = (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) ? texture2D(uMask, uv).rgb : vec3(0.0);
+  vec4 mask = (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) ? texture2D(uMask, uv) : vec4(0.0);
   vec2 luv = (p - uLakeRect.xy) * uLakeRect.zw;
   float shore = (texture2D(uLake, luv).r - 0.5) * 12.0;
   float fine = gardenNoise(p * 6.0);
@@ -134,6 +134,10 @@ void main() {
   grass = mix(grass, uGrassDeep, smoothstep(0.55, 0.85, wash) * 0.6);
   float path = smoothstep(0.3, 0.6, mask.r + (fine - 0.5) * 0.2);
   vec3 earth = mix(uEarth, uEarthLight, fine * 0.5 + coarse * 0.5);
+  // Small gravel and moss follow world coordinates, so they do not shimmer with the camera.
+  float grit = gardenNoise(p * 34.0);
+  earth *= 0.88 + grit * 0.24;
+  grass *= 0.92 + gardenNoise(p * 19.0) * 0.16;
   float slab = smoothstep(0.35, 0.55, mask.g + (fine - 0.5) * 0.08);
   vec3 stone = mix(uStone, uStoneLight, gardenNoise(p * 4.0 + 2.0) * 0.6 + fine * 0.4);
   vec3 color = mix(grass, mix(earth, stone, slab), path);
@@ -143,6 +147,7 @@ void main() {
   vec3 normal = normalize(vNormal);
   vec3 viewDir = normalize(cameraPosition - vWorld);
   color *= gardenLight(vWorld, normal, viewDir, 0.9) * gardenGrain();
+  color *= 1.0 - mask.a * mix(0.55, 0.25, uNight);
   color += uPoolColor * mask.b * uNight;
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
@@ -193,8 +198,8 @@ void main() {
   float shore = (texture2D(uLake, luv).r - 0.5) * 12.0;
   if (shore > 1.4) discard;
   // 잔물결: 느린 두 파동 + 미세한 노이즈
-  vec2 slope = vec2(cos(p.x * 0.9 + p.y * 0.35 + uTime * 0.5), sin(p.y * 0.8 - p.x * 0.3 + uTime * 0.42)) * 0.012;
-  slope += (vec2(gardenNoise(p * 1.7 + uTime * 0.12), gardenNoise(p * 1.7 + 5.0 - uTime * 0.1)) - 0.5) * 0.02;
+  vec2 slope = vec2(cos(p.x * 0.9 + p.y * 0.35 + uTime * 0.5), sin(p.y * 0.8 - p.x * 0.3 + uTime * 0.42)) * 0.004;
+  slope += (vec2(gardenNoise(p * 1.7 + uTime * 0.12), gardenNoise(p * 1.7 + 5.0 - uTime * 0.1)) - 0.5) * 0.006;
   float rings = 0.0;
   if (uRain > 0.01) {
     vec2 cell = floor(p / 0.85);
@@ -232,29 +237,31 @@ void main() {
   vec3 reflection = skyRef;
   if (uReflect > 0.0) {
     vec4 proj = vReflectUv;
-    proj.xy += slope * proj.w * 2.4;
+    proj.xy += slope * proj.w * 0.45;
     vec4 rt = texture2DProj(uReflection, proj);
     reflection = mix(skyRef, rt.rgb, clamp(rt.a, 0.0, 1.0) * uReflect);
   }
   float facing = clamp(dot(-incoming, normal), 0.0, 1.0);
   float fresnel = pow(1.0 - facing, 4.0);
   float depth = clamp(-shore / 7.0, 0.0, 1.0);
-  vec3 body = mix(uJadeShore, mix(uJade, uJadeDeep, depth), smoothstep(-0.2, -1.6, shore));
-  float reflectAmount = mix(0.5, 0.93, fresnel) * mix(1.0, 0.72, uRain);
+  vec3 waterLight = mix(vec3(0.88, 0.96, 1.0), vec3(0.035, 0.065, 0.115), uNight);
+  vec3 litShore = uJadeShore * waterLight;
+  vec3 body = mix(litShore, mix(uJade, uJadeDeep, depth) * waterLight, 1.0 - smoothstep(-1.6, -0.2, shore));
+  float reflectAmount = mix(0.56, 0.94, fresnel) * mix(1.0, 0.8, uRain);
   vec3 color = mix(body, reflection, reflectAmount);
   // 해·달의 긴 반짝임
   vec3 sunDir = normalize(uSun);
   float glint = pow(max(dot(reflected, sunDir), 0.0), 320.0) * step(0.0, uSun.y);
   color += srgbToLinearApprox(uSunColor) * glint * 0.5 * (1.0 - uRain * 0.6);
   color += vec3(0.5, 0.6, 0.65) * rings * mix(0.5, 0.25, uNight);
-  color = mix(color, uJadeShore, (1.0 - smoothstep(-0.5, 0.0, shore)) * 0.35);
+  color = mix(color, litShore, smoothstep(-1.2, 0.25, shore) * 0.18);
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
 }`;
 
-/** 원경 산수 띠: 종이빛 안개 위에 먹이 번진 능선. 표시 색공간에서 바로 섞는다(하늘과 같은 규약, 안개 없음). */
+/** 생성한 봄 산수 파노라마. 거울 반복으로 세로 이음새를 없애고 하늘 쪽은 안개로 부드럽게 사라진다. */
 export const GARDEN_MOUNTAIN_VERT = `
 varying vec2 vUv;
 void main() {
@@ -263,17 +270,31 @@ void main() {
 }`;
 export const GARDEN_MOUNTAIN_FRAG = `
 uniform sampler2D uInk;
+uniform float uPhotographic;
 uniform vec3 uFogColor;
 uniform vec3 uInkColor;
 uniform float uNight;
 uniform float uRain;
 varying vec2 vUv;
 void main() {
+  if (uPhotographic > 0.5) {
+    float x = 1.0 - abs(fract(vUv.x * 2.0) * 2.0 - 1.0);
+    vec3 landscape = texture2D(uInk, vec2(x, vUv.y)).rgb;
+    float luma = dot(landscape, vec3(0.2126, 0.7152, 0.0722));
+    landscape = mix(landscape, vec3(luma), 0.08 + uRain * 0.25);
+    landscape *= mix(vec3(1.0, 1.0, 0.99), vec3(0.12, 0.19, 0.32), uNight);
+    float haze = 0.1 + smoothstep(0.35, 0.88, vUv.y) * 0.72 + uRain * 0.3;
+    landscape = mix(landscape, uFogColor, clamp(haze, 0.0, 0.96));
+    float cover = (1.0 - smoothstep(0.54, 0.94, vUv.y)) * smoothstep(0.0, 0.08, vUv.y);
+    gl_FragColor = vec4(pow(max(landscape, vec3(0.0)), vec3(2.2)), cover);
+  } else {
   vec4 ink = texture2D(uInk, vUv);
   float cover = min(1.0, ink.a * 1.7) * (1.0 - uRain * 0.45);
   if (cover < 0.004) discard;
   vec3 tone = mix(uInkColor, uFogColor, ink.r);
-  gl_FragColor = vec4(mix(uFogColor, tone, cover * 0.95), 1.0);
+  gl_FragColor = vec4(pow(mix(uFogColor, tone, cover * 0.95), vec3(2.2)), 1.0);
+  }
+  #include <colorspace_fragment>
 }`;
 
 /** 버드나무 가닥·갈대: 인스턴스 십자 빌보드. aLeafSeed.w 가 1 이면 위(가지)에 매달려 끝이 흔들리고, 0 이면 밑동에서 자라 끝이 흔들린다. */
@@ -287,14 +308,15 @@ varying vec3 vWorld;
 varying float vTint;
 #include <fog_pars_vertex>
 void main() {
-  vUv = uv;
   vTint = aLeafSeed.y;
   float hanging = aLeafSeed.w;
+  // The hanging quad grows downward; keep the photographed crown above its leaf tips.
+  vUv = vec2(uv.x, mix(uv.y, 1.0 - uv.y, hanging));
   float c = cos(aLeafSeed.z), s = sin(aLeafSeed.z);
   float along = position.y + 0.5;
   float y = mix(along, -along, hanging) * aLeaf.w;
-  float reach = mix(along, along, 1.0);
-  vec3 local = vec3(position.x * c * aLeaf.w, y, position.x * s * aLeaf.w);
+  float reach = along * along;
+  vec3 local = vec3((position.x * c - position.z * s) * aLeaf.w, y, (position.x * s + position.z * c) * aLeaf.w);
   float phase = uTime * (0.7 + 0.2 * aLeafSeed.y) + aLeafSeed.x;
   float sway = (sin(phase) * 0.14 + sin(phase * 2.3) * 0.04) * uSway * reach * aLeaf.w;
   vec3 world = aLeaf.xyz + local + vec3(sway, 0.0, sway * 0.5);
@@ -317,7 +339,7 @@ ${GARDEN_LIGHT_GLSL}
 #include <fog_pars_fragment>
 void main() {
   vec4 leaf = texture2D(uLeaf, vUv);
-  if (leaf.a < 0.45) discard;
+  if (leaf.a < 0.32) discard;
   vec3 tint = mix(uLeafShade, uLeafLit, vTint);
   vec3 viewDir = normalize(cameraPosition - vWorld);
   vec3 light = gardenLight(vWorld, vec3(0.0, 1.0, 0.0), viewDir, 0.7) + uSunColor * uTransmit * max(uSunDir.y, 0.0);
@@ -342,7 +364,8 @@ void main() {
   vUv = (uv + vec2(mod(cell, 2.0), floor(cell / 2.0))) * 0.5;
   vTint = aPadSeed.x;
   float c = cos(aPad.w), s = sin(aPad.w);
-  vec2 local = vec2(position.x * c - position.y * s, position.x * s + position.y * c) * aPad.z * 2.0;
+  // The base plane is already horizontal (XZ); using Y here collapses every pad to a line.
+  vec2 local = vec2(position.x * c - position.z * s, position.x * s + position.z * c) * aPad.z * 2.0;
   float bob = sin(uTime * 0.9 + aPadSeed.x * 6.28) * 0.012;
   vec3 world = vec3(aPad.x + local.x, 0.03 + bob + aPadSeed.z, aPad.y + local.y);
   vWorld = world;

@@ -499,7 +499,10 @@ export class BeachEngine {
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
       wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
       wood.repeat.set(2, 2);
-      this.garden = new GardenWorld(this.scene, this.skyMat.uniforms, { wood }, this.mobile);
+      // These generated garden assets ship with the app; they do not depend on a CDN upload.
+      const landscape = this.loadEnvironmentTexture("/garden/art/spring-hills-panorama-v1.webp", false);
+      const willow = this.loadEnvironmentTexture("/garden/art/willow-canopy-v1.webp", true);
+      this.garden = new GardenWorld(this.scene, this.skyMat.uniforms, { wood, landscape, willow }, this.mobile);
       this.cove = this.garden;
       this.obstacles.push(...GARDEN_OBSTACLES.map((o) => ({ ...o })));
     } else {
