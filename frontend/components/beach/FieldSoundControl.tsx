@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, type CSSProperties } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import styles from "./FieldSoundControl.module.css";
 
 function Speaker({ muted }: { muted: boolean }) {
@@ -14,15 +15,59 @@ type Props = { map: "beach" | "bamboo" | "garden"; volume: number; open: boolean
 
 export default function FieldSoundControl({ map, volume, open, buttonClass, onOpenChange, onChange, onToggleMute }: Props) {
   const id = useId(), root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), slider = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLElement>(null);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const close = useRef(onOpenChange);
   useEffect(() => { close.current = onOpenChange; }, [onOpenChange]);
+  useLayoutEffect(() => {
+    setPortalRoot(open ? root.current?.closest<HTMLElement>("[data-map]") ?? null : null);
+  }, [open]);
+  useLayoutEffect(() => {
+    const popup = panel.current, button = trigger.current;
+    if (!open || !portalRoot || !popup || !button) return;
+    const viewport = window.visualViewport;
+    let frame = 0;
+    const position = () => {
+      frame = 0;
+      const anchor = button.getBoundingClientRect();
+      const viewLeft = viewport?.offsetLeft ?? 0, viewTop = viewport?.offsetTop ?? 0;
+      const viewWidth = viewport?.width ?? window.innerWidth, viewHeight = viewport?.height ?? window.innerHeight;
+      const width = Math.min(240, Math.max(0, viewWidth - 32));
+      const minTop = viewTop + 8;
+      let bottom = Math.min(anchor.top - 12, viewTop + viewHeight - 16);
+      const joystick = portalRoot.querySelector<HTMLElement>('[role="application"][aria-label^="걷기 조이스틱"]');
+      const joystickBox = joystick?.getBoundingClientRect();
+      if (joystickBox && joystickBox.width > 0 && joystickBox.height > 0) bottom = Math.min(bottom, joystickBox.top - 12);
+      popup.style.width = `${width}px`;
+      popup.style.maxHeight = `${Math.max(0, bottom - minTop)}px`;
+      popup.style.left = `${Math.max(viewLeft + 16, Math.min(anchor.right - width, viewLeft + viewWidth - width - 16))}px`;
+      popup.style.top = `${Math.max(minTop, bottom - popup.offsetHeight)}px`;
+      popup.style.visibility = "visible";
+    };
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(position); };
+    position();
+    slider.current?.focus({ preventScroll: true });
+    const observer = new ResizeObserver(schedule);
+    observer.observe(button); observer.observe(popup); observer.observe(portalRoot);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+    viewport?.addEventListener("resize", schedule); viewport?.addEventListener("scroll", schedule);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+      viewport?.removeEventListener("resize", schedule); viewport?.removeEventListener("scroll", schedule);
+    };
+  }, [open, portalRoot]);
   useEffect(() => {
     if (!open) return;
-    slider.current?.focus({ preventScroll: true });
-    const outside = (event: Event) => { if (event.target instanceof Node && !root.current?.contains(event.target)) close.current(false); };
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target) && !panel.current?.contains(event.target)) close.current(false);
+    };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      event.preventDefault(); event.stopPropagation(); close.current(false); trigger.current?.focus();
+      event.preventDefault(); event.stopPropagation(); close.current(false); trigger.current?.focus({ preventScroll: true });
     };
     document.addEventListener("pointerdown", outside); document.addEventListener("focusin", outside); document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("focusin", outside); document.removeEventListener("keydown", escape); };
@@ -33,7 +78,7 @@ export default function FieldSoundControl({ map, volume, open, buttonClass, onOp
       aria-controls={open ? id : undefined} onClick={() => onOpenChange(!open)}>
       <Speaker muted={muted} /><span>현장음</span>
     </button>
-    {open && <section id={id} className={styles.panel} aria-label="현장음 조절">
+    {open && portalRoot && createPortal(<section ref={panel} id={id} className={styles.panel} style={{ visibility: "hidden" }} aria-label="현장음 조절">
       <div className={styles.heading}><div><label htmlFor={id + "-range"}>내 현장음</label><small>{map === "beach" ? "파도 · 장작불 · 폭죽" : map === "garden" ? "연못 · 창가의 빗소리 · 폭죽" : "풀벌레 · 폭죽"}</small></div>
         <output htmlFor={id + "-range"}>{valueText}</output></div>
       <div className={styles.row}><button type="button" className={styles.speaker} aria-label={muted ? "현장음 음소거 해제" : "현장음 음소거"}
@@ -41,6 +86,6 @@ export default function FieldSoundControl({ map, volume, open, buttonClass, onOp
         <input ref={slider} id={id + "-range"} aria-valuetext={valueText} type="range" min={0} max={100} step={1} value={volume}
           style={{ "--filled": volume + "%" } as CSSProperties} onChange={e => onChange(e.currentTarget.valueAsNumber)} />
       </div>
-    </section>}
+    </section>, portalRoot)}
   </div>;
 }

@@ -1,4 +1,4 @@
-/* 바닷가 걷기 조이스틱. 손가락 기기에서만 보이고, 하단 바 위 왼쪽 엄지 자리에 둔다 */
+/* Keep the left thumb area visible without covering the scenery. */
 .base {
   position: absolute;
   left: var(--beach-pad-left);
@@ -7,8 +7,11 @@
   height: var(--beach-pad-size);
   display: none;
   border-radius: 50%;
-  border: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, .48);
   background: transparent;
+  box-shadow: 0 0 0 1px #142d251f, inset 0 0 10px #ffffff05;
+  transition: border-color .15s ease;
   touch-action: none;
   pointer-events: auto;
   -webkit-user-select: none;
@@ -28,5 +31,6 @@
   box-shadow: 0 0 0 1px #142d2529, 0 1px 6px #10251b26;
   transition: transform .1s ease-out, border-color .15s ease, box-shadow .15s ease;
 }
+.base.active { border-color: rgba(255, 255, 255, .72); }
 .base.active .knob { border-color: #fff; box-shadow: 0 0 0 4px #ffffff0d, 0 1px 7px #10251b26; transition: none; }
 @media (pointer: coarse) { .base { display: block; } }

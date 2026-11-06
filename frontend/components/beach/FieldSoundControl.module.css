@@ -1,6 +1,6 @@
 .control { position: relative; min-width: 0; }
 .control > button { width: 100%; }
-.panel { position: absolute; z-index: 8; right: 0; bottom: calc(100% + 12px); width: min(240px, calc(100vw - 30px)); box-sizing: border-box; padding: 14px 15px 6px; border: 1px solid #ffffffa8; border-radius: 19px; background: #f8faf6f2; color: #304035; box-shadow: 0 8px 26px #102b2529; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); text-shadow: none; }
+.panel { position: fixed; z-index: 8; width: min(240px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 15px 6px; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; border: 1px solid #ffffffa8; border-radius: 19px; background: #f8faf6f2; color: #304035; box-shadow: 0 8px 26px #102b2529; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); text-shadow: none; }
 .heading,.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .heading { padding-left: 3px; }
 .heading label,.heading small { display: block; }

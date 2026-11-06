@@ -2,8 +2,7 @@
 .root {
   --beach-pad-size: 118px;
   --beach-pad-left: max(18px, env(safe-area-inset-left));
-  --beach-pad-bottom: calc(88px + env(safe-area-inset-bottom));
-  --beach-hud-left: max(14px, env(safe-area-inset-left));
+  --beach-pad-bottom: calc(20px + env(safe-area-inset-bottom));
   --beach-glass: rgba(250,247,239,.18);
   --beach-ink: #34433e;
   --beach-muted: #68756f;
@@ -228,7 +227,7 @@
 @media(max-width:600px) { .bottomHud { left:calc(50% - 30px); } }
 @media(max-width:360px) { .dockButton { font-size:10px; gap:5px; }.dockButton > svg { width:20px; height:20px; }.exitButton { font-size:11px; padding:0 10px 0 7px; }.contextCopy strong, .fireContext > button strong { font-size:10px; } }
 @media(max-height:520px) { .top { top:calc(7px + env(safe-area-inset-top)); }.statusBar { top:calc(70px + env(safe-area-inset-top)); }.bottomHud { gap:5px; bottom:calc(7px + env(safe-area-inset-bottom)); }.hideHud, .restoreHud { bottom:calc(12px + env(safe-area-inset-bottom)); }.actionTile, .personChoice { min-height:78px; }.actionTray { max-height:42dvh; overflow-y:auto; touch-action:pan-y; } }
-/* Move the thumb control above both rows when nearby actions are available. */
+/* Reserve the left thumb area for both rows, including when nearby actions appear. */
 @media(pointer:coarse) {
   .root { --beach-mobile-glass:rgba(250,247,239,.18); }
   .root[data-map="uyuni"], .root[data-map="bamboo"], .root[data-map="garden"] { --beach-mobile-glass:rgba(250,247,239,.18); }
@@ -242,17 +241,25 @@
   .dockButton[aria-expanded="true"], .dockButton[aria-pressed="true"], .topTool[aria-expanded="true"], .topTool[aria-pressed="true"] { background:#ffffff24; }
   .root[data-map] :is(.exitButton:active,.contextButton:active,.roomClockTrigger:active,.fireworksTrigger:active:not(:disabled)), .dockButton:active:not(:disabled), .topTool:active:not(:disabled) { background:#ffffff30; }
   .bottomHud {
-    left:var(--beach-hud-left); right:max(14px,env(safe-area-inset-right)); width:auto; transform:none;
-    display:grid; grid-template-columns:calc(var(--beach-pad-left) + var(--beach-pad-size) - var(--beach-hud-left)) minmax(0,1fr);
-    column-gap:12px; align-items:end;
+    left:auto; right:calc(max(12px,env(safe-area-inset-right)) + 60px); transform:none;
+    width:min(400px,calc(100% - var(--beach-pad-left) - var(--beach-pad-size) - 20px - max(12px,env(safe-area-inset-right)) - 60px));
+    align-items:stretch;
   }
-  .root[data-context-row="true"] { --beach-pad-bottom:calc(160px + env(safe-area-inset-bottom)); }
-  .contextActions, .dock, .actionTray { grid-column:1 / -1; width:min(calc(100% - 60px),400px); justify-self:start; }
-  .dockCharacterPanel { right:60px; max-width:calc(100% - 60px); }
+  .contextActions, .dock {
+    box-sizing:border-box; width:100%; min-width:0;
+    grid-template-columns:none; grid-auto-flow:column;
+    grid-auto-columns:max(50px,calc((100% - (var(--dock-columns) - 1) * 2px) / var(--dock-columns)));
+    overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain;
+    touch-action:pan-x; scrollbar-width:none; scroll-padding:4px; scroll-snap-type:x proximity;
+  }
+  .dock::-webkit-scrollbar { display:none; }
+  .dock > *, .contextButton, .fireContext > button { scroll-snap-align:start; }
+  /* These panels replace walking controls while open, so retain a comfortable reading width. */
+  .actionTray { align-self:flex-end; flex:none; width:min(340px,calc(100vw - 32px)); margin-right:-60px; }
+  .dockCharacterPanel { right:-60px; width:min(280px,calc(100vw - 32px)); max-width:calc(100vw - 32px); }
 }
-@media(pointer:coarse) and (max-height:520px) {
-  .root { --beach-pad-size:100px; --beach-pad-bottom:calc(81px + env(safe-area-inset-bottom)); }
-  .root[data-context-row="true"] { --beach-pad-bottom:calc(149px + env(safe-area-inset-bottom)); }
+@media(pointer:coarse) and (max-width:360px), (pointer:coarse) and (max-height:520px) {
+  .root { --beach-pad-size:100px; }
 }
 @media(prefers-reduced-motion:reduce) { .actionTray, .characterPanel, .contextButton, .fireContext > button { animation:none; }.actionTile, .dockButton, .topTool, .exitButton, .hideHud, .restoreHud, .contextButton, .characterChoice, .place { transition:none; }.flash { animation-duration:.8s; } }
 .festivalTile[data-toy="balloon"] .actionIcon { color: #9ee8e6; background: #20454e; }
@@ -269,12 +276,3 @@
 :global(body):has(.root) :global(.app-toast__close) { width:36px; height:36px; min-width:36px; background:#ffffff14; color:inherit; }
 :global(body):has(.root) :global(.app-toast__remaining) { padding:6px 10px; font-size:11px; }
 @media(prefers-reduced-motion:reduce) { :global(body):has(.root) :global(.app-toast) { animation:none; } }
-
-@media(pointer:coarse) {
-  :global(body):has(.root [role="application"]) :global(.app-toasts) { bottom:calc(214px + env(safe-area-inset-bottom)); }
-  :global(body):has(.root[data-context-row="true"] [role="application"]) :global(.app-toasts) { bottom:calc(286px + env(safe-area-inset-bottom)); }
-}
-@media(pointer:coarse) and (max-height:520px) {
-  :global(body):has(.root [role="application"]) :global(.app-toasts) { bottom:calc(189px + env(safe-area-inset-bottom)); }
-  :global(body):has(.root[data-context-row="true"] [role="application"]) :global(.app-toasts) { bottom:calc(257px + env(safe-area-inset-bottom)); }
-}
