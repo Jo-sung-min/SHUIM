@@ -123,3 +123,8 @@
 .kind[aria-checked="true"]:active { background: var(--text); }
 .opt:not(:disabled):active { scale: 0.98; background: var(--surface-2); }
 @media (prefers-reduced-motion: reduce) { .mineChip:active, .kind:active, .opt:active { scale: 1; } }
+
+/* ---------- 후원 기업 링크 (바닷가 카드 아래) ---------- */
+.sponsorLink { display: flex; justify-content: flex-end; align-items: center; gap: 2px; margin: 6px 0 4px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.sponsorLink svg { width: 14px; height: 14px; }
+.sponsorLink:hover { color: var(--text); }

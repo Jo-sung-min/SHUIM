@@ -18,6 +18,7 @@ import Joystick from "./Joystick";
 import PhotoPreview, { CameraIcon } from "./PhotoPreview";
 import RoomLightingControls from "./RoomLightingControls";
 import RoomFireworksControls from "./RoomFireworksControls";
+import FireworkTicketSheet from "@/components/FireworkTicketSheet";
 import UyuniMomentControls from "./UyuniMomentControls";
 import BambooFestivalControls from "./BambooFestivalControls";
 import BambooBulletin from "./BambooBulletin";
@@ -139,6 +140,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [lightingOpen, setLightingOpen] = useState(false);
   const [lightingBusy, setLightingBusy] = useState<RoomLightingMode | null>(null);
   const [fireworksControl, setFireworksControl] = useState(false);
+  // Administrators launch for free (tickets null); members hold a ticket count and unlock through the ticket sheet.
+  const [fireworksFree, setFireworksFree] = useState(false);
+  const [fireworkTickets, setFireworkTickets] = useState<number | null>(null);
+  const [ticketSheetOpen, setTicketSheetOpen] = useState(false);
   const [fireworksBusy, setFireworksBusy] = useState(false);
   const [fireworksMuted, setFireworksMuted] = useState(false);
   const [fieldVolume, setFieldVolume] = useState(50);
@@ -260,6 +265,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     fireworksRequestRef.current = null;
     fireworksClockRef.current = { time: -1, cooldown: 0 };
     setFireworksBusy(false); setFireworksDeadline(0); setFireworksControl(false);
+    setFireworksFree(false); setFireworkTickets(null); setTicketSheetOpen(false);
   }, []);
 
   const applyFireworks = useCallback((events: FireworkEvent[] | undefined, serverTime: number | undefined, cooldownUntil: number | undefined) => {
@@ -485,7 +491,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     }
     sequenceRef.current = Math.max(sameAccount ? sequenceRef.current : 0, entered.sequence ?? 0);
     resetFireworks();
-    setFireworksControl(entered.fireworksControl === true);
+    setFireworksControl(entered.fireworksControl === true); setFireworksFree(entered.fireworksFree === true); setFireworkTickets(entered.fireworksFree === true ? null : entered.fireworkTickets ?? 0);
     applyFireworks(entered.fireworks, entered.serverTime, entered.fireworksCooldownUntil);
     resetMoments(sameAccount);
     setMomentsEnabled(entered.uyuniMomentsEnabled === true);
@@ -778,7 +784,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         setLightingControl(entered.lightingControl === true);
         applyLighting(entered.lighting, true);
         applyFire(entered.fire);
-        setFireworksControl(entered.fireworksControl === true);
+        setFireworksControl(entered.fireworksControl === true); setFireworksFree(entered.fireworksFree === true); setFireworkTickets(entered.fireworksFree === true ? null : entered.fireworkTickets ?? 0);
         applyFireworks(entered.fireworks, entered.serverTime, entered.fireworksCooldownUntil);
         setMomentsEnabled(entered.uyuniMomentsEnabled === true);
         applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns);
@@ -972,6 +978,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const launchFireworks = async (variant: FireworkVariant) => {
     const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
     if (!ticket || !engine || !fireworksControl || fireworksBusyRef.current || blockedRef.current || lost || Date.now() < fireworksDeadline) return;
+    if (!fireworksFree && (fireworkTickets ?? 0) <= 0) { setTicketSheetOpen(true); return; }
     const belongsToVisit = () => aliveRef.current && !blockedRef.current && engineRef.current === engine && ticketRef.current === ticket && visitGenerationRef.current === visit;
     fireworksBusyRef.current = true; setFireworksBusy(true);
     const request = fireworksRequestRef.current ?? { id: crypto.randomUUID(), variant };
@@ -983,11 +990,14 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       if (!belongsToVisit()) return;
       fireworksRequestRef.current = null;
       applyFireworks([result.event], result.serverTime, result.cooldownUntil);
+      if (typeof result.tickets === "number") setFireworkTickets(result.tickets);
       if (result.event.startedAt + result.event.durationMs <= result.serverTime) showToast("이전 요청을 확인했어요. 다시 누르면 새 불꽃놀이를 시작해요.", { kind: "info" });
     } catch (cause) {
       if (!belongsToVisit()) return;
       // Reuse the request on an uncertain transport failure; a retry must not launch twice.
       if (cause instanceof BeachUnavailable || cause instanceof BeachCooldown || cause instanceof BeachGone) fireworksRequestRef.current = null;
+      // 402: another tab spent the last ticket. Show the ticket sheet instead of a toast.
+      if (cause instanceof BeachUnavailable && cause.status === 402) { setFireworkTickets(0); setTicketSheetOpen(true); return; }
       if (cause instanceof BeachUnavailable && (cause.status === 401 || cause.status === 403)) setFireworksControl(false);
       if (cause instanceof BeachGone) { ticketRef.current = null; setFireworksControl(false); scheduleTick(0); }
       if (cause instanceof BeachCooldown) scheduleTick(0);
@@ -1347,6 +1357,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
               if (engine) { engine.setUyuniMusicVolume(volume); setUyuniMusicVolume(engine.uyuniMusicVolume); }
             } } : undefined} />}
           {fireworksControl && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
+            tickets={fireworksFree ? null : fireworkTickets ?? 0} onUnlock={() => setTicketSheetOpen(true)}
             onLaunch={(variant) => void launchFireworks(variant)} />}
           {lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}
             busy={lightingBusy} disabled={lost} onOpenChange={openLighting} onSelect={mode => void changeLighting(mode)} />}
@@ -1500,6 +1511,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           <Link href={returnHref} className={styles.glass}><IconChevronL />소로우로 돌아가기</Link>
         </div>
       )}
+      {!fireworksFree && <FireworkTicketSheet portal open={ticketSheetOpen} loginNext={mapId} onClose={() => setTicketSheetOpen(false)}
+        onTickets={(next) => setFireworkTickets(next)} />}
       {photo && <PhotoPreview key={photo.url} photo={photo} onClose={closePhoto} />}
       {guestbookInSight && phase === "ready" && mapId === "bamboo" && ticketRef.current &&
         <BambooBulletin key={ticketRef.current} ticket={ticketRef.current} initialName={meRef.current?.nick}

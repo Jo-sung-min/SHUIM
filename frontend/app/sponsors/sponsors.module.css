@@ -1,0 +1,27 @@
+/* 후원 기업 순위 (공개) */
+.mine { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 14px; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; line-height: 1.5; }
+.mine svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.mine span { flex: 1; min-width: 0; }
+.mine a { flex: none; font-size: 13px; font-weight: 700; color: var(--accent); }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.rank { flex: none; width: 28px; text-align: center; font-size: 15px; font-weight: 800; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.row[data-top="1"] .rank { color: var(--tone-praise); font-size: 18px; }
+.row[data-top="2"] .rank { color: var(--text-2); font-size: 17px; }
+.row[data-top="3"] .rank { color: var(--tone-love); font-size: 16px; }
+.logo {
+  flex: none; width: 48px; height: 48px; border-radius: 14px; overflow: hidden; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: 18px; font-weight: 800;
+}
+.logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.name { font-size: 15px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name a { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+.tagline { font-size: 13px; line-height: 1.45; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.meta { font-size: 11.5px; color: var(--text-3); line-height: 1.4; }
+.row > :global(.btn) { flex: none; white-space: nowrap; }
+.inquiry { display: grid; gap: 10px; justify-items: center; margin: 28px 0 8px; text-align: center; }
+@media (max-width: 400px) {
+  .row { flex-wrap: wrap; }
+  .row > :global(.btn) { width: 100%; margin-left: 40px; }
+}

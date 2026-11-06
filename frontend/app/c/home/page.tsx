@@ -81,6 +81,7 @@ export default function CircleHomePage() {
         </div>
 
         <BeachCard circles={mine.member.filter((c) => c.status === "active")} />
+        <Link href="/sponsors" className={styles.sponsorLink}>후원 기업 <IconChevronR aria-hidden="true" /></Link>
 
         <div className={styles.head}>
           <h2>{chips.length ? "내 소로우 사연" : "커뮤니티 소로우"}</h2>

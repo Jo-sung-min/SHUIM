@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { CSSProperties } from "react";
 import "./globals.css";
 import TabBar from "@/components/TabBar";
+import SponsorRails from "@/components/SponsorRails";
 import AppRuntime from "@/components/AppRuntime";
 import CommunityConsent from "@/components/CommunityConsent";
 import ServiceAvailability from "@/components/ServiceAvailability";
@@ -124,6 +125,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {children}
             <TabBar />
           </div>
+          <SponsorRails />
         </ServiceAvailability>
       </body>
     </html>

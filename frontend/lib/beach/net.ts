@@ -39,6 +39,10 @@ export interface EnterResponse {
   music?: RoomMusicState;
   musicControl?: boolean;
   fireworksControl?: boolean;
+  /** Administrators launch for free with every style; members spend firework tickets. */
+  fireworksFree?: boolean;
+  /** The member's remaining firework tickets (absent for administrators). */
+  fireworkTickets?: number;
   fireworks?: FireworkEvent[];
   fireworksCooldownUntil?: number;
   uyuniMomentsEnabled?: boolean;
@@ -113,7 +117,7 @@ function readUyuniMomentsState(response: { uyuniMoments?: unknown; uyuniMomentCo
 
 export type FireworkVariant = "festival" | "songi" | "love" | "bloom" | "saturn" | "willow" | "stardust";
 export interface FireworkEvent { id: string; seed: number; startedAt: number; durationMs: number; variant?: FireworkVariant }
-export interface FireworkLaunch { event: FireworkEvent; serverTime: number; cooldownUntil: number }
+export interface FireworkLaunch { event: FireworkEvent; serverTime: number; cooldownUntil: number; tickets?: number }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isTime = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const isFireworkVariant = (value: unknown): value is FireworkVariant =>
@@ -337,7 +341,8 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
   if (!res.ok) {
     const message = json.error ?? `요청 실패 (${res.status})`;
     if (res.status === 429) throw new BeachCooldown(message);
-    if ([400, 401, 403, 404, 409].includes(res.status)) throw new BeachUnavailable(message, res.status);
+    // 402: the member has no firework ticket left (the scene opens the ticket sheet).
+    if ([400, 401, 402, 403, 404, 409].includes(res.status)) throw new BeachUnavailable(message, res.status);
     throw new Error(message);
   }
   return json;
@@ -373,6 +378,8 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
     pavilionEnabled: (mapId === "bamboo" || mapId === "garden") && response.pavilionEnabled === true,
     festival: mapId === "bamboo" ? readFestival(response.festival) : undefined,
     fireworksControl: response.fireworksControl === true && fireworks.supported,
+    fireworksFree: response.fireworksFree === true,
+    fireworkTickets: isTime(response.fireworkTickets) ? response.fireworkTickets : undefined,
     uyuniMomentsEnabled: mapId === "uyuni" && response.uyuniMomentsEnabled === true && moments.supported,
     uyuniMoments: mapId === "uyuni" ? moments.events : [], uyuniMomentCooldowns: moments.cooldowns,
     fireworks: fireworks.fireworks, fireworksCooldownUntil: fireworks.fireworksCooldownUntil };
@@ -420,13 +427,14 @@ export async function launchBeachFireworks(ticket: string, requestId: string, va
   if (!isFireworkVariant(variant)) throw new Error("불꽃놀이 종류를 다시 골라 주세요.");
   const response = await post<FireworkLaunch>("/api/beach/fireworks", { ticket, requestId, variant }, { signal: AbortSignal.timeout(8000) });
   const event = readFireworkEvent(response?.event);
-  if (!response || Object.keys(response).length !== 3 || !Object.keys(response).every(key => ["event", "serverTime", "cooldownUntil"].includes(key))
-    || !event || !isTime(response.serverTime) || !isTime(response.cooldownUntil)
+  const ticketed = Boolean(response) && Object.hasOwn(response, "tickets");
+  if (!response || Object.keys(response).length !== (ticketed ? 4 : 3) || !Object.keys(response).every(key => ["event", "serverTime", "cooldownUntil", "tickets"].includes(key))
+    || !event || !isTime(response.serverTime) || !isTime(response.cooldownUntil) || (ticketed && !isTime(response.tickets))
     || event.startedAt > response.serverTime || response.cooldownUntil < event.startedAt + 15_000
     || response.cooldownUntil > response.serverTime + 15_000) {
     throw new Error("불꽃놀이 시작을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   }
-  return { event, serverTime: response.serverTime, cooldownUntil: response.cooldownUntil };
+  return { event, serverTime: response.serverTime, cooldownUntil: response.cooldownUntil, ...(ticketed ? { tickets: response.tickets } : {}) };
 }
 export const addFirewood = (ticket: string, requestId: string) => post<FireState>("/api/beach/fire/wood", { ticket, requestId }, { signal: AbortSignal.timeout(8000) });
 export async function addFirePowder(ticket: string, requestId: string, color: PowderColor): Promise<FireState> {

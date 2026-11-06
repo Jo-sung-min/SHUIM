@@ -5,8 +5,9 @@ import Link from "next/link";
 import { fetchMe } from "@/lib/auth";
 import { SESSION_KEY } from "@/lib/storage";
 import { fetchPoints, pointReason, pointsSessionChanged, type PointsWallet as Wallet } from "@/lib/points";
-import { IconChevronL, IconChevronR, IconCoin, IconHeart, IconMessage, IconPalette, IconRefresh, IconCheck } from "./Icons";
+import { IconChevronL, IconChevronR, IconCoin, IconHeart, IconMessage, IconSparkle, IconRefresh, IconCheck } from "./Icons";
 import { Empty, LoadError, SkeletonCard, TopBar } from "./ui";
+import FireworkTicketSheet from "./FireworkTicketSheet";
 import styles from "./PointsWallet.module.css";
 
 function useWallet(expectedUserId?: string) {
@@ -76,6 +77,7 @@ const date = (timestamp: number) => new Intl.DateTimeFormat("ko-KR", { timeZone:
 
 export default function PointsWallet() {
   const { wallet, guest, loading, error, refresh } = useWallet();
+  const [ticketOpen, setTicketOpen] = useState(false);
   return <>
     <TopBar title="온기 포인트" right={<>
       <button type="button" className="icon-btn" aria-label="포인트 새로고침" title="새로고침" disabled={loading} aria-busy={loading} onClick={() => void refresh()}><IconRefresh /></button>
@@ -108,7 +110,9 @@ export default function PointsWallet() {
             <details className={styles.rules}><summary>자세한 적립 기준<IconChevronR /></summary><ul>{wallet.rules.map((rule, index) => <li key={index}>{rule}</li>)}</ul></details>
           </section>
 
-          <aside className={styles.future}><IconPalette /><div><h2>꾸미기 상점을 준비하고 있어요</h2><p>지금은 포인트를 모을 수 있어요. 상점이 열리면 꾸미기 아이템을 구매할 때 사용할 수 있어요.</p></div></aside>
+          <aside className={styles.future}><IconSparkle /><div><h2>폭죽 이용권으로 바꿀 수 있어요</h2><p>1,000 P 로 폭죽 이용권 1장. 바닷가·유우니·대나무숲·봄물 정원에서 불꽃놀이를 한 번 쏠 수 있어요.</p>
+            <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setTicketOpen(true)}>이용권으로 바꾸기</button></div></aside>
+          <FireworkTicketSheet open={ticketOpen} loginNext="points" onClose={() => setTicketOpen(false)} onTickets={() => { if (ticketOpen) void refresh(); }} />
 
           <section className={styles.section} aria-labelledby="points-history">
             <div className={styles.sectionHead}><h2 id="points-history">적립 내역</h2><span>최근 30건</span></div>

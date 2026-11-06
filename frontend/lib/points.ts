@@ -33,7 +33,8 @@ export function parsePointsWallet(value: unknown): PointsWallet {
     || !Array.isArray(value.rules) || !value.rules.every((rule) => typeof rule === "string")
     || !Array.isArray(value.history) || !value.history.every((entry) => object(entry)
       && typeof entry.id === "string" && typeof entry.reason === "string"
-      && whole(entry.amount) && whole(entry.balanceAfter)
+      // Spending rows (firework tickets) are negative; earning rows are never above the daily limit.
+      && typeof entry.amount === "number" && Number.isSafeInteger(entry.amount) && entry.amount >= -1000 && whole(entry.balanceAfter)
       && whole(entry.createdAt) && entry.createdAt > 0 && entry.createdAt < 8.64e15)) {
     throw new Error("포인트 정보를 확인하지 못했어요. 다시 시도해 주세요.");
   }
@@ -59,6 +60,7 @@ const REASONS: Record<string, string> = {
   cheers_5: "힘내요 5개를 받았어요",
   cheers_15: "힘내요 15개를 받았어요",
   cheers_30: "힘내요 30개를 받았어요",
+  firework_ticket: "폭죽 이용권으로 바꿨어요",
 };
 export const pointReason = (reason: string): string => Object.hasOwn(REASONS, reason) ? REASONS[reason] : "온기 포인트 적립";
 

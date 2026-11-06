@@ -15,6 +15,7 @@ import { toastSuccess } from "@/lib/toast";
 import { IconInbox, IconBell, IconBubble, IconCalendar, IconChevronL, IconFlag, IconMessage, IconNote, IconSettings, IconShare } from "@/components/Icons";
 import ProfileHeader from "@/components/ProfileHeader";
 import { PointsCard } from "@/components/PointsWallet";
+import { FireworkTicketCard } from "@/components/FireworkTicketSheet";
 import BadgeShelf, { BadgeCelebration, BadgeIcon } from "@/components/BadgeShelf";
 import ProfileTabs from "@/components/ProfileTabs";
 import { shareProfile } from "@/lib/share-profile";
@@ -130,6 +131,7 @@ export default function MePage() {
             )}
 
             {user && <PointsCard key={user.id} userId={user.id} />}
+            {user && <FireworkTicketCard key={`fireworks-${user.id}`} userId={user.id} />}
             {profile && <BadgeShelf earned={profile.badges} catalog={profile.badgeCatalog} />}
 
             {/* 나만 보이는 도구 줄 (다른 사람이 내 프로필을 열면 이 줄은 없다) */}
