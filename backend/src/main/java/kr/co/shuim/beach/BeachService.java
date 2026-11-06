@@ -3,6 +3,7 @@ package kr.co.shuim.beach;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.common.SpaceCapacity;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -81,7 +82,7 @@ public class BeachService {
 
     public BeachRoom.Entry enter(String communityId, String userId, String nick, Set<String> excluded, String character,
                                  String mapId, String resumeTicket, Long sequence, int capacity) {
-        if (capacity < 1 || capacity > BeachRoom.CAPACITY) throw ApiException.badRequest("입장 정원을 확인해 주세요.");
+        capacity = SpaceCapacity.effective(capacity);
         BeachMap map = BeachMap.from(mapId);
         BeachRoom.selectedSkin(character);
         BeachRoom.validateSequence(sequence);

@@ -4,6 +4,7 @@ import type { FireworkEvent, FireworkVariant } from "./net";
 import { festivalVariantGeometry } from "./firework-festival-variants";
 import type { FireworkAudio } from "./firework-audio";
 import { SONGI_FINALE_POINTS } from "./firework-songi-finale";
+import { buildSongiFlowers, SONGI_FLOWER_GLSL } from "./firework-songi-flowers";
 
 export const FIREWORK_SPARK_URL = "/beach/fx/firework-spark-v1.webp";
 const PALETTE = [0xffc777, 0xff83b1, 0x87eaff, 0xb89aff, 0x95ffd1, 0xffb88c];
@@ -11,7 +12,7 @@ const CENTERS = [[-28, 50, -58], [0, 64, -76], [28, 53, -60], [-26, 78, -46], [2
 const STARTS = [1.3, 1.3, 1.3, 3.7, 3.7, 6.4, 6.4, 6.4];
 export const FIREWORK_TEXT = { songi: "송이 안녕?", love: "사랑해" } as const;
 type PersonalFirework = "songi" | "love";
-const SONGI_ENCORES = [[4.3, 4.58, 4.9], [6.9, 7.22, 7.55], [9.6, 9.94, 10.3]] as const;
+const SONGI_ENCORES = [[4.3, 4.58, 4.9], [6.9, 7.22, 7.55]] as const;
 const SONGI_ENCORE_COLORS = [[0xff6fa9, 0xffcc66, 0x6de8ff], [0xa98bff, 0x70ffd0, 0xff91b8]] as const;
 const SONGI_ENCORE_LIFE = 1.95;
 const SONGI_ENCORE_TAIL_SCALE = .6;
@@ -220,16 +221,27 @@ function grandPersonalGeometry(seed: number, mobile: boolean, variant: PersonalF
   const origin:number[]=[], velocity:number[]=[], colors:number[]=[], timing:number[]=[], detail:number[]=[];
   const glyphCenters:number[]=[];
   const backdrops:number[]=[];
-  const flowers:number[]=[];
+  const flowers:number[]=[], flowerCenters:number[]=[], flowerBurns:number[]=[], flowerColors:number[]=[];
+  const blooms=variant==="songi"?buildSongiFlowers(seed,mobile,grand?1.8:1):null;
+  let flowerIndex=0;
   let glyphCenter=0, backdrop:readonly number[]=[0,0,0];
-  let flower:readonly number[]=[0,0,0,0];
   const tint=new THREE.Color();
   const add=(center:readonly number[], direction:readonly number[], start:number, delay:number, life:number,
     mode:number, hue:number, size:number, alpha:number, phase:number)=>{
     origin.push(center[0],center[1],center[2]); velocity.push(direction[0],direction[1],direction[2]);
     tint.setHex(hue); colors.push(tint.r,tint.g,tint.b);
     timing.push(start,delay,life,mode); detail.push(size,phase,alpha);
-    if(variant==="songi") { glyphCenters.push(glyphCenter); backdrops.push(...backdrop); flowers.push(...flower); }
+    if(variant==="songi") {
+      glyphCenters.push(glyphCenter); backdrops.push(...backdrop);
+      const bloom=mode===11?blooms!.particles[flowerIndex++]:null;
+      if(bloom) {
+        flowers.push(...bloom.target,bloom.start); flowerCenters.push(...bloom.center,bloom.life);
+        flowerBurns.push(bloom.delay,bloom.streak,bloom.alpha,bloom.phase);
+        tint.setHex(bloom.color); flowerColors.push(tint.r,tint.g,tint.b);
+      } else {
+        flowers.push(0,0,0,0); flowerCenters.push(0,0,0,0); flowerBurns.push(0,0,0,0); flowerColors.push(0,0,0);
+      }
+    }
   };
   const comet=(center:readonly number[],start:number)=>{
     for(let i=0;i<32;i++) add(center,[0,0,0],start,i*.011,1.2,1,0xffbd69,i?.20:.58,1-i/36,random()*6.28);
@@ -263,16 +275,12 @@ function grandPersonalGeometry(seed: number, mobile: boolean, variant: PersonalF
         const phi=ray*2.399963, vertical=1-2*(ray+.5)/spokes;
         const radial=Math.sqrt(Math.max(0,1-vertical*vertical)), rate=speed*scale*(.94+random()*.12);
         const direction=[radial*Math.cos(phi)*rate,vertical*rate,radial*Math.sin(phi)*rate];
-        // The same bank becomes four curled, overlapping petal rings only after
-        // both spherical encore waves; no extra particle cloud is needed for roses.
-        const layer=ray%4, a=Math.floor(ray/4)/(spokes/4)*Math.PI*2+layer*.37;
-        flower=[a,layer,Math.PI*2/(spokes/4)/shellTails,scale];
+        // This bank later supplies moving rose, tulip and cosmos embers.
         const phase=random()*Math.PI*2, life=2.6+random()*.45;
         for(let tail=0;tail<shellTails;tail++) add(center,direction,1.35,tail*shellStep,life,11,hue,shellStep,
           tail===0?.58:.24*(1-.65*tail/shellTails),phase);
       }
     }
-    flower=[0,0,0,0];
     const launch=(x:number,y:number,depth:number,start:number,hue:number,flight=1.3)=>{
       backdrop=[x,y,depth];
       const anchor=[center[0]+x,center[1]+y,center[2]-depth];
@@ -283,10 +291,11 @@ function grandPersonalGeometry(seed: number, mobile: boolean, variant: PersonalF
     // The next flight starts while the previous embers still fall. Visible rockets
     // and matching flashes share the exact camera-facing endpoint on every map.
     for (let round = 0; round < SONGI_ENCORES.length; round++) for (let slot = 0; slot < 3; slot++) {
-      const x = (slot - 1) * 19 * (round === 2 ? 1.35 : round ? -1.15 : 1.15) * scale;
-      const y = ([1, 5, 0][slot] + (round === 2 ? [10,20,7] : round ? [10,2,14] : [6,12,3])[slot]) * scale;
-      launch(x,y,58*scale,SONGI_ENCORES[round][slot],round===2?[0xff7e9f,0xc9a0ff,0xffb275][slot]:SONGI_ENCORE_COLORS[round][slot]);
+      const x = (slot - 1) * 19 * (round ? -1.15 : 1.15) * scale;
+      const y = ([1, 5, 0][slot] + (round ? [10,2,14] : [6,12,3])[slot]) * scale;
+      launch(x,y,58*scale,SONGI_ENCORES[round][slot],SONGI_ENCORE_COLORS[round][slot]);
     }
+    for(const bloom of blooms!.launches) launch(...bloom.center,bloom.start,bloom.color,bloom.flight);
     // Authored from the user's outline: a white puppy face within a golden maple
     // leaf. Geometry data avoids a network/font delay during the shared finale.
     backdrop=[0,8*scale,0];
@@ -331,15 +340,21 @@ function grandPersonalGeometry(seed: number, mobile: boolean, variant: PersonalF
     geometry.setAttribute("glyphCenter",new THREE.Float32BufferAttribute(glyphCenters,1));
     geometry.setAttribute("backdrop",new THREE.Float32BufferAttribute(backdrops,3));
     geometry.setAttribute("flower",new THREE.Float32BufferAttribute(flowers,4));
+    geometry.setAttribute("flowerCenter",new THREE.Float32BufferAttribute(flowerCenters,4));
+    geometry.setAttribute("flowerBurn",new THREE.Float32BufferAttribute(flowerBurns,4));
+    geometry.setAttribute("flowerColor",new THREE.Float32BufferAttribute(flowerColors,3));
   }
   geometry.userData.variant=variant; geometry.userData.phrase=variant!=="love"?FIREWORK_TEXT[variant]:""; geometry.userData.grand=grand;
   const letters=variant==="songi"?textPoints(FIREWORK_TEXT.songi):[];
   // Include the heart-like 1.28x expansion and late drift in the portrait fit.
   geometry.userData.textWidth=letters.length?(Math.max(...letters.map(p=>p[0]))-Math.min(...letters.map(p=>p[0]))+.8)*(grand?1.8:1)*1.36:0;
   if(variant==="songi") {
+    geometry.userData.flowerHalfWidth=blooms!.maxHalfWidth;
+    geometry.userData.flowerHalfHeight=blooms!.maxHalfHeight;
     geometry.userData.finaleHalfWidth=37.5*(grand?1.8:1)*1.04+3;
     geometry.userData.finaleHalfHeight=(37.5*1.04+8)*(grand?1.8:1)+6;
-    geometry.userData.songiTimeline={greeting:1.35,encores:SONGI_ENCORES,finale:14.2,finish:17.6};
+    geometry.userData.songiTimeline={greeting:1.35,encores:SONGI_ENCORES,
+      flowers:blooms!.launches.map(({kind,start,center})=>({kind,start,center})),finale:14.2,finish:17.8};
   }
   return geometry;
 }
@@ -347,6 +362,7 @@ function grandPersonalGeometry(seed: number, mobile: boolean, variant: PersonalF
 function personalMaterial(material: THREE.ShaderMaterial, variant: PersonalFirework) {
   if(variant!=="love") {
     material.uniforms.uFinalScale={value:1};
+    material.uniforms.uFlowerScale={value:1};
     const encoreColor = (round: number) => SONGI_ENCORE_COLORS[round].map(hex => {
       const color = new THREE.Color(hex);
       return `vec3(${color.toArray().map(value => value.toFixed(6)).join(",")})`;
@@ -387,7 +403,7 @@ function personalMaterial(material: THREE.ShaderMaterial, variant: PersonalFirew
             } else if(timing.w>11.5 && timing.w<12.5) {
               float flight=age+timing.z, t=clamp(flight/timing.z,0.0,1.0);
               vec3 behind=normalize(uTextCenter-uCameraPosition)*backdrop.z;
-              float showScale=timing.x>13.5?uFinalScale:uTextScale;
+              float showScale=timing.x>13.5?uFinalScale:(timing.x>8.5&&timing.x<13.0?uFlowerScale:uTextScale);
               vec3 target=uTextCenter+(behind+uTextRight*backdrop.x+uTextUp*backdrop.y)*showScale;
               vec3 foot=target;foot.y=max(.5,uCameraPosition.y-1.2);
               foot.xz=mix(uCameraPosition.xz,target.xz,.88);
@@ -408,43 +424,34 @@ function personalMaterial(material: THREE.ShaderMaterial, variant: PersonalFirew
               vTextTip=head*smoothstep(.9,2.1,shellAge);sparkle=glint*mix(.2,1.0,scatter);
             } else if(timing.w>2.5 && timing.w<3.5 && timing.x>3.0) {
               vec3 behind=normalize(uTextCenter-uCameraPosition)*backdrop.z;
-              p=uTextCenter+(behind+uTextRight*backdrop.x+uTextUp*backdrop.y)*(timing.x>13.5?uFinalScale:uTextScale);
+              float showScale=timing.x>13.5?uFinalScale:(timing.x>8.5&&timing.x<13.0?uFlowerScale:uTextScale);
+              p=uTextCenter+(behind+uTextRight*backdrop.x+uTextUp*backdrop.y)*showScale;
               fade=step(0.0,age)*(1.0-smoothstep(.04,timing.z,age));
             } else if(timing.w>10.5 && timing.w<11.5) {
+              if(uAge>=flower.w) {
+                float flowerAlpha;
+                songiFlowerMotion(flower,flowerCenter,flowerBurn,flowerColor,p,tangent,flowerAlpha,sparkle,vTextTip,particleColor);
+                fade=flowerAlpha/max(detail.z,.001); streakStep=flowerBurn.y;
+              } else {
               float slot=step(0.0,backdrop.x)+step(1.0,backdrop.x);
-              vec3 firstStarts=vec3(${SONGI_ENCORES[0].join(",")}), secondStarts=vec3(${SONGI_ENCORES[1].join(",")}), roseStarts=vec3(${SONGI_ENCORES[2].join(",")});
+              vec3 firstStarts=vec3(${SONGI_ENCORES[0].join(",")}), secondStarts=vec3(${SONGI_ENCORES[1].join(",")});
               float first=slot<.5?firstStarts.x:(slot<1.5?firstStarts.y:firstStarts.z);
               float second=slot<.5?secondStarts.x:(slot<1.5?secondStarts.y:secondStarts.z);
-              float roseStart=slot<.5?roseStarts.x:(slot<1.5?roseStarts.y:roseStarts.z);
-              float encore=uAge>=roseStart?3.0:(uAge>=second?2.0:(uAge>=first?1.0:0.0));
-              float shellStart=encore>2.5?roseStart:(encore>1.5?second:(encore>.5?first:timing.x));
+              float encore=uAge>=second?2.0:(uAge>=first?1.0:0.0);
+              float shellStart=encore>1.5?second:(encore>.5?first:timing.x);
               float shellAge=uAge-shellStart-timing.y*(encore>.5?${SONGI_ENCORE_TAIL_SCALE}:1.0);
-              float life=encore>2.5?2.65:(encore>.5?${SONGI_ENCORE_LIFE}:timing.z);
+              float life=encore>.5?${SONGI_ENCORE_LIFE}:timing.z;
               float t=max(0.0,shellAge), travel=(1.0-exp(-.46*t))/.46;
               vec3 direction=velocity*(encore>.5?1.38:1.0);
               vec3 ray=direction*travel-vec3(0.0,.7*t*t,0.0);
               vec3 motion=direction*exp(-.46*t)-vec3(0.0,1.4*t,0.0);
               vec3 shell=backdrop;
               if(encore>.5) {
-                float lift=encore>2.5?(slot<.5?10.0:(slot<1.5?20.0:7.0)):(encore>1.5?(slot<.5?10.0:(slot<1.5?2.0:14.0)):(slot<.5?6.0:(slot<1.5?12.0:3.0)));
-                shell.x*=encore>2.5?1.35:(encore>1.5?-1.15:1.15); shell.y+=lift*backdrop.z/58.0;
+                float lift=encore>1.5?(slot<.5?10.0:(slot<1.5?2.0:14.0)):(slot<.5?6.0:(slot<1.5?12.0:3.0));
+                shell.x*=encore>1.5?-1.15:1.15; shell.y+=lift*backdrop.z/58.0;
                 vec3 firstColor=slot<.5?${palette[0][0]}:(slot<1.5?${palette[0][1]}:${palette[0][2]});
                 vec3 secondColor=slot<.5?${palette[1][0]}:(slot<1.5?${palette[1][1]}:${palette[1][2]});
                 particleColor=encore>1.5?secondColor:firstColor;
-              }
-              if(encore>2.5) {
-                // Reuse each old tail as the next sample on the curled petal,
-                // rather than drawing radial spokes over the flower silhouette.
-                float petalAge=max(0.0,uAge-shellStart), layer=flower.y;
-                float theta=flower.x+timing.y/detail.x*flower.z;
-                float radius=(.17+layer*.26)*(.78+.22*cos(5.0*theta+layer*.68))*30.0*flower.w;
-                float angle=theta+.18*sin(5.0*theta+layer*.6);
-                vec3 petalRay=vec3(cos(angle)*radius,sin(angle)*radius,sin(theta*5.0+layer)*flower.w*1.2);
-                float opening=1.12*(1.0-exp(-3.8*petalAge));
-                ray=petalRay*opening-vec3(0.0,.38*petalAge*petalAge,0.0);
-                motion=petalRay*(4.256*exp(-3.8*petalAge))-vec3(0.0,.76*petalAge,0.0);
-                vec3 petal=slot<.5?vec3(1.0,.13,.31):(slot<1.5?vec3(.63,.27,1.0):vec3(1.0,.34,.16));
-                particleColor=mix(vec3(1.0,.69,.32),petal,.3+layer*.23);
               }
               vec3 back=cross(uTextRight,uTextUp);
               // Follow the ray through the phrase: merely moving along camera Z
@@ -454,19 +461,19 @@ function personalMaterial(material: THREE.ShaderMaterial, variant: PersonalFirew
               tangent=(uTextRight*motion.x+uTextUp*motion.y-back*motion.z)*uTextScale;
               float glint=fireworkTwinkle(t,detail.y);
               fade=step(0.0,shellAge)*(1.0-smoothstep(life*.45,life,t))*(.75+.25*glint);
-              // Petal curves reuse dim trail samples; lift only those samples so
-              // their coloured edges remain clear against the bright city below.
-              if(encore>2.5 && timing.y>.001) fade*=3.0;
-              sparkle=glint*(encore>2.5?.5:.22);
+              sparkle=glint*.22;
+              }
             `+material.vertexShader.slice(end);
     const reserveStart=material.vertexShader.indexOf("if(uGrand>.5 && uTextWidth>0.0");
     const reserveEnd=material.vertexShader.indexOf("if (vAlpha",reserveStart);
     material.vertexShader=material.vertexShader.slice(0,reserveStart)+material.vertexShader.slice(reserveEnd);
     material.vertexShader=material.vertexShader
-      .replace("uniform float uAge;", "uniform float uFinalScale; uniform float uAge;")
-      .replace("attribute vec3 velocity;", "attribute float glyphCenter; attribute vec3 backdrop; attribute vec4 flower; attribute vec3 velocity;")
+      .replace("uniform float uAge;", "uniform float uFinalScale; uniform float uFlowerScale; uniform float uAge;")
+      .replace("attribute vec3 velocity;", "attribute float glyphCenter; attribute vec3 backdrop; attribute vec4 flower; attribute vec4 flowerCenter; attribute vec4 flowerBurn; attribute vec3 flowerColor; attribute vec3 velocity;")
       .replace("varying float vWater;", "varying float vWater; varying float vTextTip;")
-      .replace("float sparkle = 0.0;", "float sparkle = 0.0; vTextTip=0.0; vec3 particleColor=sparkColor;")
+      .replace("void main() {", SONGI_FLOWER_GLSL + "\nvoid main() {")
+      .replace("float sparkle = 0.0;", "float sparkle = 0.0; vTextTip=0.0; vec3 particleColor=sparkColor; float streakStep=detail.x;")
+      .replace("imagePoint+tangent*detail.x", "imagePoint+tangent*streakStep")
       .replace("vColor = mix(sparkColor,", "vColor = mix(particleColor,")
       .replace("if(timing.w>5.5) {", "if(timing.w>5.5 || (timing.w>3.5 && timing.w<4.5)) {")
       .replace("vTrailAspect=clamp(width/gl_PointSize,.025,.65);", `
@@ -819,6 +826,10 @@ export class BeachFireworks {
           const verticalRoom=Math.max(0,verticalHalf*.82-Math.abs(this.textFromCamera.dot(this.cameraUp)));
           show.object.material.uniforms.uFinalScale.value=Math.min(1,Math.max(.05,availableWidth/(2*show.object.geometry.userData.finaleHalfWidth)),
             Math.max(.05,verticalRoom/show.object.geometry.userData.finaleHalfHeight));
+          // The flowers have their own frame allowance; a wide bouquet must not
+          // shrink the greeting or the puppy on a portrait phone.
+          show.object.material.uniforms.uFlowerScale.value=Math.min(1,Math.max(.05,availableWidth/(2*show.object.geometry.userData.flowerHalfWidth)),
+            Math.max(.05,verticalRoom/show.object.geometry.userData.flowerHalfHeight));
         }
       }
     }

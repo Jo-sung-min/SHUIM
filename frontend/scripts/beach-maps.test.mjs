@@ -6,6 +6,7 @@ import test from "node:test";
 import ts from "typescript";
 import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
+import { assets } from "./assets-fixture.mjs";
 
 const read = file => readFile(new URL(file, import.meta.url), "utf8");
 const mapSource = stripTypeScriptTypes(await read("../lib/beach/maps.ts")).replace(/\bexport\s+(?=function|const)/g, "");
@@ -20,6 +21,7 @@ function elements(tree, type) {
   if (!React.isValidElement(tree)) return [];
   return [...(tree.type === type ? [tree] : []), ...React.Children.toArray(tree.props.children).flatMap(child => elements(child, type))];
 }
+const occupancyLabels = tree => elements(tree,"strong").filter(element => typeof element.props.children === "number");
 
 function cardHarness(customCircles) {
   const values = [], effects = [], queued = [], requests = [];
@@ -46,13 +48,14 @@ function cardHarness(customCircles) {
       if (name === "react/jsx-runtime") return jsxRuntime;
       if (name === "next/link") return { default: "a" };
       if (name.endsWith("/maps")) return maps;
+      if (name.endsWith("/assets")) return assets;
       if (name.endsWith("/daylight")) return { currentHour: () => 12, daylightAt: () => ({ skyTop: [0.5, 0.6, 0.7], stars: 0 }) };
       if (name.endsWith("/atlas")) return { CHAR_VIEW: { front: 0, left: 1 } };
       if (name.endsWith("/net")) return { fetchBeachCount: (communityId, mapId) => {
         const result = deferred(); requests.push({ communityId, mapId, ...result }); return result.promise;
       } };
       if (name.endsWith(".css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
-      return { IconChevronR: "i", IconLock: "i", IconUsers: "i" };
+      return { IconCheck: "i", IconChevronR: "i", IconLock: "i", IconUsers: "i" };
     },
   };
   vm.runInNewContext(compile(cardSource), context);
@@ -68,6 +71,7 @@ test("visitors with no joined circles render the discovery card without derefere
   const harness = cardHarness([]), tree = harness.render();
   assert.equal(harness.requests.length, 0);
   assert.equal(elements(tree, "a")[0].props.href, "/c");
+  assert.deepEqual(elements(tree,"img").map(image=>image.props.src),["beach","uyuni","bamboo","garden"].map(map=>assets.assetUrl(`/beach/places/${map}-v1.webp`)));
 });
 
 test("a pinned private circle precedes the primary circle and respects its four-place limit", async () => {
@@ -80,7 +84,7 @@ test("a pinned private circle precedes the primary circle and respects its four-
   harness.requests[0].resolve({ communityId: "test", mapId: "beach", count: 4, capacity: 4 });
   await settle(); tree = harness.render();
   assert.equal(elements(tree, "a").length, 0, "the fifth visit has no enter link");
-  assert.equal(elements(tree, "strong")[0].props.children, 4);
+  assert.equal(occupancyLabels(tree)[0].props.children, 4);
 });
 
 test("map links preserve the community and encode it without changing the beach route", () => {
@@ -96,7 +100,7 @@ test("switching landscapes keeps the chosen community and discards late counts f
   assert.equal(harness.requests[0].mapId, "beach");
   elements(tree, "select")[0].props.onChange({ target: { value: "circle-two" } });
   tree = harness.render();
-  elements(tree, "button").find(button => button.props.children.includes("우유니")).props.onClick();
+  elements(tree, "button").find(button => button.props["data-place"] === "uyuni").props.onClick();
   tree = harness.render();
   assert.equal(elements(tree, "select")[0].props.value, "circle-two");
   assert.equal(elements(tree, "a")[0].props.href, "/uyuni?communityId=circle-two");
@@ -104,14 +108,14 @@ test("switching landscapes keeps the chosen community and discards late counts f
     [["circle / one", "beach"], ["circle-two", "beach"], ["circle-two", "uyuni"]]);
   harness.requests[1].resolve({ communityId: "circle-two", mapId: "beach", count: 100, capacity: 100 });
   await settle(); tree = harness.render();
-  assert.equal(elements(tree, "strong").length, 0, "a full beach cannot mark Uyuni as full");
+  assert.equal(occupancyLabels(tree).length, 0, "a full beach cannot mark Uyuni as full");
   assert.equal(elements(tree, "a").length, 1);
   harness.requests[2].resolve({ communityId: "circle-two", mapId: "uyuni", count: 9, capacity: 100 });
   await settle(); tree = harness.render();
-  assert.equal(elements(tree, "strong")[0].props.children, 9);
-  elements(tree, "button").find(button => button.props.children.includes("바닷가")).props.onClick();
+  assert.equal(occupancyLabels(tree)[0].props.children, 9);
+  elements(tree, "button").find(button => button.props["data-place"] === "beach").props.onClick();
   tree = harness.render();
-  assert.equal(elements(tree, "strong").length, 0, "the newly selected map starts with unknown occupancy");
+  assert.equal(occupancyLabels(tree).length, 0, "the newly selected map starts with unknown occupancy");
   assert.equal(elements(tree, "select")[0].props.value, "circle-two");
 });
 

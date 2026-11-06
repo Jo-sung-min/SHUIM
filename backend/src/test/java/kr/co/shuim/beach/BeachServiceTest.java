@@ -59,11 +59,11 @@ class BeachServiceTest {
 
     @Test
     void fullCircleDoesNotUseAnotherCirclesCapacity() {
-        for (int i = 0; i < 100; i++) enter("circle-a", "u-" + i);
+        for (int i = 0; i < 20; i++) enter("circle-a", "u-" + i);
         assertEquals(409, assertThrows(ApiException.class, () -> enter("circle-a", "overflow")).status());
         BeachRoom.Presence b = enter("circle-b", "u-b");
         assertEquals(1, tick(b, null).count());
-        assertEquals(100, service.count("circle-a"));
+        assertEquals(20, service.count("circle-a"));
     }
 
     @Test
@@ -93,7 +93,7 @@ class BeachServiceTest {
     }
 
     @Test
-    void oneHundredConcurrentVisitorsShareOneFireRead() throws Exception {
+    void twentyConcurrentVisitorsShareOneFireRead() throws Exception {
         BeachFireService fire = mock(BeachFireService.class);
         BeachFireService.FireView view = new BeachFireService.FireView(3, 12, .25, "amber", null,
             clock.get(), clock.get() + BeachFireService.LOG_BURN_MS, null, 0);
@@ -105,7 +105,7 @@ class BeachServiceTest {
         });
         BeachService cached = new BeachService(clock::get, fire);
         var visitors = new ArrayList<BeachRoom.Presence>();
-        for (int i = 0; i < 100; i++) visitors.add(cached.enter("circle-a", "u-" + i, "방문자", Set.of()));
+        for (int i = 0; i < 20; i++) visitors.add(cached.enter("circle-a", "u-" + i, "방문자", Set.of()));
         try (var workers = Executors.newFixedThreadPool(16)) {
             var results = new ArrayList<java.util.concurrent.Future<BeachRoom.TickResult>>();
             for (var visitor : visitors) results.add(workers.submit(() -> {

@@ -76,11 +76,7 @@ export default function Joystick({ onMove }: { onMove: (x: number, y: number) =>
       onLostPointerCapture={release}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <span className={styles.arrow} data-dir="up" aria-hidden="true" />
-      <span className={styles.arrow} data-dir="down" aria-hidden="true" />
-      <span className={styles.arrow} data-dir="left" aria-hidden="true" />
-      <span className={styles.arrow} data-dir="right" aria-hidden="true" />
-      <div className={styles.knob} style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} />
+      <div aria-hidden="true" className={styles.knob} style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} />
     </div>
   );
 }

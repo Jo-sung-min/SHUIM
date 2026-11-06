@@ -53,7 +53,7 @@ class BeachMapControllerTest {
     @Test void uyuniEntryAdvertisesOnlyAvailableFacilitiesAndCountAndFireRespectTheSelectedMap() throws Exception {
         mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\",\"mapId\":\"uyuni\",\"character\":\"female-3d\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("uyuni"))
-            .andExpect(jsonPath("$.count").value(1)).andExpect(jsonPath("$.capacity").value(100))
+            .andExpect(jsonPath("$.count").value(1)).andExpect(jsonPath("$.capacity").value(20))
             .andExpect(jsonPath("$.restEnabled").value(true)).andExpect(jsonPath("$.bedEnabled").value(true))
             .andExpect(jsonPath("$.benchEnabled").value(false)).andExpect(jsonPath("$.onsenEnabled").value(false))
             .andExpect(jsonPath("$.fireEnabled").value(false)).andExpect(jsonPath("$.fire.logs").value(0))
@@ -80,7 +80,7 @@ class BeachMapControllerTest {
     @Test void bambooEntryAdvertisesPavilionsInsteadOfStarlightBedsOrBeachFacilities() throws Exception {
         mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\",\"mapId\":\"bamboo\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("bamboo"))
-            .andExpect(jsonPath("$.count").value(1)).andExpect(jsonPath("$.capacity").value(100))
+            .andExpect(jsonPath("$.count").value(1)).andExpect(jsonPath("$.capacity").value(20))
             .andExpect(jsonPath("$.restEnabled").value(false)).andExpect(jsonPath("$.bedEnabled").value(false))
             .andExpect(jsonPath("$.pavilionEnabled").value(true))
             .andExpect(jsonPath("$.benchEnabled").value(false)).andExpect(jsonPath("$.onsenEnabled").value(false))

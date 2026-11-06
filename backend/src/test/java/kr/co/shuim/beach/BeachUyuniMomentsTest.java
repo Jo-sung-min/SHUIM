@@ -192,17 +192,20 @@ class BeachUyuniMomentsTest {
     }
 
     @Test void activeEventsAreBoundedPerKindWithoutDiscardingAnExistingVisitorsMoment() {
-        var visitors = new ArrayList<BeachRoom.Presence>();
-        for (int i = 0; i < 33; i++) visitors.add(visitor("user-" + i));
         var accepted = new ArrayList<BeachUyuniMoments.Event>();
-        for (int i = 0; i < 32; i++) { accepted.add(spark(visitors.get(i)).event()); accepted.add(lantern(visitors.get(i)).event()); }
-        assertEquals(accepted, poll(visitors.getLast()).uyuniMoments());
-        assertEquals(429, assertThrows(ApiException.class, () -> spark(visitors.getLast())).status());
-        assertEquals(429, assertThrows(ApiException.class, () -> lantern(visitors.getLast())).status());
-        advance(12_000, visitors.toArray(BeachRoom.Presence[]::new));
-        assertDoesNotThrow(() -> spark(visitors.getLast()));
-        assertEquals(429, assertThrows(ApiException.class, () -> lantern(visitors.getLast())).status());
-        assertEquals(33, poll(visitors.getLast()).uyuniMoments().size());
+        for (int i = 0; i < 32; i++) {
+            var visitor = visitor("user-" + i);
+            accepted.add(spark(visitor).event()); accepted.add(lantern(visitor).event());
+            beach.leave(visitor.ticket()); // Finished visits free room capacity, while their moments remain visible.
+        }
+        var newcomer = visitor("newcomer");
+        assertEquals(accepted, poll(newcomer).uyuniMoments());
+        assertEquals(429, assertThrows(ApiException.class, () -> spark(newcomer)).status());
+        assertEquals(429, assertThrows(ApiException.class, () -> lantern(newcomer)).status());
+        advance(12_000, newcomer);
+        assertDoesNotThrow(() -> spark(newcomer));
+        assertEquals(429, assertThrows(ApiException.class, () -> lantern(newcomer)).status());
+        assertEquals(33, poll(newcomer).uyuniMoments().size());
     }
 
     @Test void blockFilteringWorksInBothDirectionsIncludingAfterTheSenderLeaves() {

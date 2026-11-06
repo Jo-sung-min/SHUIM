@@ -99,7 +99,7 @@ class BeachRestTest {
     @Test
     void concurrentClaimsNeverShareAPlaceOrExceedEight() throws Exception {
         List<BeachRoom.Presence> guests = new ArrayList<>();
-        for (int i = 0; i < 24; i++) guests.add(visitor("guest-" + i));
+        for (int i = 0; i < 20; i++) guests.add(visitor("guest-" + i));
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(24)) {
             var tasks = new ArrayList<java.util.concurrent.Future<Integer>>();
@@ -117,7 +117,7 @@ class BeachRestTest {
                 else { occupied++; assertTrue(slots.add(slot), "no duplicate slot"); }
             }
             assertEquals(8, occupied);
-            assertEquals(16, full);
+            assertEquals(12, full);
         }
     }
 

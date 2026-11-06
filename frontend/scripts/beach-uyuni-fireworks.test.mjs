@@ -12,11 +12,12 @@ const source=stripTypeScriptTypes(await readFile(new URL("../lib/beach/fireworks
 const variantSource=stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-festival-variants.ts",import.meta.url),"utf8"))
   .replace(/^import\s+[^\n]+\n/gm,"").replace(/\bexport\s+(?=function\b|class\b|const\b)/g,"");
 const finaleSource=stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-songi-finale.ts",import.meta.url),"utf8")).replace(/\bexport\s+(?=const\b)/g,"");
+const flowerSource=stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-songi-flowers.ts",import.meta.url),"utf8")).replace(/\bexport\s+(?=function\b|const\b)/g,"");
 const event=(id="festival",variant="festival",startedAt=100000)=>({id,seed:1729,startedAt,durationMs:variant==="songi"?18000:12000,variant});
 function fixture(options={mobile:true,grand:true,reflectWater:true}) {
   let time=100000;
   const context={THREE,Date:{now:()=>time},...assets};
-  vm.runInNewContext(`${variantSource}\n${finaleSource}\n${source}\nglobalThis.api={BeachFireworks,fireworkGeometry};`,context);
+  vm.runInNewContext(`${variantSource}\n${finaleSource}\n${flowerSource}\n${source}\nglobalThis.api={BeachFireworks,fireworkGeometry};`,context);
   const scene=new THREE.Scene(), fireworks=new context.api.BeachFireworks(scene,options);
   const camera=new THREE.PerspectiveCamera(82,390/844,.1,520); camera.position.set(0,1.55,10); camera.lookAt(0,40,-100);
   return {...context.api,scene,fireworks,camera,setTime:value=>time=value};
@@ -120,7 +121,7 @@ test("songi bursts once, then short tails burn out into scattered gold tips with
     assert.equal(geometry.userData.phrase,"송이 안녕?");
     assert.ok(!object.material.vertexShader.includes("float reserve"),"the background stays continuous behind the lettering");
     assert.ok(object.material.vertexShader.includes("expansion=1.28*(1.0-exp(-1.05*t))"),"the text uses the existing heart's moving trajectory");
-    assert.ok(object.material.vertexShader.includes("attribute float glyphCenter"),"trails radiate locally within each character instead of streaking across other letters");
+
     const core=points;
     const minX=Math.min(...core.map(p=>p[0])),maxX=Math.max(...core.map(p=>p[0]));
     assert.ok(Math.abs(minX+maxX)<1e-5,"visible pixels are horizontally centered without trailing space");
@@ -195,6 +196,34 @@ test("songi places three cool spherical shells behind warm foreground letters on
   f.fireworks.dispose();
 });
 
+test("the restored greeting particles and original greeting/puppy motion match the approved baseline",()=>{
+  // SHA snapshots were calculated from the approved pre-flower-change source.
+  // Only greeting attributes and the two restored shader branches are included:
+  // new flowers may evolve without silently changing the user's chosen greeting.
+  const baselines=[
+    [true,true,"35332564b774ab4ddbe0b4751dd564d9e8c0691e647a3bb73bf36ff2f081403b"],
+    [true,false,"a731b0d7cb8136f805134648da78562a39c6a46f5c625bbe448a51e7dfac2efb"],
+    [false,true,"75bd1174b2688e17ae61abaef628183937870653cbcfbf14b8442887f0d7bff8"],
+    [false,false,"e8e30601ddcb7549e1b532009f31a03e8132cd8840c222b554d0ae0407c6b09c"],
+  ];
+  const shaderHash=block=>createHash("sha256").update(block.replace(/\/\/[^\n]*/g,"").replace(/\s+/g,"")).digest("hex");
+  for(const [mobile,grand,expected] of baselines) {
+    const f=fixture({mobile,grand,reflectWater:true});f.fireworks.apply([event("restored","songi")],100000);
+    const object=f.scene.children[0],{timing}=object.geometry.attributes,hash=createHash("sha256");
+    for(const name of ["position","velocity","sparkColor","timing","detail","glyphCenter","backdrop"]) {
+      const attr=object.geometry.attributes[name],values=[];
+      for(let i=0;i<timing.count;i++)if(timing.getW(i)===4)for(let axis=0;axis<attr.itemSize;axis++)values.push(attr.array[i*attr.itemSize+axis]);
+      hash.update(new Uint8Array(new Float32Array(values).buffer));
+    }
+    assert.equal(hash.digest("hex"),expected,"the exact text destinations, phase, timing, colour and alpha are restored");
+    const shader=object.material.vertexShader,begin=shader.indexOf("if (timing.w > 3.5 && timing.w < 4.5) {"),end=shader.indexOf("} else if(timing.w>11.5",begin);
+    assert.equal(shaderHash(shader.slice(begin,end)),"527b76d29e4e3a10162d09ab562bdcc03300e0ec207db469d9ee284a202fad99");
+    const puppy=shader.match(/else if\(timing.w>13\.5 && timing.w<14\.5\) \{([\s\S]*?)\n\s+\} else if/)[1];
+    assert.equal(shaderHash(puppy),"413d81ad99e6252cd0ebba27df90826b4e4b00f6996e5258e8e373d7d2c524b5");
+    f.fireworks.dispose();
+  }
+});
+
 test("the greeting's distant shells stay behind its screen position when the phrase is high above the viewer",()=>{
   const f=fixture();f.fireworks.apply([event("aligned","songi")],100000);
   const object=f.scene.getObjectByName("beach-fireworks-aligned");
@@ -212,7 +241,7 @@ test("the greeting's distant shells stay behind its screen position when the phr
   f.fireworks.dispose();
 });
 
-test("songi launches nine overlapping encore shells, opens three layered roses and finishes with the puppy in its eighteen-second window",()=>{
+test("songi preserves both spherical waves, launches one rose, three tulips and five cosmos, then ends with the puppy",()=>{
   for (const mobile of [true,false]) for (const grand of [true,false]) {
     const f=fixture({mobile,grand,reflectWater:true}); f.fireworks.apply([event("encore","songi")],100000);
     const object=f.scene.getObjectByName("beach-fireworks-encore"), shader=object.material.vertexShader;
@@ -220,47 +249,55 @@ test("songi launches nine overlapping encore shells, opens three layered roses a
       .replace(/\b(?:float|vec3)\s+(?=\w+\s*=)/g,"let ");
     const context={step:(edge,x)=>x>=edge?1:0,max:Math.max,exp:Math.exp,vec3:(x,y,z)=>({x,y,z})};
     vm.runInNewContext(`globalThis.sample=(uAge,x,delay=0)=>{const backdrop={x},timing={x:1.35,y:delay,z:2.8};${scalar}return {slot,encore,shellStart,shellAge,life,t};};`,context);
-    const {timing,backdrop,flower,velocity,sparkColor}=object.geometry.attributes, flashes=[];
+    const {timing,backdrop,flower,flowerCenter,flowerBurn,flowerColor,velocity,sparkColor}=object.geometry.attributes, flashes=[];
     for(let i=0;i<timing.count;i++)if(timing.getW(i)===3&&timing.getX(i)>3)flashes.push(i);
     const starts=flashes.map(i=>timing.getX(i));
-    assert.equal(starts.length,10,"two spherical waves, one rose wave and the puppy have their own burst flashes");
-    assert.ok(starts[2]-starts[0]>.5&&starts[2]-starts[0]<.7,"the first three flowers are staggered, not simultaneous");
-    assert.ok(starts[5]-starts[3]>.6&&starts[5]-starts[3]<.75,"the second wave has a different offbeat cadence");
-    assert.ok(starts[3]-starts[0]>2.5,"the distant report can finish before the next wave");
+    assert.deepEqual(starts.map(t=>Number(t.toFixed(2))),[4.3,4.58,4.9,6.9,7.22,7.55,9.1,10.5,10.64,10.78,11.9,12.02,12.14,12.26,12.38,14.2]);
     const scale=grand?1.8:1;
     for(let slot=0;slot<3;slot++) {
-      const x=(slot-1)*19*scale;
-      const early=context.sample(2.55,x,.2);
-      assert.equal(early.encore,0); assert.ok(Math.abs(early.shellAge-1)<1e-9,"the approved greeting timing is unchanged");
-      for(let round=0;round<3;round++) {
-        const start=starts[round*3+slot], sample=context.sample(start+.001,x);
-        assert.equal(sample.encore,round+1);assert.ok(sample.shellAge<.002);
-        assert.equal(sample.life,round===2?2.65:1.95);
+      const x=(slot-1)*19*scale, early=context.sample(2.55,x,.2);
+      assert.equal(early.encore,0); assert.ok(Math.abs(early.shellAge-1)<1e-9);
+      for(let round=0;round<2;round++) {
+        const sample=context.sample(starts[round*3+slot]+.001,x);
+        assert.equal(sample.encore,round+1);assert.ok(sample.shellAge<.002);assert.equal(sample.life,1.95);
       }
     }
-    let lastEmber=0; const layers=new Set();
+    const blooms=object.geometry.userData.songiTimeline.flowers;
+    assert.deepEqual(Array.from(blooms,b=>b.kind),["rose",...Array(3).fill("tulip"),...Array(5).fill("cosmos")]);
+    const counts=new Map(), heads=new Map();let lastEmber=0,bank=0;
     for(let i=0;i<timing.count;i++)if(timing.getW(i)===11) {
-      const sample=context.sample(13.3,backdrop.getX(i),timing.getY(i));
-      const end=sample.shellStart+timing.getY(i)*.6+sample.life;
-      lastEmber=Math.max(lastEmber,end);
-      layers.add(flower.getY(i));
-      assert.ok(sample.shellAge>=sample.life,"the petals finish while the final rocket rises");
-      assert.ok(flower.getZ(i)>0&&flower.getZ(i)<.03,"old tail samples fill the small angular gaps along a petal");
-      assert.ok(Math.abs(flower.getW(i)-scale)<1e-6);
+      bank++;
+      const start=Number(flower.getW(i).toFixed(2)), bloom=blooms.find(b=>Math.abs(b.start-start)<1e-5);
+      assert.ok(bloom,"every reused spherical particle belongs to one of the nine real flowers");
+      counts.set(start,(counts.get(start)??0)+1);
+      if(flowerBurn.getX(i)===0)heads.set(start,(heads.get(start)??0)+1);
+      for(const [axis,get] of ["getX","getY","getZ"].entries()) assert.ok(Math.abs(flowerCenter[get](i)-bloom.center[axis])<1e-5);
+      assert.ok(flowerBurn.getX(i)>=0&&flowerBurn.getX(i)<=.28001);
+      assert.ok(Math.abs(flowerBurn.getY(i)-.28/(mobile?2:4))<1e-6,"streak length follows the actual delayed sample spacing");
+      assert.ok(flowerBurn.getZ(i)>0&&flowerBurn.getZ(i)<=1);
+      assert.ok([flowerColor.getX(i),flowerColor.getY(i),flowerColor.getZ(i)].every(n=>n>=0&&n<=1));
+      lastEmber=Math.max(lastEmber,start+flowerCenter.getW(i));
     }
-    assert.equal(layers.size,4,"four differently turned petal whorls form each rose");
-    assert.ok(lastEmber>12.9&&lastEmber<13.3);
+    assert.equal(bank,mobile?3168:7680,"flowers reuse the existing spherical bank rather than adding a particle cloud");
+    assert.equal(counts.size,9);
+    for(const bloom of blooms) {
+      const expected=bloom.kind==="rose"?(mobile?192:320):bloom.kind==="tulip"?(mobile?128:192):(mobile?96:128);
+      assert.equal(heads.get(bloom.start),expected);assert.equal(counts.get(bloom.start),expected*(mobile?3:5));
+      const flash=flashes.find(i=>Math.abs(timing.getX(i)-bloom.start)<1e-5);assert.notEqual(flash,undefined);
+      for(const [axis,get] of ["getX","getY","getZ"].entries()) assert.ok(Math.abs(backdrop[get](flash)-bloom.center[axis])<1e-5,"flower and rocket flash use the same destination");
+    }
+    assert.ok(lastEmber>14.2&&lastEmber<=14.38001,"cosmos embers bridge into the puppy finale without extending the event");
     for(const flash of flashes) {
       const rocket=[];
       for(let i=0;i<timing.count;i++)if(timing.getW(i)===12&&timing.getX(i)===timing.getX(flash))rocket.push(i);
-      assert.equal(rocket.length,36,"every late shell is preceded by a continuous rising trail");
+      assert.equal(rocket.length,36);
       for(const i of rocket) for(const getter of ["getX","getY","getZ"])
         assert.equal(backdrop[getter](i),backdrop[getter](flash),"the rocket reaches the exact flash center");
       assert.ok(timing.getZ(rocket[0])>=1.29&&timing.getZ(rocket[0])<=1.41);
     }
-    assert.ok(starts[0]-1.3<3.1,"the first ascent begins during the fading greeting");
+    assert.ok(starts[0]-1.3<3.1);
     assert.ok(starts[3]-1.3<starts[2]+1.95&&starts[6]-1.3<starts[5]+1.95);
-    assert.ok(starts[9]-1.4<lastEmber,"no empty sky separates the rose and puppy");
+    assert.ok(starts.at(-1)-1.4<lastEmber);
     const finaleHeads=[],colours=new Set();
     for(let i=0;i<timing.count;i++)if(timing.getW(i)===14) {
       assert.ok(timing.getX(i)+timing.getY(i)+timing.getZ(i)<17.6);
@@ -268,13 +305,10 @@ test("songi launches nine overlapping encore shells, opens three layered roses a
       colours.add([sparkColor.getX(i),sparkColor.getY(i),sparkColor.getZ(i)].join(","));
       assert.ok(Math.abs(velocity.getX(i))<=37.5*scale&&Math.abs(velocity.getY(i))<=37.5*scale);
     }
-    assert.equal(finaleHeads.length,1867,"mobile retains the puppy eyes, muzzle and maple edges");assert.equal(colours.size,2);
-    assert.ok(object.geometry.attributes.position.count<=(mobile?20000:32000),"the spheres also supply the rose bank within a bounded mobile budget");
-    assert.equal(object.geometry.userData.songiTimeline.finale,14.2);
-    f.fireworks.update(f.camera,115350,844);
-    assert.equal(f.scene.children.length,2,"the encore and reflection share one show until completion");
-    f.fireworks.update(f.camera,118000,844);assert.equal(f.scene.children.length,0);
-    f.fireworks.dispose();
+    assert.equal(finaleHeads.length,1867);assert.equal(colours.size,2);
+    assert.ok(object.geometry.attributes.position.count<=(mobile?20000:32000));
+    f.fireworks.update(f.camera,115350,844);assert.equal(f.scene.children.length,2);
+    f.fireworks.update(f.camera,118000,844);assert.equal(f.scene.children.length,0);f.fireworks.dispose();
   }
 });
 
@@ -295,6 +329,43 @@ test("the puppy finale fits portrait and landscape views, including the sky-only
       assert.ok(Math.abs(p.x)<.9&&Math.abs(p.y)<.9,`outline fits ${aspect} grand=${grand} lying=${skyOnly}: ${p.toArray()}`);
     }
     assert.equal(f.scene.children[1].material.uniforms.uFinalScale,u.uFinalScale,"the reflection shares the same fit");
+    f.fireworks.dispose();
+  }
+});
+
+test("larger flowers fit independently of the greeting on phones, wide views and the lookout, with matching rocket endpoints",()=>{
+  for(const [grand,summitDisplay] of [[false,false],[true,false],[true,true]])
+    for(const aspect of [320/900,390/844,16/9]) for(const skyOnly of summitDisplay?[false]:[true,false]) {
+    const f=fixture({mobile:true,grand,summitDisplay,reflectWater:true});
+    const target=summitDisplay?[0,72,395]:skyOnly?[0,90,28]:grand?[0,66,-205]:[0,72,-45];
+    f.camera.position.set(0,summitDisplay?22:1.55,summitDisplay?102.2:10);
+    f.camera.aspect=aspect;f.camera.updateProjectionMatrix();f.camera.lookAt(...target);
+    if(skyOnly)f.camera.layers.set(1);
+    f.fireworks.apply([event("flower-fit","songi")],100000);f.fireworks.update(f.camera,112900,844);
+    const object=f.scene.getObjectByName("beach-fireworks-flower-fit"),u=object.material.uniforms;
+    const {timing,flower,flowerCenter,flowerBurn}=object.geometry.attributes;
+    assert.ok(u.uFlowerScale.value>0&&u.uFlowerScale.value<=1);
+    const ray=u.uTextCenter.value.clone().sub(f.camera.position).normalize(),back=new THREE.Vector3().crossVectors(u.uTextRight.value,u.uTextUp.value);
+    for(let i=0;i<timing.count;i++)if(timing.getW(i)===11&&flowerBurn.getX(i)===0) {
+      // Use the maximum expansion and both depth extremes, which bound the
+      // actual shorter lived moving flower and its gravity drop.
+      for(const depthSign of [-1,1]) {
+        const p=u.uTextCenter.value.clone().addScaledVector(ray,flowerCenter.getZ(i)*u.uFlowerScale.value)
+          .addScaledVector(u.uTextRight.value,(flowerCenter.getX(i)+flower.getX(i)*1.28)*u.uFlowerScale.value)
+          .addScaledVector(u.uTextUp.value,(flowerCenter.getY(i)+flower.getY(i)*1.28-.9)*u.uFlowerScale.value)
+          .addScaledVector(back,depthSign*Math.abs(flower.getZ(i))*1.28*u.uFlowerScale.value).project(f.camera);
+        assert.ok(Math.abs(p.x)<.9&&Math.abs(p.y)<.9,`complete flower fits ${aspect} grand=${grand} summit=${summitDisplay} sky=${skyOnly}: ${p.toArray()}`);
+      }
+    }
+    const scaleExpressions=[...object.material.vertexShader.matchAll(/float showScale=([^;]+);/g)].map(match=>
+      new Function("timing","uFinalScale","uFlowerScale","uTextScale",`return ${match[1]};`));
+    assert.equal(scaleExpressions.length,2,"both rocket and primary flash choose their display's scale");
+    for(const choose of scaleExpressions)for(const launch of object.geometry.userData.songiTimeline.flowers)
+      assert.equal(choose({x:launch.start},.2,.61,.8),.61,"each flower rocket meets the independently fitted flower centre");
+    for(const choose of scaleExpressions) {
+      assert.equal(choose({x:4.3},.2,.61,.8),.8);assert.equal(choose({x:14.2},.2,.61,.8),.2);
+    }
+    assert.equal(f.scene.children[1].material.uniforms.uFlowerScale,u.uFlowerScale);
     f.fireworks.dispose();
   }
 });

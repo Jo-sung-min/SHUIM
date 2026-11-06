@@ -148,7 +148,7 @@ class BeachBenchTest {
         var guests = new ArrayList<BeachRoom.Presence>();
         for (int bench = 0; bench < 6; bench++) {
             double[] first = SEATS[bench * 2], second = SEATS[bench * 2 + 1];
-            for (int i = 0; i < 4; i++) guests.add(visitor("bench-" + bench + "-" + i,
+            for (int i = 0; i < 3; i++) guests.add(visitor("bench-" + bench + "-" + i,
                 (first[0] + second[0]) / 2, (first[1] + second[1]) / 2));
         }
         var start = new CountDownLatch(1);
@@ -170,7 +170,7 @@ class BeachBenchTest {
                 if (slot < 0) full++; else assertTrue(used.add(slot), "no shared seats");
             }
             assertEquals(12, used.size());
-            assertEquals(12, full);
+            assertEquals(6, full);
         }
     }
 }

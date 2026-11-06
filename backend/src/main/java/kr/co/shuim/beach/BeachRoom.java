@@ -2,6 +2,7 @@ package kr.co.shuim.beach;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import kr.co.shuim.common.Ids;
+import kr.co.shuim.common.SpaceCapacity;
 import kr.co.shuim.config.ApiException;
 
 import java.util.ArrayList;
@@ -30,13 +31,12 @@ public class BeachRoom {
     /** 세계 경계 (m). 물가는 z = 0, 바다는 z 가 음수 쪽. 들어오는 위치는 전부 이 안으로 자른다 */
     public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -1, MAX_Z = 55;
     /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
-    public static final int CAPACITY = 100;
+    public static final int CAPACITY = SpaceCapacity.MAX;
     private int capacity = CAPACITY;
 
     /** Admission limits come from the community policy, never from the visitor's request. */
     public synchronized void setCapacity(int capacity) {
-        if (capacity < 1 || capacity > CAPACITY) throw ApiException.badRequest("입장 정원을 확인해 주세요.");
-        this.capacity = capacity;
+        this.capacity = SpaceCapacity.effective(capacity);
     }
     /** 이만큼 tick 이 없으면 나간 것 */
     public static final long IDLE_MS = 10_000;

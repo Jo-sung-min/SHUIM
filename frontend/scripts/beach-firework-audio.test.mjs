@@ -9,10 +9,10 @@ async function source(name) {
   return stripTypeScriptTypes(await readFile(new URL(`../lib/beach/${name}.ts`, import.meta.url), "utf8"))
     .replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=function\b|const\b|class\b)/g, "");
 }
-const [soundSource, variantSource, fireworksSource, recordingSource, finaleSource] = await Promise.all(
-  ["firework-audio", "firework-festival-variants", "fireworks", "field-recording", "firework-songi-finale"].map(source));
+const [soundSource, variantSource, fireworksSource, recordingSource, finaleSource, flowerSource] = await Promise.all(
+  ["firework-audio", "firework-festival-variants", "fireworks", "field-recording", "firework-songi-finale", "firework-songi-flowers"].map(source));
 const geometryContext = { THREE };
-vm.runInNewContext(`${variantSource}\n${finaleSource}\n${fireworksSource}\nglobalThis.make = fireworkGeometry;`, geometryContext);
+vm.runInNewContext(`${variantSource}\n${finaleSource}\n${flowerSource}\n${fireworksSource}\nglobalThis.make = fireworkGeometry;`, geometryContext);
 const makeGeometry = geometryContext.make;
 const start = 100_000, listener = { x: 0, y: 0, z: 0 };
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -28,7 +28,7 @@ function twoShells() {
   put("detail", [4, 0, 1, 4, 0, 1], 3);
   return geometry;
 }
-function harness({ muted = false, savedVolume, savedMusicVolume, noWebAudio = false, slowDownload = false, bamboo = false, map = bamboo ? "bamboo" : "uyuni", delayedStream = false, running = true } = {}) {
+function harness({ muted = false, savedVolume, savedMusicVolume, noWebAudio = false, slowDownload = false, bamboo = false, map = bamboo ? "bamboo" : "uyuni", delayedStream = false, running = true, naturalEnd = false } = {}) {
   let localTime = 15_000, release;
   const download = slowDownload ? new Promise(resolve => { release = resolve; }) : Promise.resolve();
   const requests = [], contexts = [], played = [], storage = new Map(muted ? [["sorow:fireworks-muted", "1"]] : []);
@@ -51,7 +51,7 @@ function harness({ muted = false, savedVolume, savedMusicVolume, noWebAudio = fa
     constructor() { contexts.push(this); }
     async resume() { this.state = "running"; }
     async close() { this.state = "closed"; this.closes++; }
-    async decodeAudioData(bytes) { return { sample: new Uint8Array(bytes)[0] === 1 ? "boom" : "crackle" }; }
+    async decodeAudioData(bytes) { return { sample: new Uint8Array(bytes)[0] === 1 ? "boom" : "crackle", duration: 2.28 }; }
     createGain() {
       return { gain: { value: 1 }, connect() {}, disconnect() { this.disconnected = true; } };
     }
@@ -62,7 +62,7 @@ function harness({ muted = false, savedVolume, savedMusicVolume, noWebAudio = fa
       return {
         playbackRate: { value: 1 }, stops: 0, onended: null,
         connect(gain) { this.gain = gain; return gain; }, disconnect() { this.disconnected = true; },
-        start() { played.push(this); }, stop() { this.stops++; this.onended?.(); },
+        start() { this.startedAt=localTime; played.push(this); }, stop() { this.stops++; this.onended?.(); },
       };
     }
   };
@@ -84,7 +84,13 @@ function harness({ muted = false, savedVolume, savedMusicVolume, noWebAudio = fa
       const event = new Event(type); Object.defineProperty(event, "isTrusted", { value: trusted }); window.dispatchEvent(event);
     },
     add(elapsed = 0) { jump(elapsed); audio.addShow(geometry, start, start + elapsed, 1729); },
-    update(elapsed) { jump(elapsed); audio.update(start + elapsed); },
+    update(elapsed) {
+      jump(elapsed);
+      if(naturalEnd) for(const voice of played) if(!voice.finished && localTime>=voice.startedAt+voice.buffer.duration/voice.playbackRate.value*1000) {
+        voice.finished=true; voice.onended?.();
+      }
+      audio.update(start + elapsed);
+    },
     visibility(hidden, elapsed) { jump(elapsed); document.hidden = hidden; document.dispatchEvent(new Event("visibilitychange")); },
     dispose() { audio.dispose(); geometry.dispose(); },
   };
@@ -401,23 +407,23 @@ test("each real display variant ties distant sound to its primary visual bursts 
   h.dispose();
 });
 
-test("songi's encore waves each produce one quiet delayed report, without replay on later frames", async () => {
-  for(const grand of [true,false]) {
-    const h=harness(), geometry=makeGeometry(1729,true,"songi",grand);
-    const cues=h.cues(geometry,listener,start,1729);
-    assert.equal(cues.length,5,"greeting, two spherical waves, added roses and puppy finale each have one distant report");
+test("all seven Songi report groups play once without dropping rapid flower groups at the two-voice limit", async () => {
+  for(const grand of [true,false]) for(const seed of [0,16,1729]) {
+    const h=harness({naturalEnd:true}), geometry=makeGeometry(seed,true,"songi",grand);
+    const cues=h.cues(geometry,listener,start,seed);
+    assert.equal(cues.length,7,"greeting, two spherical waves, rose, tulips, cosmos and puppy each have a distant report");
     assert.ok(cues[1].at>start+4300&&cues.at(-1).at<start+16000);
-    h.unlock();h.audio.addShow(geometry,start,start,1729);h.update(0);await settle();
+    h.unlock();h.audio.addShow(geometry,start,start,seed,18000);h.update(0);await settle();
     for(const [index,cue] of cues.entries()) {
-      if(index) {
-        assert.ok(cue.at-cues[index-1].at>2500,"the 2.28-second recording finishes before the next group");
-        h.played.at(-1)?.onended();
-      }
+      // Model natural recording completion, without manually stopping the prior
+      // voice. This catches a third group being silently lost when two still play.
       h.update(cue.at-start+1);h.update(cue.at-start+1);h.update(cue.at-start+80);
       assert.equal(h.played.length,index+1,"a burst is consumed once despite repeated frames");
-      assert.equal(h.played.at(-1).gain.gain.value,.48,"the continuation preserves the existing distant gain");
+      assert.ok(h.audio.voices.size<=2);
+      assert.equal(h.played.at(-1).gain.gain.value,.48);
+      if(index>=3&&index<=5)assert.ok(cue.at-cues[index-1].at>1250,"flower reports leave enough room for two overlapping distant recordings");
     }
-    h.update(18000);assert.equal(h.played.length,5);
+    h.update(18000);assert.equal(h.played.length,7);assert.equal(h.audio.voices.size,0);
     geometry.dispose();h.dispose();
   }
 });
@@ -428,8 +434,8 @@ test("legacy songi audio stops at its twelve-second window while the extended sh
     const cues=h.cues(geometry,listener,start,1729);
     h.unlock();h.audio.addShow(geometry,start,start,1729,durationMs);h.update(0);await settle();
     for(const cue of cues) { h.played.at(-1)?.onended();h.update(cue.at-start+1); }
-    assert.equal(h.played.length,durationMs===12000?4:5,"a legacy event cannot leave a ghost finale boom after cleanup");
-    h.update(19000);assert.equal(h.played.length,durationMs===12000?4:5);geometry.dispose();h.dispose();
+    assert.equal(h.played.length,durationMs===12000?5:7,"a legacy event cannot leave a ghost finale boom after cleanup");
+    h.update(19000);assert.equal(h.played.length,durationMs===12000?5:7);geometry.dispose();h.dispose();
   }
 });
 

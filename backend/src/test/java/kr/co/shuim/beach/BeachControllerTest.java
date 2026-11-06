@@ -127,7 +127,7 @@ class BeachControllerTest {
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
         assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
-        assertEquals(100, out.get("capacity"));
+        assertEquals(20, out.get("capacity"));
         @SuppressWarnings("unchecked") Map<String, Object> me = (Map<String, Object>) out.get("me");
         assertEquals(Set.of("pid", "id", "nick", "skin"), me.keySet());
         assertEquals("u-1", me.get("id"));
@@ -137,7 +137,7 @@ class BeachControllerTest {
         assertTrue((double) spawn.get("z") >= 2.8 && (double) spawn.get("z") <= 4);
         assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -1.0, "maxZ", 55.0), out.get("bounds"));
         assertEquals(1, out.get("count"));
-        assertEquals(Map.of("communityId", "circle-a", "mapId", "beach", "count", 1, "capacity", 100), controller.count("circle-a", request));
+        assertEquals(Map.of("communityId", "circle-a", "mapId", "beach", "count", 1, "capacity", 20), controller.count("circle-a", request));
         BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,
             new BeachController.Care("u-x", "comfort")), request);
         assertEquals("gone", tick.care());
@@ -330,7 +330,7 @@ class BeachControllerTest {
         for (int i = 0; i < BeachRoom.CAPACITY; i++) beach.enter("circle-a", "u-" + i, "닉", Set.of());
         ApiException e = assertThrows(ApiException.class, () -> enter("circle-a"));
         assertEquals(409, e.status());
-        assertEquals(100, beach.count("circle-a"));
+        assertEquals(20, beach.count("circle-a"));
     }
 
     @Test

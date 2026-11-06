@@ -10,18 +10,32 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class BeachCapacityTest {
-    @Test void privateSpaceHasFourPlacesPerMapAndOrdinarySpacesStillHaveOneHundred() {
-        var service = new BeachService(mock(BeachFireService.class));
-        for (String map : new String[]{"beach", "uyuni"}) {
-            var first = service.enter("private", "owner", "나", Set.of(), null, map, null, 0L, 4).presence();
-            for (int i = 1; i < 4; i++) service.enter("private", "peer-" + i, "동행", Set.of(), null, map, null, 0L, 4);
+    @Test void allFourMapsCapLegacyOrdinaryRoomsAtTwentyAndKeepSmallerPrivateLimits() {
+        var service = new BeachService(() -> 1_000_000L, mock(BeachFireService.class));
+        for (String map : new String[]{"beach", "uyuni", "bamboo", "garden"}) {
+            for (int limit : new int[]{2, 4}) {
+                String community = "private-" + limit;
+                var first = service.enter(community, "owner", "나", Set.of(), null, map, null, 0L, limit).presence();
+                for (int i = 1; i < limit; i++) service.enter(community, "peer-" + i, "동행", Set.of(), null, map, null, 0L, limit);
+                assertEquals(409, assertThrows(ApiException.class,
+                    () -> service.enter(community, "overflow", "초과", Set.of(), null, map, null, 0L, limit)).status());
+                assertEquals(first.ticket(), service.enter(community, "owner", "나", Set.of(), null, map, first.ticket(), 1L, limit).presence().ticket());
+                assertEquals(limit, service.count(community, map));
+            }
+            for (int i = 0; i < 20; i++) service.enter("ordinary", "user-" + i, "회원", Set.of(), null, map, null, 0L, 100);
+            assertEquals(20, service.count("ordinary", map));
             assertEquals(409, assertThrows(ApiException.class,
-                () -> service.enter("private", "fifth", "초과", Set.of(), null, map, null, 0L, 4)).status());
-            assertEquals(first.ticket(), service.enter("private", "owner", "나", Set.of(), null, map, first.ticket(), 1L, 4).presence().ticket());
-            assertEquals(4, service.count("private", map));
-            for (int i = 0; i < 100; i++) service.enter("ordinary", "user-" + i, "회원", Set.of(), null, map);
-            assertEquals(100, service.count("ordinary", map));
+                () -> service.enter("ordinary", "twenty-first", "초과", Set.of(), null, map, null, 0L, 100)).status());
+            assertEquals(20, service.count("ordinary", map), "a full map does not over-admit or affect other maps");
         }
+    }
+
+    @Test void ordinaryDefaultAdmissionAlsoStopsAtTwenty() {
+        var service = new BeachService(() -> 1_000_000L, mock(BeachFireService.class));
+        for (int i = 0; i < 20; i++) service.enter("ordinary", "user-" + i, "회원", Set.of());
+        assertEquals(20, service.count("ordinary"));
+        assertEquals(409, assertThrows(ApiException.class,
+            () -> service.enter("ordinary", "twenty-first", "초과", Set.of())).status());
     }
 
     @Test void simultaneousEntryCannotExceedFourAndExpiredVisitsReleaseCapacity() throws Exception {

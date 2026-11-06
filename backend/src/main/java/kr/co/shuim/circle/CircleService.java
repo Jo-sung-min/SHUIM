@@ -8,6 +8,7 @@ import kr.co.shuim.ai.JsonText;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
+import kr.co.shuim.common.SpaceCapacity;
 import kr.co.shuim.community.CommunityLogic;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.profile.BadgeService;
@@ -63,10 +64,14 @@ public class CircleService {
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
                          String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
                          boolean privateTest, boolean pinned, int spaceCapacity) {
+        public Circle {
+            spaceCapacity = SpaceCapacity.effective(spaceCapacity);
+        }
+
         public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
                       String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample) {
             this(id, slug, name, kind, domain, verified, joinMode, visibility, intro, notice, createdBy, postSeq,
-                createdAt, memberCount, listenerCount, sample, false, false, 100);
+                createdAt, memberCount, listenerCount, sample, false, false, SpaceCapacity.MAX);
         }
     }
 
@@ -346,10 +351,10 @@ public class CircleService {
         if (intro.length() > 200) intro = intro.substring(0, 200);
         String id = Ids.uid();
         jdbc.sql("""
-            INSERT INTO communities (id, slug, name, name_key, kind, domain, join_mode, visibility, intro, invite_code, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
+            INSERT INTO communities (id, slug, name, name_key, kind, domain, join_mode, visibility, intro, invite_code, created_by, space_capacity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
             .param(id).param(slug).param(name).param(key).param(kind).param(domain).param(joinMode).param(visibility).param(intro)
-            .param("invite".equals(joinMode) ? inviteCode() : null).param(me.id()).update();
+            .param("invite".equals(joinMode) ? inviteCode() : null).param(me.id()).param(SpaceCapacity.MAX).update();
         boolean hasPrimary = jdbc.sql("SELECT count(*) FROM community_members WHERE user_id = ? AND is_primary").param(me.id()).query(Long.class).single() > 0;
         jdbc.sql("INSERT INTO community_members (community_id, user_id, role, status, is_primary) VALUES (?, ?, 'owner', 'active', ?)")
             .param(id).param(me.id()).param(!hasPrimary).update();

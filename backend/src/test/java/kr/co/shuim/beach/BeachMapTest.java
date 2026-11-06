@@ -76,12 +76,12 @@ class BeachMapTest {
         assertEquals(1, tick(coastFriend).received().comfort());
     }
 
-    @Test void eachMapKeepsItsOwnOneHundredPlaces() {
-        for (int i = 0; i < 100; i++) enter("beach", "coast-" + i);
+    @Test void eachMapKeepsItsOwnTwentyPlaces() {
+        for (int i = 0; i < 20; i++) enter("beach", "coast-" + i);
         assertEquals(409, assertThrows(ApiException.class, () -> enter("beach", "overflow")).status());
-        for (int i = 0; i < 100; i++) enter("uyuni", "salt-" + i);
+        for (int i = 0; i < 20; i++) enter("uyuni", "salt-" + i);
         assertEquals(409, assertThrows(ApiException.class, () -> enter("uyuni", "overflow")).status());
-        assertEquals(100, service.count("room", "beach")); assertEquals(100, service.count("room", "uyuni"));
+        assertEquals(20, service.count("room", "beach")); assertEquals(20, service.count("room", "uyuni"));
         service.enter("another", "elsewhere", "별도", Set.of(), null, "uyuni");
         assertEquals(1, service.count("another", "uyuni"));
     }

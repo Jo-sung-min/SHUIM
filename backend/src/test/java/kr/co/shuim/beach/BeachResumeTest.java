@@ -166,8 +166,8 @@ class BeachResumeTest {
         var oldest = enter("oldest");
         clock.addAndGet(BeachRoom.IDLE_MS + 1);
         room.sweep();
-        for (int batch = 0; batch < 6; batch++) {
-            for (int i = 0; i < 90; i++) {
+        for (int batch = 0; batch <= BeachRoom.MAX_RESUME_TICKETS / BeachRoom.CAPACITY; batch++) {
+            for (int i = 0; i < BeachRoom.CAPACITY; i++) {
                 enter("batch-" + batch + "-" + i);
             }
             clock.addAndGet(BeachRoom.IDLE_MS + 1);
@@ -183,13 +183,13 @@ class BeachResumeTest {
     @Test
     void fullRoomCanResumeLiveVisitorButCannotReclaimCapacityFromSomeoneElse() {
         var me = enter("u");
-        for (int i = 0; i < 99; i++) enter("v" + i);
+        for (int i = 0; i < BeachRoom.CAPACITY - 1; i++) enter("v" + i);
         assertSame(me, resume(me, 0).presence());
-        assertEquals(100, room.count());
+        assertEquals(20, room.count());
         clock.addAndGet(BeachRoom.IDLE_MS + 1);
-        for (int i = 0; i < 100; i++) enter("new" + i);
+        for (int i = 0; i < BeachRoom.CAPACITY; i++) enter("new" + i);
         assertEquals(409, assertThrows(ApiException.class, () -> resume(me, 0)).status());
-        assertEquals(100, room.count());
+        assertEquals(20, room.count());
     }
 
     @Test
@@ -246,11 +246,11 @@ class BeachResumeTest {
     void unknownTokenRetryReusesTheLastCapacitySlotAfterALostResponse() throws Exception {
         BeachFireService fire = mock(BeachFireService.class);
         BeachService restarted = new BeachService(clock::get, fire);
-        for (int i = 0; i < 99; i++) restarted.enter("c", "v" + i, "v", Set.of(), null, "uyuni");
+        for (int i = 0; i < BeachRoom.CAPACITY - 1; i++) restarted.enter("c", "v" + i, "v", Set.of(), null, "uyuni");
         String unknown = "0123456789abcdef0123456789abcdef";
         var first = restarted.enter("c", "u", "u", Set.of(), null, "uyuni", unknown, 20L);
         assertFalse(first.resumed());
-        assertEquals(100, restarted.count("c", "uyuni"));
+        assertEquals(20, restarted.count("c", "uyuni"));
         try (var pool = Executors.newFixedThreadPool(12)) {
             var jobs = new ArrayList<java.util.concurrent.Future<BeachRoom.Entry>>();
             for (int i = 0; i < 40; i++) jobs.add(pool.submit(() ->
@@ -262,7 +262,7 @@ class BeachResumeTest {
                 assertEquals(first.presence().sequence(), retried.presence().sequence());
             }
         }
-        assertEquals(100, restarted.count("c", "uyuni"));
+        assertEquals(20, restarted.count("c", "uyuni"));
         assertEquals(403, assertThrows(ApiException.class, () ->
             restarted.enter("c", "other", "other", Set.of(), null, "uyuni", unknown, 20L)).status());
         assertEquals(403, assertThrows(ApiException.class, () ->

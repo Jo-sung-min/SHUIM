@@ -57,7 +57,17 @@ class CirclePrivatePolicyTest {
         assertFalse(CircleLogic.canAccessPrivate(true, false, false));
         var legacy = new CircleService.Circle("id", "public", "공개 소로우", "rest", null, false,
             "open", "public", "", "", "owner", 0, 1, 1, 0, false);
-        assertFalse(legacy.privateTest()); assertFalse(legacy.pinned()); assertEquals(100, legacy.spaceCapacity());
+        assertFalse(legacy.privateTest()); assertFalse(legacy.pinned()); assertEquals(20, legacy.spaceCapacity());
+    }
+
+    @Test void storedLegacyCapacityIsClampedForApiViewsWithoutRaisingPrivateLimits() {
+        var service = new CircleService(null, null, null, null, null);
+        for (int stored : new int[]{1, 2, 4, 20, 21, 100}) {
+            var circle = new CircleService.Circle("id", "room", "소로우", "rest", null, false,
+                "open", "public", "", "", "owner", 0, 1, 1, 0, false, stored < 20, false, stored);
+            assertEquals(Math.min(stored, 20), circle.spaceCapacity());
+            assertEquals(Math.min(stored, 20), service.view(circle).get("spaceCapacity"));
+        }
     }
 
     @Test void readEndpointsForwardAuthenticatedViewerAndAnonymousStaysAnonymous() {

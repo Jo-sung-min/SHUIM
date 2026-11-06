@@ -119,7 +119,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
   const [count, setCount] = useState<number | null>(null);
-  const [capacity, setCapacity] = useState(100);
+  const [capacity, setCapacity] = useState(20);
   const [community, setCommunity] = useState<EnterResponse["community"] | null>(null);
   const [selected, setSelected] = useState<RemotePlayer | null>(null);
   const [rest, setRest] = useState<RestState | null>(null);
@@ -131,7 +131,6 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [hudHidden, setHudHidden] = useState(false);
   const [carePrompt, setCarePrompt] = useState<CareKind | null>(null);
   const [flash, setFlash] = useState<{ kind: CareKind; id: number } | null>(null);
-  const [hint, setHint] = useState(false);
   const [intro, setIntro] = useState<"visible" | "leaving" | "hidden">("hidden");
   const [timeLabel, setTimeLabel] = useState("");
   const [nightControls, setNightControls] = useState(false);
@@ -221,19 +220,15 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   useEffect(() => {
     if (phase !== "ready") {
       setIntro("hidden");
-      setHint(false);
       return;
     }
     setIntro("visible");
-    setHint(true);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const fadeTimer = window.setTimeout(() => setIntro(reducedMotion ? "hidden" : "leaving"), INTRO_VISIBLE_MS);
     const removeTimer = window.setTimeout(() => setIntro("hidden"), INTRO_VISIBLE_MS + INTRO_FADE_MS);
-    const hintTimer = window.setTimeout(() => setHint(false), 6000);
     return () => {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(removeTimer);
-      window.clearTimeout(hintTimer);
     };
   }, [phase, communityId, mapId]);
 
@@ -1327,14 +1322,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const pavilionContextVisible = (mapId === "bamboo" || mapId === "garden") && (pavilion.near || pavilion.seated || Boolean(pavilionPhase)) && !boat?.riding;
   const boatContextVisible = mapId === "garden" && Boolean(boat && (boat.near || boat.riding)) && !pavilion.seated;
   const seatNoun = pavilion.kind === "deck" ? "전망대" : pavilion.kind === "hall" ? "자리" : "정자";
-  const pavilionTitle = pavilionPhase === "standing" ? "일어나는 중…" : pavilion.seated ? `${seatNoun}에서 일어나기` : pavilionPhase === "joining" ? "자리 잡는 중…" : !pavilion.available ? "가까운 자리가 찼어요" : `${seatNoun}에 앉기`;
-  const pavilionDetail = pavilion.seated
-    ? (pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : pavilion.kind === "hall" ? (rain > 0.05 ? `${pavilion.name} · 비 내리는 호수를 바라보며 머무는 중` : `${pavilion.name} · 통창 너머 호수를 바라보는 중`) : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`)
-    : !pavilionEnabled ? "앉을 자리를 준비하고 있어요"
-    : !pavilion.available ? (pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : pavilion.kind === "hall" ? "벤치의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요")
-    : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : pavilion.kind === "hall" ? `${pavilion.name} · 벤치에 앉아 통창 너머 호수를 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`;
-  const boatTitle = !boat ? "" : !boat.riding ? "나룻배 타기" : boat.docked ? "내리기" : boat.alightArmed ? "내리기 취소" : "다음 정류장에서 내리기";
-  const boatDetail = !boat ? "" : !boat.riding ? `${boat.near?.name ?? "잔교"} · 호수를 한 바퀴 천천히 떠가요` : boat.docked ? `${boat.stop?.name ?? "정류장"}에 서 있어요 · 잠시 뒤 출발` : boat.alightArmed ? `${boat.nextStop?.name ?? "다음 정류장"}에서 내려요` : `다음은 ${boat.nextStop?.name ?? "정류장"} · ${rain > 0.05 ? "빗속을 떠가는 중" : "호수를 떠가는 중"}`;
+  const pavilionTitle = pavilionPhase === "standing" ? "일어나는 중" : pavilion.seated ? "일어나기" : pavilionPhase === "joining" ? "준비 중…" : !pavilion.available ? "자리 없음" : "앉기";
+  const boatTitle = !boat ? "" : !boat.riding ? "나룻배 타기" : boat.docked ? "내리기" : boat.alightArmed ? "내리기 취소" : "내리기 예약";
   const restContextVisible = !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
   const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
   const guestbookVisible = mapId === "bamboo" && nearGuestbook && Boolean(ticketRef.current);
@@ -1342,7 +1331,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
 
   return (
-    <div className={styles.root} data-map={mapId} data-night={nightControls} inert={Boolean(photo)}>
+    <div className={styles.root} data-map={mapId} data-night={nightControls} data-context-row={!hudHidden && phase === "ready" && (contextVisible || fireContextVisible) && !characterPickerOpen && !powderOpen} inert={Boolean(photo)}>
       <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 ${map.name} (${view === "first" ? "1인칭" : "3인칭"})`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
@@ -1376,10 +1365,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
       {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
-      <div className={styles.bottomHud} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
-        {lost && <p className={styles.dockNotice} role="status">연결을 다시 이어 보는 중…</p>}
-        {!actionsOpen && (skyPhase || woodBusy || powderPhase) && <p className={styles.dockNotice} role="status">잠깐만요, 행동을 마치고 있어요.</p>}
-        {hint && !actionsOpen && !selected && !lost && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && <p className={styles.dockHint}>{mapId === "bamboo" ? "둘레길을 걷다 정자에 앉아 함께 쉬어요." : mapId === "garden" ? "호수를 걷고, 청우헌에 앉아 비 내리는 물을 바라봐요." : "걷고, 둘러보고, 행동을 골라 함께 쉬어요."}</p>}
+      <div className={styles.bottomHud} data-lying={lying} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
+        {lost && <p className={styles.dockNotice} role="status">연결 중…</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
           <div className={styles.trayHeader}>
             <div className={styles.trayHeading}>
@@ -1408,53 +1395,60 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           </div>
           {gotAny && !carePrompt && <p className={styles.receivedMini}>받은 인사 {received.wave ?? 0} · 위로 {received.comfort} · 포옹 {received.hug}</p>}
         </section>
-        {contextVisible && !characterPickerOpen && !powderOpen && <div className={styles.contextActions} aria-label="가까운 자리에서 쉬기">
+        <div className={styles.contextActions} role="group" aria-label="지금 할 수 있는 행동" tabIndex={0} hidden={!(contextVisible || fireContextVisible) || characterPickerOpen || powderOpen}>
           {guestbookVisible && <button type="button" className={styles.contextButton} disabled={lost} aria-haspopup="dialog"
             onClick={() => { setActionsOpen(false); setGuestbookOpen(true); haptic(); }}>
             <span className={styles.contextIcon} aria-hidden="true">✎</span>
-            <span className={styles.contextCopy}><strong>축제 게시판</strong><small>메모 읽기 · 포스트잇 붙이기</small></span>
+            <span className={styles.contextCopy}><strong>게시판</strong></span>
           </button>}
           {lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "first"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}>
             <span className={styles.contextIcon}>{view === "third" ? <IconMoon /> : <IconUsers />}</span>
-            <span className={styles.contextCopy}><strong>{viewLabel}</strong><small>{view === "third" ? activeBed ? "누운 채 바다를 바라봐요" : "편안히 누워 하늘을 바라봐요" : "함께 쉬는 모습을 바라봐요"}</small></span>
+            <span className={styles.contextCopy}><strong>{viewLabel}</strong></span>
           </button>}
           {benchContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!bench.seated && (!benchEnabled || !bench.available))} aria-pressed={bench.seated} aria-keyshortcuts="E" onClick={() => void toggleStargazing("fire-benches")}>
             <span className={styles.contextIcon}><IconSmile /></span>
-            <span className={styles.contextCopy}><strong>{benchPhase === "standing" ? "일어나는 중…" : bench.seated ? "통나무에서 일어나기" : benchPhase === "joining" ? "자리 잡는 중…" : !bench.available ? "가까운 자리가 찼어요" : "통나무에 앉기"}</strong><small>{bench.seated ? "모닥불을 바라보며 쉬는 중" : !benchEnabled ? "앉을 자리를 준비하고 있어요" : !bench.available ? "다른 통나무 쪽으로 가 주세요" : "따뜻한 불 곁에서 함께 쉬어요"}</small></span>
+            <span className={styles.contextCopy}><strong>{benchPhase === "standing" ? "일어나는 중" : bench.seated ? "일어나기" : benchPhase === "joining" ? "준비 중…" : !bench.available ? "자리 없음" : "앉기"}</strong></span>
             <span className={styles.contextCount} aria-label={`벤치 12석 중 ${bench.occupied}석 사용 중`}>{bench.occupied}/{bench.capacity}</span>
           </button>}
           {pavilionContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || (!pavilion.seated && (!pavilionEnabled || !pavilion.available))} aria-pressed={pavilion.seated} aria-keyshortcuts="E" onClick={() => { const spot = pavilion.spotId; if (spot) void toggleStargazing(spot); }}>
             <span className={styles.contextIcon}><IconSmile /></span>
-            <span className={styles.contextCopy}><strong>{pavilionTitle}</strong><small>{pavilionDetail}</small></span>
+            <span className={styles.contextCopy}><strong>{pavilionTitle}</strong></span>
             <span className={styles.contextCount} aria-label={`${seatNoun} ${pavilion.capacity}석 중 ${pavilion.occupied}석 사용 중`}>{pavilion.occupied}/{pavilion.capacity}</span>
           </button>}
           {boatContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost} aria-pressed={boat?.riding === true} aria-keyshortcuts="E" onClick={() => boatActionRef.current()}>
             <span className={styles.contextIcon}><IconLeaf /></span>
-            <span className={styles.contextCopy}><strong>{boatTitle}</strong><small>{boatDetail}</small></span>
+            <span className={styles.contextCopy}><strong>{boatTitle}</strong></span>
           </button>}
           {restContextVisible && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || woodBusy || Boolean(powderPhase) || lost || (!lying && (!areaEnabled || skyFull))} onClick={() => void toggleStargazing(areaSpot)}>
             <span className={styles.contextIcon}><IconMoon /></span>
-            <span className={styles.contextCopy}><strong>{skyPhase === "standing" ? "일어나는 중…" : lying ? "일어나기" : skyPhase === "walking" ? "자리로 가는 중…" : skyPhase === "joining" ? "자리 잡는 중…" : activeBed ? "이불 덮고 눕기" : skyFull ? "모든 자리가 찼어요" : "같이 눕기"}</strong><small>{lying ? activeBed ? "포근한 이불 속에서 쉬는 중" : "함께 하늘을 보는 중" : !areaEnabled ? "쉬어갈 자리를 준비하고 있어요" : activeBed ? activeBed.shelterName : "별빛 자리에서 쉬어가요"}</small></span>
+            <span className={styles.contextCopy}><strong>{skyPhase === "standing" ? "일어나는 중" : lying ? "일어나기" : skyPhase === "walking" ? "이동 중…" : skyPhase === "joining" ? "준비 중…" : activeBed ? "눕기" : skyFull ? "자리 없음" : "같이 눕기"}</strong></span>
             <span className={styles.contextCount}>{restArea.occupied}/{restArea.capacity}</span>
           </button>}
           {onsenContextVisible && (onsenResting ? <button type="button" className={styles.contextButton}
             disabled={Boolean(skyPhase) || lost} onClick={() => void toggleStargazing(onsen.sitting ? "onsen-benches" : "onsen-float")}>
-            <span className={styles.contextIcon}><IconLeaf /></span><span className={styles.contextCopy}><strong>{onsenPhase === "standing" ? "일어나는 중…" : "일어나기"}</strong><small>{onsen.sitting ? "따뜻한 물에 앉아 쉬는 중" : "수면에 기대어 편안히 쉬는 중"}</small></span>
+            <span className={styles.contextIcon}><IconLeaf /></span><span className={styles.contextCopy}><strong>{onsenPhase === "standing" ? "일어나는 중" : "일어나기"}</strong></span>
           </button> : <>
             <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || !onsen.canSit}
               onClick={() => void toggleStargazing("onsen-benches")}>
-              <span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{restActionSpot === "onsen-benches" && onsenPhase ? "자리 잡는 중…" : "앉아있기"}</strong><small>{onsen.canSit ? "낮은 돌단에 앉아 바다를 바라봐요" : onsen.occupiedSeats.length >= 6 ? "앉을 자리가 모두 사용 중이에요" : "낮은 돌단 가까이 다가가 주세요"}</small></span>
+              <span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{restActionSpot === "onsen-benches" && onsenPhase ? "준비 중…" : "앉아있기"}</strong></span>
               <span className={styles.contextCount} aria-label={`온천 돌단 6석 중 ${onsen.occupiedSeats.length}석 사용 중`}>{onsen.occupiedSeats.length}/6</span>
             </button>
             <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || !onsen.canFloat}
               onClick={() => void toggleStargazing("onsen-float")}>
-              <span className={styles.contextIcon}><IconMoon /></span><span className={styles.contextCopy}><strong>{restActionSpot === "onsen-float" && onsenPhase ? "자리 잡는 중…" : "온천에 떠있기"}</strong><small>{onsen.canFloat ? "물에 몸을 맡기고 하늘을 바라봐요" : onsen.occupiedFloats.length >= 3 ? "수면 자리가 모두 사용 중이에요" : "온천 앞쪽의 빈자리로 다가가 주세요"}</small></span>
+              <span className={styles.contextIcon}><IconMoon /></span><span className={styles.contextCopy}><strong>{restActionSpot === "onsen-float" && onsenPhase ? "준비 중…" : "떠있기"}</strong></span>
               <span className={styles.contextCount} aria-label={`온천 수면 3자리 중 ${onsen.occupiedFloats.length}자리 사용 중`}>{onsen.occupiedFloats.length}/3</span>
             </button>
           </>)}
-          {rest && !lying && !bench.seated && !onsenResting && !skyPhase && <button type="button" className={styles.contextButton} disabled={woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{rest.seated ? "앉은 자리에서 일어나기" : "앉아서 쉬기"}</strong><small>{rest.shelterName} · 바다를 바라봐요</small></span></button>}
-          {walking && <button type="button" className={styles.contextButton + " " + styles.contextCancel} onClick={() => engineRef.current?.cancelAutoWalk()}><span className={styles.contextIcon}><IconClose /></span><span className={styles.contextCopy}><strong>걸음 멈추기</strong><small>천천히 가도 돼요</small></span></button>}
-        </div>}
+          {rest && !lying && !bench.seated && !onsenResting && !skyPhase && <button type="button" className={styles.contextButton} disabled={woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}><IconSmile /></span><span className={styles.contextCopy}><strong>{rest.seated ? "일어나기" : "앉기"}</strong></span></button>}
+          {walking && <button type="button" className={styles.contextButton + " " + styles.contextCancel} onClick={() => engineRef.current?.cancelAutoWalk()}><span className={styles.contextIcon}><IconClose /></span><span className={styles.contextCopy}><strong>멈추기</strong></span></button>}
+          {mapId === "beach" && fireEnabled && <div className={styles.fireContext} role="group" aria-label="모닥불 돌보기" hidden={!fireContextVisible}>
+            {fire && meRef.current && <CampfireControls key={communityId + ":" + meRef.current.id}
+              fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || characterPickerOpen || lying || Boolean(photo)}
+              onAddWood={onAddWood} onAddPowder={onAddPowder} onFireChange={applyFire}
+              powderOpen={powderOpen} onPowderOpenChange={setPowderOpen}
+            />}
+          </div>}
+        </div>
         {characterPickerOpen && <div ref={characterPickerRef} id={characterPickerId} className={styles.characterPanel + " " + styles.dockCharacterPanel}>
           <div className={styles.characterPanelHead}><strong>내 캐릭터</strong><button type="button" aria-label="캐릭터 선택 닫기" onClick={() => { setCharacterPickerOpen(false); characterTriggerRef.current?.focus(); }}><IconClose /></button></div>
           <div className={styles.characterChoices} role="group" aria-label="캐릭터 선택">
@@ -1464,13 +1458,6 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
               {character === option.id && <span className={styles.characterSelected} aria-hidden="true"><IconCheck /></span>}
             </button>)}
           </div><p>고르면 내 모습이 바로 보여요.</p>
-        </div>}
-        {mapId === "beach" && fireEnabled && <div className={styles.fireContext} role="group" aria-label="모닥불 돌보기" hidden={!fireContextVisible}>
-          {fire && meRef.current && <CampfireControls key={communityId + ":" + meRef.current.id}
-            fire={fire} near={nearFire} disconnected={lost || Boolean(skyPhase) || characterPickerOpen || lying || Boolean(photo)}
-            onAddWood={onAddWood} onAddPowder={onAddPowder} onFireChange={applyFire}
-            powderOpen={powderOpen} onPowderOpenChange={setPowderOpen}
-          />}
         </div>}
         <nav className={styles.dock} aria-label={`${map.name} 조작`} data-lying={lying}>
           <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSparkle /><span>행동</span></button>

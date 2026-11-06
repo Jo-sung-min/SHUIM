@@ -335,15 +335,15 @@ class BeachRoomTest {
     }
 
     @Test
-    void onlyNearestFortyAreReturnedSortedByDistance() {
+    void everyOtherVisitorInAFullRoomIsReturnedSortedByDistance() {
         BeachRoom room = room();
         List<Presence> all = new ArrayList<>();
-        for (int i = 0; i < 45; i++) all.add(room.enter("u-" + i, "n" + i, Set.of()));
-        for (int i = 0; i < 45; i++) at(room, all.get(i), -13 + i * 0.5, 10); // 0번이 맨 왼쪽, 0.5 m 간격
+        for (int i = 0; i < 20; i++) all.add(room.enter("u-" + i, "n" + i, Set.of()));
+        for (int i = 0; i < 20; i++) at(room, all.get(i), -13 + i * 0.5, 10); // 0번이 맨 왼쪽, 0.5 m 간격
         Presence me = all.get(0);
         TickResult r = at(room, me, -13, 10);
-        assertEquals(45, r.count());
-        assertEquals(BeachRoom.MAX_PLAYERS, r.players().size());
+        assertEquals(20, r.count());
+        assertEquals(19, r.players().size());
         double prev = -1;
         for (PlayerView p : r.players()) {
             double d = Math.hypot(p.x() - me.x(), p.z() - me.z());
@@ -352,22 +352,20 @@ class BeachRoomTest {
         }
         List<String> ids = r.players().stream().map(PlayerView::id).toList();
         assertEquals("u-1", ids.get(0));
-        assertEquals("u-40", ids.get(39));
-        assertFalse(ids.contains("u-41"));
-        assertFalse(ids.contains("u-44"));
+        assertEquals("u-19", ids.get(18));
         assertFalse(ids.contains("u-0"));
     }
 
     @Test
-    void capacityIsOneHundredAndLeavingOrExpiringFreesSpace() {
+    void capacityIsTwentyAndLeavingOrExpiringFreesSpace() {
         BeachRoom room = room();
         Presence first = room.enter("u-first", "닉", Set.of());
         for (int i = 1; i < BeachRoom.CAPACITY; i++) room.enter("u-" + i, "닉", Set.of());
-        assertEquals(100, room.count());
+        assertEquals(20, room.count());
         assertEquals(409, assertThrows(ApiException.class, () -> room.enter("overflow", "닉", Set.of())).status());
         room.leave(first.ticket());
         assertNotNull(room.enter("replacement", "닉", Set.of()));
-        assertEquals(100, room.count());
+        assertEquals(20, room.count());
         clock.addAndGet(BeachRoom.IDLE_MS + 1);
         assertNotNull(room.enter("new-visit", "닉", Set.of()));
         assertEquals(1, room.count());
@@ -395,16 +393,16 @@ class BeachRoomTest {
             start.countDown();
             int admitted = 0;
             for (Future<Boolean> result : entries) if (result.get()) admitted++;
-            assertEquals(100, admitted);
-            assertEquals(100, room.count());
+            assertEquals(20, admitted);
+            assertEquals(20, room.count());
         }
     }
 
     @Test
     void capacityAlsoIncludesAnySimulatedVisitors() {
         BeachRoom room = new BeachRoom(clock::get, true);
-        for (int i = 0; i < 97; i++) room.enter("u-" + i, "닉", Set.of());
-        assertEquals(100, room.count());
+        for (int i = 0; i < BeachRoom.CAPACITY - 3; i++) room.enter("u-" + i, "닉", Set.of());
+        assertEquals(20, room.count());
         assertEquals(409, assertThrows(ApiException.class, () -> room.enter("overflow", "닉", Set.of())).status());
     }
 }

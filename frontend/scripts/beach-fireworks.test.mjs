@@ -14,6 +14,7 @@ const variantSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/
   .replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
 const finaleSource=stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-songi-finale.ts",import.meta.url),"utf8")).replace(/\bexport\s+(?=const\b)/g,"");
+const flowerSource=stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-songi-flowers.ts",import.meta.url),"utf8")).replace(/\bexport\s+(?=function\b|const\b)/g,"");
 const event = (id = "one", startedAt = 100_000, seed = 1785) => ({ id, seed, startedAt, durationMs: 12_000 });
 
 function fixture({ mobile = false, dom = true, height = 844, audio } = {}) {
@@ -28,7 +29,7 @@ function fixture({ mobile = false, dom = true, height = 844, audio } = {}) {
   }
   const context = { THREE: { ...THREE, TextureLoader }, Date: { now: () => time }, ...assets };
   if (dom) { context.document = {}; context.window = { innerHeight: height }; }
-  vm.runInNewContext(`${variantSource}\n${finaleSource}\n${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
+  vm.runInNewContext(`${variantSource}\n${finaleSource}\n${flowerSource}\n${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
   const scene = new THREE.Scene(), fireworks = new context.api.BeachFireworks(scene, { mobile }, audio);
   return { ...context.api, scene, fireworks, requests, setTime(value) { time = value; },
     load(index = 0) { requests[index].onLoad(requests[index].texture); } };

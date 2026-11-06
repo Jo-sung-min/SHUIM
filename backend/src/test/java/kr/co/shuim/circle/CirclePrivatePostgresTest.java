@@ -188,7 +188,7 @@ class CirclePrivatePostgresTest {
         assertEquals("우리 둘의 안내", circles.update(owner, SLUG, Map.of("notice", "우리 둘의 안내")).get("notice"));
         String publicId = ordinary(owner, "public-default");
         CircleService.Circle publicCircle = circles.byId(publicId);
-        assertFalse(publicCircle.privateTest()); assertFalse(publicCircle.pinned()); assertEquals(100, publicCircle.spaceCapacity());
+        assertFalse(publicCircle.privateTest()); assertFalse(publicCircle.pinned()); assertEquals(20, publicCircle.spaceCapacity());
         assertThrows(DataIntegrityViolationException.class, () -> jdbc.sql("UPDATE communities SET space_capacity=101 WHERE id=?").param(publicId).update());
         assertThrows(DataIntegrityViolationException.class, () -> jdbc.sql("UPDATE communities SET space_capacity=0 WHERE id=?").param(publicId).update());
         assertThrows(DataIntegrityViolationException.class, () -> jdbc.sql("UPDATE communities SET visibility='public' WHERE id=?").param(id()).update());
