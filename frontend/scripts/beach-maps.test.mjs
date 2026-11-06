@@ -15,7 +15,7 @@ vm.runInNewContext(`${mapSource}\nglobalThis.api = { MAPS, mapHref };`, mapConte
 const maps = mapContext.api;
 const cardSource = await read("../components/beach/BeachCard.tsx");
 const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+const deferred = () => { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
 function elements(tree, type) {
   if (!React.isValidElement(tree)) return [];
@@ -25,7 +25,7 @@ const occupancyLabels = tree => elements(tree,"strong").filter(element => typeof
 
 function cardHarness(customCircles) {
   const values = [], effects = [], queued = [], requests = [];
-  let cursor = 0;
+  let cursor = 0, refresh;
   const hooks = {
     useId: () => "community-choice",
     useState(initial) {
@@ -41,7 +41,7 @@ function cardHarness(customCircles) {
     },
   };
   const context = {
-    exports: {}, window: { setInterval: () => 1, clearInterval() {} },
+    exports: {}, window: { setInterval: callback => { refresh = callback; return 1; }, clearInterval() {} },
     document: { hidden: false, addEventListener() {}, removeEventListener() {} },
     require(name) {
       if (name === "react") return hooks;
@@ -59,8 +59,8 @@ function cardHarness(customCircles) {
     },
   };
   vm.runInNewContext(compile(cardSource), context);
-  const circles = customCircles ?? [{ id: "circle / one", name: "우리", slug: "one", primary: true }, { id: "circle-two", name: "둘", slug: "two" }];
-  return { requests, render() {
+  let circles = customCircles ?? [{ id: "circle / one", name: "우리", slug: "one", primary: true }, { id: "circle-two", name: "둘", slug: "two" }];
+  return { requests, setCircles(next) { circles = next; }, refresh() { refresh(); }, render() {
     cursor = 0; const tree = context.exports.default({ circles });
     while (queued.length) queued.shift()();
     return tree;
@@ -70,7 +70,9 @@ function cardHarness(customCircles) {
 test("visitors with no joined circles render the discovery card without dereferencing an empty count", () => {
   const harness = cardHarness([]), tree = harness.render();
   assert.equal(harness.requests.length, 0);
-  assert.equal(elements(tree, "a")[0].props.href, "/c");
+  assert.equal(elements(tree, "a").length, 4);
+  assert.ok(elements(tree, "a").every(link => link.props.href === "/c"));
+  assert.equal(occupancyLabels(tree).length, 0, "unknown occupancy is never invented as zero");
   assert.deepEqual(elements(tree,"img").map(image=>image.props.src),["beach","uyuni","bamboo","garden"].map(map=>assets.assetUrl(`/beach/places/${map}-v1.webp`)));
 });
 
@@ -78,12 +80,15 @@ test("a pinned private circle precedes the primary circle and respects its four-
   const harness = cardHarness([{ id: "ordinary", name: "기존", slug: "ordinary", primary: true },
     { id: "test", name: "헤송민의 소로우", slug: "test", pinned: true, privateTest: true, spaceCapacity: 4 }]);
   let tree = harness.render();
-  assert.equal(elements(tree, "option")[0].props.value, "test");
-  assert.equal(harness.requests[0].communityId, "test");
-  assert.match(elements(tree, "small")[0].props.children, /최대 4명/);
+  assert.equal(elements(tree, "select").length, 0, "the surrounding community selection is not duplicated");
+  assert.equal(harness.requests.length, 4);
+  assert.ok(harness.requests.every(request => request.communityId === "test"));
+  assert.ok(elements(tree, "a").every(link => link.props.href.endsWith("communityId=test")));
   harness.requests[0].resolve({ communityId: "test", mapId: "beach", count: 4, capacity: 4 });
   await settle(); tree = harness.render();
-  assert.equal(elements(tree, "a").length, 0, "the fifth visit has no enter link");
+  assert.equal(elements(tree, "a").length, 3, "only the full room loses its enter link");
+  assert.equal(elements(tree, "button")[0].props["data-place"], "beach");
+  assert.equal(elements(tree, "button")[0].props.disabled, true);
   assert.equal(occupancyLabels(tree)[0].props.children, 4);
 });
 
@@ -94,29 +99,39 @@ test("map links preserve the community and encode it without changing the beach 
   assert.equal(maps.MAPS.uyuni.welcome, "발끝에 비치는 별빛");
 });
 
-test("switching landscapes keeps the chosen community and discards late counts from previous rooms", async () => {
+test("all landscape cards enter directly and keep their live counts and effective capacities separate", async () => {
   const harness = cardHarness();
   let tree = harness.render();
-  assert.equal(harness.requests[0].mapId, "beach");
-  elements(tree, "select")[0].props.onChange({ target: { value: "circle-two" } });
-  tree = harness.render();
-  elements(tree, "button").find(button => button.props["data-place"] === "uyuni").props.onClick();
-  tree = harness.render();
-  assert.equal(elements(tree, "select")[0].props.value, "circle-two");
-  assert.equal(elements(tree, "a")[0].props.href, "/uyuni?communityId=circle-two");
-  assert.deepEqual(harness.requests.map(({ communityId, mapId }) => [communityId, mapId]),
-    [["circle / one", "beach"], ["circle-two", "beach"], ["circle-two", "uyuni"]]);
-  harness.requests[1].resolve({ communityId: "circle-two", mapId: "beach", count: 100, capacity: 100 });
+  assert.deepEqual(elements(tree, "a").map(link => link.props.href), Object.keys(maps.MAPS).map(id => maps.mapHref(id, "circle / one")));
+  assert.equal(occupancyLabels(tree).length, 0);
+  harness.requests[0].resolve({ communityId: "circle / one", mapId: "beach", count: 20, capacity: 100 });
+  harness.requests[1].resolve({ communityId: "circle / one", mapId: "uyuni", count: 9, capacity: 100 });
   await settle(); tree = harness.render();
-  assert.equal(occupancyLabels(tree).length, 0, "a full beach cannot mark Uyuni as full");
-  assert.equal(elements(tree, "a").length, 1);
-  harness.requests[2].resolve({ communityId: "circle-two", mapId: "uyuni", count: 9, capacity: 100 });
+  assert.equal(elements(tree, "button")[0].props["data-place"], "beach", "legacy capacity 100 is capped at the current 20-person limit");
+  assert.equal(elements(tree, "a").length, 3);
+  assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [20, 9]);
+  assert.ok(elements(tree, "span").some(span => span.props["aria-label"] === "9명, 정원 20명"));
+});
+
+test("changing communities and refreshing discards late counts and restores unknown state on failure", async () => {
+  const harness = cardHarness();
+  harness.render();
+  harness.setCircles([{ id: "new-circle", name: "새 소로우", slug: "new" }]);
+  harness.render();
+  harness.requests[0].resolve({ communityId: "circle / one", mapId: "beach", count: 20, capacity: 20 });
+  harness.requests[4].resolve({ communityId: "new-circle", mapId: "beach", count: 3, capacity: 20 });
+  await settle();
+  let tree = harness.render();
+  assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [3]);
+  assert.ok(elements(tree, "a").every(link => link.props.href.endsWith("communityId=new-circle")));
+  harness.refresh();
+  harness.requests[5].resolve({ communityId: "new-circle", mapId: "uyuni", count: 20, capacity: 20 });
+  harness.requests[9].resolve({ communityId: "new-circle", mapId: "uyuni", count: 7, capacity: 20 });
+  harness.requests[8].reject(new Error("network unavailable"));
   await settle(); tree = harness.render();
-  assert.equal(occupancyLabels(tree)[0].props.children, 9);
-  elements(tree, "button").find(button => button.props["data-place"] === "beach").props.onClick();
-  tree = harness.render();
-  assert.equal(occupancyLabels(tree).length, 0, "the newly selected map starts with unknown occupancy");
-  assert.equal(elements(tree, "select")[0].props.value, "circle-two");
+  assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [7], "failed counts become unknown and the old refresh cannot mark a room full");
+  assert.equal(elements(tree, "a").length, 4);
+  assert.equal(elements(tree, "button").length, 0);
 });
 
 const sceneSource = await read("../components/beach/BeachScene.tsx");

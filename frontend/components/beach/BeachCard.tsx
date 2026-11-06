@@ -52,7 +52,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
         {Object.values(MAPS).map((choice, index) => {
           const count = occupancy[choice.id];
           const current = count?.communityId === communityId && count?.mapId === choice.id ? count : undefined;
-          const capacity = current?.capacity ?? chosen?.spaceCapacity ?? 20;
+          const capacity = Math.min(20, current?.capacity ?? chosen?.spaceCapacity ?? 20);
           const full = current !== undefined && current.count >= capacity;
           const content = <>
             {!failedPhotos[choice.id] && <img className={styles.photo} src={assetUrl(`/beach/places/${choice.id}-v1.webp`)}
@@ -70,6 +70,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
           return full ? <button key={choice.id} type="button" className={styles.placeCard} data-place={choice.id}
             disabled aria-label={`${choice.name}, 만석`}>{content}</button>
             : <Link key={choice.id} className={styles.placeCard} data-place={choice.id}
+              prefetch={false}
               href={chosen ? mapHref(choice.id, chosen.id) : "/c"}
               aria-label={chosen ? `${chosen.name} ${choice.name} 들어가기` : `${choice.name}, 소로우 찾기`}>{content}</Link>;
         })}
