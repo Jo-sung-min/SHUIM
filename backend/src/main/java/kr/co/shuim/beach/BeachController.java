@@ -15,6 +15,7 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleService;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.points.FireworkTickets;
 import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.CacheControl;
@@ -45,20 +46,36 @@ public class BeachController {
     private final BeachService beach;
     private final CircleService circles;
     private final RoomMusicRecordings recordings;
+    /** Null keeps the legacy administrator-only fireworks (tests without a ticket store). */
+    private final FireworkTickets tickets;
     // Privacy is immutable after creation. All live visits are admitted here; restart clears both indexes.
     private final Set<String> privateCommunities = ConcurrentHashMap.newKeySet();
 
     public BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles) {
-        this(auth, blocks, beach, circles, null);
+        this(auth, blocks, beach, circles, null, null);
+    }
+
+    BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles, RoomMusicRecordings recordings) {
+        this(auth, blocks, beach, circles, recordings, null);
+    }
+
+    public BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles, FireworkTickets tickets) {
+        this(auth, blocks, beach, circles, null, tickets);
     }
 
     @Autowired
-    BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles, RoomMusicRecordings recordings) {
+    BeachController(AuthService auth, BlockService blocks, BeachService beach, CircleService circles, RoomMusicRecordings recordings, FireworkTickets tickets) {
         this.auth = auth;
         this.blocks = blocks;
         this.beach = beach;
         this.circles = circles;
         this.recordings = recordings;
+        this.tickets = tickets;
+    }
+
+    /** Registered members launch with tickets; administrators keep the free control. Without a ticket store only administrators may. */
+    private boolean fireworksAllowed(DbUser me) {
+        return auth.isAdmin(me) || (tickets != null && !me.anonymous() && !me.blocked());
     }
 
     /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
@@ -182,7 +199,10 @@ public class BeachController {
         out.put("lightingControl", auth.isAdmin(me));
         out.put("lighting", beach.lighting(circle.id(), map.id()));
         out.put("musicControl", auth.isAdmin(me));
-        out.put("fireworksControl", auth.isAdmin(me));
+        boolean fireworksFree = auth.isAdmin(me);
+        out.put("fireworksControl", fireworksAllowed(me));
+        out.put("fireworksFree", fireworksFree);
+        if (!fireworksFree && tickets != null) out.put("fireworkTickets", tickets.balance(me.id()));
         BeachRoom.FireworksState fireworks = beach.fireworks(circle.id(), map.id());
         out.put("fireworks", fireworks.events());
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
@@ -293,15 +313,24 @@ public class BeachController {
         return response.body(recordings.resource(selected));
     }
 
-    /** POST /api/beach/fireworks { ticket, requestId: UUID, variant? }. A room-wide, retry-safe administrator action. */
+    /**
+     * POST /api/beach/fireworks { ticket, requestId: UUID, variant? }. A room-wide, retry-safe launch.
+     * Administrators launch for free with every style; registered members spend one firework ticket and cannot use "songi".
+     */
     @PostMapping("/api/beach/fireworks")
     public BeachRoom.FireworkLaunch fireworks(@RequestBody(required = false) FireworksBody body, HttpServletRequest req) {
-        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 불꽃놀이를 쏠 수 있어요."));
         if (body == null) throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireMember(visit.communityId(), me);
-        if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 불꽃놀이를 시작할 수 있어요.");
-        return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), body.selectedVariant());
+        String variant = body.selectedVariant();
+        if (auth.isAdmin(me)) return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant);
+        if (!fireworksAllowed(me)) throw ApiException.forbidden("가입한 회원만 불꽃놀이를 쏠 수 있어요.");
+        if ("songi".equals(variant)) throw ApiException.forbidden("송이 안녕? 불꽃은 관리자만 띄울 수 있어요.");
+        String selected = variant == null ? "festival" : variant;
+        FireworkTickets.Consumed<BeachRoom.FireworkLaunch> consumed = tickets.consume(me.id(), body.requestId(), visit.communityId(), visit.mapId(), selected,
+            () -> beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant));
+        return consumed.result().withTickets(consumed.tickets());
     }
 
     /** A registered current member can launch only from their own standing Uyuni visit. */

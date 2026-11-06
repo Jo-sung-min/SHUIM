@@ -365,7 +365,11 @@ public class BeachRoom {
     private static final long FIREWORK_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000L;
     public record FireworkEvent(String id, int seed, long startedAt, int durationMs, String variant) {}
     public record FireworksState(List<FireworkEvent> events, long cooldownUntil, long serverTime) {}
-    public record FireworkLaunch(FireworkEvent event, long serverTime, long cooldownUntil) {}
+    /** tickets is the launcher's remaining firework tickets; administrators launch for free and get none. */
+    public record FireworkLaunch(FireworkEvent event, long serverTime, long cooldownUntil, Integer tickets) {
+        public FireworkLaunch(FireworkEvent event, long serverTime, long cooldownUntil) { this(event, serverTime, cooldownUntil, null); }
+        public FireworkLaunch withTickets(int remaining) { return new FireworkLaunch(event, serverTime, cooldownUntil, remaining); }
+    }
     private final LinkedHashMap<UUID, FireworkEvent> fireworkRequests = new LinkedHashMap<>();
     private FireworkEvent activeFirework;
     private long fireworksCooldownUntil;

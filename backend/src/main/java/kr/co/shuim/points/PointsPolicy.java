@@ -16,7 +16,7 @@ public final class PointsPolicy {
         "외침 작성자가 내 최상위 댓글을 채택하면 50P를 받아요. 한 글에서 한 번만 채택할 수 있어요.",
         "위로 댓글이나 위로 피드에 서로 다른 회원의 힘내요가 5·15·30개 모이면 각각 10·20·30P를 한 번씩 받아요.",
         "모든 보상을 합쳐 한국 시간 하루 최대 200P예요. 한도를 넘은 보상은 다음 날로 넘어가지 않아요.",
-        "내 반응, 비회원·샘플·제한 계정의 활동과 숨겨진 글은 적립에 포함되지 않아요. 포인트는 현금이 아니며 지금은 사용할 수 없어요.");
+        "내 반응, 비회원·샘플·제한 계정의 활동과 숨겨진 글은 적립에 포함되지 않아요. 포인트는 현금이 아니며 폭죽 이용권(1,000P = 1장)으로만 바꿀 수 있어요.");
 
     public static LocalDate day(long now) { return Instant.ofEpochMilli(now).atZone(ZoneId.of("Asia/Seoul")).toLocalDate(); }
     public static boolean meaningful(String text) {

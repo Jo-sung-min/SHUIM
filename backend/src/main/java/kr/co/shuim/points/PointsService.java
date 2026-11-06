@@ -119,13 +119,37 @@ public class PointsService {
             .param(balance).param(Math.addExact(wallet.totalEarned(), amount)).param(now).param(userId).update();
     }
 
+    /**
+     * Server-owned spending (firework tickets). The caller holds its own transaction; the same event key never charges twice.
+     * Returns the remaining balance. Spending never touches the daily earning limit.
+     */
+    @Transactional
+    public long spend(String userId, String eventKey, String reason, int amount, long now, String shortMessage) {
+        if (amount <= 0 || amount > 1000) throw new IllegalArgumentException("Unsupported spend amount");
+        Wallet wallet = lockWallet(userId, now);
+        if (jdbc.sql("SELECT EXISTS(SELECT 1 FROM point_ledger WHERE event_key=?)").param(eventKey).query(Boolean.class).single()) return wallet.balance();
+        if (wallet.balance() < amount) throw new ApiException(409, shortMessage);
+        long balance = wallet.balance() - amount;
+        jdbc.sql("INSERT INTO point_ledger(id,user_id,event_key,reason,amount,balance_after,earned_on,created_at) VALUES (?,?,?,?,?,?,?,?)")
+            .param(UUID.randomUUID()).param(userId).param(eventKey).param(reason).param(-amount).param(balance).param(PointsPolicy.day(now)).param(now).update();
+        jdbc.sql("UPDATE point_wallets SET balance=?,total_spent=total_spent+?,updated_at=? WHERE user_id=?")
+            .param(balance).param(amount).param(now).param(userId).update();
+        return balance;
+    }
+
+    /** A registered, unblocked, non-sample account: the only kind that may earn or spend. */
+    public boolean eligible(DbUser user) {
+        return user != null && !user.anonymous() && !user.blocked() && registered(user.id());
+    }
+
     private Wallet lockWallet(String userId, long now) {
         jdbc.sql("INSERT INTO point_wallets(user_id,updated_at) VALUES (?,?) ON CONFLICT DO NOTHING").param(userId).param(now).update();
         return jdbc.sql("SELECT balance,total_earned FROM point_wallets WHERE user_id=? FOR UPDATE").param(userId)
             .query((rs, i) -> new Wallet(rs.getLong("balance"), rs.getLong("total_earned"))).single();
     }
     private Daily daily(String userId, LocalDate day) {
-        return jdbc.sql("SELECT COALESCE(sum(amount),0) AS earned,count(*) FILTER (WHERE reason='comfort_write' AND amount>0) AS writing FROM point_ledger WHERE user_id=? AND earned_on=?")
+        // Spending rows are negative and must not free up the daily earning limit.
+        return jdbc.sql("SELECT COALESCE(sum(amount) FILTER (WHERE amount>0),0) AS earned,count(*) FILTER (WHERE reason='comfort_write' AND amount>0) AS writing FROM point_ledger WHERE user_id=? AND earned_on=?")
             .param(userId).param(day).query((rs, i) -> new Daily(rs.getLong("earned"), rs.getInt("writing"))).single();
     }
     private boolean registered(String id) {
