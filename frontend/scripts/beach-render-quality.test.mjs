@@ -136,6 +136,23 @@ test("beach field audio receives the avatar position and the last confirmed log 
   assert.deepEqual(heard, [0, 1, 0, 0], "only an accepted beach snapshot can supply fuel to the crackle");
 });
 
+test("garden rain audio follows the avatar across both hall doors and the current weather, not the orbit camera", () => {
+  const { engine } = fixture(), heard = [];
+  Object.assign(engine, {
+    mapId: "garden", self: { x: 0, z: -11 }, rainNow: 0, time: 0, lastRender: 10_000, lastDaylightAt: 10_000,
+    clock: { update() {}, getDelta: () => .016 },
+    updateSelf() {}, syncSkyResolution() {}, updatePlayers() {}, updateFx() {}, updateWorld() {},
+    updateRain() { this.rainNow = .7; }, garden: { renderReflection() {} },
+    fireworkAudio: { updateGardenSound(inside, rain, dt) { heard.push({ inside, rain, dt }); } },
+  });
+  for (const [x, z, expected] of [[0, -11, false], [-16, 76, false], [-14.8, 76, true], [0, 62, true], [14.8, 76, true], [16, 76, false], [0, 81, false]]) {
+    engine.self.x = x; engine.self.z = z;
+    engine.camera.position.set(expected ? 22 : 0, 3, 70);
+    engine.rainNow = 0; engine.frame();
+    assert.deepEqual(heard.at(-1), { inside: expected, rain: .7, dt: .016 }, `${x},${z} uses the freshly updated weather and avatar boundary`);
+  }
+});
+
 test("walking and camera turns brighten stars, then settle independently in both night skies", () => {
   for (const map of ["bamboo", "uyuni"]) {
     const { engine } = fixture();

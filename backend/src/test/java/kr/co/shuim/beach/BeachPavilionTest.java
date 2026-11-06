@@ -95,10 +95,13 @@ class BeachPavilionTest {
         assertTrue(BeachMap.BAMBOO.hasPavilions()); assertFalse(BeachMap.BAMBOO.hasStarlight()); assertFalse(BeachMap.BAMBOO.hasBeds());
         assertFalse(BeachMap.BAMBOO.hasBeachFacilities());
         assertEquals(-4, BeachMap.BAMBOO.minZ()); assertEquals(115, BeachMap.BAMBOO.maxZ());
-        assertEquals(-44, BeachMap.BAMBOO.minX()); assertEquals(44, BeachMap.BAMBOO.maxX());
+        assertEquals(-55, BeachMap.BAMBOO.minX()); assertEquals(44, BeachMap.BAMBOO.maxX());
         assertEquals(BeachRoom.MIN_X, BeachMap.BEACH.minX()); assertEquals(BeachRoom.MAX_Z, BeachMap.UYUNI.maxZ());
         assertEquals(BeachMap.BAMBOO, BeachMap.from("bamboo"));
+        room.tick(walker.ticket(), -49, 98, 0, true, null, null);
+        assertEquals(-49, walker.x(), "the widened arboretum must not snap visitors back to the old edge");
+        assertEquals(98, walker.z());
         room.tick(walker.ticket(), -100, 200, 0, true, null, null);
-        assertEquals(-44, walker.x()); assertEquals(115, walker.z());
+        assertEquals(-55, walker.x()); assertEquals(115, walker.z());
     }
 }

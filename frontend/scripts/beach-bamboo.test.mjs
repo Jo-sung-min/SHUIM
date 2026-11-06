@@ -23,6 +23,7 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
   "BAMBOO_GUESTBOOK", "BAMBOO_GUESTBOOK_OBSTACLES", "isNearBambooGuestbook",
   "TRAIL_POLYLINES", "pavilionWorld", "pavilionLocal", "pavilionSeat", "claimedPavilionSeat", "nearbyBambooPavilion", "summitGroveSites",
   "mountainHeight", "groundHeight", "bambooFloorHeight", "bambooCeilingHeight", "nearestOnTrail", "onTrail", "resolveTrail", "bambooStalkSites", "trailLength",
+  "SECRET_GARDEN", "SECRET_GARDEN_ZONES", "SECRET_GARDEN_PATHS", "insideSecretGarden",
 ]);
 const { daylightAt, bambooDaylightAt } = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "bambooDaylightAt"]);
 const maps = await load("../lib/beach/maps.ts", {}, ["MAPS", "mapHref"]);
@@ -184,7 +185,7 @@ test("the summit's bamboo frames the river from the book, both ends of the bench
         assert.ok(flanking.some(site => site.height < 6) && flanking.some(site => site.height > 10),
           "young and mature stems screen the bare lateral slope");
         const depths = flanking.map(site => Math.hypot(site.x - eyeX, site.z - eyeZ));
-        assert.ok(Math.max(...depths) - Math.min(...depths) > 7, "the stands overlap at different distances");
+        assert.ok(Math.max(...depths) - Math.min(...depths) > 7, `the stands overlap at different distances: side=${side}, eye=${eyeX},${eyeZ}, bearing=${bearing}, depths=${depths.map(d => d.toFixed(1))}`);
       }
     }
   }
@@ -199,10 +200,10 @@ test("the loop is a long climb that starts at the shared arrival point and stays
     assert.ok(x > trail.BAMBOO_BOUNDS.minX + 1.5 && x < trail.BAMBOO_BOUNDS.maxX - 1.5, `x ${x}`);
     assert.ok(z > trail.BAMBOO_BOUNDS.minZ + 1 && z < trail.BAMBOO_BOUNDS.maxZ - 1, `z ${z}`);
   }
-  assert.deepEqual([trail.BAMBOO_BOUNDS.minX, trail.BAMBOO_BOUNDS.maxX, trail.BAMBOO_BOUNDS.minZ, trail.BAMBOO_BOUNDS.maxZ], [-44, 44, -4, 115]);
+  assert.deepEqual([trail.BAMBOO_BOUNDS.minX, trail.BAMBOO_BOUNDS.maxX, trail.BAMBOO_BOUNDS.minZ, trail.BAMBOO_BOUNDS.maxZ], [-55, 44, -4, 115]);
   assert.ok(trail.onTrail(0, 3), "the server's arrival point is on the entrance stem");
   assert.ok(trail.onTrail(0.8, 3.4) && trail.onTrail(-1.2, 3.2));
-  assert.deepEqual([...trail.TRAIL_POLYLINES].map(line => line.id), ["loop", "entrance", "spur-step", "spur-wind", "spur-pine", "spur-moon", "spur-summit"]);
+  assert.deepEqual([...trail.TRAIL_POLYLINES].filter(line => !line.id.startsWith("secret-")).map(line => line.id), ["loop", "entrance", "spur-step", "spur-wind", "spur-pine", "spur-moon", "spur-summit"]);
 });
 
 test("the mountain rises from a flat trailhead to a flat summit, with the path terraced across the slope", () => {
@@ -224,13 +225,56 @@ test("the mountain rises from a flat trailhead to a flat summit, with the path t
   assert.ok(trail.groundHeight(0, 140) < trail.SUMMIT_HEIGHT - 6, "beyond the summit the slope falls away toward the city");
 });
 
+test("the hidden arboretum is reached behind Moon Pavilion by a continuous dogleg and a straight path to three photo bays", () => {
+  const paths = trail.SECRET_GARDEN_PATHS, zones = trail.SECRET_GARDEN_ZONES;
+  assert.equal(zones.length, 3);
+  assert.ok(trail.SECRET_GARDEN.maxX - trail.SECRET_GARDEN.minX >= 30, "both wings fit a spacious planted backdrop");
+  assert.equal(trail.SECRET_GARDEN.spineX, (trail.SECRET_GARDEN.minX + trail.SECRET_GARDEN.maxX) / 2);
+  const spine = paths.find(path => path.id === "secret-spine");
+  assert.ok(spine.points.every(point => point[0] === trail.SECRET_GARDEN.spineX));
+  assert.ok(spine.points.at(-1)[1] - spine.points[0][1] >= 20);
+  const entrance = paths.find(path => path.id === "secret-entrance");
+  assert.ok(entrance.points.some(([x, z]) => x < -24 && z < trail.SECRET_GARDEN.minZ), "the concealed bend precedes the garden reveal");
+  for (const path of paths) for (let i = 1; i < path.points.length; i++) {
+    const a = path.points[i - 1], b = path.points[i], length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    let previousY = trail.bambooFloorHeight(...a);
+    for (let step = 0; step <= Math.ceil(length * 10); step++) {
+      const t = step / Math.ceil(length * 10), x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+      assert.ok(trail.onTrail(x, z), `${path.id} is connected at ${x},${z}`);
+      assert.deepEqual([...trail.resolveTrail(x, z)], [x, z], "walking does not snap away from the entrance or branch");
+      assert.ok(x > trail.BAMBOO_BOUNDS.minX + .4 && x < trail.BAMBOO_BOUNDS.maxX - .4 && z < trail.BAMBOO_BOUNDS.maxZ - .4);
+      assert.ok(!trail.BAMBOO_PAVILION_COLLIDERS.some(wall => x > wall.minX - .25 && x < wall.maxX + .25 && z > wall.minZ - .25 && z < wall.maxZ + .25), "entrance skirts the pavilion back railing");
+      const y = trail.bambooFloorHeight(x, z);
+      assert.ok(Math.abs(y - previousY) < .12, `no hidden floor step on ${path.id}: ${y - previousY}`);
+      previousY = y;
+    }
+  }
+  for (const zone of zones) {
+    assert.ok(trail.insideSecretGarden(zone.x, zone.z));
+    for (let i = 0; i < 12; i++) {
+      const x = zone.x + Math.cos(i / 12 * Math.PI * 2) * 2, z = zone.z + Math.sin(i / 12 * Math.PI * 2) * 2;
+      assert.ok(trail.onTrail(x, z), "a photographer can stand around each sculpture");
+      assert.deepEqual([...trail.resolveTrail(x, z)], [x, z]);
+      assert.ok(Math.abs(trail.groundHeight(x, z) - trail.groundHeight(zone.x, zone.z)) < .001, "expanded photo bays are level across their full posing disk");
+    }
+  }
+  assert.equal(trail.onTrail(-20, 96), false, "the summit does not open a second shortcut through the screening bamboo");
+  assert.ok(trail.bambooStalkSites().every(stalk => !trail.insideSecretGarden(stalk.x, stalk.z, .5)), "random forest trunks do not grow through the planted garden");
+});
+
+test("rendered terrain height can correct walking while pavilion floors retain their precise seat and step levels", () => {
+  assert.equal(trail.bambooFloorHeight(-38, 100, () => 12.345), 12.345);
+  const pavilion = byId("moon");
+  assert.equal(trail.bambooFloorHeight(pavilion.x, pavilion.z, () => -100), pavilion.floorY);
+});
+
 test("the corridor slides a walker back toward the path, a yard or a clearing instead of stopping", () => {
   assert.deepEqual([...trail.resolveTrail(0, 3)], [0, 3]);
   const [x, z] = trail.resolveTrail(3, 1);
   assert.ok(trail.onTrail(x, z));
   assert.ok(Math.abs(trail.nearestOnTrail(x, z).distance - trail.TRAIL_WALK_HALF) < 0.02, "pushed back to the inside of the fence line");
   assert.ok(Math.abs(z - 1) < 0.3 && x > 1.3, "the push is perpendicular to the entrance stem");
-  const moon = byId("moon");
+  const moon = byId("wind");
   assert.ok(trail.onTrail(moon.x, moon.z), "the deck itself is walkable");
   const outside = trail.pavilionWorld(moon, 1, -5);
   const [yx, yz] = trail.resolveTrail(outside.x, outside.z);

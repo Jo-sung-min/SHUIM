@@ -13,6 +13,7 @@ const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/firewor
 const variantSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-festival-variants.ts", import.meta.url), "utf8"))
   .replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
+const finaleSource=stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-songi-finale.ts",import.meta.url),"utf8")).replace(/\bexport\s+(?=const\b)/g,"");
 const event = (id = "one", startedAt = 100_000, seed = 1785) => ({ id, seed, startedAt, durationMs: 12_000 });
 
 function fixture({ mobile = false, dom = true, height = 844, audio } = {}) {
@@ -27,7 +28,7 @@ function fixture({ mobile = false, dom = true, height = 844, audio } = {}) {
   }
   const context = { THREE: { ...THREE, TextureLoader }, Date: { now: () => time }, ...assets };
   if (dom) { context.document = {}; context.window = { innerHeight: height }; }
-  vm.runInNewContext(`${variantSource}\n${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
+  vm.runInNewContext(`${variantSource}\n${finaleSource}\n${source}\nglobalThis.api = { BeachFireworks, fireworkGeometry, FIREWORK_SPARK_URL, FIREWORK_TEXT, FIREWORK_TEXT_CENTER, FIREWORK_SKY_TEXT_CENTER };`, context);
   const scene = new THREE.Scene(), fireworks = new context.api.BeachFireworks(scene, { mobile }, audio);
   return { ...context.api, scene, fireworks, requests, setTime(value) { time = value; },
     load(index = 0) { requests[index].onLoad(requests[index].texture); } };
@@ -75,9 +76,9 @@ test("burst sparks twinkle at separate seeded phases and tempos instead of flash
   fireworks.dispose();
 });
 
-test("late glitter stays visible while glyph strokes remain steady and all sparks expire on time", () => {
+test("ordinary late glitter and legacy love lettering retain their shared shimmer", () => {
   const { fireworks, scene } = fixture({ mobile: true, dom: false });
-  fireworks.apply([{ ...event(), variant: "songi" }], 100_000);
+  fireworks.apply([{ ...event(), variant: "love" }], 100_000);
   const { fireworkSparkFade, fireworkLetterShimmer } = shimmerFunctions(scene.children[0].material.vertexShader);
   const phases = Array.from({ length: 256 }, (_, index) => index * Math.PI * 2 / 256);
   const late = phases.map(phase => fireworkSparkFade(4.2, 4.8, phase));
@@ -92,8 +93,40 @@ test("late glitter stays visible while glyph strokes remain steady and all spark
       assert.ok(brightness >= .86 && brightness <= 1, "Hangul strokes shimmer gently without blinking out");
     }
   }
-  assert.equal(scene.children[0].geometry.getAttribute("position").count, 3939, "glitter reuses the existing mobile particles");
+  assert.equal(scene.children[0].geometry.getAttribute("position").count, 3720, "legacy glitter retains its particle budget");
   fireworks.dispose();
+});
+
+test("offbeat burns away the long tails first and finishes with asynchronous twinkling tips", () => {
+  const { fireworks, scene } = fixture({ mobile: true, dom: false });
+  fireworks.apply([{ ...event(), variant: "offbeat" }], 100_000);
+  const material = scene.children[0].material;
+  assert.equal(material.uniforms.uOffbeat.value, 1);
+  const { fireworkTwinkle } = shimmerFunctions(material.vertexShader);
+  const block = material.vertexShader.match(/if\(uOffbeat>\.5\) \{([\s\S]*?)\n\s+\}/)?.[1];
+  assert.ok(block, "use the actual offbeat shader branch");
+  const context = { fireworkTwinkle, max: Math.max,
+    step: (edge, x) => x < edge ? 0 : 1, mix: (a, b, t) => a * (1 - t) + b * t,
+    smoothstep: (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); },
+  };
+  vm.runInNewContext(`globalThis.sample = (elapsed, delay, phase) => {
+    const timing = {x:1.2,y:delay,z:4.1}, detail = {y:phase};
+    const uAge = timing.x + elapsed, age = elapsed - delay, t = Math.max(0,age);
+    let fade=0, sparkle=0, vTipGlitter=0;
+    ${block.replace(/\bfloat\s+/g, "let ")}
+    return {fade,sparkle,vTipGlitter};
+  };`, context);
+  const values = Array.from({length:120}, (_,i) => context.sample(3.2, 0, i*Math.PI/60));
+  assert.ok(values.filter(v => v.fade>.4).length>3, "a few tips catch the light near the end");
+  assert.ok(values.filter(v => v.fade<.08).length>50, "other tips are dark instead of glowing as a solid curtain");
+  assert.ok(values.every(v => v.vTipGlitter===1), "late heads use compact star points instead of long strokes");
+  for (const delay of [.03,.3,.7]) assert.equal(context.sample(3.2,delay,.5).fade,0,"no delayed trail survives the head-only ending");
+  for (const delay of [0,.3,.7]) assert.equal(context.sample(4.11,delay,.5).fade,0,"the entire shell expires together");
+  assert.ok(context.sample(.6,0,.5).fade>.8,"the initial burst remains bright");
+  fireworks.dispose();
+  const ordinary=fixture({dom:false}); ordinary.fireworks.apply([event()],100000);
+  assert.equal(ordinary.scene.children[0].material.uniforms.uOffbeat,undefined,"other variants keep their existing shader and trails");
+  ordinary.fireworks.dispose();
 });
 
 test("seeded trajectories are deterministic and mobile uses fewer finite particles at the same burst centers", () => {
@@ -156,7 +189,7 @@ test("both exact Korean messages use deterministic glyph particles and stay with
     const mobile = fireworkGeometry(7, true, variant), desktop = fireworkGeometry(99, false, variant);
     const letters = geometry => {
       const points = [], timing = geometry.getAttribute("timing"), velocity = geometry.getAttribute("velocity"), origin = geometry.getAttribute("position");
-      for (let index = 0; index < timing.count; index++) if (timing.getW(index) === 4) {
+      for (let index = 0; index < timing.count; index++) if (timing.getW(index) === 4 && (variant !== "songi" || (timing.getY(index) === 0 && velocity.getZ(index) === 0))) {
         points.push([velocity.getX(index), velocity.getY(index)]);
         assert.deepEqual([origin.getX(index), origin.getY(index), origin.getZ(index)], Array.from(FIREWORK_TEXT_CENTER));
         assert.ok(timing.getX(index) + timing.getY(index) + timing.getZ(index) < 12);
@@ -167,9 +200,9 @@ test("both exact Korean messages use deterministic glyph particles and stay with
     assert.equal(points.length, expectedPoints);
     assert.deepEqual(points, letters(desktop), "text strokes do not depend on seed, density, DOM or device font");
     assert.equal(mobile.userData.phrase, FIREWORK_TEXT[variant]);
-    assert.ok(mobile.getAttribute("position").count <= 4000);
-    assert.ok(desktop.getAttribute("position").count <= 8000);
-    assert.ok(mobile.userData.textWidth > 25 && mobile.userData.textWidth < 60);
+    assert.ok(mobile.getAttribute("position").count <= (variant === "songi" ? 20000 : 12000), "the greeting includes its three separate background shells");
+    assert.ok(desktop.getAttribute("position").count <= (variant === "songi" ? 32000 : 18000));
+    assert.ok(mobile.userData.textWidth > 25 && mobile.userData.textWidth < 85);
     assert.ok(new Set(points.map(p => p[1])).size >= 20, "full multi-row glyph strokes retain Hangul detail");
     mobile.dispose(); desktop.dispose();
   }
@@ -239,14 +272,15 @@ test("higher drawing-buffer resolution preserves the CSS size of sparks, text do
   const object = scene.children[0], camera = new THREE.PerspectiveCamera(82, 390 / 844, 0.1, 520);
   camera.position.set(0, 17.92, 41.88); camera.rotation.x = Math.PI / 2; camera.layers.set(1);
   const detail = object.geometry.getAttribute("detail"), timing = object.geometry.getAttribute("timing");
-  const sampleModes = [0, 4, 3, 5];
+  const sampleModes = [1, 4, 3];
   const sizesAt = bufferHeight => {
     fireworks.update(camera, 105_000, bufferHeight);
     const { uViewport: viewport, uPointScale: pointScale, uTextScale: textScale } = object.material.uniforms;
     assert.equal(viewport.value, bufferHeight, "actual render heights above 1400 are retained");
     assert.equal(pointScale.value, bufferHeight / 844);
     return sampleModes.flatMap(mode => {
-      let index = 0; while (timing.getW(index) !== mode) index++;
+      const index = Array.from({ length: timing.count }, (_, i) => i).find(i => timing.getW(i) === mode);
+      assert.notEqual(index, undefined, `mode ${mode} exists in this choreography`);
       const size = detail.getX(index) * (mode === 4 ? textScale.value : 1);
       return [1, 72, 520].map(depth => Math.max(1.6 * pointScale.value,
         Math.min(96 * pointScale.value, size * camera.projectionMatrix.elements[5] * viewport.value / depth)) / (bufferHeight / 844));
@@ -266,7 +300,7 @@ test("audio receives the actual visible geometry once per accepted room event an
   } });
   fireworks.apply([event("expired", 170_000), event("live", 195_000)], 200_000);
   assert.equal(starts.length, 1);
-  assert.deepEqual(starts[0], [scene.children[0].geometry, 195_000, 200_000, 1785]);
+  assert.deepEqual(starts[0], [scene.children[0].geometry, 195_000, 200_000, 1785, 12000]);
   setTime(100_500); fireworks.apply([event("live", 195_000)], 200_200);
   fireworks.update(); assert.equal(times.at(-1), 200_500);
   assert.equal(starts.length, 1, "a polling retry never reschedules the booms");

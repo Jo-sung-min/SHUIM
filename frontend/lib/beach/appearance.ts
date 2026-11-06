@@ -1,4 +1,4 @@
-/** New selections use only the 3D characters; old saved choices migrate by gender. */
+/** Stable IDs also travel through the room server; old pixel choices migrate by gender. */
 export type BeachCharacter = "male" | "female-3d";
 
 export const BEACH_CHARACTERS = [
@@ -7,8 +7,8 @@ export const BEACH_CHARACTERS = [
 ] as const;
 
 function currentCharacter(value: unknown): BeachCharacter | null {
-  if (value === "male" || value === "pixel-male") return "male";
-  if (value === "female-3d" || value === "female") return "female-3d";
+  if (value === "male" || value === "pixel-male" || value === "cat-gentleman") return "male";
+  if (value === "female-3d" || value === "female" || value === "cat-lady") return "female-3d";
   return null;
 }
 

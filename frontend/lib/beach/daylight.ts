@@ -217,6 +217,11 @@ export function uyuniDaylightAt(hourIn: number): Daylight {
  * 대나무숲: 빽빽한 줄기와 캐노피가 먼 곳을 가리므로 안개가 초록빛으로 가깝게 닫히고(그만큼 덜 그린다),
  * 낮에는 댓잎 그늘이 캐릭터에 살짝 초록빛을 얹는다. 밤 팔레트·등불 타이밍은 다른 지도와 같다.
  */
+export function bambooSunsetAmount(hourIn: number): number {
+  const hour = ((hourIn % 24) + 24) % 24;
+  return smooth((hour - 17.5) / .5) * (1 - smooth(hour - 19));
+}
+
 export function bambooDaylightAt(hourIn: number): Daylight {
   const base = daylightAt(hourIn);
   const night = Math.max(0, Math.min(1, base.stars));
@@ -226,7 +231,13 @@ export function bambooDaylightAt(hourIn: number): Daylight {
   const shade: RGB = [base.tint[0] * 0.92, base.tint[1] * 1.0, base.tint[2] * 0.88];
   const lanternWarm: RGB = [0.74, 0.7, 0.68];
   const tint = mixRgb(mixRgb(base.tint, shade, 1 - night), lanternWarm, base.deepNight * 0.45);
-  return { ...base, fog, fogNear: 14, fogFar: 62, tint };
+  const sunset = bambooSunsetAmount(base.hour), evening = smooth((base.hour - 18) / 1.8);
+  return {
+    ...base, fog: mixRgb(fog, c("#766f82"), sunset * .65), fogNear: 14, fogFar: 62, tint,
+    skyTop: mixRgb(base.skyTop, mixRgb(c("#17365b"), c("#141b3a"), evening), sunset),
+    skyHorizon: mixRgb(base.skyHorizon, mixRgb(c("#f9b971"), c("#a5667d"), evening), sunset),
+    sunColor: mixRgb(base.sunColor, c("#ffc28f"), sunset),
+  };
 }
 
 /**

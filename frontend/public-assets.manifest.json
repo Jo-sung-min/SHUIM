@@ -33,6 +33,18 @@
       "contentType": "audio/mpeg"
     },
     {
+      "key": "beach/fx/bamboo-field-crickets-v3.mp3",
+      "bytes": 786284,
+      "sha256": "afb6934e563fd57731955319a67fd422356dce0e696b54b7eeec229f77c95c07",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/bamboo-field-wind-day-v1.mp3",
+      "bytes": 877484,
+      "sha256": "3db43e177a37a76142a64920389d08991952ce300f5cc8a4670bc621423fbabf",
+      "contentType": "audio/mpeg"
+    },
+    {
       "key": "beach/fx/beach-campfire-crackle-v1.mp3",
       "bytes": 559148,
       "sha256": "0d1444c4bcacaf15da2831bf86228494d4881eb7c91ada8a32229aa21bcdf72c",
@@ -60,6 +72,24 @@
       "key": "beach/fx/firework-spark-v1.webp",
       "bytes": 15150,
       "sha256": "1e2c3408ddc730e157fd5c16a8f9a7272befe91771e0814c9d1a759229917d26",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/fx/garden-rain-indoor-v1.mp3",
+      "bytes": 686156,
+      "sha256": "d479b36b7731485a3fad3b35f283a3eda9f9aa5f4848c5d8528c4faa0476d462",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/garden-rain-outdoor-v1.mp3",
+      "bytes": 1040972,
+      "sha256": "efd812b3047ceb6b605cbc88f859817b6153b946e1bfa173fcbda3e749c278ce",
+      "contentType": "audio/mpeg"
+    },
+    {
+      "key": "beach/fx/songi-puppy-maple-outline-v1.webp",
+      "bytes": 35916,
+      "sha256": "4975957d143477b75bcf848611d659568dfeb2ff38a7ecfa1e18fa6d4e82ad02",
       "contentType": "image/webp"
     },
     {
@@ -141,6 +171,30 @@
       "contentType": "image/png"
     },
     {
+      "key": "beach/real/bamboo-forest-floor-v1.webp",
+      "bytes": 278264,
+      "sha256": "c49c2f35bc63751d01d587dad5009bc4dcfff7e91b3899bcb97677f0716603da",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/bamboo-garden-ground-v1.webp",
+      "bytes": 299798,
+      "sha256": "82e685acdc0b3c7f123aa4dc4f14d3add8ccb312297a65eefac16bcdf423cf65",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/bamboo-grass-v1.webp",
+      "bytes": 298172,
+      "sha256": "67256088039c45acff1c7bb31d4b57cea1f10e2001ec48a8b4f6f46300cf95b5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/bamboo-soil-v1.webp",
+      "bytes": 293356,
+      "sha256": "7a1fab2ad76921d3db613aaddff5437930f1c422a4a45b7828ca9e5958dacb4a",
+      "contentType": "image/webp"
+    },
+    {
       "key": "beach/real/bamboo-summit-city-v1.webp",
       "bytes": 477770,
       "sha256": "1ac9827e526606fd6c1f5521e12cf7609ee1f2f5de6a36f177530fe4e4ccc977",
@@ -150,6 +204,12 @@
       "key": "beach/real/bamboo-summit-river-v3.webp",
       "bytes": 488802,
       "sha256": "afc8eb8e02e17728e6729b3c1c73fcc3560402b8bd2d6fdbc531ab91854fb656",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/bamboo-summit-seoul-morning-v1.webp",
+      "bytes": 443106,
+      "sha256": "0d2dbfa11cdfe331061bfd60ac2590e696b34c69a1f52f71cc03203c17bbdd5f",
       "contentType": "image/webp"
     },
     {
@@ -337,6 +397,18 @@
       "bytes": 1772,
       "sha256": "2681f3f0f88a31031a601e999e226e015d80ffd7520987267680066fd73fd95e",
       "contentType": "image/svg+xml"
+    },
+    {
+      "key": "garden/art/spring-hills-panorama-v1.webp",
+      "bytes": 289848,
+      "sha256": "57154cd30ce5e09c70138e1fda84c02a1a2c703020d22deb7b3a45be287a2174",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "garden/art/willow-canopy-v1.webp",
+      "bytes": 766906,
+      "sha256": "62ece858e7eb21d595e0f3965c3c41c3d975128ac2538023f3d98c17bbe55aa7",
+      "contentType": "image/webp"
     },
     {
       "key": "icon-192.png",

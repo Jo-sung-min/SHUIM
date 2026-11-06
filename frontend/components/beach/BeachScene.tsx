@@ -275,7 +275,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     engineRef.current?.applyFireworks(events ?? [], time);
     if (time === previous.time && cooldown === previous.cooldown) return;
     fireworksClockRef.current = { time, cooldown };
-    const remaining = Math.max(0, Math.min(15_000, cooldown - time));
+    const remaining = Math.max(0, Math.min(21_000, cooldown - time));
     // An expired cooldown is zero, so an idle tick cannot briefly disable and close the picker.
     setFireworksDeadline(remaining > 0 ? Date.now() + remaining : 0);
   }, []);
@@ -1477,7 +1477,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
           {!lying && <button type="button" className={styles.dockButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
           <button ref={characterTriggerRef} type="button" className={styles.dockButton} aria-label="내 캐릭터 고르기" aria-expanded={characterPickerOpen} aria-controls={characterPickerId} onClick={() => { haptic(); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); setCharacterPickerOpen((open) => !open); }}><IconUser /><span>내 캐릭터</span></button>
-          {mapId !== "uyuni" && mapId !== "garden" ? <FieldSoundControl map={mapId} buttonClass={styles.dockButton} volume={fieldVolume} open={fieldOpen}
+          {mapId !== "uyuni" ? <FieldSoundControl map={mapId} buttonClass={styles.dockButton} volume={fieldVolume} open={fieldOpen}
             onOpenChange={open => {
               if (open) { setActionsOpen(false); setCharacterPickerOpen(false); setCarePrompt(null); engineRef.current?.select(null); }
               setFieldOpen(open);

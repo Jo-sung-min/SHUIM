@@ -23,7 +23,7 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
   "PAVILION_SEAT_CAPACITY", "TRAIL_WALK_HALF", "nearestOnTrail", "sampleCatmullRom", "seededRandom",
 ]);
 const layout = await load("../lib/beach/garden-layout.ts", trail, [
-  "BRIDGE_Y", "GARDEN_BRIDGE", "GARDEN_LANTERNS", "GARDEN_PAVILIONS", "GARDEN_PIERS", "GATE_WALL_Z", "GROUND_Y", "HALL", "HALL_BENCH_HEIGHT", "HALL_SEAT_LX", "HALL_STAIR_HALF", "HALL_STAIR_RUN",
+  "BRIDGE_Y", "GARDEN_BRIDGE", "GARDEN_LANTERNS", "GARDEN_PAVILIONS", "GARDEN_PIERS", "GARDEN_PHOTO_ZONE", "GROUND_Y", "HALL", "HALL_BENCH_HEIGHT", "HALL_SEAT_LX", "HALL_STAIR_HALF", "HALL_STAIR_RUN",
   "HALL_TIERS", "PIER_Y", "WATER_Y", "gardenPavilionWorld", "pierEnd", "GARDEN_SEATS",
   "BOAT_STOPS", "GARDEN_POLYLINES", "GARDEN_WILLOWS", "LAKE", "insideHall", "lakeRadiusAt", "lakeSigned", "onBridge", "onPier",
 ]);
@@ -35,8 +35,9 @@ const coast = await load("../lib/beach/uyuni-coast.ts", {}, ["UYUNI_COAST_FUNCTI
 const sky = await load("../lib/beach/uyuni-shader.ts", { ...skyBase, ...coast }, ["UYUNI_SKY_FUNCTIONS", "UYUNI_SKY_UNIFORMS"]);
 const gardenShaders = await load("../lib/beach/garden-shader.ts", sky, ["GARDEN_GLASS_VERT", "GARDEN_GLASS_FRAG"]);
 const bambooShaders = await load("../lib/beach/bamboo-shader.ts", sky, ["BAMBOO_GLOW_VERT", "BAMBOO_GLOW_FRAG"]);
+const photo = await load("../lib/beach/garden-photo-zone.ts", layout, ["buildGardenPhotoZone"]);
 const { buildGardenStructures, toonGradient } = await load("../lib/beach/garden-hall.ts", {
-  ...trail, ...layout, ...roofs, ...stone, ...ink, ...gardenShaders, ...bambooShaders,
+  ...trail, ...layout, ...roofs, ...stone, ...ink, ...gardenShaders, ...bambooShaders, ...photo,
 }, ["buildGardenStructures", "toonGradient"]);
 const { gardenDetailSites, buildGardenLandscapeDetail } = await load("../lib/beach/garden-landscape-detail.ts", { ...trail, ...layout }, ["gardenDetailSites", "buildGardenLandscapeDetail"]);
 
@@ -83,10 +84,38 @@ test("natural garden materials remain merged and bounded without new light or sh
       for (const material of materials) assert.ok(!material.isMeshToonMaterial, `${object.name} avoids stepped flat shading`);
     });
     assert.equal(lights, 0);
-    assert.ok(meshes <= 29, `${meshes} material batches`);
-    assert.ok(triangles < 90000, `${triangles} structure triangles`);
+    assert.ok(meshes <= 35, `${meshes} material batches including the six-batch photo court`);
+    assert.ok(triangles < 120000, `${triangles} structure triangles`);
     const warmWood = scene.getObjectByName("garden-pavilion-timber").material;
     assert.ok(warmWood.color.r < warmWood.color.g * 2.1, "pavilion wood stays warm brown instead of saturated red");
+    structures.dispose(); gradient.dispose();
+  }
+});
+
+test("the old moon wall is open at eye height, and neon switches on without extra lights", t => {
+  for (const mobile of [true, false]) {
+    const { scene, structures, gradient } = build(mobile);
+    const zone = scene.getObjectByName("garden-photo-zone");
+    assert.ok(zone);
+    let triangles = 0;
+    zone.traverse(object => {
+      assert.ok(!object.isLight);
+      if (object.isMesh) triangles += (object.geometry.index?.count ?? object.geometry.getAttribute("position").count) / 3;
+    });
+    assert.equal(zone.children.filter(object => object.isMesh).length, 6);
+    assert.ok(triangles < 35000, `${triangles} neon court triangles`);
+    for (const x of [-4, -2, 0, 2, 4]) {
+      const ray = new THREE.Raycaster(new THREE.Vector3(x, layout.GROUND_Y + 1.5, -10), new THREE.Vector3(0, 0, -1), 0, 9);
+      assert.equal(ray.intersectObject(structures.root, true).length, 0, `open sight and walking aisle at x=${x}`);
+    }
+    const halo = scene.getObjectByName("photo-neon-halo").material;
+    const pools = scene.getObjectByName("photo-light-pools").material;
+    structures.applyDaylight({ lanterns: 0 }, 0);
+    assert.equal(halo.opacity, 0); assert.equal(pools.uniforms.uNight.value, 0);
+    structures.applyDaylight({ lanterns: 1 }, 0);
+    assert.ok(halo.opacity > 0); assert.equal(pools.uniforms.uNight.value, 1);
+    assert.equal(scene.getObjectByName("photo-neon-core").material.color.r, 1);
+    t.diagnostic(`${mobile ? "mobile" : "desktop"}: six draws, ${triangles} photo court triangles, zero added lights`);
     structures.dispose(); gradient.dispose();
   }
 });

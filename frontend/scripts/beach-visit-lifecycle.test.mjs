@@ -172,7 +172,7 @@ async function joined(h, payload = entry()) { await h.mount(); of(h, "enter")[0]
 
 test("Uyuni background music follows confirmed playback and retains its listener's volume", async () => {
   const h = harness();
-  const playing = { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 163029, playing: true, startedAt: h.now, version: 4 };
+  const playing = { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 257520, playing: true, startedAt: h.now, version: 4 };
   const engine = await joined(h, entry({ music: playing, serverTime: h.now }));
   const priority = () => engine.events.filter(e => e[0] === "musicPriority").map(e => e[1]);
   function musicPanel() {

@@ -3,17 +3,23 @@ import { assetLoader, assetUrl } from "../assets";
 import type { FireworkEvent, FireworkVariant } from "./net";
 import { festivalVariantGeometry } from "./firework-festival-variants";
 import type { FireworkAudio } from "./firework-audio";
+import { SONGI_FINALE_POINTS } from "./firework-songi-finale";
 
 export const FIREWORK_SPARK_URL = "/beach/fx/firework-spark-v1.webp";
 const PALETTE = [0xffc777, 0xff83b1, 0x87eaff, 0xb89aff, 0x95ffd1, 0xffb88c];
 const CENTERS = [[-28, 50, -58], [0, 64, -76], [28, 53, -60], [-26, 78, -46], [27, 82, -44], [-33, 77, 8], [0, 101, -12], [33, 80, 10]];
 const STARTS = [1.3, 1.3, 1.3, 3.7, 3.7, 6.4, 6.4, 6.4];
 export const FIREWORK_TEXT = { songi: "송이 안녕?", love: "사랑해" } as const;
+type PersonalFirework = "songi" | "love";
+const SONGI_ENCORES = [[4.3, 4.58, 4.9], [6.9, 7.22, 7.55], [9.6, 9.94, 10.3]] as const;
+const SONGI_ENCORE_COLORS = [[0xff6fa9, 0xffcc66, 0x6de8ff], [0xa98bff, 0x70ffd0, 0xff91b8]] as const;
+const SONGI_ENCORE_LIFE = 1.95;
+const SONGI_ENCORE_TAIL_SCALE = .6;
 export const FIREWORK_TEXT_CENTER = [0, 72, -45] as const;
 export const FIREWORK_SKY_TEXT_CENTER = [0, 90, 28] as const;
 
 // Fixed 24×26 glyph samples from Malgun Gothic Bold, rendered once during authoring.
-// Only these eight glyphs are stored: every browser gets identical Hangul particle
+// Only the message characters are stored: every browser gets identical Hangul particle
 // positions without downloading a font, raster image or relying on Canvas fonts.
 const GLYPHS: Record<string, string> = {
   "송": "0.0.0.iyo.iyo.1beo.2rk0.lxq8.2f4qo.27740.iyo.iyo.4zso0.4zso0.0.5lhc.mgw0.166io.13clc.13clc.166io.mgw0.5lhc.0.0.0",
@@ -27,25 +33,31 @@ const GLYPHS: Record<string, string> = {
 };
 
 function textPoints(text: string) {
-  const points: [number, number][] = [];
+  const points: [number, number, number][] = [];
   let advance = 0;
   for (const character of text) {
     if (character === " ") { advance += 12; continue; }
+    const glyph: [number, number][] = [];
     GLYPHS[character].split(".").forEach((row, y) => {
       const bits = parseInt(row, 36);
-      for (let x = 0; x < 24; x++) if (bits & (1 << x)) points.push([advance + x, -y]);
+      for (let x = 0; x < 24; x++) if (bits & (1 << x)) glyph.push([x, -y]);
     });
+    const center = (Math.min(...glyph.map(p => p[0])) + Math.max(...glyph.map(p => p[0]))) / 2;
+    for (const [x, y] of glyph) points.push([advance + x, y, advance + center]);
     advance += character === "?" ? 16 : 26;
   }
   const minX = Math.min(...points.map(p => p[0])), maxX = Math.max(...points.map(p => p[0]));
   const minY = Math.min(...points.map(p => p[1])), maxY = Math.max(...points.map(p => p[1]));
-  return points.map(([x, y]) => [(x - (minX + maxX) / 2) * 0.43, (y - (minY + maxY) / 2) * 0.43] as const);
+  return points.map(([x, y, center]) => [(x - (minX + maxX) / 2) * 0.43, (y - (minY + maxY) / 2) * 0.43,
+    (center - (minX + maxX) / 2) * 0.43] as const);
 }
 
 /** Seeded GPU trajectories let every visitor see the same show at its current age. */
 export function fireworkGeometry(seed: number, mobile = false, variant: FireworkVariant = "festival", grand = false): THREE.BufferGeometry {
-  if (variant === "bloom" || variant === "saturn" || variant === "willow" || variant === "stardust")
+  if (variant === "bloom" || variant === "saturn" || variant === "willow" || variant === "stardust"
+    || variant === "offbeat" || variant === "aurora" || variant === "jewels")
     return grand ? festivalVariantGeometry(seed, mobile, variant) : fireworkGeometry(seed, mobile, "festival", false);
+  if (variant === "songi") return grandPersonalGeometry(seed, mobile, variant, grand);
   if (grand) return grandFireworkGeometry(seed, mobile, variant);
   let state = seed >>> 0;
   const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 4294967296);
@@ -82,7 +94,8 @@ export function fireworkGeometry(seed: number, mobile = false, variant: Firework
   for (const [x, y] of letters) {
     origin.push(...FIREWORK_TEXT_CENTER); velocity.push(x, y, 0);
     tint.setHex(variant === "love" ? 0xffc9de : 0xffedbf); color.push(tint.r, tint.g, tint.b);
-    timing.push(2.6, random() * 0.2, 6.8, 4); detail.push(0.39, random() * Math.PI * 2, 1);
+    timing.push(variant === "love" ? 2.6 : 1.3, variant === "love" ? random() * .2 : 0, 6.8, 4);
+    detail.push(0.39, random() * Math.PI * 2, 1);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(origin, 3));
@@ -108,7 +121,7 @@ const GRAND_SHELLS = [
   [-36,88,12,7.5], [0,107,18,7.5], [36,88,12,7.5],
 ];
 const GRAND_PALETTE = [0xffb42e, 0xff3f75, 0x26d5ff, 0x8350ff, 0x31e8a1, 0xff7134];
-function grandFireworkGeometry(seed: number, mobile: boolean, variant: "festival" | "songi" | "love") {
+function grandFireworkGeometry(seed: number, mobile: boolean, variant: "festival" | PersonalFirework) {
   if (variant !== "festival") return grandPersonalGeometry(seed, mobile, variant);
   let state=seed>>>0;
   const random=()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);
@@ -191,8 +204,8 @@ function stageSummitFireworks(geometry: THREE.BufferGeometry) {
     const z = positions.getZ(i);
     // The two open maps have overhead finale shells. Here they join the city display.
     positions.setXYZ(i, -positions.getX(i), positions.getY(i) + SUMMIT_STAGE_Y, SUMMIT_STAGE_Z - z + (z > 0 ? 210 : 0));
-    if (timing.getW(i) !== 4) velocities.setXYZ(i, -velocities.getX(i), velocities.getY(i), -velocities.getZ(i));
-    // Mode 4 stores letter strokes in camera-facing XY; rotating them would mirror the writing.
+    if (timing.getW(i) !== 4 && timing.getW(i) < 11) velocities.setXYZ(i, -velocities.getX(i), velocities.getY(i), -velocities.getZ(i));
+    // Text and its background shell use the same camera-facing basis on every map.
   }
 }
 const HEART_SHELLS = [
@@ -201,41 +214,89 @@ const HEART_SHELLS = [
 ];
 
 /** Personal shows own their choreography; the approved festival stays byte-for-byte separate. */
-function grandPersonalGeometry(seed: number, mobile: boolean, variant: "songi" | "love") {
+function grandPersonalGeometry(seed: number, mobile: boolean, variant: PersonalFirework, grand = true) {
   let state=seed>>>0;
   const random=()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);
   const origin:number[]=[], velocity:number[]=[], colors:number[]=[], timing:number[]=[], detail:number[]=[];
+  const glyphCenters:number[]=[];
+  const backdrops:number[]=[];
+  const flowers:number[]=[];
+  let glyphCenter=0, backdrop:readonly number[]=[0,0,0];
+  let flower:readonly number[]=[0,0,0,0];
   const tint=new THREE.Color();
   const add=(center:readonly number[], direction:readonly number[], start:number, delay:number, life:number,
     mode:number, hue:number, size:number, alpha:number, phase:number)=>{
     origin.push(center[0],center[1],center[2]); velocity.push(direction[0],direction[1],direction[2]);
     tint.setHex(hue); colors.push(tint.r,tint.g,tint.b);
     timing.push(start,delay,life,mode); detail.push(size,phase,alpha);
+    if(variant==="songi") { glyphCenters.push(glyphCenter); backdrops.push(...backdrop); flowers.push(...flower); }
   };
   const comet=(center:readonly number[],start:number)=>{
     for(let i=0;i<32;i++) add(center,[0,0,0],start,i*.011,1.2,1,0xffbd69,i?.20:.58,1-i/36,random()*6.28);
     add(center,[0,0,0],start,0,.24,3,0xffc98c,4,.4,random()*6.28);
   };
   if(variant==="songi") {
-    const shells=[[0,66,-205,1.2,1.35],[-38,56,-215,1.6,.8],[38,56,-215,1.6,.8],[-68,42,-230,6.5,.65],[68,42,-230,6.9,.65]];
-    const rays=mobile?100:176, tails=mobile?24:34;
-    for(let shell=0;shell<shells.length;shell++) {
-      const center=shells[shell], start=center[3], step=.85/(tails-1), life=Math.min(shell<3?2.6:3.8,11.92-start-.85);
-      for(let ray=0;ray<rays;ray++) {
-        const angle=ray*2.399963, y=1-2*(ray+.5)/rays, radial=Math.sqrt(1-y*y), phase=random()*6.28;
-        const speed=(16+random()*7)*center[4]*(ray%5===0?.55:1);
-        const direction=[Math.cos(angle)*radial*speed,y*speed,Math.sin(angle)*radial*speed*.65];
-        for(let tail=0;tail<tails;tail++) add(center,direction,start,tail*step,life,6,
-          ray%6===0?0xff8c52:0xffc25a,step,.82*(1-.6*tail/tails),phase);
+    const center=grand?PERSONAL_TEXT_CENTER:FIREWORK_TEXT_CENTER, scale=grand?1.8:1;
+    const tails=mobile?14:22, tailStep=.55/(tails-1), goldTails=mobile?3:4;
+    // Like the existing heart, one shell throws burning trails outward. The glyphs
+    // are destinations of those moving embers, never a separate illuminated label.
+    for(const [x,y,cx] of textPoints(FIREWORK_TEXT.songi)) {
+      glyphCenter=cx*scale;
+      const phase=random()*Math.PI*2, life=2.05+random()*.85;
+      const direction=[x*scale,y*scale,0];
+      const hue=random()<.18?0xffcc70:0xffe3a1;
+      for(let tail=0;tail<tails;tail++) add(center,direction,1.35,tail*tailStep,life,4,hue,tailStep,
+        tail===0?.80:.24*(1-.6*tail/tails),phase);
+      // Gold tips continue from the expanded outline and fall. velocity.z identifies
+      // this second stage without rotating the camera-facing Hangul samples.
+      const goldLife=1.35+random()*1.25;
+      for(let tail=0;tail<goldTails;tail++) add(center,[x*scale,y*scale,1],2.8,tail*.035,goldLife,4,
+        random()<.2?0xffedae:0xffd26e,.035,(tail===0?.72:.22)*(1-tail/goldTails),phase);
+    }
+    glyphCenter=0; comet(center,1.35);
+    // Cool spherical shells sit genuinely behind the warm lettering, including
+    // the overhead view. Their transparent centers leave the message readable.
+    const spokes=mobile?96:160, shellTails=mobile?11:16, shellStep=.5/(shellTails-1);
+    for(const [cx,cy,speed,hue] of [[-19,1,17,0x347bff],[0,5,20,0x8361ff],[19,0,17,0x31c8d6]]) {
+      backdrop=[cx*scale,cy*scale,58*scale];
+      for(let ray=0;ray<spokes;ray++) {
+        const phi=ray*2.399963, vertical=1-2*(ray+.5)/spokes;
+        const radial=Math.sqrt(Math.max(0,1-vertical*vertical)), rate=speed*scale*(.94+random()*.12);
+        const direction=[radial*Math.cos(phi)*rate,vertical*rate,radial*Math.sin(phi)*rate];
+        // The same bank becomes four curled, overlapping petal rings only after
+        // both spherical encore waves; no extra particle cloud is needed for roses.
+        const layer=ray%4, a=Math.floor(ray/4)/(spokes/4)*Math.PI*2+layer*.37;
+        flower=[a,layer,Math.PI*2/(spokes/4)/shellTails,scale];
+        const phase=random()*Math.PI*2, life=2.6+random()*.45;
+        for(let tail=0;tail<shellTails;tail++) add(center,direction,1.35,tail*shellStep,life,11,hue,shellStep,
+          tail===0?.58:.24*(1-.65*tail/shellTails),phase);
       }
-      comet(center,start);
     }
-    for(const [x,y] of textPoints(FIREWORK_TEXT.songi)) for(let ember=0;ember<3;ember++) {
-      const jitter=ember===0?0:.23;
-      add(PERSONAL_TEXT_CENTER,[x*1.8+(random()-.5)*jitter,y*1.8+(random()-.5)*jitter,ember],
-        2.0,random()*.28,8.7,4,ember===2?0xffbb7b:0xffdfa0,ember===0?.86:.58,
-        ember===0?.95:.30,random()*Math.PI*2);
+    flower=[0,0,0,0];
+    const launch=(x:number,y:number,depth:number,start:number,hue:number,flight=1.3)=>{
+      backdrop=[x,y,depth];
+      const anchor=[center[0]+x,center[1]+y,center[2]-depth];
+      for(let i=0;i<36;i++)add(anchor,[0,0,0],start,i*.011,flight,12,hue,.012,
+        i===0?.95:.55*(1-i/38),random()*Math.PI*2);
+      add(anchor,[0,0,0],start,0,.22,3,hue,4,.42,random()*Math.PI*2);
+    };
+    // The next flight starts while the previous embers still fall. Visible rockets
+    // and matching flashes share the exact camera-facing endpoint on every map.
+    for (let round = 0; round < SONGI_ENCORES.length; round++) for (let slot = 0; slot < 3; slot++) {
+      const x = (slot - 1) * 19 * (round === 2 ? 1.35 : round ? -1.15 : 1.15) * scale;
+      const y = ([1, 5, 0][slot] + (round === 2 ? [10,20,7] : round ? [10,2,14] : [6,12,3])[slot]) * scale;
+      launch(x,y,58*scale,SONGI_ENCORES[round][slot],round===2?[0xff7e9f,0xc9a0ff,0xffb275][slot]:SONGI_ENCORE_COLORS[round][slot]);
     }
+    // Authored from the user's outline: a white puppy face within a golden maple
+    // leaf. Geometry data avoids a network/font delay during the shared finale.
+    backdrop=[0,8*scale,0];
+    const finalTails=mobile?2:3;
+    for(const [x,y,kind] of SONGI_FINALE_POINTS) {
+      const phase=random()*Math.PI*2, life=3.15+random()*.1;
+      for(let tail=0;tail<finalTails;tail++)add(center,[x*37.5*scale,y*37.5*scale,0],14.2,tail*.04,life,14,
+        kind?0xffc333:0xffeadb,.04,tail===0?.78:.2*(1-tail/finalTails),phase);
+    }
+    launch(0,8*scale,0,14.2,0xffd17b,1.4);
   } else {
     const samples=mobile?128:224, tails=mobile?18:26, goldTails=mobile?12:18;
     for(let shell=0;shell<HEART_SHELLS.length;shell++) {
@@ -266,32 +327,163 @@ function grandPersonalGeometry(seed: number, mobile: boolean, variant: "songi" |
   geometry.setAttribute("sparkColor",new THREE.Float32BufferAttribute(colors,3));
   geometry.setAttribute("timing",new THREE.Float32BufferAttribute(timing,4));
   geometry.setAttribute("detail",new THREE.Float32BufferAttribute(detail,3));
-  geometry.userData.variant=variant; geometry.userData.phrase=variant==="songi"?FIREWORK_TEXT.songi:""; geometry.userData.grand=true;
+  if(variant==="songi") {
+    geometry.setAttribute("glyphCenter",new THREE.Float32BufferAttribute(glyphCenters,1));
+    geometry.setAttribute("backdrop",new THREE.Float32BufferAttribute(backdrops,3));
+    geometry.setAttribute("flower",new THREE.Float32BufferAttribute(flowers,4));
+  }
+  geometry.userData.variant=variant; geometry.userData.phrase=variant!=="love"?FIREWORK_TEXT[variant]:""; geometry.userData.grand=grand;
   const letters=variant==="songi"?textPoints(FIREWORK_TEXT.songi):[];
-  geometry.userData.textWidth=letters.length?(Math.max(...letters.map(p=>p[0]))-Math.min(...letters.map(p=>p[0]))+.8)*1.8:0;
+  // Include the heart-like 1.28x expansion and late drift in the portrait fit.
+  geometry.userData.textWidth=letters.length?(Math.max(...letters.map(p=>p[0]))-Math.min(...letters.map(p=>p[0]))+.8)*(grand?1.8:1)*1.36:0;
+  if(variant==="songi") {
+    geometry.userData.finaleHalfWidth=37.5*(grand?1.8:1)*1.04+3;
+    geometry.userData.finaleHalfHeight=(37.5*1.04+8)*(grand?1.8:1)+6;
+    geometry.userData.songiTimeline={greeting:1.35,encores:SONGI_ENCORES,finale:14.2,finish:17.6};
+  }
   return geometry;
 }
 
-function personalMaterial(material: THREE.ShaderMaterial, variant: "songi" | "love") {
-  if(variant==="songi") {
+function personalMaterial(material: THREE.ShaderMaterial, variant: PersonalFirework) {
+  if(variant!=="love") {
+    material.uniforms.uFinalScale={value:1};
+    const encoreColor = (round: number) => SONGI_ENCORE_COLORS[round].map(hex => {
+      const color = new THREE.Color(hex);
+      return `vec3(${color.toArray().map(value => value.toFixed(6)).join(",")})`;
+    });
+    const palette = [encoreColor(0), encoreColor(1)];
     // Only this variant receives the ember motion. The festival shader source is untouched.
     const begin=material.vertexShader.indexOf("if (timing.w > 3.5 && timing.w < 4.5) {");
     const end=material.vertexShader.indexOf("} else if (timing.w > 5.5) {",begin);
     material.vertexShader=material.vertexShader.slice(0,begin)+`if (timing.w > 3.5 && timing.w < 4.5) {
-              float t=max(0.0,age), settle=smoothstep(.05,1.15,t);
-              float fall=max(0.0,t-3.6), scatter=smoothstep(3.6,8.4,t);
-              vec2 flutter=vec2(sin(detail.y+t*.65),cos(detail.y*1.7+t*.5));
-              vec2 offset=velocity.xy*mix(.88,1.0,settle);
-              offset+=flutter*((1.0-settle)*3.4+.12+scatter*1.6);
-              offset.y-=fall*fall*(.12+.08*sin(detail.y)*sin(detail.y));
+              float t=max(0.0,age), shellAge=max(0.0,uAge-timing.x);
+              float head=1.0-step(.001,timing.y), glint=fireworkTwinkle(t,detail.y);
+              vec2 offset, motion;
+              if(velocity.z<.5) {
+                // Same outward impulse and gravity as the existing pink heart.
+                float expansion=1.28*(1.0-exp(-1.05*t)), fall=max(0.0,t-1.2);
+                float clusterExpansion=1.28*(1.0-exp(-1.05*shellAge));
+                vec2 localRay=velocity.xy-vec2(glyphCenter,0.0);
+                offset=vec2(glyphCenter*clusterExpansion,0.0)+localRay*expansion-vec2(0.0,.58*fall*fall);
+                motion=localRay*1.344*exp(-1.05*t)-vec2(0.0,1.16*fall);
+                fade=smoothstep(.06,.3,t)*(1.0-smoothstep(timing.z*.42,timing.z,shellAge));
+                fade*=mix(exp(-max(0.0,t-.7)*1.5),1.0,head);
+                float burnout=smoothstep(timing.z*.35,timing.z*.9,shellAge);
+                fade*=mix(.72+.28*glint,.14+.86*glint,burnout);
+                vTextTip=head*burnout;
+                sparkle=glint*mix(.22,.9,burnout);
+              } else {
+                vec2 drift=velocity.xy*vec2(.065,.025)+vec2(sin(detail.y)*1.8,-1.8+cos(detail.y)*.8);
+                offset=velocity.xy+drift*t-vec2(0.0,1.4*t*t);
+                motion=drift-vec2(0.0,2.8*t);
+                fade=smoothstep(0.0,.2,t)*(1.0-smoothstep(timing.z*.25,timing.z,shellAge));
+                fade*=mix(1.0,head,smoothstep(.2,.45,shellAge))*(.08+.92*glint);
+                vTextTip=head*smoothstep(.1,.3,t);
+                sparkle=glint;
+              }
               p=uTextCenter+(uTextRight*offset.x+uTextUp*offset.y)*uTextScale;
-              p+=cross(uTextRight,uTextUp)*sin(detail.y)*(.4+scatter)*uTextScale;
-              fade=smoothstep(.25,1.1,t)*(1.0-smoothstep(5.0,timing.z,t));
-              fade*=.72+.28*fireworkTwinkle(t,detail.y);
-              sparkle=fireworkTwinkle(t,detail.y)*.4;
+              p+=cross(uTextRight,uTextUp)*sin(detail.y)*.5*uTextScale;
+              tangent=(uTextRight*motion.x+uTextUp*motion.y)*uTextScale;
+            } else if(timing.w>11.5 && timing.w<12.5) {
+              float flight=age+timing.z, t=clamp(flight/timing.z,0.0,1.0);
+              vec3 behind=normalize(uTextCenter-uCameraPosition)*backdrop.z;
+              float showScale=timing.x>13.5?uFinalScale:uTextScale;
+              vec3 target=uTextCenter+(behind+uTextRight*backdrop.x+uTextUp*backdrop.y)*showScale;
+              vec3 foot=target;foot.y=max(.5,uCameraPosition.y-1.2);
+              foot.xz=mix(uCameraPosition.xz,target.xz,.88);
+              p=mix(foot,target,t)+uTextRight*sin(t*3.141593)*.45;
+              tangent=(target-foot)/timing.z+uTextRight*cos(t*3.141593)*1.1;
+              fade=step(0.0,flight)*(1.0-step(timing.z,flight))*(1.0-step(timing.x+.06,uAge));
+              sparkle=fireworkTwinkle(flight,detail.y)*.15;
+            } else if(timing.w>13.5 && timing.w<14.5) {
+              float t=max(0.0,age), shellAge=max(0.0,uAge-timing.x), head=1.0-step(.001,timing.y);
+              float expand=1.04*(1.0-exp(-2.0*t)), fall=max(0.0,t-1.15);
+              float scatter=smoothstep(1.75,3.25,shellAge), glint=fireworkTwinkle(t,detail.y);
+              vec2 drift=vec2(sin(detail.y),cos(detail.y*1.7))*scatter*scatter*2.1;
+              vec2 offset=velocity.xy*expand+drift-vec2(0.0,.48*fall*fall);
+              p=uTextCenter+(uTextRight*(backdrop.x+offset.x)+uTextUp*(backdrop.y+offset.y))*uFinalScale;
+              tangent=(uTextRight*velocity.x+uTextUp*velocity.y)*(2.08*exp(-2.0*t))*uFinalScale-uTextUp*.96*fall*uFinalScale;
+              fade=smoothstep(.04,.24,t)*(1.0-smoothstep(timing.z*.58,timing.z,shellAge));
+              fade*=mix(.86+.14*glint,.14+.86*glint,scatter);
+              vTextTip=head*smoothstep(.9,2.1,shellAge);sparkle=glint*mix(.2,1.0,scatter);
+            } else if(timing.w>2.5 && timing.w<3.5 && timing.x>3.0) {
+              vec3 behind=normalize(uTextCenter-uCameraPosition)*backdrop.z;
+              p=uTextCenter+(behind+uTextRight*backdrop.x+uTextUp*backdrop.y)*(timing.x>13.5?uFinalScale:uTextScale);
+              fade=step(0.0,age)*(1.0-smoothstep(.04,timing.z,age));
+            } else if(timing.w>10.5 && timing.w<11.5) {
+              float slot=step(0.0,backdrop.x)+step(1.0,backdrop.x);
+              vec3 firstStarts=vec3(${SONGI_ENCORES[0].join(",")}), secondStarts=vec3(${SONGI_ENCORES[1].join(",")}), roseStarts=vec3(${SONGI_ENCORES[2].join(",")});
+              float first=slot<.5?firstStarts.x:(slot<1.5?firstStarts.y:firstStarts.z);
+              float second=slot<.5?secondStarts.x:(slot<1.5?secondStarts.y:secondStarts.z);
+              float roseStart=slot<.5?roseStarts.x:(slot<1.5?roseStarts.y:roseStarts.z);
+              float encore=uAge>=roseStart?3.0:(uAge>=second?2.0:(uAge>=first?1.0:0.0));
+              float shellStart=encore>2.5?roseStart:(encore>1.5?second:(encore>.5?first:timing.x));
+              float shellAge=uAge-shellStart-timing.y*(encore>.5?${SONGI_ENCORE_TAIL_SCALE}:1.0);
+              float life=encore>2.5?2.65:(encore>.5?${SONGI_ENCORE_LIFE}:timing.z);
+              float t=max(0.0,shellAge), travel=(1.0-exp(-.46*t))/.46;
+              vec3 direction=velocity*(encore>.5?1.38:1.0);
+              vec3 ray=direction*travel-vec3(0.0,.7*t*t,0.0);
+              vec3 motion=direction*exp(-.46*t)-vec3(0.0,1.4*t,0.0);
+              vec3 shell=backdrop;
+              if(encore>.5) {
+                float lift=encore>2.5?(slot<.5?10.0:(slot<1.5?20.0:7.0)):(encore>1.5?(slot<.5?10.0:(slot<1.5?2.0:14.0)):(slot<.5?6.0:(slot<1.5?12.0:3.0)));
+                shell.x*=encore>2.5?1.35:(encore>1.5?-1.15:1.15); shell.y+=lift*backdrop.z/58.0;
+                vec3 firstColor=slot<.5?${palette[0][0]}:(slot<1.5?${palette[0][1]}:${palette[0][2]});
+                vec3 secondColor=slot<.5?${palette[1][0]}:(slot<1.5?${palette[1][1]}:${palette[1][2]});
+                particleColor=encore>1.5?secondColor:firstColor;
+              }
+              if(encore>2.5) {
+                // Reuse each old tail as the next sample on the curled petal,
+                // rather than drawing radial spokes over the flower silhouette.
+                float petalAge=max(0.0,uAge-shellStart), layer=flower.y;
+                float theta=flower.x+timing.y/detail.x*flower.z;
+                float radius=(.17+layer*.26)*(.78+.22*cos(5.0*theta+layer*.68))*30.0*flower.w;
+                float angle=theta+.18*sin(5.0*theta+layer*.6);
+                vec3 petalRay=vec3(cos(angle)*radius,sin(angle)*radius,sin(theta*5.0+layer)*flower.w*1.2);
+                float opening=1.12*(1.0-exp(-3.8*petalAge));
+                ray=petalRay*opening-vec3(0.0,.38*petalAge*petalAge,0.0);
+                motion=petalRay*(4.256*exp(-3.8*petalAge))-vec3(0.0,.76*petalAge,0.0);
+                vec3 petal=slot<.5?vec3(1.0,.13,.31):(slot<1.5?vec3(.63,.27,1.0):vec3(1.0,.34,.16));
+                particleColor=mix(vec3(1.0,.69,.32),petal,.3+layer*.23);
+              }
+              vec3 back=cross(uTextRight,uTextUp);
+              // Follow the ray through the phrase: merely moving along camera Z
+              // would pull a high-up background burst down toward screen center.
+              vec3 behind=normalize(uTextCenter-uCameraPosition)*backdrop.z;
+              p=uTextCenter+(behind+uTextRight*(shell.x+ray.x)+uTextUp*(shell.y+ray.y)-back*ray.z)*uTextScale;
+              tangent=(uTextRight*motion.x+uTextUp*motion.y-back*motion.z)*uTextScale;
+              float glint=fireworkTwinkle(t,detail.y);
+              fade=step(0.0,shellAge)*(1.0-smoothstep(life*.45,life,t))*(.75+.25*glint);
+              // Petal curves reuse dim trail samples; lift only those samples so
+              // their coloured edges remain clear against the bright city below.
+              if(encore>2.5 && timing.y>.001) fade*=3.0;
+              sparkle=glint*(encore>2.5?.5:.22);
             `+material.vertexShader.slice(end);
-    material.vertexShader=material.vertexShader.replace("vec2(uTextWidth*.55,6.8)","vec2(uTextWidth*.57,11.5)")
-      .replace("reserve*.68*smoothstep(2.7,3.5,uAge)","reserve*.92*smoothstep(2.0,2.75,uAge)");
+    const reserveStart=material.vertexShader.indexOf("if(uGrand>.5 && uTextWidth>0.0");
+    const reserveEnd=material.vertexShader.indexOf("if (vAlpha",reserveStart);
+    material.vertexShader=material.vertexShader.slice(0,reserveStart)+material.vertexShader.slice(reserveEnd);
+    material.vertexShader=material.vertexShader
+      .replace("uniform float uAge;", "uniform float uFinalScale; uniform float uAge;")
+      .replace("attribute vec3 velocity;", "attribute float glyphCenter; attribute vec3 backdrop; attribute vec4 flower; attribute vec3 velocity;")
+      .replace("varying float vWater;", "varying float vWater; varying float vTextTip;")
+      .replace("float sparkle = 0.0;", "float sparkle = 0.0; vTextTip=0.0; vec3 particleColor=sparkColor;")
+      .replace("vColor = mix(sparkColor,", "vColor = mix(particleColor,")
+      .replace("if(timing.w>5.5) {", "if(timing.w>5.5 || (timing.w>3.5 && timing.w<4.5)) {")
+      .replace("vTrailAspect=clamp(width/gl_PointSize,.025,.65);", `
+              if(timing.w>3.5 && timing.w<4.5) {
+                width=1.25*uPointScale;
+                gl_PointSize=clamp(length(delta)*1.5+width,2.2*uPointScale,28.0*uPointScale);
+              }
+              if(timing.w>10.5) {
+                width=1.1*uPointScale;
+                gl_PointSize=clamp(length(delta)*1.35+width,2.4*uPointScale,24.0*uPointScale);
+              }
+              vTrailAspect=clamp(width/gl_PointSize,.025,.65);
+              gl_PointSize=mix(gl_PointSize,(2.7+1.1*vTwinkle)*uPointScale,vTextTip);`);
+    material.fragmentShader=material.fragmentShader
+      .replace("varying float vWater;", "varying float vWater; varying float vTextTip;")
+      .replace("if(vMode>5.5) {", "if(vMode>5.5 || (vMode>3.5 && vMode<4.5)) {")
+      .replace("glow=fireworkStrokeGlow(stroke.x,stroke.y,vTrailAspect);", "glow=mix(fireworkStrokeGlow(stroke.x,stroke.y,vTrailAspect),glow+starRays*vTwinkle*1.3,vTextTip);");
   } else {
     material.vertexShader=material.vertexShader.replace("} else if (timing.w > 5.5) {",`}
             else if(timing.w>8.5) {
@@ -315,6 +507,34 @@ function personalMaterial(material: THREE.ShaderMaterial, variant: "songi" | "lo
               sparkle=fireworkTwinkle(t,detail.y)*.22;
             } else if (timing.w > 5.5) {`);
   }
+}
+
+/** Only the offbeat show burns its streaks down into short-lived glittering tips. */
+function offbeatMaterial(material: THREE.ShaderMaterial) {
+  material.uniforms.uOffbeat = { value: 1 };
+  material.vertexShader = material.vertexShader
+    .replace("uniform float uGrand;", "uniform float uOffbeat; uniform float uGrand;")
+    .replace("varying float vWater;", "varying float vWater; varying float vTipGlitter;")
+    .replace("float sparkle = 0.0;", "float sparkle = 0.0; vTipGlitter = 0.0;")
+    .replace("sparkle=fireworkTwinkle(t,detail.y)*.18;", `sparkle=fireworkTwinkle(t,detail.y)*.18;
+              if(uOffbeat>.5) {
+                // Shared shell age burns delayed samples away with their head.
+                float shellAge=max(0.0,uAge-timing.x);
+                float ending=smoothstep(timing.z*.45,timing.z*.72,shellAge);
+                float head=1.0-step(.001,timing.y);
+                float glint=fireworkTwinkle(t,detail.y);
+                float ember=1.0-smoothstep(timing.z*.62,timing.z,shellAge);
+                fade=step(0.0,age)*ember*mix(1.0,head,ending);
+                fade*=mix(.9,.06+.94*glint,ending);
+                sparkle=mix(glint*.18,glint,ending*head);
+                vTipGlitter=ending*head;
+              }`)
+    .replace("vTrailAspect=clamp(width/gl_PointSize,.025,.65);",
+      "vTrailAspect=clamp(width/gl_PointSize,.025,.65); gl_PointSize=mix(gl_PointSize,4.2*uPointScale,vTipGlitter);");
+  material.fragmentShader = material.fragmentShader
+    .replace("varying float vWater;", "varying float vWater; varying float vTipGlitter;")
+    .replace("glow=fireworkStrokeGlow(stroke.x,stroke.y,vTrailAspect);", `float tipGlow=glow+starRays*vTwinkle*.75;
+              glow=mix(fireworkStrokeGlow(stroke.x,stroke.y,vTrailAspect),tipGlow,vTipGlitter);`);
 }
 
 // A seeded phase also changes each spark's tempo, so a blossom shimmers instead of flashing as one.
@@ -370,8 +590,8 @@ export class BeachFireworks {
     const currentServerTime = now + this.clockOffset;
     for (const event of events.slice(0, 2)) {
       if (!event || !Number.isSafeInteger(event.seed) || event.seed < 0 || typeof event.id !== "string" || !event.id
-        || !Number.isFinite(event.startedAt) || event.durationMs !== 12000 || this.seen.has(event.id)
-        || (event.variant !== undefined && !["festival", "songi", "love", "bloom", "saturn", "willow", "stardust"].includes(event.variant))
+        || !Number.isFinite(event.startedAt) || (event.durationMs !== 12000 && !(event.variant === "songi" && event.durationMs === 18000)) || this.seen.has(event.id)
+        || (event.variant !== undefined && !["festival", "songi", "love", "bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels"].includes(event.variant))
         || currentServerTime < event.startedAt || currentServerTime >= event.startedAt + event.durationMs || this.shows.size >= 2) continue;
       this.seen.add(event.id);
       if (this.seen.size > 64) this.seen.delete(this.seen.values().next().value!);
@@ -524,8 +744,9 @@ export class BeachFireworks {
         transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, toneMapped: false,
       });
       const object = new THREE.Points(fireworkGeometry(event.seed, this.options.mobile, event.variant ?? "festival", this.options.grand), material);
+      if (event.variant === "offbeat") offbeatMaterial(material);
       if (this.options.summitDisplay) stageSummitFireworks(object.geometry);
-      if(this.options.grand && (event.variant==="songi" || event.variant==="love")) personalMaterial(material,event.variant);
+      if(event.variant==="songi" || (this.options.grand && event.variant==="love")) personalMaterial(material,event.variant);
       material.uniforms.uTextWidth.value=object.geometry.userData.textWidth;
       object.name = "beach-fireworks-" + event.id;
       object.frustumCulled = false; object.renderOrder = 6; object.layers.enable(1);
@@ -543,7 +764,7 @@ export class BeachFireworks {
         this.scene.add(reflection);
       }
       this.shows.set(event.id, { event: { ...event }, object, reflection });
-      this.audio?.addShow(object.geometry, event.startedAt, currentServerTime, event.seed);
+      this.audio?.addShow(object.geometry, event.startedAt, currentServerTime, event.seed, event.durationMs);
     }
   }
 
@@ -574,7 +795,7 @@ export class BeachFireworks {
       show.object.material.uniforms.uImage.value = this.textureReady ? 1 : 0;
       if(show.reflection) show.reflection.visible=Boolean(camera && camera.layers.mask!==2 && this.cameraPosition.y>.03);
       if (camera) {
-        if(this.options.grand && show.event.variant==="songi") {
+        if(this.options.grand && (show.event.variant==="songi")) {
           const anchor=this.options.summitDisplay ? SUMMIT_TEXT_CENTER : camera.layers.mask===2 ? FIREWORK_SKY_TEXT_CENTER : PERSONAL_TEXT_CENTER;
           this.textCenter.set(anchor[0],anchor[1],anchor[2]);
           this.textFromCamera.copy(this.textCenter).sub(this.cameraPosition);
@@ -593,6 +814,12 @@ export class BeachFireworks {
         const availableWidth = Math.max(0, 2 * (halfFrame * 0.84 - centerOffset));
         const width = show.object.geometry.userData.textWidth;
         show.object.material.uniforms.uTextScale.value = width ? Math.min(1, Math.max(0.15, availableWidth / width)) : 1;
+        if(show.event.variant==="songi") {
+          const verticalHalf=depth/Math.max(.01,Math.abs(camera.projectionMatrix.elements[5]));
+          const verticalRoom=Math.max(0,verticalHalf*.82-Math.abs(this.textFromCamera.dot(this.cameraUp)));
+          show.object.material.uniforms.uFinalScale.value=Math.min(1,Math.max(.05,availableWidth/(2*show.object.geometry.userData.finaleHalfWidth)),
+            Math.max(.05,verticalRoom/show.object.geometry.userData.finaleHalfHeight));
+        }
       }
     }
   }

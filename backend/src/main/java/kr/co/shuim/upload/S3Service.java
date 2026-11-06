@@ -109,7 +109,7 @@ public class S3Service {
 
     /** Load a bounded, KMS-encrypted recording only for the application's own versioned inventory. */
     public byte[] readPrivateRecording(String key, int size, String sha256) {
-        if (!key.matches("private/room-music/[a-z0-9-]+-v[0-9]+\\.m4a") || size <= 0 || size > 6 * 1024 * 1024)
+        if (!key.matches("private/room-music/[a-z0-9-]+-v[0-9]+\\.(?:m4a|mp3)") || size <= 0 || size > 6 * 1024 * 1024)
             throw new IllegalArgumentException("Invalid room music inventory");
         String unavailable = "지금은 음악을 불러올 수 없어요. 잠시 후 다시 들어 주세요.";
         if (!configured()) throw ApiException.unavailable(unavailable);

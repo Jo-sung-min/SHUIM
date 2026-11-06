@@ -20,7 +20,7 @@ public enum BeachMap {
     }
     /** The bamboo mountain is twice as wide as the shore and climbs far beyond it; the garden's lake and hall need a wider, deeper field. */
     public double maxZ() { return this == BAMBOO ? 115 : this == GARDEN ? 100 : BeachRoom.MAX_Z; }
-    public double minX() { return this == BAMBOO ? -44 : this == GARDEN ? -60 : BeachRoom.MIN_X; }
+    public double minX() { return this == BAMBOO ? -55 : this == GARDEN ? -60 : BeachRoom.MIN_X; }
     public double maxX() { return this == BAMBOO ? 44 : this == GARDEN ? 60 : BeachRoom.MAX_X; }
     /** Newcomers arrive beside the fire on the open maps; in the garden they stand inside the south moon gate. */
     public double spawnMinZ() { return this == GARDEN ? -11.5 : 2.8; }

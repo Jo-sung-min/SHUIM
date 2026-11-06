@@ -102,6 +102,7 @@ export function buildBambooPavilions(scene: THREE.Scene, textures: { wood: THREE
   const underside = new THREE.MeshStandardMaterial({ color: 0x8a6a4c, roughness: 0.95, side: THREE.BackSide });
   const ridge = new THREE.MeshStandardMaterial({ color: 0x323a45, roughness: 0.75 });
   const paper = new THREE.MeshBasicMaterial({ color: 0xfff1d6, toneMapped: false });
+  const deckPaper = paper.clone();
   const plaque = new THREE.MeshStandardMaterial({ map: textures.wood, color: 0x5a4332, roughness: 0.7 });
 
   const box = new THREE.BoxGeometry(1, 1, 1);
@@ -174,7 +175,7 @@ export function buildBambooPavilions(scene: THREE.Scene, textures: { wood: THREE
       for (const [lx, lz] of DECK_LANTERN_SITES) {
         part("wood", cylinder, wood, lx, floorY + 1.15, lz, 0.07, 2.3, 0.07);
         part("trim", box, darkWood, lx, floorY + 2.3, lz, 0.5, 0.05, 0.5);
-        part("paper-lanterns", lantern, paper, lx, floorY + 2.0, lz, 1.15, 1.15, 1.15);
+        part("paper-lanterns", lantern, deckPaper, lx, floorY + 2.0, lz, 1.15, 1.15, 1.15);
       }
     }
     const sites = BAMBOO_PAVILIONS.filter((p) => p.kind === kind);
@@ -201,13 +202,14 @@ export function buildBambooPavilions(scene: THREE.Scene, textures: { wood: THREE
     if (disposed) return;
     const night = THREE.MathUtils.clamp(d.lanterns, 0, 1);
     paper.color.copy(dim).lerp(warm, night);
+    deckPaper.color.copy(paper.color).multiplyScalar(1 - .28 * night);
   }, dispose() {
     if (disposed) return;
     disposed = true;
     for (const mesh of meshes) mesh.dispose();
     root.removeFromParent(); root.clear();
     for (const geometry of [box, cylinder, footing, roof, roofUnder, hip, knob, lantern, ...merged]) geometry.dispose();
-    for (const material of [wood, darkWood, floorWood, stone, tile, underside, ridge, paper, plaque]) material.dispose();
+    for (const material of [wood, darkWood, floorWood, stone, tile, underside, ridge, paper, deckPaper, plaque]) material.dispose();
     tiles.dispose();
   } };
 }

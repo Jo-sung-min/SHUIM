@@ -7,8 +7,29 @@ import { UYUNI_SKY_FUNCTIONS, UYUNI_SKY_UNIFORMS } from "./uyuni-shader";
  */
 export const BAMBOO_SKY_FRAGMENT = `${UYUNI_SKY_UNIFORMS}
 uniform vec3 uHorizonFog;
+uniform float uBambooSunset;
 varying vec3 vDir;
 ${UYUNI_SKY_FUNCTIONS}
+vec4 bambooSunsetSky(vec3 d) {
+  float up = max(d.y, 0.0);
+  // A clear atmosphere: low amber light travels furthest through the air;
+  // the rose afterglow gently gives way to a deep, open blue overhead.
+  // No cloud noise or moving bands; direction adds depth rather than a flat tint.
+  vec3 sunDirection = normalize(vec3(-.38, .045, 1.0));
+  float facing = pow(max(0.0, dot(d.xz, sunDirection.xz) * .5 + .5), 3.0);
+  float twilight = smoothstep(.10, .70, uStars);
+  vec3 horizon = mix(vec3(.29, .33, .46), uSkyHorizon, .18 + .82 * facing);
+  vec3 afterglow = mix(vec3(.25, .32, .48), vec3(.62, .40, .43), facing);
+  afterglow = mix(afterglow, uSkyTop * 1.7, twilight * .7);
+  vec3 sky = mix(afterglow, uSkyTop, 1.0 - exp(-up * 4.5));
+  sky = mix(sky, horizon, exp(-up * 15.0));
+  float sunDistance = length(d - sunDirection);
+  float glow = exp(-sunDistance * sunDistance / .045) * exp(-up * 4.0);
+  sky += vec3(.20, .095, .025) * glow * (1.0 - twilight);
+  float disc = 1.0 - smoothstep(.007, .010, sunDistance);
+  sky = mix(sky, vec3(1.0, .82, .55), disc * .82 * (1.0 - twilight));
+  return vec4(sky, 0.0);
+}
 void main() {
   vec3 d = normalize(vDir);
   if (d.y < 0.0) {
@@ -20,7 +41,9 @@ void main() {
   vec3 up = d;
   vec4 day = vec4(0.0);
   if (night < 1.0) {
-    day = uyuniDay(up);
+    day = uBambooSunset >= .999 ? bambooSunsetSky(up)
+      : daylightSky(up, .56 * smoothstep(0.0, .2, uBambooSunset));
+    if (uBambooSunset > 0.0 && uBambooSunset < .999) day = mix(day, bambooSunsetSky(up), uBambooSunset);
     if (uStars > 0.0) {
       vec3 firstStars = uyuniStars(up, 220.0, 0.988, 0.0) + uyuniStars(up, 70.0, 0.992, 19.7) * 0.85;
       day.rgb += firstStars * uStars * smoothstep(0.08, 0.34, up.y) * (1.0 - day.a * 0.92);
@@ -29,7 +52,8 @@ void main() {
   vec3 dark = night > 0.0 ? uyuniNight(up) : vec3(0.0);
   vec3 sky = uyuniHorizonAir(mix(day.rgb, dark, night), up, night);
   // The low sky dissolves into the same haze as the far stalks, so the forest never shows a horizon line.
-  sky = mix(sky, uHorizonFog, 1.0 - smoothstep(0.0, 0.26, up.y));
+  sky = mix(sky, mix(uHorizonFog, uSkyHorizon, uBambooSunset * .7),
+    (1.0 - smoothstep(0.0, 0.26, up.y)) * mix(1.0, .2, uBambooSunset));
   if (night > 0.0) {
     sky += vec3(0.022, 0.030, 0.065) * night * smoothstep(-0.2, 0.75, d.z) * exp(-3.9 * d.y);
     vec3 moonDir = normalize(vec3(-0.50 + 0.08 * uMoon.x, 0.27 + 0.08 * max(0.0, uMoon.y), 1.0));
@@ -104,6 +128,16 @@ void main() {
 
 export const BAMBOO_GROUND_FRAG = `
 uniform sampler2D uMask;
+uniform sampler2D uGrassMap;
+uniform sampler2D uSoilMap;
+uniform sampler2D uForestMap;
+uniform sampler2D uGardenMap;
+uniform float uGrassReady;
+uniform float uSoilReady;
+uniform float uForestReady;
+uniform float uGardenReady;
+uniform vec4 uGardenRect;
+uniform float uGroundTileScale;
 uniform vec4 uMaskRect;
 uniform float uTime;
 uniform float uDapple;
@@ -120,8 +154,8 @@ ${BAMBOO_CLEARING_GLSL}
 void main() {
   vec2 p = vWorld.xz;
   vec2 uv = (p - uMaskRect.xy) * uMaskRect.zw;
-  // One baked texture carries the path (r), stone slabs (g) and lantern pools (b).
-  vec3 mask = (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) ? texture2D(uMask, uv).rgb : vec3(0.0);
+  // One raw RGBA mask carries path, slabs, lantern pools, and actual bamboo root coverage.
+  vec4 mask = (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) ? texture2D(uMask, uv) : vec4(0.0);
   float fine = bambooNoise(p * 7.0);
   float coarse = bambooNoise(p * 1.3 + 4.2);
   vec3 litter = mix(uLitter, uLitterLight, fine * 0.7 + coarse * 0.3);
@@ -132,20 +166,51 @@ void main() {
   vec3 grass = mix(uGrass, uGrassLight, fine * 0.55 + coarse * 0.45);
   grass = mix(grass, uEarthLight, smoothstep(0.62, 0.8, bambooNoise(p * 0.5 + 2.7)) * 0.5);
   litter = mix(litter, grass, clearing);
+  // World-space repeats stay aligned across the near/far meshes and the hidden garden.
+  // sRGB textures are decoded by Three's GPU texture format before the same linear lighting.
+  vec2 groundUv = p * uGroundTileScale;
+  vec3 grassArt = texture2D(uGrassMap, groundUv).rgb * (0.9 + coarse * 0.1);
+  vec3 forestArt = texture2D(uForestMap, groundUv).rgb;
+  // Moss follows broad irregular patches while the photograph keeps every root and dry leaf.
+  float forestLuma = dot(forestArt, vec3(.2126, .7152, .0722));
+  float forestMoss = .65 + .30 * smoothstep(.25, .75, bambooNoise(p * .42 + vec2(31.7, 7.2)));
+  forestArt = mix(forestArt, forestLuma * vec3(.55, .82, .38), forestMoss);
+  vec3 forestFloor = mix(litter, forestArt, uForestReady);
+  litter = mix(mix(litter, grassArt, uGrassReady), forestFloor, mask.a);
   float path = smoothstep(0.32, 0.6, mask.r + (fine - 0.5) * 0.22);
   vec3 earth = mix(uEarth, uEarthLight, fine * 0.5 + coarse * 0.5);
+  vec3 soilArt = texture2D(uSoilMap, groundUv).rgb * (0.9 + coarse * 0.1);
+  // Preserve fine grains while replacing the ochre pigment with pale neutral brown.
+  float soilLuma = dot(soilArt, vec3(0.2126, 0.7152, 0.0722));
+  soilArt = mix(soilArt, vec3(1.26, 1.01, .76) * (soilLuma * 1.32 + .035), .78);
+  earth = mix(earth, soilArt, uSoilReady);
   float slab = smoothstep(0.35, 0.55, mask.g + (fine - 0.5) * 0.08);
   vec3 stone = mix(uStone, uStoneLight, bambooNoise(p * 5.0 + 2.0) * 0.6 + fine * 0.4);
   vec3 color = mix(litter, mix(earth, stone, slab), path);
   float edge = smoothstep(0.2, 0.45, mask.r) * (1.0 - smoothstep(0.45, 0.75, mask.r));
   color = mix(color, uMoss, edge * 0.35 * (1.0 - clearing));
+  float gardenEdge = min(min(p.x - uGardenRect.x, p.y - uGardenRect.y), min(uGardenRect.z - p.x, uGardenRect.w - p.y));
+  float garden = smoothstep(0.0, .45, gardenEdge);
+  // The garden retains its earlier mixed grass/earth picture, including beneath its paths.
+  vec3 gardenArt = texture2D(uGardenMap, groundUv).rgb;
+  float gardenSoil = 1.0 - smoothstep(.90, 1.14, gardenArt.g / max(.001, gardenArt.r));
+  float gardenLuma = dot(gardenArt, vec3(.2126, .7152, .0722));
+  vec3 gardenEarth = vec3(1.26, 1.01, .76) * gardenLuma * 1.08;
+  gardenArt = mix(gardenArt, gardenEarth, gardenSoil * .55);
+  color = mix(color, gardenArt, garden * uGardenReady);
   float dapple = mix(1.0 - uDapple * (1.0 - clearing), 1.0, bambooNoise(p * 0.75 + vec2(uTime * 0.02, uTime * 0.013)));
-  color *= bambooLight(vWorld, normalize(vNormal), dapple);
+  vec3 light = bambooLight(vWorld, normalize(vNormal), dapple);
+  float soilWarmth = max(path * (1.0 - garden), garden * gardenSoil * .85) * uNight;
+  light = mix(light, vec3(dot(light, vec3(.2126, .7152, .0722))), soilWarmth * .35);
+  color *= light;
   // Beyond the deck lanterns the unlit slope recedes into cool moonlight.
   float riverBank = smoothstep(uClearings[0].y + 9.0, uClearings[0].y + 16.0, p.y) * clearing * uNight;
   float leafLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
   color = mix(color, leafLuma * vec3(0.16, 0.29, 0.42), riverBank * 0.89);
-  color += uPoolColor * mask.b * uNight * (1.0 - 0.55 * riverBank);
+  vec3 pool = mix(uPoolColor, vec3(dot(uPoolColor, vec3(.2126, .7152, .0722))) * vec3(1.1, 1.0, .9), soilWarmth * .5);
+  color += pool * mask.b * uNight * (1.0 - 0.55 * riverBank);
+  // Keep the hidden garden floor quiet at night so its LED trees remain the focus.
+  color *= mix(1.0, .52, garden * uNight);
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

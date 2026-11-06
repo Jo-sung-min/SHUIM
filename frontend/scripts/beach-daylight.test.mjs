@@ -7,9 +7,34 @@ import test from "node:test";
 const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/daylight.ts", import.meta.url), "utf8"))
   .replace(/\bexport\s+(?=function\b|const\b)/g, "");
 const context = {};
-vm.runInNewContext(`${source}\nglobalThis.api = { daylightAt, uyuniDaylightAt };`, context);
-const { daylightAt, uyuniDaylightAt } = context.api;
+vm.runInNewContext(`${source}\nglobalThis.api = { daylightAt, uyuniDaylightAt, bambooDaylightAt, bambooSunsetAmount };`, context);
+const { daylightAt, uyuniDaylightAt, bambooDaylightAt, bambooSunsetAmount } = context.api;
 const energy = rgb => rgb.reduce((sum, value) => sum + value, 0);
+
+test("bamboo sunset combines a warm amber horizon and deep blue ceiling only in the evening", () => {
+  const sunset = bambooDaylightAt(18);
+  assert.ok(sunset.skyHorizon[0] > .95 && sunset.skyHorizon[1] > .5 && sunset.skyHorizon[2] < .5);
+  assert.ok(sunset.skyTop[2] > sunset.skyTop[1] * 1.5 && sunset.skyTop[1] > sunset.skyTop[0]);
+  for (const hour of [0, 6, 12, 16, 17.5, 20, 23]) {
+    const original = daylightAt(hour), forest = bambooDaylightAt(hour);
+    assert.equal(bambooSunsetAmount(hour), 0);
+    for (const channel of ["skyTop", "skyHorizon", "cloud", "sunColor", "stars", "deepNight"])
+      assert.deepEqual(forest[channel], original[channel], `${channel} stays unchanged at ${hour}`);
+  }
+});
+
+test("bamboo sunset joins the original sky continuously without changing lantern or night timing", () => {
+  for (const hour of [17.5, 18, 19, 20]) {
+    const before = bambooDaylightAt(hour - .00001), after = bambooDaylightAt(hour + .00001);
+    for (const channel of ["skyTop", "skyHorizon", "cloud", "fog", "sunColor"])
+      before[channel].forEach((value, i) => assert.ok(Math.abs(value - after[channel][i]) < .0001));
+  }
+  for (let minute = 0; minute < 1440; minute += 5) {
+    const hour = minute / 60, base = daylightAt(hour), forest = bambooDaylightAt(hour);
+    assert.equal(forest.lanterns, base.lanterns);
+    assert.equal(forest.deepNight, base.deepNight);
+  }
+});
 
 test("18:00 fills the sky and reflection palette with rose pink, sustained through 19:00", () => {
   for (let hour = 18; hour <= 19; hour += 1 / 60) {

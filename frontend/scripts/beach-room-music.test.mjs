@@ -7,14 +7,14 @@ import vm from "node:vm";
 const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/room-music.ts", import.meta.url), "utf8"))
   .replace(/^import[^\n]*\n/gm, "").replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const flags = (trackId, version, startedAt) => ({ ...({
-  "morning-v1": {trackId, title:"아침만남겨주고", durationMs:163029},
-  "tomorrow-v1": {trackId, title:"내일의우리", durationMs:256448},
+  "morning-v1": {trackId, title:"아침만남겨주고", durationMs:257520},
+  "tomorrow-v1": {trackId, title:"내일의우리", durationMs:240000},
 })[trackId], playing:startedAt !== null, startedAt, version });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture({ mini=false, blocked=false, defer=false }={}) {
   let now = 0;
-  const statuses=[], elements=[], contexts=[], calls=[], removed=[], deferred=[];
+  const statuses=[], elements=[], contexts=[], calls=[], removed=[], deferred=[], blobs=[];
   const document = Object.assign(new EventTarget(), {hidden:false});
   const storage = new Map();
   class Graph {
@@ -37,17 +37,17 @@ function fixture({ mini=false, blocked=false, defer=false }={}) {
   let nextBlob=0;
   const window=Object.assign(new EventTarget(),{AudioContext:Graph});
   const context={document,Audio,URLSearchParams,AbortController,AbortSignal,Blob,window, IS_AIT:mini,
-    URL:{createObjectURL:()=>"blob:qa-"+(++nextBlob),revokeObjectURL:url=>removed.push(url)},
+    URL:{createObjectURL:blob=>{blobs.push(blob);return "blob:qa-"+(++nextBlob);},revokeObjectURL:url=>removed.push(url)},
     localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},performance:{now:()=>now},
     fetch:async(url,options)=>{
       calls.push({url,options});
       if(options.method==="POST")return Response.json({music:flags("tomorrow-v1",2,10000),serverTime:10010});
       if(defer)await new Promise(resolve=>deferred.push(resolve));
-      return new Response(new Blob(["test audio bytes"],{type:"audio/mp4"}));
+      return new Response(new Blob(["test audio bytes"],{type:"audio/mpeg"}));
     }};
   vm.runInNewContext(source+"\nglobalThis.api={RoomMusicPlayer, readRoomMusic, changeRoomMusic,readMusicPreferences};",context);
   const player=new context.api.RoomMusicPlayer("room & 2","bamboo",{volume:.32,muted:false},s=>statuses.push(s));
-  return {...context.api,player,statuses,elements,contexts,calls,removed,deferred,storage,
+  return {...context.api,player,statuses,elements,contexts,calls,removed,deferred,storage,blobs,
     tap:()=>window.dispatchEvent(new Event("pointerup")),advance:ms=>now+=ms,hidden:hidden=>{document.hidden=hidden; document.dispatchEvent(new Event("visibilitychange"));}};
 }
 
@@ -86,7 +86,7 @@ test("blocked autoplay offers one local listening gesture; hidden and disconnect
   h.hidden(true);assert.ok(media.paused);h.advance(9000);h.hidden(false);await settle();assert.equal(media.currentTime,14);
   h.player.setSuspended(true);assert.ok(media.paused);h.advance(2000);h.player.setSuspended(false);await settle();
   assert.equal(media.currentTime,16);assert.equal(h.calls.length,0);
-  h.advance(200000);h.player.sync(flags("morning-v1",1,1000),220_000);assert.equal(media.src,"");assert.ok(media.paused);
+  h.advance(300000);h.player.sync(flags("morning-v1",1,1000),320_000);assert.equal(media.src,"");assert.ok(media.paused);
   h.player.dispose();
 });
 
@@ -97,7 +97,21 @@ test("mini-app uses authenticated API fetch, aborts superseded data and revokes 
   assert.ok(h.calls.every(c=>c.url.startsWith("/api/beach/music/audio?") && c.options.cache==="no-store"));
   h.deferred[1]();await settle();h.deferred[0]();await settle();
   assert.equal(h.elements[0].src,"");assert.equal(h.elements[1].src,"blob:qa-1");
+  assert.equal(h.blobs[0].type,"audio/mpeg","the replacement MP3 keeps its correct MIME in the authenticated mini-app");
   h.player.dispose();assert.deepEqual(h.removed,["blob:qa-1"]);
+});
+
+test("the full replacement songs remain playable until their new duration and stop exactly at completion",async()=>{
+  for(const [id,duration] of [["morning-v1",257520],["tomorrow-v1",240000]]){
+    const h=fixture(), state=flags(id,1,1000);
+    assert.equal(state.durationMs,duration);
+    h.player.sync(state,164_000);
+    const media=h.elements[0];media.metadata();await settle();
+    assert.equal(media.currentTime,163,"morning continues beyond the old short recording");
+    h.player.sync(state,1000+duration-1);assert.ok(media.src);assert.equal(media.paused,false);
+    h.player.sync(state,1000+duration);assert.equal(media.src,"");assert.equal(media.paused,true);
+    h.player.dispose();
+  }
 });
 
 test("an ordinary room tap unlocks the listener for later broadcasts without downloading an idle track",async()=>{

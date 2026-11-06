@@ -208,7 +208,13 @@ export const GARDEN_POLYLINES: readonly TrailPolyline[] = [LOOP, ...SPURS];
 export const GARDEN_LOOP_POINTS: readonly TrailPoint[] = LOOP.points;
 /** 남문 안마당 */
 export const GATE_YARD = { minX: -4.5, maxX: 4.5, minZ: -15, maxZ: 2 } as const;
-export const GATE_WALL_Z = -16;
+/** Open light-exhibition court at the former moon wall. The central aisle joins the old yard. */
+export const GARDEN_PHOTO_ZONE = { x: 0, z: -14.4, rx: 12.5, rz: 4.6 } as const;
+
+export function insideGardenPhotoZone(x: number, z: number): boolean {
+  const p = GARDEN_PHOTO_ZONE;
+  return Math.pow((x - p.x) / (p.rx - 0.35), 2) + Math.pow((z - p.z) / (p.rz - 0.35), 2) <= 1;
+}
 
 export function insideIsland(x: number, z: number, margin = 0): boolean {
   return Math.hypot(x - ISLAND.x, z - ISLAND.z) <= ISLAND.radius - 0.4 + margin;
@@ -227,7 +233,7 @@ export function isWater(x: number, z: number): boolean {
 export function onGardenGround(x: number, z: number): boolean {
   if (onStructure(x, z)) return true;
   if (lakeSigned(x, z) < 0.25) return false;
-  if (insideIsland(x, z) || insideGateYard(x, z)) return true;
+  if (insideIsland(x, z) || insideGateYard(x, z) || insideGardenPhotoZone(x, z)) return true;
   return nearestOnTrail(x, z, GARDEN_POLYLINES).distance <= TRAIL_WALK_HALF;
 }
 
@@ -246,6 +252,9 @@ export function resolveGardenWalk(x: number, z: number): [number, number] {
   const dx = x - ISLAND.x, dz = z - ISLAND.z, d = Math.hypot(dx, dz) || 1, r = ISLAND.radius - 0.42;
   candidates.push([ISLAND.x + dx / d * r, ISLAND.z + dz / d * r]);
   candidates.push([clamp(x, GATE_YARD.minX, GATE_YARD.maxX), clamp(z, GATE_YARD.minZ, GATE_YARD.maxZ)]);
+  const photo = GARDEN_PHOTO_ZONE, photoX = (x - photo.x) / (photo.rx - 0.36), photoZ = (z - photo.z) / (photo.rz - 0.36);
+  const photoDistance = Math.max(1, Math.hypot(photoX, photoZ));
+  candidates.push([photo.x + (x - photo.x) / photoDistance, photo.z + (z - photo.z) / photoDistance]);
   for (const p of GARDEN_PIERS) {
     const { along, across } = pierLocal(p, x, z);
     const a = clamp(along, 0, p.length - 0.02), c = clamp(across, -p.halfWidth + 0.02, p.halfWidth - 0.02);

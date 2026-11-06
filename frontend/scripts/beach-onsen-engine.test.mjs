@@ -213,6 +213,49 @@ test("male and female robe downloads remain independent when both visitors arriv
   assert.equal(engine.onsenAvatarReady, false, "an outstanding request cannot resurrect a disposed room");
 });
 
+test("a failed everyday model download retries after the pool cooldown and replaces the fallback without rejoining", async () => {
+  for (const [skin, name, kind] of [[0, "avatarModels", "male"], [3, "femaleAvatarModels", "female"]]) {
+    const { engine } = fixture(skin);
+    let loads = 0, ready = false, pending = false, coolingDown = true, finish;
+    const template = pool(kind);
+    engine[name] = {
+      get ready() { return ready; },
+      get canLoad() { return !ready && !pending && !coolingDown; },
+      load() {
+        loads++; pending = true;
+        return new Promise(resolve => { finish = () => { ready = true; pending = false; resolve(); }; });
+      },
+      create() { return ready ? template.create() : null; },
+    };
+    const local = { avatar: null }, visitor = { avatar: null };
+    const sync = () => { for (const node of [local, visitor]) engine.syncAvatar(node, skin, 0, 0); };
+    sync(); sync();
+    assert.equal(loads, 0, "failed requests respect the pool cooldown");
+    assert.equal(local.avatar, null);
+    coolingDown = false;
+    sync(); sync(); sync();
+    assert.equal(loads, 1, "actors share one pending retry, not one request per frame or visitor");
+    finish(); await Promise.resolve(); sync();
+    assert.equal(local.avatar.kind, kind); assert.equal(visitor.avatar.kind, kind);
+    assert.notEqual(local.avatar, visitor.avatar, "each actor gets its own rig");
+    const previous = local.avatar; sync();
+    assert.equal(local.avatar, previous); assert.equal(loads, 1);
+  }
+});
+
+test("legacy pixel selections resolve to 3D characters and matching onsen robes", () => {
+  const { engine } = fixture();
+  for (const [skin, kind] of [[0, "male"], [1, "female"], [2, "male"], [3, "female"]]) {
+    const node = { avatar: null };
+    engine.syncAvatar(node, skin, 0, 0);
+    assert.equal(node.avatar.kind, kind);
+    engine.syncAvatar(node, skin, 0, 45);
+    assert.equal(node.avatar.kind, `${kind}-onsen`);
+    engine.syncAvatar(node, skin, 0, 0);
+    assert.equal(node.avatar.kind, kind);
+  }
+});
+
 test("fireworks allocate on the first room event, forward clocks and updates, and are released with both robe pools", () => {
   const { engine, camera } = fixture();
   let poolsDisposed = 0;

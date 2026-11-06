@@ -96,6 +96,26 @@ test("legacy server rows resolve to the matching 3D gender without renumbering t
   assert.equal(api.characterFromSkin(Number.POSITIVE_INFINITY), "male");
 });
 
+test("removed cat preferences migrate to the ordinary characters across storage and reconnect", async () => {
+  const values = new Map([
+    ["sorow:beach-character:v1:one", "cat-gentleman"],
+    ["sorow:beach-character:v1:two", "cat-lady"],
+  ]);
+  const api = await preferenceApi({ localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) } });
+  assert.deepEqual(Array.from(api.BEACH_CHARACTERS, choice => choice.id), ["male", "female-3d"]);
+  for (const [id, removed, selected, oldSkin, skin] of [["one", "cat-gentleman", "male", 4, 0], ["two", "cat-lady", "female-3d", 5, 3]]) {
+    assert.equal(api.savedCharacter(id), selected);
+    assert.equal(values.get(`sorow:beach-character:v1:${id}`), selected, "persist the migration so every map uses the ordinary character");
+    assert.equal(api.characterAfterEntry({ id, skin: oldSkin }, { id, character: removed }, null), selected);
+    assert.equal(api.characterAfterEntry({ id, skin: oldSkin }, null, null), selected);
+    assert.equal(api.characterSkin(removed), skin);
+    api.saveCharacter(id, removed);
+    assert.equal(api.savedCharacter(id), selected);
+  }
+  const readOnly = await preferenceApi({ localStorage: { getItem: () => "cat-lady", setItem: () => { throw Error("read only"); } } });
+  assert.equal(readOnly.savedCharacter("one"), "female-3d");
+});
+
 test("enter and movement updates send the selected character for remote players", async () => {
   const calls = [];
   const api = await load("../lib/beach/net.ts", {
@@ -113,7 +133,7 @@ test("enter and movement updates send the selected character for remote players"
   assert.equal(calls[1].body.ticket, "ticket");
   assert.deepEqual(calls[2].body, { communityId: "circle" }, "initial unknown-account entry does not inherit another account's choice");
   const choices = await preferenceApi(undefined);
-  for (const legacy of ["pixel-male", "female"]) {
+  for (const legacy of ["pixel-male", "female", "cat-gentleman", "cat-lady"]) {
     const character = choices.characterAfterEntry({ id: "account", skin: 0 }, { id: "account", character: legacy }, null);
     await api.enterBeach("circle", character);
     await api.tickBeach({ ticket: "ticket", x: 1, z: 2, yaw: 0, moving: false, character });

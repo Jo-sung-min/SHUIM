@@ -11,7 +11,7 @@ const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/firewor
   .replace(/\bexport\s+(?=function\b|const\b|class\b)/g, "");
 const context = { THREE };
 vm.runInNewContext(`${source}\nglobalThis.make = festivalVariantGeometry;`, context);
-const make = context.make, variants = ["bloom", "saturn", "willow", "stardust"];
+const make = context.make, variants = ["bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels"];
 const digest = geometry => {
   const hash = createHash("sha256");
   for (const name of ["position", "velocity", "sparkColor", "timing", "detail"]) hash.update(new Uint8Array(geometry.attributes[name].array.buffer));
@@ -28,7 +28,7 @@ function samples(geometry, predicate = () => true) {
 }
 const close = (actual, expected, tolerance = 1e-4) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} should be close to ${expected}`);
 
-test("all four shows are deterministic, seeded, and expose the existing reflection attribute contract", () => {
+test("all shows are deterministic, seeded, and expose the existing reflection attribute contract", () => {
   for (const variant of variants) for (const mobile of [false, true]) {
     const first = make(1234567, mobile, variant), repeat = make(1234567, mobile, variant), changed = make(1729, mobile, variant);
     assert.equal(digest(first), digest(repeat), `${variant}/${mobile} deterministic`);
@@ -43,7 +43,8 @@ test("all four shows are deterministic, seeded, and expose the existing reflecti
 test("finite particles stay within the mobile/desktop budget and every tail expires before twelve seconds", () => {
   for (const variant of variants) for (const mobile of [false, true]) for (const seed of [0, 2_147_483_646]) {
     const geometry = make(seed, mobile, variant), count = geometry.attributes.position.count;
-    assert.ok(count >= (mobile ? 29000 : 75000), `${variant} has a full show, rather than a sparse fallback`);
+    const newShow = ["offbeat", "aurora", "jewels"].includes(variant);
+    assert.ok(count >= (mobile ? newShow ? 20000 : 29000 : newShow ? 45000 : 75000), `${variant} has a complete particle show`);
     assert.ok(count <= (mobile ? 40000 : 90000), `${variant}/${mobile} budget ${count}`);
     for (const attribute of Object.values(geometry.attributes)) {
       assert.equal(attribute.count, count);
@@ -143,5 +144,60 @@ test("mobile preserves the same major launch choreography while reducing samplin
     assert.deepEqual(launches(mobile), launches(desktop));
     assert.ok(desktop.attributes.position.count > mobile.attributes.position.count * 2);
     mobile.dispose(); desktop.dispose();
+  }
+});
+
+test("offbeat sends one large crown first, then separately launched satellites while its embers fall", () => {
+  const geometry = make(1729, true, "offbeat");
+  const launches = samples(geometry, p => p.mode === 1 && p.delay === 0);
+  assert.equal(launches.length, 9);
+  assert.ok(launches.slice(1).every((p, i) => p.start - launches[i].start > .75), "each satellite has its own audible detonation");
+  const gaps = launches.slice(1).map((p, i) => Number((p.start - launches[i].start).toFixed(2)));
+  assert.ok(new Set(gaps).size > 5, "the beat varies rather than repeating one interval");
+  const crown = samples(geometry, p => p.mode === 6 && p.delay === 0);
+  const satellites = samples(geometry, p => p.mode === 7 && p.delay === 0);
+  assert.ok(crown.every(p => p.start + p.life > launches[3].start), "early satellites still surround the first crown's falling embers");
+  assert.ok(crown.every(p => p.start + p.life < 5.6), "the main crown burns out before the late satellites instead of blocking the whole show");
+  assert.ok(Math.max(...crown.map(p => Math.hypot(...p.v))) > Math.max(...satellites.map(p => Math.hypot(...p.v))) * 1.6);
+  assert.ok(launches.every(p => p.p[1] >= 75 && p.p[2] < -295), "the full display is staged higher and farther out over the sea");
+  for (const p of crown) for (let age = 0; age <= p.life; age += .2) {
+    const travel = (1 - Math.exp(-.33 * age)) / .33;
+    assert.ok(p.p[1] + p.v[1] * travel - 1.28 * age * age > 25, "even the lowest dying tips remain well above the horizon");
+    assert.ok(p.p[2] + p.v[2] * travel < -290, "the large crown never moves into the foreground");
+  }
+  geometry.dispose();
+});
+
+test("aurora and jewels fill round crowns with volumetric irregular rays, distinct colours and timing", () => {
+  for (const variant of ["aurora", "jewels"]) {
+    const geometry = make(1729, true, variant);
+    const rays = samples(geometry, p => p.mode === 7 && p.delay === 0);
+    const first = rays[0].p.join(","), layers = new Map();
+    for (const p of rays.filter(p => p.p.join(",") === first)) {
+      const group = layers.get(p.start) ?? []; group.push(p); layers.set(p.start, group);
+    }
+    assert.equal(layers.size, 3);
+    for (const ring of layers.values()) {
+      const radii = ring.map(p => Math.hypot(p.v[0], p.v[1]));
+      const outer = Math.max(...radii);
+      assert.ok(radii.filter(radius => radius < outer * .55).length >= 8, "near/far rays fill the interior rather than leaving an empty ring");
+      assert.ok(radii.filter(radius => radius > outer * .8).length >= 20, "the full crown retains a broad round silhouette");
+      assert.ok(ring.some(p => p.v[2] > outer * .4) && ring.some(p => p.v[2] < -outer * .4), "each crown has depth in both directions");
+      const depth = variant === "aurora" ? .58 : .55;
+      const speeds = ring.map(p => Math.hypot(p.v[0], p.v[1], p.v[2] / depth));
+      assert.ok(Math.max(...speeds) / Math.min(...speeds) > 1.2, "seeded speed variations break evenly spaced concentric outlines");
+      const sectors = new Set(ring.map(p => Math.floor((Math.atan2(p.v[1], p.v[0]) + Math.PI) / (Math.PI / 4)) % 8));
+      assert.equal(sectors.size, 8, "all directions of the circle remain visible");
+    }
+    const colours = geometry.attributes.sparkColor, timing = geometry.attributes.timing;
+    let cool = 0, pink = 0, gold = 0;
+    for (let i = 0; i < colours.count; i++) if (timing.getW(i) === 7) {
+      const r = colours.getX(i), g = colours.getY(i), b = colours.getZ(i);
+      if (b > r || g > r) cool++;
+      if (r > .6 && b > .2 && g < .4) pink++;
+      if (r > .6 && g > .4 && b < .3) gold++;
+    }
+    assert.ok(variant === "aurora" ? cool > 20000 : pink > 15000 && gold > 7000, "each show has its own palette");
+    geometry.dispose();
   }
 });

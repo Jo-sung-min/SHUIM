@@ -5,7 +5,7 @@
  *  - 공터: 서쪽 중턱의 풀밭 공터와, 대나무가 없는 정상 공터(전망대). 둘 다 평평하게 깎인 터.
  *  - 정자·전망대: 중심·방향(정수 축)으로 좌석·바닥·천장·기둥을 계산한다. 좌석 표는 서버와 같다.
  */
-export const BAMBOO_BOUNDS = { minX: -44, maxX: 44, minZ: -4, maxZ: 115 } as const;
+export const BAMBOO_BOUNDS = { minX: -55, maxX: 44, minZ: -4, maxZ: 115 } as const;
 /** 눈에 보이는 흙길 폭 */
 export const TRAIL_WIDTH = 2.6;
 /** 중심선에서 걸을 수 있는 반폭 (울타리 바로 안쪽) */
@@ -42,6 +42,21 @@ export const SUMMIT = { x: 0, z: 93, radius: 17, feather: 5 } as const;
 export const MEADOW = { x: -25, z: 50, radius: 9, feather: 3 } as const;
 /** 정상 너머 북쪽 비탈: 대나무 없는 민둥 초지라 도시가 트여 보인다 (바닥·캐노피 셰이더의 세 번째 "공터") */
 export const NORTH_FACE = { x: 0, z: 165, radius: 78, feather: 18 } as const;
+
+/** Hidden behind Moon Pavilion; the western edge matches the multiplayer room bounds. */
+export const SECRET_GARDEN = {
+  minX: -54, maxX: -22, minZ: 84, maxZ: 113,
+  spineX: -38, spineFrom: 85, spineTo: 109, entrance: { x: -22, z: 80 }, pathHalf: 1.5,
+} as const;
+export const SECRET_GARDEN_ZONES = [
+  { id: "moon", x: -28, z: 90, radius: 2.7 },
+  { id: "blossom", x: -48, z: 98, radius: 2.7 },
+  { id: "stars", x: -28, z: 106, radius: 2.7 },
+] as const;
+export function insideSecretGarden(x: number, z: number, margin = 0): boolean {
+  return x >= SECRET_GARDEN.minX - margin && x <= SECRET_GARDEN.maxX + margin
+    && z >= SECRET_GARDEN.minZ - margin && z <= SECRET_GARDEN.maxZ + margin;
+}
 
 const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -156,6 +171,13 @@ export function nearbyBambooPavilion(x: number, z: number): BambooPavilion | nul
 export type TrailPoint = [number, number];
 export interface TrailPolyline { id: string; points: TrailPoint[]; closed: boolean }
 
+export const SECRET_GARDEN_PATHS: readonly TrailPolyline[] = [
+  // Go around the pavilion's back railing before entering the concealing grass.
+  { id: "secret-entrance", points: [[-18, 83.2], [-22, 83.2], [-22, 80], [-34, 80], [SECRET_GARDEN.spineX, SECRET_GARDEN.spineFrom]], closed: false },
+  { id: "secret-spine", points: [[SECRET_GARDEN.spineX, SECRET_GARDEN.spineFrom], [SECRET_GARDEN.spineX, SECRET_GARDEN.spineTo]], closed: false },
+  ...SECRET_GARDEN_ZONES.map(zone => ({ id: `secret-${zone.id}`, points: [[SECRET_GARDEN.spineX, zone.z], [zone.x, zone.z]] as TrailPoint[], closed: false })),
+];
+
 /** 입구(0, 7)에서 서쪽 비탈로 올라 정상(0, 90)을 지나 동쪽 비탈로 내려오는 한 바퀴. */
 export const TRAIL_LOOP_CONTROL: readonly TrailPoint[] = [
   [0, 7], [-9, 15], [-19, 26], [-26, 40], [-25, 56], [-19, 70], [-10, 83], [0, 90], [10, 83], [19, 70], [25, 56], [26, 40], [19, 26], [9, 15],
@@ -209,7 +231,7 @@ const SPURS: TrailPolyline[] = BAMBOO_PAVILIONS.map((p) => {
   const start = nearestOnPolyline(LOOP, front.x, front.z);
   return { id: `spur-${p.id}`, points: [[start.x, start.z], [front.x, front.z]], closed: false };
 });
-export const TRAIL_POLYLINES: readonly TrailPolyline[] = [LOOP, ENTRANCE, ...SPURS];
+export const TRAIL_POLYLINES: readonly TrailPolyline[] = [LOOP, ENTRANCE, ...SPURS, ...SECRET_GARDEN_PATHS];
 
 export function nearestOnTrail(x: number, z: number, lines: readonly TrailPolyline[] = TRAIL_POLYLINES): TrailHit {
   let best: TrailHit | null = null;
@@ -227,6 +249,7 @@ const PLATEAUS: readonly Plateau[] = [
   { ...SUMMIT, height: mountainHeight(SUMMIT.x, SUMMIT.z) },
   { ...MEADOW, height: mountainHeight(MEADOW.x, MEADOW.z) },
   ...BAMBOO_PAVILIONS.map((p) => ({ x: p.x, z: p.z, radius: p.kind === "deck" ? 7.4 : 5.4, feather: 1.6, height: p.groundY })),
+  { x: -32, z: 98, radius: 18, feather: 4, height: mountainHeight(-32, 98) },
 ];
 export const SUMMIT_HEIGHT = PLATEAUS[0].height;
 
@@ -244,11 +267,16 @@ export function groundHeight(x: number, z: number): number {
     const w = 1 - smooth((d - (pad.radius - pad.feather)) / pad.feather);
     h += (pad.height - h) * w;
   }
+  // The wider garden is one level terrace. Feather only outside its enclosure,
+  // preserving the pavilion approach and preventing a sloped western photo bay.
+  const gardenEdge = Math.max(SECRET_GARDEN.minX - x, 0, x - SECRET_GARDEN.maxX,
+    SECRET_GARDEN.minZ - z, z - SECRET_GARDEN.maxZ);
+  if (gardenEdge < 3) h += (mountainHeight(-32, 98) - h) * (1 - smooth(gardenEdge / 3));
   return h;
 }
 
 /** 마루 위와 섬돌(경사)만 마루 높이, 나머지는 땅. */
-export function bambooFloorHeight(x: number, z: number): number {
+export function bambooFloorHeight(x: number, z: number, terrainHeight: (x: number, z: number) => number = groundHeight): number {
   for (const p of BAMBOO_PAVILIONS) {
     const { lx, lz } = pavilionLocal(p, x, z), half = pavilionHalf(p);
     if (Math.abs(lx) <= half.x && Math.abs(lz) <= half.z) return p.floorY;
@@ -257,7 +285,7 @@ export function bambooFloorHeight(x: number, z: number): number {
       return p.groundY + (p.floorY - p.groundY) * (1 - (along - half.z) / PAVILION_STEP_LENGTH);
     }
   }
-  return groundHeight(x, z);
+  return terrainHeight(x, z);
 }
 
 /** Conservative underside of the roof for the follow camera: low at the eaves, rising toward the centre. The deck is open. */
@@ -321,7 +349,8 @@ function insideYard(x: number, z: number, margin = 0): BambooPavilion | null {
 }
 
 function insideClearing(x: number, z: number, margin = 0): boolean {
-  return Math.hypot(x - SUMMIT.x, z - SUMMIT.z) <= SUMMIT.radius + margin || Math.hypot(x - MEADOW.x, z - MEADOW.z) <= MEADOW.radius + margin;
+  return Math.hypot(x - SUMMIT.x, z - SUMMIT.z) <= SUMMIT.radius + margin || Math.hypot(x - MEADOW.x, z - MEADOW.z) <= MEADOW.radius + margin
+    || SECRET_GARDEN_ZONES.some(zone => Math.hypot(x - zone.x, z - zone.z) <= zone.radius + margin);
 }
 
 export function onTrail(x: number, z: number): boolean {
@@ -343,7 +372,7 @@ export function resolveTrail(x: number, z: number): [number, number] {
     const distance = Math.hypot(x - w.x, z - w.z);
     if (distance < bestDistance) { best = [w.x, w.z]; bestDistance = distance; }
   }
-  for (const clearing of [SUMMIT, MEADOW]) {
+  for (const clearing of [SUMMIT, MEADOW, ...SECRET_GARDEN_ZONES]) {
     const dx = x - clearing.x, dz = z - clearing.z, d = Math.hypot(dx, dz) || 1, r = clearing.radius - 0.62;
     const w: [number, number] = [clearing.x + dx / d * r, clearing.z + dz / d * r];
     const distance = Math.hypot(x - w[0], z - w[1]);
@@ -460,12 +489,26 @@ export function summitGroveSites(heightAt: (x: number, z: number) => number): St
         const across = Math.sin(spin) * spread * 2.2;
         const x = deck.x + along * forwardX + across * acrossX;
         const z = deck.z + 2 + along * forwardZ + across * acrossZ;
-        if (Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.radius + 1 || onTrail(x, z)) continue;
+        if (Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < SUMMIT.radius + 1 || onTrail(x, z) || insideSecretGarden(x, z, 1)) continue;
         const height = i % 4 === 0 ? 1.8 + rand() * 3.6 : i % 4 === 1 ? 5.4 + rand() * 3.7 : 9.4 + rand() * 7.6;
         sites.push({ x, z, y: heightAt(x, z), height, radius: 0.025 + height * 0.005,
           phase: rand() * Math.PI * 2, tint: rand(), leafAt: 0.73 + rand() * 0.20, lean: (rand() - 0.5) * 0.17 });
       }
     }
+  }
+  // Replace the western stands now occupied by the hidden garden with overlapping
+  // low and tall shoots along its opaque eastern screen; the city-facing axis stays open.
+  for (const z of [94, 100, 106, 112]) for (let i = 0; i < 6; i++) {
+    const x = -20.6 - (i % 2) * 1.1, pz = z + (i - 2.5) * .45;
+    if (onTrail(x, pz)) continue;
+    const height = i % 3 === 0 ? 3.4 : 11.2 + rand() * 2;
+    sites.push({ x, z: pz, y: heightAt(x, pz), height, radius: .035 + height * .005,
+      phase: rand() * Math.PI * 2, tint: rand(), leafAt: .78, lean: 0 });
+  }
+  for (const z of [94, 100, 106, 112, 118]) for (let i = 0; i < 3; i++) {
+    const x = SECRET_GARDEN.minX - 2.3 - i * .4, pz = z + (i - 1) * .8, height = i === 0 ? 4.2 : 12.4;
+    sites.push({ x, z: pz, y: heightAt(x, pz), height, radius: .035 + height * .005,
+      phase: rand() * Math.PI * 2, tint: rand(), leafAt: .78, lean: 0 });
   }
   return sites;
 }
@@ -477,6 +520,7 @@ export function bambooStalkSites(seed = 7): StalkSite[] {
   const rand = seededRandom(seed), out: StalkSite[] = [];
   const { inner, outer } = STALK_FIELD;
   const place = (x: number, z: number) => {
+    if (insideSecretGarden(x, z, 0.5)) return; // The enclosed arboretum supplies its own trees and dense perimeter.
     if (nearestOnTrail(x, z).distance < STALK_CLEARANCE || insideYard(x, z, 1.2)) return;
     const summit = Math.hypot(x - SUMMIT.x, z - SUMMIT.z);
     if (summit < SUMMIT.radius + 4 || Math.hypot(x - MEADOW.x, z - MEADOW.z) < MEADOW.radius + 1.5) return;

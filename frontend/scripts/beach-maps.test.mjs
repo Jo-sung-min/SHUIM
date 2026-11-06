@@ -133,9 +133,9 @@ test("reconnection keeps Uyuni and a response from a departed visit only release
   assert.ok(reenter && lifecycle);
   for (const hook of [reenter, lifecycle]) assert.match(hook.arguments[1].getText(sceneAst), /\bmapId\b/, "changing map recreates the room lifecycle and reconnect callback");
   const entered = { ticket: "uyuni-ticket", me: { id: "self" }, community: { id: "ours" }, count: 2, capacity: 100,
-    mapId: "uyuni", fireEnabled: false, restEnabled: true, spawn: { x: 0, z: 0, yaw: 0 } };
+    mapId: "uyuni", fireEnabled: false, restEnabled: true, fireworksFree: false, fireworkTickets: 3, spawn: { x: 0, z: 0, yaw: 0 } };
   for (const depart of [false, true]) {
-    const pending = deferred(), requests = [], left = [];
+    const pending = deferred(), requests = [], left = [], fireworkState = [];
     const engine = { restoreVisit() {}, select() {}, getContinuityView: () => ({ view: "first", yaw: 0, pitch: 0.07, orbitYaw: 0, restSpot: null }),
       isLying: false, isBenchSeated: false, onsenState: { sitting: false } };
     const ctx = { communityId: "ours", mapId: "uyuni", enterBeach: (...args) => { requests.push(args); return pending.promise; }, leaveBeach: ticket => left.push(ticket) };
@@ -143,6 +143,8 @@ test("reconnection keeps Uyuni and a response from a departed visit only release
     ctx.aliveRef.current = true; ctx.engineRef.current = engine; ctx.visitGenerationRef.current = 4;
     ctx.setMusicControl = () => {};
     ctx.applyMusic = () => {};
+    ctx.setFireworksFree = value => fireworkState.push(["free", value]);
+    ctx.setFireworkTickets = value => fireworkState.push(["tickets", value]);
     ctx.requestEpochRef.current = 8; ctx.sequenceRef.current = 0;
     for (const name of ["setCareBusy", "resetFireworks", "setFireworksControl", "applyFireworks", "resetMoments", "setMomentsEnabled", "applyMoments", "setLightingBusy", "setLightingOpen", "setLightingControl", "setLighting", "applyLighting", "adoptCharacter", "setCareCapabilities", "setCount", "setCapacity", "setCommunity", "setFireEnabled", "setRestEnabled", "setBedEnabled", "setBenchEnabled", "setOnsenEnabled", "setPavilionEnabled", "applyFire", "rememberVisit"]) ctx[name] = () => {};
     vm.runInNewContext(compile(`globalThis.run = ${reenter.arguments[0].getText(sceneAst)};`), ctx);
@@ -153,6 +155,7 @@ test("reconnection keeps Uyuni and a response from a departed visit only release
     assert.equal(requests[0][2], "uyuni");
     assert.deepEqual(left, depart ? ["uyuni-ticket"] : []);
     assert.equal(ctx.ticketRef.current, depart ? null : "uyuni-ticket");
+    assert.deepEqual(fireworkState, depart ? [] : [["free", false], ["tickets", 3]], "a departed reconnect does not update firework access or tickets");
   }
 });
 

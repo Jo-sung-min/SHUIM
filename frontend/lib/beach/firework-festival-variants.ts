@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-export type FestivalVariant = "bloom" | "saturn" | "willow" | "stardust";
+export type FestivalVariant = "bloom" | "saturn" | "willow" | "stardust" | "offbeat" | "aurora" | "jewels";
 type Vector = readonly [number, number, number];
 type Shell = readonly [number, number, number, number];
 
@@ -11,7 +11,7 @@ const END = 11.92;
 
 /** These shows share the existing shader and water reflection, but never alter the approved festival. */
 export function festivalVariantGeometry(seed: number, mobile: boolean, variant: FestivalVariant): THREE.BufferGeometry {
-  if (!["bloom", "saturn", "willow", "stardust"].includes(variant)) throw new RangeError("Unknown festival variant");
+  if (!["bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels"].includes(variant)) throw new RangeError("Unknown festival variant");
   let state = seed >>> 0;
   const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 4294967296);
   const seedColor = (seed >>> 0) % COLORS.length;
@@ -115,6 +115,96 @@ export function festivalVariantGeometry(seed: number, mobile: boolean, variant: 
         // Slow-drag mode 6 carries a broad crown before gravity turns it into hanging gold rain.
         trail(center, [d[0] * speed, d[1] * 13 + 4, d[2] * speed * .64], center[3], 5.5, 6,
           GOLD[(ray + shell + seedColor) % GOLD.length], tails, 1.18, .76);
+      }
+      launch(center, center[3]);
+    }
+  } else if (variant === "offbeat") {
+    const main: Shell = [0, 110, -320, 1.2];
+    const mainRays = mobile ? 176 : 280, mainTails = mobile ? 28 : 36;
+    const turn = random() * TAU;
+    for (let ray = 0; ray < mainRays; ray++) {
+      const d = sphere(ray, mainRays, turn), speed = 27 + random() * 5;
+      // A distant crown stays in the sky; its short, staggered burnout leaves
+      // glimmering tips instead of a curtain falling toward the viewer.
+      trail(main, [d[0] * speed, d[1] * speed * .88 + 2, d[2] * speed * .32],
+        main[3], 3.9 + random() * .4, 6, GOLD[ray % GOLD.length], mainTails, .70, .74);
+    }
+    launch(main, main[3]);
+    // Each satellite has its own ascent and off-beat detonation. The first
+    // broad crown is still falling when the next circles begin around it.
+    const satellites: readonly Shell[] = [
+      [-50, 61, -221, 2.55], [46, 87, -230, 3.36], [-37, 109, -238, 4.47],
+      [57, 53, -216, 5.25], [0, 119, -244, 6.17], [-60, 85, -225, 6.95],
+      [38, 110, -234, 7.79], [-27, 49, -213, 8.72],
+    ];
+    const rays = mobile ? 104 : 164, tails = mobile ? 20 : 28;
+    for (let shell = 0; shell < satellites.length; shell++) {
+      const source = satellites[shell];
+      const center: Shell = [source[0], source[1] + 27, source[2] - 85, source[3]];
+      const phase = random() * TAU;
+      const hue = COLORS[(seedColor + shell * 2) % COLORS.length];
+      for (let ray = 0; ray < rays; ray++) {
+        const d = sphere(ray, rays, phase), speed = 12 + random() * 4;
+        trail(center, [d[0] * speed, d[1] * speed, d[2] * speed * .35],
+          center[3], 3.7, 7, hue, tails, .58, .8);
+      }
+      launch(center, center[3]);
+    }
+  } else if (variant === "aurora") {
+    const shells: readonly Shell[] = [
+      [-48, 65, -222, 1.25], [47, 78, -235, 1.65], [0, 96, -249, 3.55],
+      [-51, 63, -222, 5.40], [49, 73, -235, 5.87], [0, 100, -248, 7.15],
+    ];
+    const aurora = [0x50ffe1, 0x18c9f1, 0x447bff, 0x8254ff, 0xd074ff];
+    const rays = mobile ? 132 : 200, tails = mobile ? 12 : 19;
+    const from = new THREE.Color(), to = new THREE.Color();
+    for (let shell = 0; shell < shells.length; shell++) {
+      const center = shells[shell], turn = random() * TAU;
+      for (let layer = 0; layer < 3; layer++) {
+        const speed = [10, 22, 31][layer], start = center[3] + layer * .10;
+        for (let ray = 0; ray < rays; ray++) {
+          const direction = sphere(ray, rays, turn + layer * .6);
+          const angle = Math.atan2(direction[1], direction[0]);
+          const band = (((angle + Math.PI) / TAU + layer * .19 + shell * .13) % 1) * aurora.length;
+          from.setHex(aurora[Math.floor(band)]).lerp(to.setHex(aurora[(Math.floor(band) + 1) % aurora.length]), band % 1);
+          const radius = speed * (.88 + random() * .24);
+          // A complete sphere projects into a round, filled crown. Uneven ray
+          // speeds keep the flowing colour bands from looking like neon rings.
+          trail(center, [direction[0] * radius, direction[1] * radius, direction[2] * radius * .58],
+            start, 4.5, 7, from.getHex(), tails, .58 + layer * .12, .65 + random() * .16);
+        }
+      }
+      launch(center, center[3]);
+    }
+  } else if (variant === "jewels") {
+    const shells: readonly Shell[] = [
+      [-42, 66, -220, 1.30], [42, 66, -220, 1.60], [0, 90, -242, 3.55],
+      [-56, 61, -216, 5.70], [0, 85, -240, 6.05], [56, 61, -216, 6.40],
+      [0, 105, -250, 7.35],
+    ];
+    const jewel = [0xffc85d, 0xff6dad, 0xd625ff];
+    const rays = mobile ? 104 : 164, tails = mobile ? 13 : 20;
+    for (let shell = 0; shell < shells.length; shell++) {
+      const center = shells[shell], turn = random() * TAU;
+      for (let layer = 0; layer < 3; layer++) {
+        const speed = [30, 22, 11][layer], start = center[3] + layer * .12;
+        for (let ray = 0; ray < rays; ray++) {
+          const direction = sphere(ray, rays, turn + layer * .7);
+          const radius = speed * (.86 + random() * .27);
+          const hue = ray % 13 === 0 ? 0xfff2d1 : jewel[layer];
+          trail(center, [direction[0] * radius, direction[1] * radius, direction[2] * radius * .55],
+            start, 4.15, 7, hue, tails, [.68, .56, .43][layer], layer === 0 ? .72 : .86);
+        }
+      }
+      // Sparse pinpoints twinkle along the expanding pink crown. Their centres
+      // follow the same drag/gravity equation as the parent spark trajectories.
+      for (let glint = 0; glint < 24; glint++) {
+        const direction = sphere(glint, 24, turn + .7), age = .9 + random() * 1.1;
+        const travel = (1 - Math.exp(-.46 * age)) / .46;
+        const at: Vector = [center[0] + direction[0] * 22 * travel,
+          center[1] + direction[1] * 22 * travel - .88 * age * age,
+          center[2] + direction[2] * 12.1 * travel];
+        add(at, [0, 0, 0], center[3] + .12 + age, 0, .24, 3, 0xffedc4, .64, .42, random() * TAU);
       }
       launch(center, center[3]);
     }

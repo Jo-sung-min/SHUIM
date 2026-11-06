@@ -73,7 +73,7 @@ class BeachMusicTest {
             assertEquals(BeachRoom.SILENT, admin.get("music"));
             var play = command((String) admin.get("ticket"), "play", "tomorrow-v1", 0);
             assertEquals(clock.get(), play.music().startedAt());
-            assertEquals(256_448, play.music().durationMs());
+            assertEquals(240_000, play.music().durationMs());
             assertEquals("내일의우리", play.music().title());
             clock.addAndGet(3200);
             actor("listener", "user");
@@ -93,7 +93,7 @@ class BeachMusicTest {
         String ticket = enter("operator", "bamboo");
         var first = command(ticket, "play", null, 0).music();
         assertEquals("아침만남겨주고", first.title());
-        assertEquals(163_029, first.durationMs());
+        assertEquals(257_520, first.durationMs());
         clock.addAndGet(100);
         assertEquals(first, command(ticket, "play", "morning-v1", 1).music());
         assertEquals(first, command(ticket, "play", "tomorrow-v1", 0).music());
@@ -189,23 +189,46 @@ class BeachMusicTest {
             byte[] expected = java.util.Arrays.copyOfRange(fixture, 4, 16);
             when(storage.readPrivateRecording(track.objectKey, size, track.sha256)).thenReturn(fixture);
             mvc.perform(head(url)).andExpect(status().isOk()).andExpect(header().longValue("Content-Length", size));
-            mvc.perform(get(url).header("If-None-Match", "\"" + track.id + "\"")).andExpect(status().isNotModified());
+            mvc.perform(get(url).header("If-None-Match", "\"" + track.sha256 + "\"")).andExpect(status().isNotModified());
             verify(storage, never()).readPrivateRecording(track.objectKey, size, track.sha256);
             mvc.perform(get(url).header("Range", "bytes=4-15")).andExpect(status().isPartialContent())
-                .andExpect(header().string("Accept-Ranges", "bytes")).andExpect(content().contentType("audio/mp4"))
+                .andExpect(header().string("Accept-Ranges", "bytes")).andExpect(content().contentType("audio/mpeg"))
                 .andExpect(header().string("Content-Range", "bytes 4-15/" + size)).andExpect(content().bytes(expected));
+            // The stable selection ID was the old recording's ETag. It must not return
+            // 304 now that the same song ID points to a different complete recording.
+            mvc.perform(get(url).header("If-None-Match", "\"" + track.id + "\"").header("Range", "bytes=4-15"))
+                .andExpect(status().isPartialContent()).andExpect(content().bytes(expected))
+                .andExpect(header().string("ETag", "\"" + track.sha256 + "\""));
             mvc.perform(head(url)).andExpect(status().isOk()).andExpect(header().longValue("Content-Length", size))
-                .andExpect(header().string("ETag", "\"" + track.id + "\""))
+                .andExpect(header().string("ETag", "\"" + track.sha256 + "\""))
                 .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("private")));
-            mvc.perform(get(url).header("If-None-Match", "\"" + track.id + "\"")).andExpect(status().isNotModified());
+            mvc.perform(get(url).header("If-None-Match", "\"" + track.sha256 + "\"")).andExpect(status().isNotModified());
             mvc.perform(get(url).header("Range", "bytes=-8")).andExpect(status().isPartialContent())
                 .andExpect(header().string("Content-Range", "bytes " + (size - 8) + "-" + (size - 1) + "/" + size));
             verify(storage, times(1)).readPrivateRecording(track.objectKey, size, track.sha256);
         }
         mvc.perform(head("/api/beach/music/audio?communityId=room&mapId=bamboo"))
-            .andExpect(status().isOk()).andExpect(header().string("ETag", "\"morning-v1\""));
+            .andExpect(status().isOk()).andExpect(header().string("ETag", "\"" + RoomMusicTrack.MORNING.sha256 + "\""));
         mvc.perform(head("/api/beach/music/audio?communityId=room&mapId=bamboo&trackId=unknown"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void replacementRecordingsRetainSelectionIdsAndCompleteSongLengths() {
+        assertEquals("morning-v1", RoomMusicTrack.MORNING.id);
+        assertEquals("tomorrow-v1", RoomMusicTrack.TOMORROW.id);
+        assertEquals("private/room-music/morning-v2.mp3", RoomMusicTrack.MORNING.objectKey);
+        assertEquals("private/room-music/tomorrow-v2.mp3", RoomMusicTrack.TOMORROW.objectKey);
+        for (RoomMusicTrack track : RoomMusicTrack.values()) {
+            assertTrue(track.bytes > 0 && track.bytes < 6_000_000, "The mini-app can buffer each full song");
+            String ticket = enter("operator", "bamboo");
+            long version = beach.music("room", "bamboo").music().version();
+            var playing = command(ticket, "play", track.id, version).music();
+            clock.addAndGet(track.durationMs - 1);
+            assertTrue(beach.music("room", "bamboo").music().playing());
+            clock.incrementAndGet();
+            assertFalse(beach.music("room", "bamboo").music().playing());
+        }
     }
 
     @Test

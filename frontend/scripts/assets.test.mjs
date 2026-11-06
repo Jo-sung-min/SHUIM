@@ -8,7 +8,7 @@ import { assetsFor } from "./assets-fixture.mjs";
 
 const CDN = "https://cdn.sorow.co.kr";
 test("public media defaults to the verified CDN and supports an optional replacement origin", () => {
-  const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v2.glb", "/beach/fx/firework-boom-v1.mp3", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png"];
+  const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v2.glb", "/beach/fx/firework-boom-v1.mp3", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png", "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp"];
   for (const path of paths) {
     assert.equal(assetsFor().assetUrl(path), `${CDN}${path}`);
     assert.equal(assetsFor(` ${CDN}/// `).assetUrl(path), `${CDN}${path}`);
@@ -98,7 +98,8 @@ test("actual Three.js loading entry points request CDN textures and models with 
   const atlas = await load("atlas", ["CHAR_ANIM", "CHAR_ATLAS", "CHAR_VIEW"]);
   const { BeachEngine } = await load("engine", ["BeachEngine"], { ...atlas, CAMPFIRE: { x: 0, z: 12 } });
   const engine = Object.assign(Object.create(BeachEngine.prototype), { assetLoads: [], renderer: { capabilities: { getMaxAnisotropy: () => 4 } } });
-  engine.loadEnvironmentTexture("/beach/real/white-sand-v1.webp"); await Promise.all(engine.assetLoads);
+  for (const path of ["/beach/real/white-sand-v1.webp", "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp"]) engine.loadEnvironmentTexture(path);
+  await Promise.all(engine.assetLoads);
   // Mark disposed to exercise requests and their late-load cleanup without constructing actors.
   engine.disposed = true; await engine.loadAtlases();
   const expected = [
@@ -107,6 +108,7 @@ test("actual Three.js loading entry points request CDN textures and models with 
     "/beach/models/tripo-male-rigged-mobile-v3.glb", "/beach/models/tripo-female-rigged-mobile-v2.glb",
     "/beach/models/tripo-male-onsen-mobile-v2.glb", "/beach/models/tripo-female-onsen-mobile-v2.glb",
     "/beach/models/tripo-firewood-mobile-v2.glb", "/beach/real/white-sand-v1.webp", "/beach/chars-v2.png", "/beach/props.png",
+    "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp",
   ];
   assert.deepEqual(new Set(requests), new Set(expected.map(path => CDN + path)));
   lanterns.dispose(); fireworks.dispose(); campfire.dispose();

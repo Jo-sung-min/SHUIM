@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { seededRandom } from "./bamboo-trail";
-import { GARDEN_POLYLINES, GARDEN_PATH_WIDTH, GARDEN_LANTERNS, GARDEN_WILLOWS, GATE_YARD, LAKE, lakeSigned, HALL, GARDEN_PIERS, pierEnd, GARDEN_BRIDGE } from "./garden-layout";
+import { GARDEN_POLYLINES, GARDEN_PATH_WIDTH, GARDEN_LANTERNS, GARDEN_WILLOWS, GATE_YARD, GARDEN_PHOTO_ZONE, LAKE, lakeSigned, HALL, GARDEN_PIERS, pierEnd, GARDEN_BRIDGE } from "./garden-layout";
 
 /**
  * 봄물 정원의 수묵 텍스처. 전부 Canvas 2D 로 실행 시점에 그린다 (외부 이미지·CDN 없음).
@@ -328,6 +328,7 @@ export function gardenGroundMaskTexture(): THREE.Texture {
   strokeLines(GARDEN_PATH_WIDTH + 1.6, 0.25); strokeLines(GARDEN_PATH_WIDTH + 0.6, 0.45); strokeLines(GARDEN_PATH_WIDTH, 1);
   ctx.fillStyle = "#f00"; ctx.globalAlpha = 1;
   ctx.fillRect(GATE_YARD.minX, GATE_YARD.minZ, GATE_YARD.maxX - GATE_YARD.minX, GATE_YARD.maxZ - GATE_YARD.minZ);
+  ctx.beginPath(); ctx.ellipse(GARDEN_PHOTO_ZONE.x, GARDEN_PHOTO_ZONE.z, GARDEN_PHOTO_ZONE.rx, GARDEN_PHOTO_ZONE.rz, 0, 0, Math.PI * 2); ctx.fill();
   // 청우헌 둘레 돌 포장과 옆문 앞 마당
   ctx.fillStyle = "#0f0"; ctx.globalAlpha = 1;
   ctx.fillRect(HALL.x - HALL.halfX - 3.6, HALL.doorZ - 2.4, 3.6, 4.8);

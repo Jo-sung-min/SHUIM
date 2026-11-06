@@ -9,7 +9,7 @@ function Speaker({ muted }: { muted: boolean }) {
   </svg>;
 }
 
-type Props = { map: "beach" | "bamboo"; volume: number; open: boolean; buttonClass: string; onOpenChange: (open: boolean) => void;
+type Props = { map: "beach" | "bamboo" | "garden"; volume: number; open: boolean; buttonClass: string; onOpenChange: (open: boolean) => void;
   onChange: (volume: number) => void; onToggleMute: () => void };
 
 export default function FieldSoundControl({ map, volume, open, buttonClass, onOpenChange, onChange, onToggleMute }: Props) {
@@ -34,7 +34,7 @@ export default function FieldSoundControl({ map, volume, open, buttonClass, onOp
       <Speaker muted={muted} /><span>현장음</span>
     </button>
     {open && <section id={id} className={styles.panel} aria-label="현장음 조절">
-      <div className={styles.heading}><div><label htmlFor={id + "-range"}>내 현장음</label><small>{map === "beach" ? "파도 · 장작불 · 폭죽" : "풀벌레 · 폭죽"}</small></div>
+      <div className={styles.heading}><div><label htmlFor={id + "-range"}>내 현장음</label><small>{map === "beach" ? "파도 · 장작불 · 폭죽" : map === "garden" ? "연못 · 창가의 빗소리 · 폭죽" : "풀벌레 · 폭죽"}</small></div>
         <output htmlFor={id + "-range"}>{valueText}</output></div>
       <div className={styles.row}><button type="button" className={styles.speaker} aria-label={muted ? "현장음 음소거 해제" : "현장음 음소거"}
         aria-pressed={muted} onClick={onToggleMute}><Speaker muted={muted} /></button>

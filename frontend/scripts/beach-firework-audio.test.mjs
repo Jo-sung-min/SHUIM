@@ -9,13 +9,15 @@ async function source(name) {
   return stripTypeScriptTypes(await readFile(new URL(`../lib/beach/${name}.ts`, import.meta.url), "utf8"))
     .replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=function\b|const\b|class\b)/g, "");
 }
-const [soundSource, variantSource, fireworksSource, recordingSource] = await Promise.all(
-  ["firework-audio", "firework-festival-variants", "fireworks", "field-recording"].map(source));
+const [soundSource, variantSource, fireworksSource, recordingSource, finaleSource] = await Promise.all(
+  ["firework-audio", "firework-festival-variants", "fireworks", "field-recording", "firework-songi-finale"].map(source));
 const geometryContext = { THREE };
-vm.runInNewContext(`${variantSource}\n${fireworksSource}\nglobalThis.make = fireworkGeometry;`, geometryContext);
+vm.runInNewContext(`${variantSource}\n${finaleSource}\n${fireworksSource}\nglobalThis.make = fireworkGeometry;`, geometryContext);
 const makeGeometry = geometryContext.make;
 const start = 100_000, listener = { x: 0, y: 0, z: 0 };
 const settle = () => new Promise(resolve => setImmediate(resolve));
+const daylightContext = {};
+vm.runInNewContext(`${await source("daylight")}\nglobalThis.daylightAt = daylightAt;`, daylightContext);
 
 // Two primary flashes at 1 and 3 seconds, exactly one second of sound travel away.
 function twoShells() {
@@ -96,7 +98,7 @@ test("only a bamboo gesture streams the long loop; hide, mute, return and leave 
   h.unlock("keydown"); h.unlock(); await settle();
   const media=h.streams[0];
   assert.equal(h.streams.length,1); assert.equal(h.contexts.length,1); assert.equal(h.requests.length,0);
-  assert.equal(media.src,"https://cdn.sorow.co.kr/beach/fx/bamboo-field-crickets-v2.mp3");
+  assert.equal(media.src,"https://cdn.sorow.co.kr/beach/fx/bamboo-field-crickets-v3.mp3");
   assert.ok(media.loop); assert.equal(media.crossOrigin,"anonymous"); assert.equal(media.gain.gain.value,.43);
   assert.equal(media.plays,1); media.currentTime=78;
   h.visibility(true,1000); assert.ok(media.paused);
@@ -143,7 +145,131 @@ test("fallback element follows the latest slider level during pending loads, mut
   h.visibility(false,200); await settle(); assert.equal(stream.volume,.43*1.3); assert.equal(stream.paused,false); h.dispose();
 });
 
+function bambooTime(h, hour, frames = 360) {
+  h.audio.setBambooNight(daylightContext.daylightAt(hour).deepNight);
+  for (let i = 0; i < frames; i++) h.audio.updateBambooSound(1 / 60);
+}
+
+test("bamboo arrives on daylight wind or original night crickets without downloading the inactive loop", async () => {
+  for (const hour of [6, 12, 18, 19, 20, 22, 2]) {
+    const h = harness({ bamboo: true }); bambooTime(h, hour);
+    assert.equal(h.streams.length, 0, "weather changes cannot unlock playback");
+    h.unlock(); await settle();
+    assert.equal(h.streams.length, 1);
+    assert.ok(h.streams[0].src.endsWith(hour >= 20 || hour < 5 ? "bamboo-field-crickets-v3.mp3" : "bamboo-field-wind-day-v1.mp3"));
+    assert.equal(h.streams[0].gain.gain.value, .43); assert.ok(h.streams[0].loop);
+    h.dispose(); assert.ok(h.streams[0].paused && !h.streams[0].src);
+  }
+});
+
+test("bamboo sunset, 20:00 night and dawn crossfade at constant total gain and reuse both loops", async () => {
+  const h = harness({ bamboo: true }); bambooTime(h, 18); h.unlock(); await settle();
+  const day = h.streams[0]; day.currentTime = 23;
+  bambooTime(h, 19.75, 1); await settle(); const night = h.streams[1];
+  assert.ok(day.gain.gain.value > .4 && night.gain.gain.value > 0);
+  for (let i = 0; i < 360; i++) {
+    h.audio.updateBambooSound(1 / 60);
+    assert.ok(Math.abs(day.gain.gain.value + night.gain.gain.value - .43) < 1e-9);
+  }
+  assert.equal(day.gain.gain.value, .215); assert.equal(night.gain.gain.value, .215);
+  bambooTime(h, 20); assert.ok(day.paused && !night.paused); assert.equal(night.gain.gain.value, .43);
+  bambooTime(h, 5); await settle(); assert.equal(day.gain.gain.value, .215);
+  bambooTime(h, 6); assert.ok(!day.paused && night.paused);
+  assert.equal(day.currentTime, 23); assert.equal(day.plays, 2); assert.equal(h.streams.length, 2);
+  h.dispose(); assert.ok(h.streams.every(s => s.disconnected));
+});
+
+test("bamboo day/night transitions respect slider mute, visibility, scene pause and pending playback", async () => {
+  const h = harness({ bamboo: true, delayedStream: true, savedVolume: "70" });
+  bambooTime(h, 12); h.unlock(); const day = h.streams[0];
+  h.audio.setFieldVolume(0); bambooTime(h, 22); h.finishStream(); await settle();
+  assert.ok(day.paused); assert.equal(h.streams.length, 1, "muted night transition does not fetch crickets");
+  h.visibility(true, 0); h.audio.setFieldVolume(70); assert.equal(h.streams.length, 1);
+  h.visibility(false, 1); await settle(); const night = h.streams[1];
+  assert.ok(!night.paused && day.paused); assert.equal(night.gain.gain.value, .43 * 1.4);
+  h.audio.setSceneRunning(false); bambooTime(h, 12); assert.ok(h.streams.every(s => s.paused));
+  h.audio.setSceneRunning(true); await settle(); assert.ok(!day.paused && night.paused);
+  h.audio.setFieldVolume(0); h.dispose(); assert.ok(h.streams.every(s => s.paused && !s.src));
+  const saved = harness({ bamboo: true, savedVolume: "0" }); bambooTime(saved, 12); saved.unlock(); assert.equal(saved.streams.length, 0); saved.dispose();
+});
+
+test("bamboo day/night levels also crossfade with element-volume fallback and ignore invalid updates", async () => {
+  const h = harness({ bamboo: true, noWebAudio: true }); bambooTime(h, 12); h.unlock(); await settle();
+  bambooTime(h, 22, 1); await settle();
+  assert.equal(h.contexts.length, 0); assert.equal(h.streams.length, 2);
+  assert.ok(Math.abs(h.streams.reduce((sum, s) => sum + s.volume, 0) - .43) < 1e-9);
+  const levels = h.streams.map(s => s.volume);
+  h.audio.setBambooNight(NaN); h.audio.updateBambooSound(NaN); h.audio.updateBambooSound(-1);
+  assert.deepEqual(h.streams.map(s => s.volume), levels);
+  h.audio.setFieldVolume(30); assert.ok(Math.abs(h.streams.reduce((sum, s) => sum + s.volume, 0) - .43 * .6) < 1e-9);
+  h.dispose();
+});
+
 const fireSite = { x: 0, z: 12 };
+function gardenWeather(h, inside, rain = 1, frames = 240) {
+  for (let i = 0; i < frames; i++) h.audio.updateGardenSound(inside, rain, 1 / 60);
+}
+
+test("garden rain waits for wet weather and crossfades the two recordings without restarting loops", async () => {
+  const h = harness({ map: "garden" }); h.unlock(); await settle();
+  gardenWeather(h, false, 0); assert.equal(h.streams.length, 0, "dry weather downloads neither recording");
+  gardenWeather(h, false); await settle(); const outdoor = h.streams[0];
+  assert.ok(outdoor.src.endsWith("garden-rain-outdoor-v1.mp3"));
+  assert.equal(outdoor.gain.gain.value, .43); assert.ok(outdoor.loop);
+  outdoor.currentTime = 24;
+  gardenWeather(h, true, 1, 1); await settle(); const indoor = h.streams[1];
+  assert.ok(indoor.src.endsWith("garden-rain-indoor-v1.mp3"));
+  assert.ok(outdoor.gain.gain.value < .43 && outdoor.gain.gain.value > .4);
+  assert.ok(indoor.gain.gain.value > 0 && indoor.gain.gain.value < .03);
+  assert.ok(Math.abs(outdoor.gain.gain.value + indoor.gain.gain.value - .43) < 1e-6, "doorway transition does not double the volume");
+  gardenWeather(h, true); assert.ok(outdoor.paused && !indoor.paused);
+  assert.equal(indoor.gain.gain.value, .43);
+  gardenWeather(h, false); await settle(); assert.ok(!outdoor.paused && indoor.paused);
+  assert.equal(outdoor.currentTime, 24); assert.equal(outdoor.plays, 2); assert.equal(h.streams.length, 2);
+  gardenWeather(h, false, .25); assert.equal(outdoor.gain.gain.value, .43 * .25);
+  gardenWeather(h, false, 0); assert.ok(h.streams.every(s => s.paused && s.gain.gain.value === 0));
+  h.dispose(); assert.ok(h.streams.every(s => !s.src && s.disconnected));
+});
+
+test("an indoor garden arrival plays only window rain and persists its own field slider including mute", async () => {
+  const h = harness({ map: "garden", savedVolume: "35" });
+  gardenWeather(h, true); assert.equal(h.streams.length, 0);
+  h.unlock(); await settle(); const indoor = h.streams[0];
+  assert.equal(h.streams.length, 1); assert.ok(indoor.src.endsWith("garden-rain-indoor-v1.mp3"));
+  assert.equal(indoor.gain.gain.value, .43 * .7);
+  h.audio.setFieldVolume(80); assert.equal(indoor.gain.gain.value, .43 * 1.6);
+  assert.equal(h.storage.get("sorow:garden-field-volume"), "80");
+  assert.equal(h.storage.has("sorow:bamboo-field-volume"), false);
+  h.audio.setFieldVolume(0); assert.ok(h.audio.muted && indoor.paused);
+  gardenWeather(h, false); assert.equal(h.streams.length, 1, "muted boundary crossings do not start media");
+  h.audio.setMuted(false); await settle(); assert.equal(h.audio.fieldVolume, 80);
+  const outdoor = h.streams[1]; assert.ok(outdoor.src.endsWith("garden-rain-outdoor-v1.mp3") && !outdoor.paused && indoor.paused);
+  h.dispose();
+  const muted = harness({ map: "garden", savedVolume: "0" }); gardenWeather(muted, true); muted.unlock();
+  assert.ok(muted.audio.muted); assert.equal(muted.streams.length, 0); muted.dispose();
+});
+
+test("garden rain obeys hidden/stopped scenes and delayed play cannot escape mute, dry weather or disposal", async () => {
+  for (const stop of ["mute", "hidden", "scene", "dry", "dispose"]) {
+    const h = harness({ map: "garden", delayedStream: true, noWebAudio: true });
+    gardenWeather(h, false); h.unlock(); gardenWeather(h, true, 1, 1);
+    assert.equal(h.streams.length, 2);
+    if (stop === "mute") h.audio.setFieldVolume(0);
+    if (stop === "hidden") h.visibility(true, 0);
+    if (stop === "scene") h.audio.setSceneRunning(false);
+    if (stop === "dry") gardenWeather(h, true, 0);
+    if (stop === "dispose") h.dispose();
+    h.finishStream(); await settle();
+    assert.ok(h.streams.every(s => s.paused), stop + " prevents pending playback");
+    if (stop === "hidden" || stop === "scene") {
+      gardenWeather(h, true);
+      if (stop === "hidden") h.visibility(false, 100); else h.audio.setSceneRunning(true);
+      await settle(); assert.ok(h.streams[0].paused && !h.streams[1].paused, "only the current indoor track resumes");
+    }
+    if (stop !== "dispose") h.dispose();
+  }
+});
+
 function standAt(h, x, z, logs, frames = 200) {
   for (let i = 0; i < frames; i++) h.audio.updateBeachSound({ x, z }, fireSite, logs, 1 / 60);
 }
@@ -248,7 +374,7 @@ test("bamboo audio stays silent while the scene loads or is stopped and resumes 
 
 test("each real display variant ties distant sound to its primary visual bursts and groups simultaneous shells", () => {
   const h = harness(), eye = { x: 12, y: 2, z: 9 };
-  const displays = ["festival", "bloom", "saturn", "willow", "stardust", "songi", "love"];
+  const displays = ["festival", "bloom", "saturn", "willow", "stardust", "songi", "love", "offbeat", "aurora", "jewels"];
   for (const [variant, grand] of [...displays.map(v => [v, true]), ["festival", false]]) {
     const geometry = makeGeometry(1729, true, variant, grand);
     const { timing, detail, position } = geometry.attributes;
@@ -273,6 +399,38 @@ test("each real display variant ties distant sound to its primary visual bursts 
     geometry.dispose();
   }
   h.dispose();
+});
+
+test("songi's encore waves each produce one quiet delayed report, without replay on later frames", async () => {
+  for(const grand of [true,false]) {
+    const h=harness(), geometry=makeGeometry(1729,true,"songi",grand);
+    const cues=h.cues(geometry,listener,start,1729);
+    assert.equal(cues.length,5,"greeting, two spherical waves, added roses and puppy finale each have one distant report");
+    assert.ok(cues[1].at>start+4300&&cues.at(-1).at<start+16000);
+    h.unlock();h.audio.addShow(geometry,start,start,1729);h.update(0);await settle();
+    for(const [index,cue] of cues.entries()) {
+      if(index) {
+        assert.ok(cue.at-cues[index-1].at>2500,"the 2.28-second recording finishes before the next group");
+        h.played.at(-1)?.onended();
+      }
+      h.update(cue.at-start+1);h.update(cue.at-start+1);h.update(cue.at-start+80);
+      assert.equal(h.played.length,index+1,"a burst is consumed once despite repeated frames");
+      assert.equal(h.played.at(-1).gain.gain.value,.48,"the continuation preserves the existing distant gain");
+    }
+    h.update(18000);assert.equal(h.played.length,5);
+    geometry.dispose();h.dispose();
+  }
+});
+
+test("legacy songi audio stops at its twelve-second window while the extended show retains its final report",async()=>{
+  for(const durationMs of [12000,18000]) {
+    const h=harness(),geometry=makeGeometry(1729,true,"songi",true);
+    const cues=h.cues(geometry,listener,start,1729);
+    h.unlock();h.audio.addShow(geometry,start,start,1729,durationMs);h.update(0);await settle();
+    for(const cue of cues) { h.played.at(-1)?.onended();h.update(cue.at-start+1); }
+    assert.equal(h.played.length,durationMs===12000?4:5,"a legacy event cannot leave a ghost finale boom after cleanup");
+    h.update(19000);assert.equal(h.played.length,durationMs===12000?4:5);geometry.dispose();h.dispose();
+  }
 });
 
 test("a spectator gesture loads only the boom and the time after its arrival stays quiet", async () => {

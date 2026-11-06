@@ -110,22 +110,23 @@ class BeachFireworksTest {
     }
 
     @Test
-    void allThreeVariantsReachObserversAndRetriesCannotChangeTheOriginalStyle() {
+    void allMessageVariantsReachObserversAndRetriesCannotChangeTheOriginalStyle() {
         var admin = visitor("room", "operator");
         var observer = visitor("room", "observer");
         for (String variant : List.of("festival", "songi", "love")) {
             String requestId = UUID.randomUUID().toString();
             var result = launch(admin, requestId, variant);
             assertEquals(variant, result.event().variant());
-            assertEquals(12_000, result.event().durationMs());
-            assertEquals(clock.get() + 15_000, result.cooldownUntil());
+            int duration = variant.equals("songi") ? 18_000 : 12_000;
+            assertEquals(duration, result.event().durationMs());
+            assertEquals(clock.get() + duration + 3_000, result.cooldownUntil());
             assertEquals(List.of(result.event()), poll(observer).fireworks());
             for (String retryVariant : List.of("festival", "songi", "love")) {
                 var retry = launch(admin, requestId, retryVariant);
                 assertEquals(result.event(), retry.event());
                 assertEquals(result.cooldownUntil(), retry.cooldownUntil());
             }
-            advance(15_000, admin, observer);
+            advance(duration + 3_000, admin, observer);
             assertEquals(result.event(), launch(admin, requestId, "love").event());
             assertEquals(List.of(), poll(observer).fireworks(), "an expired variant retry does not create a new show");
         }
@@ -183,6 +184,42 @@ class BeachFireworksTest {
         assertEquals(429, assertThrows(ApiException.class, () -> launch(admin, UUID.randomUUID().toString())).status());
         advance(1, admin);
         assertNotEquals(first.event().id(), launch(admin, UUID.randomUUID().toString()).event().id());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"beach", "uyuni", "bamboo", "garden"})
+    void songiFinaleRemainsSharedForEighteenSecondsAndCannotBeReplacedUntilTwentyOne(String map) {
+        var admin = visitor("room", "operator", map);
+        var observer = visitor("room", "observer", map);
+        String requestId = UUID.randomUUID().toString();
+        var first = launch(admin, requestId, "songi");
+        assertEquals(18_000, first.event().durationMs());
+        assertEquals(clock.get() + 21_000, first.cooldownUntil());
+        advance(15_000, admin, observer);
+        assertEquals(List.of(first.event()), poll(observer).fireworks(), "the former cooldown must not cut off the finale");
+        actor(user("late", "user", false, null));
+        var late = controller.enter(new BeachController.EnterBody("room", null, map), request, new MockHttpServletResponse());
+        assertEquals(List.of(first.event()), late.get("fireworks"));
+        assertEquals(first.cooldownUntil(), late.get("fireworksCooldownUntil"));
+        actor(user("operator", "admin", false, null));
+        assertEquals(429, assertThrows(ApiException.class, () -> launch(admin, UUID.randomUUID().toString(), "festival")).status());
+        assertEquals(first.event(), launch(admin, requestId, "love").event(), "a style-changing retry keeps the original duration");
+        advance(2_999, admin, observer);
+        assertEquals(List.of(first.event()), poll(observer).fireworks());
+        advance(1, admin, observer);
+        assertEquals(List.of(), poll(observer).fireworks());
+        assertEquals(first.event(), launch(admin, requestId, "songi").event());
+        assertEquals(List.of(), poll(observer).fireworks(), "an expired retry never restarts the finale");
+        advance(2_999, admin, observer);
+        assertEquals(429, assertThrows(ApiException.class, () -> launch(admin, UUID.randomUUID().toString(), "festival")).status());
+        advance(1, admin, observer);
+        var next = launch(admin, UUID.randomUUID().toString(), "festival");
+        assertEquals(12_000, next.event().durationMs());
+        assertEquals(clock.get() + 15_000, next.cooldownUntil());
+        var retry = launch(admin, requestId, "love");
+        assertEquals(first.event(), retry.event());
+        assertEquals(next.cooldownUntil(), retry.cooldownUntil());
+        assertEquals(List.of(next.event()), poll(observer).fireworks());
     }
 
     @Test
@@ -387,15 +424,15 @@ class BeachFireworksTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"beach", "uyuni", "bamboo"})
-    void grandVariantsRoundTripThroughLaunchTickAndLateEnterWithTheOriginalTimingAndRetryIdentity(String map) throws Exception {
+    @ValueSource(strings = {"beach", "uyuni", "bamboo", "garden"})
+    void namedVariantsRoundTripThroughLaunchTickAndLateEnterWithTheOriginalTimingAndRetryIdentity(String map) throws Exception {
         var admin = visitor("room", "operator", map);
         var observer = visitor("room", "observer", map);
         var otherMap = visitor("room", "observer", map.equals("beach") ? "uyuni" : "beach");
         var thirdMap = visitor("room", "observer", map.equals("bamboo") ? "uyuni" : "bamboo");
         var elsewhere = visitor("other", "observer", map);
         var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
-        for (String variant : List.of("bloom", "saturn", "willow", "stardust")) {
+        for (String variant : List.of("bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels")) {
             actor(user("operator", "admin", false, null));
             String requestId = UUID.randomUUID().toString();
             long startedAt = clock.get();

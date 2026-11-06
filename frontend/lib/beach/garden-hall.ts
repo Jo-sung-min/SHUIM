@@ -6,12 +6,13 @@ import { hipRidgeGeometry, hipRoofGeometry, roofTileTexture } from "./bamboo-pav
 import { stoneLanternGeometry } from "./bamboo";
 import { PAVILION_HALF, PAVILION_POST_HEIGHT, PAVILION_RISE, PAVILION_STEP_LENGTH, seededRandom } from "./bamboo-trail";
 import {
-  BRIDGE_Y, GARDEN_BRIDGE, GARDEN_LANTERNS, GARDEN_PAVILIONS, GARDEN_PIERS, GATE_WALL_Z, GROUND_Y, HALL, HALL_BENCH_HEIGHT, HALL_SEAT_LX, HALL_STAIR_HALF, HALL_STAIR_RUN,
+  BRIDGE_Y, GARDEN_BRIDGE, GARDEN_LANTERNS, GARDEN_PAVILIONS, GARDEN_PIERS, GROUND_Y, HALL, HALL_BENCH_HEIGHT, HALL_SEAT_LX, HALL_STAIR_HALF, HALL_STAIR_RUN,
   HALL_TIERS, PIER_Y, WATER_Y, gardenPavilionWorld, pierEnd,
 } from "./garden-layout";
 import { GARDEN_GLASS_FRAG, GARDEN_GLASS_VERT } from "./garden-shader";
 import { latticeTexture, plasterTexture } from "./garden-ink";
 import { BAMBOO_GLOW_FRAG, BAMBOO_GLOW_VERT } from "./bamboo-shader";
+import { buildGardenPhotoZone } from "./garden-photo-zone";
 
 /** 3단 셀 음영: 먹그림의 평면적인 면 느낌. 모든 토운 재질이 같은 램프를 쓴다. */
 export function toonGradient(): THREE.DataTexture {
@@ -384,23 +385,8 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
     place("mooring", cylinder, darkWood, end.x - pier.dz * 0.7, PIER_Y + 0.35, end.z + pier.dx * 0.7, 0.1, 0.9, 0.1);
   }
 
-  /* ---------------- 남문 (月門) ---------------- */
-  {
-    const shape = new THREE.Shape();
-    shape.moveTo(-14, 0); shape.lineTo(14, 0); shape.lineTo(14, 3.3); shape.lineTo(-14, 3.3); shape.closePath();
-    const hole = new THREE.Path();
-    hole.absarc(0, 1.6, 1.55, 0, Math.PI * 2, false);
-    shape.holes.push(hole);
-    const wall = new THREE.ExtrudeGeometry(shape, { depth: 0.5, bevelEnabled: false, curveSegments: 40 });
-    wall.rotateY(Math.PI);
-    owned.push(wall);
-    place("gate-wall", wall, plasterMat, 0, GROUND_Y, GATE_WALL_Z + 0.25);
-    place("gate-coping", box, ridge, 0, GROUND_Y + 3.42, GATE_WALL_Z, 28.6, 0.26, 0.95);
-    place("gate-base", box, darkStone, 0, GROUND_Y + 0.12, GATE_WALL_Z, 28.4, 0.24, 0.8);
-    const ring = new THREE.TorusGeometry(1.6, 0.09, 6, 40);
-    owned.push(ring);
-    place("gate-ring", ring, darkStone, 0, GROUND_Y + 1.6, GATE_WALL_Z);
-  }
+  /* ---------------- 열린 네온 포토 가든 ---------------- */
+  const photoZone = buildGardenPhotoZone(root, mobile);
 
   /* ---------------- 석등 ---------------- */
   const lanternBody = stoneLanternGeometry();
@@ -479,6 +465,7 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
       if (disposed) return;
       const lamps = THREE.MathUtils.clamp(d.lanterns, 0, 1);
       const indoor = Math.max(lamps, rain * 0.55);
+      photoZone.applyDaylight(lamps);
       night.value = indoor;
       glow.visible = indoor > 0.02;
       paper.color.copy(dim).lerp(warm, indoor);
@@ -498,6 +485,7 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
     dispose() {
       if (disposed) return;
       disposed = true;
+      photoZone.dispose();
       beads.dispose(); lanterns.dispose(); windows.dispose();
       root.removeFromParent(); root.clear();
       for (const geometry of [...owned, ...merged]) geometry.dispose();

@@ -56,12 +56,17 @@ export class FireworkAudio {
   private disposed = false;
   private listener: Position;
   private readonly recording: FieldRecording | null;
+  private readonly bambooDay: FieldRecording | null;
+  private readonly indoorRain: FieldRecording | null;
   private readonly crackle: FieldRecording | null;
   private readonly uyuniMusic: FieldRecording | null;
   private musicPercent = DEFAULT_UYUNI_MUSIC_VOLUME;
   private roomMusicPlaying = false;
   private readonly volumeKey: string;
   private backgroundGain: number;
+  private bambooDayGain = 0;
+  private bambooNightTarget: number | null = null;
+  private indoorRainGain = 0;
   private fireGain = 0;
   private fireInRange = false;
   private unlocked = false;
@@ -74,10 +79,13 @@ export class FireworkAudio {
   constructor(listener: Position, map: MapId = "uyuni", running = true) {
     this.listener = listener;
     this.sceneRunning = running;
-    this.backgroundGain = map === "beach" ? DISTANT_SURF : 1;
+    this.backgroundGain = map === "beach" ? DISTANT_SURF : map === "garden" ? 0 : 1;
     this.volumeKey = `sorow:${map}-field-volume`;
-    this.recording = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-crickets-v2.mp3")
-      : map === "beach" ? new FieldRecording("/beach/fx/beach-shore-waves-v1.mp3") : null;
+    this.recording = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-crickets-v3.mp3")
+      : map === "beach" ? new FieldRecording("/beach/fx/beach-shore-waves-v1.mp3")
+      : map === "garden" ? new FieldRecording("/beach/fx/garden-rain-outdoor-v1.mp3") : null;
+    this.bambooDay = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-wind-day-v1.mp3") : null;
+    this.indoorRain = map === "garden" ? new FieldRecording("/beach/fx/garden-rain-indoor-v1.mp3") : null;
     this.crackle = map === "beach" ? new FieldRecording("/beach/fx/beach-campfire-crackle-v1.mp3") : null;
     this.uyuniMusic = map === "uyuni" ? new FieldRecording("/beach/fx/uyuni-calm-night-v1.mp3", 1) : null;
     try {
@@ -90,6 +98,8 @@ export class FireworkAudio {
       if (this.uyuniMusic) this.musicPercent = readPercent(UYUNI_MUSIC_KEY, DEFAULT_UYUNI_MUSIC_VOLUME);
     } catch { /* The current visit can still play sound. */ }
     this.recording?.setVolume(this.volume / DEFAULT_FIELD_VOLUME * this.backgroundGain);
+    this.bambooDay?.setVolume(0);
+    this.indoorRain?.setVolume(0);
     this.crackle?.setVolume(0);
     this.uyuniMusic?.setVolume(this.musicPercent / 100);
     // A spectator's ordinary tap or key press can also unlock audio on mobile browsers.
@@ -114,7 +124,9 @@ export class FireworkAudio {
       if (this.context.state !== "running") void this.context.resume().catch(() => {});
     } catch { /* Visual fireworks also work when audio is unavailable. */ }
     if (!this.muted) {
-      this.recording?.resume(this.context);
+      if (this.backgroundGain > 0) this.recording?.resume(this.context);
+      if (this.bambooDayGain > 0) this.bambooDay?.resume(this.context);
+      if (this.indoorRainGain > 0) this.indoorRain?.resume(this.context);
       if (this.fireInRange) this.crackle?.resume(this.context);
     }
     if (playMusic) this.uyuniMusic?.resume(this.context);
@@ -134,6 +146,39 @@ export class FireworkAudio {
     this.roomMusicPlaying = playing;
     if (playing) this.uyuniMusic.pause();
     else this.resumeAudio();
+  }
+
+  /** The scene's deep-night curve reaches 1 at 20:00 and fades away at dawn. */
+  setBambooNight(amount: number) {
+    if (!this.bambooDay || !this.recording || this.disposed || !Number.isFinite(amount)) return;
+    const night = Math.max(0, Math.min(1, amount));
+    if (this.bambooNightTarget === null) {
+      // Set the arrival sound before the first gesture, without fetching the other loop.
+      this.backgroundGain = night;
+      this.bambooDayGain = 1 - night;
+      const scale = this.volume / DEFAULT_FIELD_VOLUME;
+      this.recording.setVolume(night * scale);
+      this.bambooDay.setVolume((1 - night) * scale);
+    }
+    this.bambooNightTarget = night;
+  }
+
+  /** A short transition also covers an administrator jumping directly between day and night. */
+  updateBambooSound(dt: number) {
+    if (!this.bambooDay || !this.recording || this.disposed || this.bambooNightTarget === null || !Number.isFinite(dt)) return;
+    const blend = 1 - Math.exp(-Math.min(.2, Math.max(0, dt)) / .65);
+    const night = approachLevel(this.backgroundGain, this.bambooNightTarget, blend);
+    if (night === this.backgroundGain) return;
+    const day = 1 - night, scale = this.volume / DEFAULT_FIELD_VOLUME;
+    const audible = this.unlocked && !this.muted && this.sceneRunning && !document.hidden;
+    this.recording.setVolume(night * scale);
+    this.bambooDay.setVolume(day * scale);
+    if (night === 0) this.recording.pause();
+    else if (this.backgroundGain === 0 && audible) this.recording.resume(this.context);
+    if (day === 0) this.bambooDay.pause();
+    else if (this.bambooDayGain === 0 && audible) this.bambooDay.resume(this.context);
+    this.backgroundGain = night;
+    this.bambooDayGain = day;
   }
 
   /** The beach tide line is near z=-1. The fire and listener use the same XZ world coordinates. */
@@ -159,12 +204,35 @@ export class FireworkAudio {
     else if (this.unlocked && !this.muted && this.sceneRunning && !document.hidden) this.crackle.resume(this.context);
   }
 
+  /** Crossfade the pond and window recordings at the avatar's hall boundary, following visible rain. */
+  updateGardenSound(inside: boolean, rain: number, dt: number) {
+    if (!this.indoorRain || !this.recording || this.disposed || !Number.isFinite(rain) || !Number.isFinite(dt)) return;
+    const amount = Math.max(0, Math.min(1, rain));
+    const blend = 1 - Math.exp(-Math.min(.2, Math.max(0, dt)) / .45);
+    const outdoor = approachLevel(this.backgroundGain, inside ? 0 : amount, blend);
+    const indoor = approachLevel(this.indoorRainGain, inside ? amount : 0, blend);
+    const scale = this.volume / DEFAULT_FIELD_VOLUME;
+    const audible = this.unlocked && !this.muted && this.sceneRunning && !document.hidden;
+    if (outdoor !== this.backgroundGain) {
+      this.recording.setVolume(outdoor * scale);
+      if (outdoor === 0) this.recording.pause();
+      else if (this.backgroundGain === 0 && audible) this.recording.resume(this.context);
+      this.backgroundGain = outdoor;
+    }
+    if (indoor !== this.indoorRainGain) {
+      this.indoorRain.setVolume(indoor * scale);
+      if (indoor === 0) this.indoorRain.pause();
+      else if (this.indoorRainGain === 0 && audible) this.indoorRain.resume(this.context);
+      this.indoorRainGain = indoor;
+    }
+  }
+
   setSceneRunning(running: boolean) {
     if (this.sceneRunning === running) return;
     this.sceneRunning = running;
     this.discardPast();
     if (!running) {
-      this.stopVoices(); this.recording?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause();
+      this.stopVoices(); this.recording?.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause();
       this.fireInRange = false; this.fireGain = 0; this.crackle?.setVolume(0);
     }
     else this.resumeAudio();
@@ -186,8 +254,10 @@ export class FireworkAudio {
     try { localStorage.setItem(this.volumeKey, String(this.volume)); } catch { /* The current visit still works. */ }
     const scale = this.volume / DEFAULT_FIELD_VOLUME;
     this.recording.setVolume(scale * this.backgroundGain);
+    this.bambooDay?.setVolume(scale * this.bambooDayGain);
+    this.indoorRain?.setVolume(scale * this.indoorRainGain);
     this.crackle?.setVolume(scale * this.fireGain);
-    if (this.muted) { this.stopVoices(); this.recording.pause(); this.crackle?.pause(); }
+    if (this.muted) { this.stopVoices(); this.recording.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); }
     else {
       this.lastAudibleVolume = this.volume;
       for (const gain of this.voices.values()) gain.gain.value = .48 * scale;
@@ -203,14 +273,15 @@ export class FireworkAudio {
 
   private onVisibility = () => {
     this.discardPast();
-    if (document.hidden) { this.stopVoices(); this.recording?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause(); }
+    if (document.hidden) { this.stopVoices(); this.recording?.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause(); }
     else this.resumeAudio();
   };
 
-  addShow(geometry: BufferGeometry, startedAt: number, serverNow: number, seed: number) {
+  addShow(geometry: BufferGeometry, startedAt: number, serverNow: number, seed: number, durationMs = Infinity) {
     if (this.disposed) return;
     this.clockOffset = serverNow - Date.now();
-    this.cues.push(...fireworkSoundCues(geometry, this.listener, startedAt, seed).filter(cue => cue.at > serverNow));
+    this.cues.push(...fireworkSoundCues(geometry, this.listener, startedAt, seed)
+      .filter(cue => cue.at > serverNow && cue.at < startedAt + durationMs));
     this.cues.sort((a, b) => a.at - b.at);
   }
 
@@ -274,7 +345,7 @@ export class FireworkAudio {
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.abort.abort();
     this.stopVoices();
-    this.recording?.dispose(); this.crackle?.dispose(); this.uyuniMusic?.dispose();
+    this.recording?.dispose(); this.bambooDay?.dispose(); this.indoorRain?.dispose(); this.crackle?.dispose(); this.uyuniMusic?.dispose();
     this.cues.length = 0;
     this.boom = null;
     if (this.context) void this.context.close().catch(() => {});

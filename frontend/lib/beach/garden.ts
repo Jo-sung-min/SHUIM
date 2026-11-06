@@ -99,7 +99,7 @@ export class GardenWorld {
   private readonly boats: GardenBoats;
   private readonly rain: GardenRain;
   private readonly gradient: THREE.DataTexture;
-  private readonly lanternPoints: { x: number; y: number; z: number }[];
+  private readonly lanternPoints: { x: number; y: number; z: number; color?: number }[];
   private readonly materials: THREE.Material[] = [];
   private readonly geometries: THREE.BufferGeometry[] = [];
   private readonly textures: THREE.Texture[] = [];
@@ -207,6 +207,9 @@ export class GardenWorld {
     this.rain = new GardenRain(this.root, this.time);
     const island = GARDEN_PAVILIONS[0];
     this.lanternPoints = [
+      // Reuse the four nearest pooled lamps to softly light faces in the photo court.
+      { x: -7, y: 3.1, z: -11, color: 0xffdfbb }, { x: 7, y: 3.1, z: -11, color: 0xffdfbb },
+      { x: 0, y: 3.2, z: -10.5, color: 0xffdfbb },
       ...GARDEN_LANTERNS.map((site) => ({ x: site.x, y: site.y + 0.9, z: site.z })),
       ...[-1.9, 1.9].map((lx) => { const w = gardenPavilionWorld(island, lx, 2.3); return { x: w.x, y: island.floorY + PAVILION_POST_HEIGHT - 0.5, z: w.z }; }),
       ...[-6, 6].map((lx) => ({ x: HALL.x + lx, y: 2.4 + HALL.eave - 4.3, z: HALL.glassZ + 8.2 })),
@@ -444,6 +447,7 @@ export class GardenWorld {
         const entry = nearest[i], lamp = this.lamps[i], uniform = this.light.uLanterns.value[i];
         if (!entry || i >= active) { uniform.set(0, -100, 0, 0); lamp.intensity = 0; continue; }
         lamp.position.set(entry.point.x, entry.point.y, entry.point.z);
+        lamp.color.setHex(entry.point.color ?? 0xffb46a);
         lamp.intensity = LAMP_INTENSITY * this.lampAmount;
         uniform.set(entry.point.x, entry.point.y, entry.point.z, 2.2);
       }

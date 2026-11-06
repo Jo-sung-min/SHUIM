@@ -5,10 +5,15 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleService;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.config.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Map;
@@ -22,6 +27,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Registered members launch with firework tickets; the room cooldown and retries never cost a second ticket. */
 class BeachFireworkTicketsTest {
@@ -130,21 +137,57 @@ class BeachFireworkTicketsTest {
         assertEquals(1, tickets.launches.size());
     }
 
-    @Test
-    void songiStaysAnAdministratorStyleAndAdministratorsNeverPayOrSeeACount() {
-        tickets.grant("member", 1);
-        var me = visitor("room", "member", "bamboo");
-        var denied = assertThrows(ApiException.class, () -> launch(me, UUID.randomUUID().toString(), "songi"));
+    @ParameterizedTest
+    @ValueSource(strings = { "beach", "uyuni", "bamboo", "garden" })
+    void songiMessageStaysAdministratorOnlyAndNeverSpendsATicket(String map) {
+        tickets.grant("member", 2);
+        var me = visitor("room", "member", map);
+        var admin = visitor("room", "operator", map);
+        actor(user("member", "user", false));
+        String requestId = UUID.randomUUID().toString();
+        var denied = assertThrows(ApiException.class, () -> launch(me, requestId, "songi"));
         assertEquals(403, denied.status());
-        assertEquals(1, tickets.balance("member"));
+        assertEquals(2, tickets.balance("member"));
         assertEquals(List.of(), poll(me).fireworks());
 
         actor(user("operator", "admin", false));
-        var admin = visitor("room", "operator", "bamboo");
-        var result = launch(admin, UUID.randomUUID().toString(), "songi");
+        var result = launch(admin, requestId, "songi");
         assertEquals("songi", result.event().variant());
         assertNull(result.tickets());
         assertEquals(0, tickets.launches.size());
+        actor(user("member", "user", false));
+        assertEquals(List.of(result.event()), poll(me).fireworks(), "everyone in the room can watch the administrator's message");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "beach", "uyuni", "bamboo", "garden" })
+    void removedMessageRejectsEveryRoleBeforeTicketSpendingAndCannotReuseAValidLaunch(String map) throws Exception {
+        tickets.grant("member", 1);
+        var me = visitor("room", "member", map);
+        var admin = visitor("room", "operator", map);
+        var empty = visitor("room", "empty", map);
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        String requestId = UUID.randomUUID().toString();
+        for (var visitor : List.of(me, admin, empty)) {
+            actor(user(visitor.userId(), visitor == admin ? "admin" : "user", false));
+            mvc.perform(post("/api/beach/fireworks").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + visitor.ticket() + "\",\"requestId\":\"" + requestId + "\",\"variant\":\"songi-cheer\"}"))
+                .andExpect(status().isBadRequest());
+            assertEquals(List.of(), poll(visitor).fireworks());
+            assertEquals(0, poll(visitor).fireworksCooldownUntil());
+        }
+        assertEquals(1, tickets.balance("member"));
+        assertEquals(0, tickets.balance("empty"));
+        assertEquals(List.of(), tickets.launches);
+
+        actor(user("member", "user", false));
+        var result = launch(me, requestId, "festival");
+        assertEquals(0, result.tickets());
+        assertEquals(400, assertThrows(ApiException.class, () -> launch(me, requestId, "songi-cheer")).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> beach.launchFireworks(me.ticket(), "member", requestId, "songi-cheer")).status());
+        assertEquals(List.of(result.event()), poll(me).fireworks());
+        assertEquals(result.cooldownUntil(), poll(me).fireworksCooldownUntil());
+        assertEquals(List.of("room/" + map + "/festival"), tickets.launches);
     }
 
     @Test
@@ -156,5 +199,26 @@ class BeachFireworkTicketsTest {
         actor(user("guest", "user", true));
         var guest = visitor("room", "guest", "beach");
         assertEquals(403, assertThrows(ApiException.class, () -> launch(guest, UUID.randomUUID().toString(), "festival")).status());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "beach", "uyuni", "bamboo", "garden" })
+    void newFestivalStylesUseOneTicketAndReplayTheSameEventOnRetry(String map) {
+        tickets.grant("member", 3);
+        var me = visitor("room", "member", map);
+        var observer = visitor("room", "observer", map);
+        int remaining = 3;
+        for (String variant : List.of("offbeat", "aurora", "jewels")) {
+            String requestId = UUID.randomUUID().toString();
+            var result = launch(me, requestId, variant);
+            assertEquals(variant, result.event().variant());
+            assertEquals(--remaining, result.tickets());
+            assertEquals(List.of(result.event()), poll(observer).fireworks());
+            var retried = launch(me, requestId, variant);
+            assertEquals(result.event(), retried.event());
+            assertEquals(remaining, tickets.balance("member"));
+            advance(BeachRoom.FIREWORK_COOLDOWN_MS, me, observer);
+        }
+        assertEquals(3, tickets.launches.size());
     }
 }

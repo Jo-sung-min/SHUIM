@@ -6,8 +6,8 @@ import java.util.Properties;
 
 /** Only these versioned private S3 objects may be selected or streamed. */
 enum RoomMusicTrack {
-    MORNING("morning-v1", "아침만남겨주고", 163_029),
-    TOMORROW("tomorrow-v1", "내일의우리", 256_448);
+    MORNING("morning-v1", "아침만남겨주고", 257_520),
+    TOMORROW("tomorrow-v1", "내일의우리", 240_000);
 
     final String id;
     final String title;
@@ -20,12 +20,13 @@ enum RoomMusicTrack {
         this.id = id;
         this.title = title;
         this.durationMs = durationMs;
-        this.objectKey = "private/room-music/" + id + ".m4a";
         String[] entry = Inventory.tracks.getProperty(id, "").split(",");
-        if (entry.length != 2 || !entry[1].matches("[0-9a-f]{64}"))
+        if (entry.length != 3 || !entry[0].matches("[a-z0-9-]+-v[0-9]+\\.mp3") || !entry[2].matches("[0-9a-f]{64}"))
             throw new IllegalStateException("Incomplete room music inventory for " + id);
-        this.bytes = Integer.parseInt(entry[0]);
-        this.sha256 = entry[1];
+        // Public selection IDs stay stable when the immutable private recording changes.
+        this.objectKey = "private/room-music/" + entry[0];
+        this.bytes = Integer.parseInt(entry[1]);
+        this.sha256 = entry[2];
     }
 
     private static class Inventory {

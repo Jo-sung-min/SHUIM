@@ -12,7 +12,10 @@ const GRAND_STYLES = [
   { variant: "saturn", label: "별고리", description: "빛나는 고리가 하늘에 퍼져요", Icon: IconMoon, adminOnly: false },
   { variant: "willow", label: "황금비", description: "금빛 불씨가 비처럼 쏟아져요", Icon: IconRain, adminOnly: false },
   { variant: "stardust", label: "별무리", description: "작은 별꽃이 다시 터져 반짝여요", Icon: IconStar, adminOnly: false },
-  { variant: "songi", label: "송이 안녕?", Icon: IconSmile, description: "불꽃이 지나간 자리에 빛나는 인사", adminOnly: true },
+  { variant: "offbeat", label: "엇박폭죽", description: "큰 불꽃 사이로 엇박자로 팡팡", Icon: IconSparkle, adminOnly: false },
+  { variant: "aurora", label: "오로라", description: "청록과 보랏빛이 둥글게 번져요", Icon: IconMoon, adminOnly: false },
+  { variant: "jewels", label: "보석꽃", description: "분홍과 금빛으로 피어나는 원", Icon: IconLotus, adminOnly: false },
+  { variant: "songi", label: "송이 안녕?", Icon: IconSmile, description: "불꽃으로 피어나는 반가운 인사", adminOnly: true },
   { variant: "love", label: "사랑해", Icon: IconHeart, description: "분홍빛 하트가 차례로 피어나요", adminOnly: false },
 ] as const;
 

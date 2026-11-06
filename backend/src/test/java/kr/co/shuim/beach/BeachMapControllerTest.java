@@ -86,7 +86,7 @@ class BeachMapControllerTest {
             .andExpect(jsonPath("$.benchEnabled").value(false)).andExpect(jsonPath("$.onsenEnabled").value(false))
             .andExpect(jsonPath("$.fireEnabled").value(false)).andExpect(jsonPath("$.fire.logs").value(0))
             .andExpect(jsonPath("$.bounds.minZ").value(-4)).andExpect(jsonPath("$.bounds.maxZ").value(115))
-            .andExpect(jsonPath("$.bounds.minX").value(-44)).andExpect(jsonPath("$.bounds.maxX").value(44));
+            .andExpect(jsonPath("$.bounds.minX").value(-55)).andExpect(jsonPath("$.bounds.maxX").value(44));
         mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "bamboo"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("bamboo")).andExpect(jsonPath("$.count").value(1));
         mvc.perform(get("/api/beach/count").param("communityId", "room").param("mapId", "uyuni"))

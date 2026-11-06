@@ -36,7 +36,9 @@ const fireworksSource = stripTypeScriptTypes(await readFile(new URL("../lib/beac
   .replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const fireworksContext = { THREE, ...assets, ...festivalContext.api };
-vm.runInNewContext(`${fireworksSource}\nglobalThis.api = { BeachFireworks };`, fireworksContext);
+const finaleSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/firework-songi-finale.ts", import.meta.url), "utf8"))
+  .replace(/\bexport\s+(?=const\b)/g, "");
+vm.runInNewContext(`${finaleSource}\n${fireworksSource}\nglobalThis.api = { BeachFireworks };`, fireworksContext);
 const hotelSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-hotel-layout.ts", import.meta.url), "utf8"))
   .replace(/^import\s+[^\n]+\n/gm, "")
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
@@ -70,6 +72,6 @@ const gardenContext = { ...trailContext.api };
 vm.runInNewContext(`${gardenSource}\nglobalThis.api = {
   GARDEN_BOUNDS, GARDEN_SPAWN, BOAT_DECK_Y, PIER_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, GARDEN_PAVILIONS, BOAT_STOPS, HALL,
   claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, nearbyGardenPavilion, pierEnd, resolveGardenWalk,
-  isWater, onGardenGround, boatPoseAt, lakeSigned
+  isWater, onGardenGround, boatPoseAt, lakeSigned, insideHall
 };`, gardenContext);
 export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...assets };

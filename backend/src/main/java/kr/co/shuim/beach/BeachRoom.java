@@ -360,8 +360,15 @@ public class BeachRoom {
     }
 
     public static final int FIREWORK_DURATION_MS = 12_000;
+    public static final int SONGI_FIREWORK_DURATION_MS = 18_000;
     public static final long FIREWORK_COOLDOWN_MS = 15_000;
-    private static final Set<String> FIREWORK_VARIANTS = Set.of("festival", "songi", "love", "bloom", "saturn", "willow", "stardust");
+    private static final Set<String> FIREWORK_VARIANTS = Set.of("festival", "songi", "love", "bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels");
+    /** Validate before opening the ticket wallet, and again for direct room callers. */
+    static String requireFireworkVariant(String variant) {
+        String selected = variant == null ? "festival" : variant;
+        if (!FIREWORK_VARIANTS.contains(selected)) throw ApiException.badRequest("불꽃놀이 종류를 다시 골라 주세요.");
+        return selected;
+    }
     private static final long FIREWORK_REQUEST_TTL_MS = 24 * 60 * 60 * 1_000L;
     public record FireworkEvent(String id, int seed, long startedAt, int durationMs, String variant) {}
     public record FireworksState(List<FireworkEvent> events, long cooldownUntil, long serverTime) {}
@@ -428,10 +435,7 @@ public class BeachRoom {
         } catch (IllegalArgumentException e) {
             throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
         }
-        String selected = variant == null ? "festival" : variant;
-        if (!FIREWORK_VARIANTS.contains(selected)) {
-            throw ApiException.badRequest("불꽃놀이 종류를 다시 골라 주세요.");
-        }
+        String selected = requireFireworkVariant(variant);
         // Keep retry identities beyond the animation lifetime without growing indefinitely.
         // At one launch per 15 seconds this holds at most 5,761 entries per room.
         var previous = fireworkRequests.entrySet().iterator();
@@ -442,9 +446,11 @@ public class BeachRoom {
         FireworkEvent retried = fireworkRequests.get(key);
         if (retried != null) return new FireworkLaunch(retried, now, fireworksCooldownUntil);
         if (now < fireworksCooldownUntil) throw new ApiException(429, "불꽃놀이가 끝난 뒤 잠시 기다려 주세요.");
-        FireworkEvent event = new FireworkEvent(UUID.randomUUID().toString(), ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE), now, FIREWORK_DURATION_MS, selected);
+        int duration = "songi".equals(selected) ? SONGI_FIREWORK_DURATION_MS : FIREWORK_DURATION_MS;
+        FireworkEvent event = new FireworkEvent(UUID.randomUUID().toString(), ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE), now, duration, selected);
         activeFirework = event;
-        fireworksCooldownUntil = now + FIREWORK_COOLDOWN_MS;
+        // Keep the finale in the single shared event slot, with the same three-second pause after every show.
+        fireworksCooldownUntil = now + duration + (FIREWORK_COOLDOWN_MS - FIREWORK_DURATION_MS);
         fireworkRequests.put(key, event);
         return new FireworkLaunch(event, now, fireworksCooldownUntil);
     }
@@ -590,10 +596,11 @@ public class BeachRoom {
     static Integer selectedSkin(String character) {
         if (character == null) return null;
         return switch (character) {
-            case "male" -> 0;
+            // Old clients may still send a removed selection; migrate it to the ordinary model.
+            case "male", "cat-gentleman" -> 0;
             case "female" -> 1;
             case "pixel-male" -> 2;
-            case "female-3d" -> 3;
+            case "female-3d", "cat-lady" -> 3;
             default -> throw ApiException.badRequest("캐릭터를 다시 골라 주세요.");
         };
     }

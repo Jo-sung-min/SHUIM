@@ -17,11 +17,11 @@ class RoomMusicRecordings {
     RoomMusicRecordings(S3Service storage) {
         for (RoomMusicTrack track : RoomMusicTrack.values()) {
             // A byte-range request can seek in memory. Keep one verified copy per immutable
-            // recording (under 7 MB total), fetched only after an authorized GET needs bytes.
+            // recording (under 10 MB total), fetched only after an authorized GET needs bytes.
             tracks.put(track, new AbstractResource() {
                 private byte[] cached;
                 @Override public String getDescription() { return track.id; }
-                @Override public String getFilename() { return track.id + ".m4a"; }
+                @Override public String getFilename() { return track.objectKey.substring(track.objectKey.lastIndexOf('/') + 1); }
                 @Override public long contentLength() { return track.bytes; }
                 @Override public synchronized InputStream getInputStream() {
                     if (cached == null) cached = storage.readPrivateRecording(track.objectKey, track.bytes, track.sha256);

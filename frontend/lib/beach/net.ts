@@ -115,13 +115,15 @@ function readUyuniMomentsState(response: { uyuniMoments?: unknown; uyuniMomentCo
   return { events, cooldowns, supported: true };
 }
 
-export type FireworkVariant = "festival" | "songi" | "love" | "bloom" | "saturn" | "willow" | "stardust";
+export type FireworkVariant = "festival" | "songi" | "love" | "bloom" | "saturn" | "willow" | "stardust" | "offbeat" | "aurora" | "jewels";
 export interface FireworkEvent { id: string; seed: number; startedAt: number; durationMs: number; variant?: FireworkVariant }
 export interface FireworkLaunch { event: FireworkEvent; serverTime: number; cooldownUntil: number; tickets?: number }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isTime = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const isFireworkVariant = (value: unknown): value is FireworkVariant =>
-  typeof value === "string" && ["festival", "songi", "love", "bloom", "saturn", "willow", "stardust"].includes(value);
+  typeof value === "string" && ["festival", "songi", "love", "bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels"].includes(value);
+const MAX_FIREWORK_COOLDOWN_MS = 21_000;
+const fireworkCooldownMs = (event: FireworkEvent) => event.durationMs + 3_000;
 
 /** Only a bounded server event can allocate fireworks particles. */
 export function readFireworkEvent(value: unknown): FireworkEvent | null {
@@ -130,7 +132,8 @@ export function readFireworkEvent(value: unknown): FireworkEvent | null {
   if (![4, 5].includes(Object.keys(event).length) || !Object.keys(event).every(key => ["id", "seed", "startedAt", "durationMs", "variant"].includes(key))
     || typeof event.id !== "string" || !UUID_PATTERN.test(event.id)
     || !Number.isSafeInteger(event.seed) || event.seed < 1 || event.seed >= 2_147_483_647
-    || !isTime(event.startedAt) || event.startedAt > Number.MAX_SAFE_INTEGER - 15_000 || event.durationMs !== 12_000
+    || !isTime(event.startedAt) || event.startedAt > Number.MAX_SAFE_INTEGER - MAX_FIREWORK_COOLDOWN_MS
+    || (event.durationMs !== 12_000 && !(event.variant === "songi" && event.durationMs === 18_000))
     || (Object.hasOwn(event, "variant") && !isFireworkVariant(event.variant))) return null;
   return { id: event.id.toLowerCase(), seed: event.seed, startedAt: event.startedAt, durationMs: event.durationMs, variant: event.variant ?? "festival" };
 }
@@ -138,13 +141,13 @@ export function readFireworkEvent(value: unknown): FireworkEvent | null {
 function readFireworksState(response: { fireworks?: unknown; fireworksCooldownUntil?: unknown; serverTime?: unknown }) {
   if (response.fireworks === undefined && response.fireworksCooldownUntil === undefined) return { fireworks: [], fireworksCooldownUntil: 0, supported: false };
   if (!Array.isArray(response.fireworks) || response.fireworks.length > 2 || !isTime(response.serverTime)
-    || !isTime(response.fireworksCooldownUntil) || response.fireworksCooldownUntil > response.serverTime + 15_000) {
+    || !isTime(response.fireworksCooldownUntil) || response.fireworksCooldownUntil > response.serverTime + MAX_FIREWORK_COOLDOWN_MS) {
     throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   }
   const unique = new Map<string, FireworkEvent>();
   for (const value of response.fireworks) {
     const event = readFireworkEvent(value);
-    if (!event || event.startedAt > response.serverTime || response.fireworksCooldownUntil < event.startedAt + 15_000) {
+    if (!event || event.startedAt > response.serverTime || response.fireworksCooldownUntil < event.startedAt + fireworkCooldownMs(event)) {
       throw new Error("불꽃놀이 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
     }
     const previous = unique.get(event.id);
@@ -430,8 +433,8 @@ export async function launchBeachFireworks(ticket: string, requestId: string, va
   const ticketed = Boolean(response) && Object.hasOwn(response, "tickets");
   if (!response || Object.keys(response).length !== (ticketed ? 4 : 3) || !Object.keys(response).every(key => ["event", "serverTime", "cooldownUntil", "tickets"].includes(key))
     || !event || !isTime(response.serverTime) || !isTime(response.cooldownUntil) || (ticketed && !isTime(response.tickets))
-    || event.startedAt > response.serverTime || response.cooldownUntil < event.startedAt + 15_000
-    || response.cooldownUntil > response.serverTime + 15_000) {
+    || event.startedAt > response.serverTime || response.cooldownUntil < event.startedAt + fireworkCooldownMs(event)
+    || response.cooldownUntil > response.serverTime + MAX_FIREWORK_COOLDOWN_MS) {
     throw new Error("불꽃놀이 시작을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   }
   return { event, serverTime: response.serverTime, cooldownUntil: response.cooldownUntil, ...(ticketed ? { tickets: response.tickets } : {}) };

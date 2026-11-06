@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class S3PrivateRecordingTest {
     @Test
     void onlyBoundedKmsObjectsWithTheInventoriedDigestCanBePlayed() throws Exception {
-        String key = "private/room-music/morning-v1.m4a";
+        String key = "private/room-music/morning-v2.mp3";
         byte[] fixture = {1, 4, 8};
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(fixture));
         S3Client client = mock(S3Client.class);

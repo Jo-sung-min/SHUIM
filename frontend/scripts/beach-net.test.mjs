@@ -100,8 +100,8 @@ test("fireworks launch sends the owned ticket, stable retry UUID and default sty
   assert.equal(oldRetry.event.startedAt, fireworksEvent.startedAt, "an expired retry is acknowledged without inventing a fresh start time");
 });
 
-test("all seven fireworks styles round-trip and retry responses retain the server's original style", async () => {
-  for (const variant of ["festival", "songi", "love", "bloom", "saturn", "willow", "stardust"]) {
+test("all fireworks styles round-trip and retry responses retain the server's original style", async () => {
+  for (const variant of ["festival", "songi", "love", "bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels"]) {
     let body;
     const event = { ...fireworksEvent, variant };
     const api = setup(async (_url, options) => { body = JSON.parse(options.body); return response({ event, serverTime: 1_001_000, cooldownUntil: 1_015_000 }); });
@@ -120,7 +120,7 @@ test("all seven fireworks styles round-trip and retry responses retain the serve
 test("legacy fireworks default to festival and malformed styles never reach the server or renderer", async () => {
   const api = setup(async () => { throw new Error("must not send malformed styles"); });
   assert.equal(api.readFireworkEvent(fireworksEvent).variant, "festival");
-  for (const variant of [null, "", "Festival", "love ", "custom", 1, true, {}, []]) {
+  for (const variant of [null, "", "Festival", "love ", "songi-cheer", "custom", 1, true, {}, []]) {
     assert.equal(api.readFireworkEvent({ ...fireworksEvent, variant }), null);
     await assert.rejects(api.launchBeachFireworks("admin", "retry", variant), /불꽃놀이 종류/);
     await assert.rejects(setup(async () => response({ ...fireworksState, fireworks: [{ ...fireworksEvent, variant }] })).enterBeach("room"));
@@ -129,6 +129,43 @@ test("legacy fireworks default to festival and malformed styles never reach the 
   await assert.rejects(setup(async () => response({ ...fireworksState, fireworks: [fireworksEvent, { ...fireworksEvent, variant: "love" }] })).tickBeach({ ticket: "observer" }));
   const compatible = await setup(async () => response({ ...fireworksState, fireworks: [fireworksEvent, { ...fireworksEvent, variant: "festival" }] })).tickBeach({ ticket: "observer" });
   assert.equal(compatible.fireworks.length, 1);
+});
+
+test("songi's extended finale survives late entry and tick until eighteen seconds on every map", async () => {
+  const event = { ...fireworksEvent, variant: "songi", durationMs: 18_000 };
+  const state = { fireworks: [event], serverTime: event.startedAt + 17_999, fireworksCooldownUntil: event.startedAt + 21_000 };
+  for (const mapId of ["beach", "uyuni", "bamboo", "garden"]) {
+    const entered = await setup(async () => response({ ...state, mapId })).enterBeach("room", undefined, mapId);
+    assert.equal(entered.fireworks[0].durationMs, 18_000);
+    assert.equal(entered.fireworksCooldownUntil, state.fireworksCooldownUntil);
+    const tick = await setup(async () => response(state)).tickBeach({ ticket: "observer" });
+    assert.equal(tick.fireworks[0].id, event.id);
+  }
+  const expired = await setup(async () => response({ ...state, serverTime: event.startedAt + 18_000 })).tickBeach({ ticket: "observer" });
+  assert.equal(expired.fireworks.length, 0); assert.equal(expired.fireworksCooldownUntil, state.fireworksCooldownUntil);
+  const launch = { event, serverTime: event.startedAt, cooldownUntil: event.startedAt + 21_000 };
+  const api = setup(async () => response(launch));
+  assert.equal((await api.launchBeachFireworks("admin", "retry", "songi")).event.durationMs, 18_000);
+  const oldRetry = await setup(async () => response({ ...launch, serverTime: event.startedAt + 30_000, cooldownUntil: event.startedAt + 45_000 }))
+    .launchBeachFireworks("admin", "retry", "love");
+  assert.equal(oldRetry.event.startedAt, event.startedAt, "old request identities do not restart the finale");
+  assert.equal(oldRetry.event.variant, "songi");
+});
+
+test("only songi accepts the bounded eighteen-second contract; legacy twelve-second songi still works", async () => {
+  const api = setup(async () => response({}));
+  assert.equal(api.readFireworkEvent({ ...fireworksEvent, variant: "songi" }).durationMs, 12_000);
+  for (const variant of [undefined, "festival", "love", "bloom", "saturn", "willow", "stardust", "offbeat", "aurora", "jewels"])
+    assert.equal(api.readFireworkEvent({ ...fireworksEvent, ...(variant ? { variant } : {}), durationMs: 18_000 }), null);
+  for (const durationMs of [0, 12_001, 17_999, 18_001, 21_000])
+    assert.equal(api.readFireworkEvent({ ...fireworksEvent, variant: "songi", durationMs }), null);
+  const event = { ...fireworksEvent, variant: "songi", durationMs: 18_000 };
+  for (const cooldownUntil of [event.startedAt + 15_000, event.startedAt + 20_999, event.startedAt + 21_001]) {
+    const launch = { event, serverTime: event.startedAt, cooldownUntil };
+    await assert.rejects(setup(async () => response(launch)).launchBeachFireworks("admin", "retry", "songi"));
+    await assert.rejects(setup(async () => response({ fireworks: [event], serverTime: launch.serverTime, fireworksCooldownUntil: cooldownUntil })).tickBeach({ ticket: "observer" }));
+  }
+  assert.equal(api.readFireworkEvent({ ...event, startedAt: Number.MAX_SAFE_INTEGER - 20_999 }), null);
 });
 
 test("fireworks snapshots deduplicate repeated IDs, order events and discard expired animations", async () => {

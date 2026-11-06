@@ -2,8 +2,8 @@ import { IS_AIT } from "../ait";
 import type { MapId } from "./maps";
 
 export const ROOM_TRACKS = {
-  "morning-v1": { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 163029 },
-  "tomorrow-v1": { trackId: "tomorrow-v1", title: "내일의우리", durationMs: 256448 },
+  "morning-v1": { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 257520 },
+  "tomorrow-v1": { trackId: "tomorrow-v1", title: "내일의우리", durationMs: 240000 },
 } as const;
 export type TrackId = keyof typeof ROOM_TRACKS;
 export type RoomMusicState = (typeof ROOM_TRACKS)[TrackId] & { playing: boolean; startedAt: number | null; version: number };
@@ -27,7 +27,7 @@ async function privateAudioBlob(response: Response, signal: AbortSignal): Promis
       chunks.push(new Uint8Array(value).buffer);
     }
     if (!bytes) throw Error();
-    return new Blob(chunks, { type: "audio/mp4" });
+    return new Blob(chunks, { type: "audio/mpeg" });
   } catch (error) {
     await reader.cancel().catch(() => {});
     throw error;

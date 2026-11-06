@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
 import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
-import { type Daylight, bambooDaylightAt, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
+import { type Daylight, bambooDaylightAt, bambooSunsetAmount, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
 import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringFloorHeight, hotSpringCeilingHeight } from "./hot-spring";
@@ -30,9 +30,9 @@ import type { BambooFestivalState, PropellerFlight } from "./net";
 import { BAMBOO_SKY_FRAGMENT } from "./bamboo-shader";
 import { GardenWorld } from "./garden";
 import { GARDEN_SKY_FRAGMENT } from "./garden-shader";
-import { BOAT_DECK_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, PIER_Y, claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, nearbyGardenPavilion, pierEnd, resolveGardenWalk, type BoatStop } from "./garden-layout";
+import { BOAT_DECK_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, PIER_Y, claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, insideHall, nearbyGardenPavilion, pierEnd, resolveGardenWalk, type BoatStop } from "./garden-layout";
 import type { BoatRideState, RemoteRider } from "./garden-boat";
-import { BAMBOO_PAVILIONS, BAMBOO_PAVILION_COLLIDERS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_SEATS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, TRAIL_WALK_HALF, bambooCeilingHeight, bambooFloorHeight, bambooPavilionForSpot, claimedPavilionSeat, nearbyBambooPavilion, nearestOnTrail, onTrail, resolveTrail, type PavilionSeat } from "./bamboo-trail";
+import { BAMBOO_PAVILIONS, BAMBOO_PAVILION_COLLIDERS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_SEATS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, TRAIL_WALK_HALF, bambooCeilingHeight, bambooPavilionForSpot, claimedPavilionSeat, nearbyBambooPavilion, nearestOnTrail, onTrail, resolveTrail, type PavilionSeat } from "./bamboo-trail";
 import type { MapId } from "./maps";
 import { FirePowderPlayback } from "./fire-powder";
 import { captureScenePhoto } from "./photo";
@@ -41,7 +41,7 @@ import { BeachFireworks } from "./fireworks";
 import { FireworkAudio } from "./firework-audio";
 import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
-import { BeachAvatarModels, type BeachAvatar } from "./rigged-avatar";
+import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-avatar";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
@@ -513,7 +513,9 @@ export class BeachEngine {
     this.femaleAvatarModels = new BeachAvatarModels("female");
     this.onsenAvatarModels = new BeachAvatarModels("male-onsen");
     this.femaleOnsenAvatarModels = new BeachAvatarModels("female-onsen");
-    this.ready = Promise.all([this.loadAtlases(), this.avatarModels.load(), this.femaleAvatarModels.load(), ...this.assetLoads]).then(async () => {
+    // Only the selected everyday model is part of entry. Other visitors/models
+    // share a lazy pool when first encountered, never preloading the whole picker.
+    this.ready = Promise.all([this.loadAtlases(), this.baseAvatarPool(this.avatarKind(this.skin))?.load(), ...this.assetLoads]).then(async () => {
       if (this.disposed) return;
       this.buildProps();
       this.applyDaylight(this.daylight);
@@ -529,6 +531,7 @@ export class BeachEngine {
     this.bindInput();
     this.resize();
     this.fireworkAudio = new FireworkAudio(this.camera.position, this.mapId, this.running);
+    this.fireworkAudio.setBambooNight(this.daylight.deepNight);
   }
 
   /** 캐릭터와 배경이 준비됐을 때 */
@@ -564,6 +567,7 @@ export class BeachEngine {
         uSun: { value: new THREE.Vector3() }, uSunColor: { value: new THREE.Vector3() },
         uCloudColor: { value: new THREE.Vector3() }, uCloudAmount: { value: 0.45 },
         uHorizonFog: { value: new THREE.Vector3(0.5, 0.6, 0.4) },
+        uBambooSunset: { value: 0 },
       },
       vertexShader: SKY_VERT,
       fragmentShader: this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : this.mapId === "bamboo" ? BAMBOO_SKY_FRAGMENT : this.mapId === "garden" ? GARDEN_SKY_FRAGMENT : SKY_FRAGMENT,
@@ -682,13 +686,28 @@ export class BeachEngine {
     return { sprite, mat, tex, shadow, avatar: null, animT: 0 };
   }
 
+  private avatarKind(skin: number): AvatarKind {
+    // Retired IDs in cached room snapshots retain their ordinary gender.
+    return skin === 1 || skin === 3 || skin === 5 ? "female" : "male";
+  }
+
+  private baseAvatarPool(kind: AvatarKind) {
+    return kind === "female" ? this.femaleAvatarModels : this.avatarModels;
+  }
+
   private syncAvatar(node: AvatarNode, skin: number, x: number, z: number) {
-    const female = skin === 3;
-    const baseKind = female ? "female" : skin === 0 ? "male" : null;
+    // Older saved rooms used rows 1/2 for pixel women/men. Keep their gender,
+    // but render the same 3D characters offered by the current picker.
+    const baseKind = this.avatarKind(skin);
+    const female = baseKind === "female";
+    const basePool = this.baseAvatarPool(baseKind);
+    // A transient first download failure must not leave a pixel fallback for
+    // the entire visit. The pool shares pending requests and enforces its cooldown.
+    if (!basePool?.ready && basePool?.canLoad) void basePool.load();
     const robeKind = female ? "female-onsen" : "male-onsen";
     const radius = Math.hypot(x - HOT_SPRING.x, z - HOT_SPRING.z);
     const wearingRobe = node.avatar?.kind === robeKind;
-    const wantsRobe = this.mapId === "beach" && baseKind !== null && radius <= (wearingRobe ? 7.65 : 7.05)
+    const wantsRobe = this.mapId === "beach" && radius <= (wearingRobe ? 7.65 : 7.05)
       && (hotSpringFloorHeight(x, z) ?? -Infinity) >= HOT_SPRING.floorY - 0.01;
     const robePool = female ? this.femaleOnsenAvatarModels : this.onsenAvatarModels;
     if (wantsRobe && robePool?.canLoad && !(female ? this.femaleOnsenAvatarRequested : this.onsenAvatarRequested)) {
@@ -707,7 +726,6 @@ export class BeachEngine {
     }
     const kind = wantsRobe && (female ? this.femaleOnsenAvatarReady : this.onsenAvatarReady) ? robeKind : baseKind;
     if (node.avatar?.kind === kind) return node.avatar;
-    const basePool = female ? this.femaleAvatarModels : this.avatarModels;
     const pool = kind === robeKind ? robePool : basePool;
     let next = kind ? pool?.create() ?? null : null;
     // Keep the matching everyday character visible while the optional robe loads.
@@ -767,8 +785,8 @@ export class BeachEngine {
 
   /** Stable IDs select either model or either atlas row without rejoining the room. */
   setSkin(skin: number) {
-    if (this.disposed || !Number.isInteger(skin) || skin < 0 || skin > 3) return;
-    this.skin = skin;
+    if (this.disposed || !Number.isInteger(skin) || skin < 0 || skin > 5) return;
+    this.skin = skin === 4 ? 0 : skin === 5 ? 3 : skin;
   }
 
   private buildProps() {
@@ -830,8 +848,8 @@ export class BeachEngine {
   }
 
   private prepareFestival(flight: PropellerFlight | null, serverTime: number) {
-    this.festivalToys ??= new BambooFestivalToys(this.scene, bambooFloorHeight);
-    if (flight) this.festivalToys.launch({ ...flight, y: bambooFloorHeight(flight.x, flight.z) + 0.85 }, serverTime);
+    this.festivalToys ??= new BambooFestivalToys(this.scene, (x, z) => this.deckHeight(x, z));
+    if (flight) this.festivalToys.launch({ ...flight, y: this.deckHeight(flight.x, flight.z) + 0.85 }, serverTime);
   }
 
   private drawFestivalToy(pid: string, node: AvatarNode | null, state: BambooFestivalState | undefined,
@@ -1314,6 +1332,7 @@ export class BeachEngine {
 
   private applyDaylight(d: Daylight) {
     this.daylight = d;
+    this.fireworkAudio?.setBambooNight(d.deepNight);
     this.cove?.applyDaylight(d);
     const u = this.skyMat.uniforms;
     const night = d.stars;
@@ -1331,6 +1350,7 @@ export class BeachEngine {
     u.uStars.value = d.stars;
     u.uLantern.value = d.lanterns;
     (u.uHorizonFog.value as THREE.Vector3).set(...d.fog);
+    u.uBambooSunset.value = this.mapId === "bamboo" ? bambooSunsetAmount(d.hour) : 0;
     this.lanterns?.setAmount(d.lanterns);
 
     if (this.seaMat) {
@@ -1920,12 +1940,14 @@ export class BeachEngine {
 
     this.updateSelf(dt);
     if (this.mapId === "beach") this.fireworkAudio?.updateBeachSound(this.self, FIRE, this.fireState?.logs ?? 0, dt);
+    if (this.mapId === "bamboo") this.fireworkAudio?.updateBambooSound(dt);
     this.syncSkyResolution();
     this.updatePlayers(dt);
     this.updateFx(dt);
     this.updateWorld(dt);
     if (this.garden) {
       this.updateRain();
+      this.fireworkAudio?.updateGardenSound(insideHall(this.self.x, this.self.z), this.rainNow, dt);
       this.garden.renderReflection(this.renderer, this.camera);
     }
     this.renderer.render(this.scene, this.camera);
@@ -2200,7 +2222,7 @@ export class BeachEngine {
       if (!onTrail(p.x, p.z) && nearestOnTrail(p.x, p.z).distance > TRAIL_WALK_HALF + 0.9) return false;
       if (p.y < PAVILION_POST_HEIGHT + 0.6) for (const o of this.obstacles) if (Math.hypot(p.x - o.x, p.z - o.z) < o.r + 0.15) return false;
       const ceiling = bambooCeilingHeight(p.x, p.z);
-      return (ceiling === null || p.y < ceiling - 0.18) && p.y >= bambooFloorHeight(p.x, p.z) + 0.2;
+      return (ceiling === null || p.y < ceiling - 0.18) && p.y >= this.deckHeight(p.x, p.z) + 0.2;
     }
     if (this.garden) {
       // Hall walls block the orbit at every height; the island railing only near the deck.
@@ -2293,7 +2315,7 @@ export class BeachEngine {
 
   private deckHeight(x: number, z: number) {
     if (this.uyuni) return uyuniHotelFloorHeight(x, z);
-    if (this.bamboo) return bambooFloorHeight(x, z);
+    if (this.bamboo) return this.bamboo.floorHeight(x, z);
     if (this.garden) return gardenFloorHeight(x, z);
     const ledge = onsenLedgeHeight(x, z);
     if (ledge !== null) return ledge;

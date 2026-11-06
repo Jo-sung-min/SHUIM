@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
-import type { Daylight } from "./daylight";
+import { bambooSunsetAmount, type Daylight } from "./daylight";
 import { BAMBOO_PAVILIONS } from "./bamboo-trail";
 
 const deck = BAMBOO_PAVILIONS.find(pavilion => pavilion.kind === "deck")!;
 const riverImage = "/beach/real/bamboo-summit-seoul-v4.webp";
+const morningImage = "/beach/real/bamboo-summit-seoul-morning-v1.webp";
 const viewArc = THREE.MathUtils.degToRad(134);
 const skylineV = 0.648; // Distant ridgeline in texture coordinates; the towers extend into the real sky.
 
@@ -48,7 +49,10 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uRiver: { value: null },
+      uMorning: { value: null },
+      uMorningReady: { value: 0 },
       uNight: { value: 0 },
+      uDusk: { value: 0 },
       uHaze: { value: new THREE.Color() },
       uTime: time,
     },
@@ -59,8 +63,8 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
         vRidges = aRidges;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }`,
-    fragmentShader: `uniform sampler2D uRiver;
-      uniform float uNight; uniform float uTime; uniform vec3 uHaze;
+    fragmentShader: `uniform sampler2D uRiver; uniform sampler2D uMorning;
+      uniform float uMorningReady; uniform float uNight; uniform float uDusk; uniform float uTime; uniform vec3 uHaze;
       varying vec2 vUv; varying vec3 vRidges;
       float cellPhase(vec2 cell) {
         return fract(sin(dot(cell, vec2(17.73, 51.19))) * 4375.85);
@@ -69,9 +73,18 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
         float x = uv.x;
         float luminance = dot(art.rgb, vec3(0.2126, 0.7152, 0.0722));
         float value = sqrt(luminance);
-        vec3 day = uHaze * (0.30 + 0.60 * value) + art.rgb * 0.11;
-        vec3 color = mix(day, art.rgb, smoothstep(0.0, 0.92, uNight));
-        if (uNight > 0.02) {
+        // A matching daylight photograph supplies natural buildings, green trees
+        // and unlit bridges. Only use the former tint while its stream is pending.
+        vec3 fallbackDay = uHaze * (0.30 + 0.60 * value) + art.rgb * 0.11;
+        vec3 morning = texture2D(uMorning, clamp(uv, 0.0, 1.0)).rgb;
+        vec3 day = mix(fallbackDay, morning, uMorningReady);
+        // The city loses its midday greens while the bridge/window lights come
+        // on ahead of full night. Day and night endpoints retain their photographs.
+        day *= mix(vec3(1.0), vec3(0.72, 0.56, 0.50), uDusk);
+        float cityNight = max(smoothstep(0.0, 0.92, uNight),
+          uDusk * (0.32 + 0.30 * smoothstep(0.02, 0.16, uNight)));
+        vec3 color = mix(day, art.rgb, cityNight);
+        if (uNight > 0.02 || uDusk > 0.0) {
           // Select already-lit windows and lamps by contrast with their local
           // surroundings. Phase is anchored to the panorama as the camera moves.
           vec3 vicinity = textureLod(uRiver, uv, 3.5).rgb;
@@ -85,6 +98,14 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
             * (1.0 - smoothstep(0.019, 0.070, contrast));
           vec3 distantRock = vec3(0.003, 0.0055, 0.0085) + luminance * vec3(0.034, 0.052, 0.072);
           color = mix(color, distantRock, ridge * smoothstep(0.06, 0.92, uNight));
+          // At dusk the photographed blue mountain band belongs behind the
+          // city, with cool, low-contrast air between it and the warm horizon.
+          // Keep isolated tower/window highlights out of this atmospheric mask.
+          float distanceAir = smoothstep(0.37, 0.63, uv.y) * (1.0 - smoothstep(0.64, 0.72, uv.y));
+          float unlit = 1.0 - smoothstep(0.025, 0.10, contrast);
+          vec3 duskAir = mix(vec3(0.050, 0.065, 0.095), vec3(0.017, 0.025, 0.043), uNight);
+          color = mix(color, duskAir, uDusk * distanceAir * unlit * 0.19);
+          color = mix(color, duskAir * 0.90, uDusk * ridge * 0.78);
           float light = smoothstep(0.11, 0.66, peak) * smoothstep(0.025, 0.20, contrast);
           float phase = cellPhase(floor(uv * vec2(300.0, 132.0)));
           float wave = 0.5 + 0.5 * sin(uTime * (1.45 + phase * 2.5) + phase * 45.0);
@@ -94,7 +115,7 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
           float water = smoothstep(0.54, 0.73, x) * smoothstep(0.004, 0.033, belowBridge)
             * (1.0 - smoothstep(0.17, 0.27, belowBridge));
           float ripple = 0.40 * sin(uv.y * 186.0 + uTime * 1.65 + sin(x * 61.0 + uTime * 0.38));
-          color += art.rgb * uNight * mix(light * twinkle, smoothstep(0.08, 0.48, peak) * ripple, water);
+          color += art.rgb * max(uNight, uDusk * cityNight) * mix(light * twinkle, smoothstep(0.08, 0.48, peak) * ripple, water);
         }
         return color;
       }
@@ -108,11 +129,19 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
         vec3 nightRidge = mix(vec3(0.008, 0.012, 0.021), vec3(0.005, 0.008, 0.013), layers.y);
         nightRidge = mix(nightRidge, vec3(0.003, 0.005, 0.008), layers.z);
         vec3 valley = mix(dayRidge, nightRidge, smoothstep(0.0, 0.92, uNight));
+        // Separated cool silhouettes frame the sunset rather than becoming one
+        // warm, bright mountain stripe. This branch is zero outside dusk.
+        vec3 duskRidge = mix(vec3(0.050, 0.065, 0.095), vec3(0.022, 0.033, 0.053), layers.y);
+        duskRidge = mix(duskRidge, vec3(0.010, 0.019, 0.025), layers.z);
+        duskRidge = mix(duskRidge, nightRidge, smoothstep(0.15, 1.0, uNight));
+        valley = mix(valley, duskRidge, uDusk);
         float valleyAlpha = layers.x * (1.0 - city);
         vec3 color = valley * valleyAlpha;
         float alpha = valleyAlpha;
         if (city > 0.0) {
           vec4 art = texture2D(uRiver, clamp(uv, 0.0, 1.0));
+          // The original silhouette remains the shared mask at every hour. New
+          // lighting cannot move a tower edge or expose a rectangular sky patch.
           float cityAlpha = city * smoothstep(0.045, 0.92, art.a);
           color += cityColor(uv, art) * cityAlpha;
           alpha += cityAlpha;
@@ -134,15 +163,50 @@ export function buildBambooOverlook(parent: THREE.Group, time: THREE.IUniform<nu
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
   material.uniforms.uRiver.value = texture;
+  material.uniforms.uMorning.value = texture;
+  type MorningRequest = { texture: THREE.Texture | null; released: boolean };
+  let morning: MorningRequest | null = null;
+  let retryMorningAt = 0;
+  const releaseMorning = (request: MorningRequest) => {
+    if (!request.released && request.texture) { request.texture.dispose(); request.released = true; }
+    if (morning !== request) return;
+    morning = null;
+    material.uniforms.uMorning.value = texture;
+    material.uniforms.uMorningReady.value = 0;
+  };
+  const loadMorning = () => {
+    if (disposed || morning || Date.now() < retryMorningAt) return;
+    const request: MorningRequest = { texture: null, released: false };
+    morning = request;
+    request.texture = loader.load(assetUrl(morningImage), loaded => {
+      request.texture ??= loaded;
+      if (disposed || morning !== request || material.uniforms.uNight.value >= .92) { releaseMorning(request); return; }
+      material.uniforms.uMorning.value = loaded;
+      material.uniforms.uMorningReady.value = 1;
+    }, undefined, () => {
+      if (morning === request) retryMorningAt = Date.now() + 15_000;
+      releaseMorning(request);
+    });
+    request.texture.colorSpace = THREE.SRGBColorSpace;
+    request.texture.anisotropy = 4;
+  };
   const fog = new THREE.Color();
   return {
     applyDaylight(light: Daylight) {
+      if (disposed) return;
       material.uniforms.uNight.value = light.stars;
+      material.uniforms.uDusk.value = bambooSunsetAmount(light.hour);
+      // Night-only visits download no extra panorama. A full night also releases
+      // the daytime GPU texture; dawn can reuse the ordinary HTTP image cache.
+      if (light.stars < .92) loadMorning();
+      else if (morning) releaseMorning(morning);
       fog.setRGB(...light.fog, THREE.SRGBColorSpace);
       material.uniforms.uHaze.value.setRGB(...light.skyHorizon, THREE.SRGBColorSpace).lerp(fog, 0.62);
     },
     dispose() {
+      if (disposed) return;
       disposed = true;
+      if (morning) releaseMorning(morning);
       group.removeFromParent();
       river.geometry.dispose();
       material.dispose();

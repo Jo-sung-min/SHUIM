@@ -80,7 +80,7 @@ public class BeachController {
 
     /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
     public record Care(String to, String kind) {}
-    /** character 는 3D·픽셀 남녀 캐릭터를 바꿀 때 선택하며, 생략하면 현재 모습 유지 */
+    /** character changes the map's permitted appearance; omitting it preserves the current choice. */
     public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character,
                            @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {
         public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
@@ -168,7 +168,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" } → map-scoped ticket, capabilities and state.
+     * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" | "bamboo" | "garden" } → map-scoped ticket, capabilities and state.
      * 이 소로우의 승인된 멤버만 들어갈 수 있다. 정원 초과는 409.
      */
     @PostMapping("/api/beach/enter")
@@ -224,7 +224,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind }, character?: "male" | "female" | "pixel-male" | "female-3d" }
+     * POST /api/beach/tick { ticket, x, z, yaw, moving, care?: { to, kind }, character? }
      *   → { players: [{ pid, id, nick, skin, x, z, yaw, moving }], events: [{ kind, fromPid, fromId, fromNick, toPid, toId, toNick, at }],
      *       count, received: { comfort, hug, wave }, care?: "sent" | "cooldown" | "gone" | "forbidden", careCapabilities?: { wave, hug } }
      * 방문 티켓으로 위치를 갱신하고 영속 모닥불 상태를 함께 내려준다. 만료 티켓은 410.
@@ -305,17 +305,17 @@ public class BeachController {
         beach.requireMusicListener(circle.id(), mapId, me.id());
         RoomMusicTrack selected = RoomMusicTrack.from(trackId);
         // Spring handles byte ranges and conditional GET/HEAD after the same visit check.
-        var response = ResponseEntity.ok().contentType(MediaType.valueOf("audio/mp4"))
+        var response = ResponseEntity.ok().contentType(MediaType.valueOf("audio/mpeg"))
             .cacheControl(CacheControl.noCache().cachePrivate())
             .varyBy(HttpHeaders.COOKIE, HttpHeaders.AUTHORIZATION)
-            .header(HttpHeaders.ACCEPT_RANGES, "bytes").eTag(selected.id);
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes").eTag(selected.sha256);
         if ("HEAD".equals(req.getMethod())) return response.contentLength(selected.bytes).build();
         return response.body(recordings.resource(selected));
     }
 
     /**
      * POST /api/beach/fireworks { ticket, requestId: UUID, variant? }. A room-wide, retry-safe launch.
-     * Administrators launch for free with every style; registered members spend one firework ticket and cannot use "songi".
+     * Administrators launch for free with every style; registered members spend one firework ticket and cannot use the Songi message.
      */
     @PostMapping("/api/beach/fireworks")
     public BeachRoom.FireworkLaunch fireworks(@RequestBody(required = false) FireworksBody body, HttpServletRequest req) {
@@ -323,12 +323,12 @@ public class BeachController {
         if (body == null) throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireMember(visit.communityId(), me);
-        String variant = body.selectedVariant();
+        String variant = BeachRoom.requireFireworkVariant(body.selectedVariant());
         if (auth.isAdmin(me)) return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant);
         if (!fireworksAllowed(me)) throw ApiException.forbidden("가입한 회원만 불꽃놀이를 쏠 수 있어요.");
-        if ("songi".equals(variant)) throw ApiException.forbidden("송이 안녕? 불꽃은 관리자만 띄울 수 있어요.");
-        String selected = variant == null ? "festival" : variant;
-        FireworkTickets.Consumed<BeachRoom.FireworkLaunch> consumed = tickets.consume(me.id(), body.requestId(), visit.communityId(), visit.mapId(), selected,
+        if ("songi".equals(variant))
+            throw ApiException.forbidden("송이에게 보내는 문구 불꽃은 관리자만 띄울 수 있어요.");
+        FireworkTickets.Consumed<BeachRoom.FireworkLaunch> consumed = tickets.consume(me.id(), body.requestId(), visit.communityId(), visit.mapId(), variant,
             () -> beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant));
         return consumed.result().withTickets(consumed.tickets());
     }

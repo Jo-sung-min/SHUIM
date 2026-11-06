@@ -78,6 +78,20 @@ test("walking never enters the water and slides back to the nearest allowed spot
   assert.ok(!garden.isWater(...island));
 });
 
+test("the entrance photo court reaches both sculptures and keeps the old gate passage open", () => {
+  for (const [x, z] of [[-10, -14.4], [10, -14.4], [0, -18], [0, -16], [0, -11], [0, -3]]) {
+    assert.ok(garden.onGardenGround(x, z), `photo approach ${x},${z}`);
+    const resolved = garden.resolveGardenWalk(x, z);
+    near(resolved[0], x, "open photo approach x"); near(resolved[1], z, "open photo approach z");
+    near(garden.gardenFloorHeight(x, z), garden.GROUND_Y, "no hidden step at the former wall");
+  }
+  for (const [x, z] of [[-16, -14.4], [16, -14.4], [0, -23]]) {
+    const resolved = garden.resolveGardenWalk(x, z);
+    assert.ok(garden.onGardenGround(...resolved));
+    assert.ok(Math.hypot(resolved[0] - x, resolved[1] - z) < 6, "outside edge slides onto nearby court");
+  }
+});
+
 test("hall tiers descend toward the glass, the stairs are continuous and the side doors ramp to the ground", () => {
   const { HALL, HALL_TIERS } = garden;
   near(garden.hallFloorHeight(8, HALL.glassZ + 2), HALL_TIERS[0].y, "window tier");

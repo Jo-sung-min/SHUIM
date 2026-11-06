@@ -464,10 +464,11 @@ test("a phone orbit keeps the sofa in sight through roof edges and interpolated 
   }
 });
 
-test("both pixel characters fold their knees on hotel sofas and recover the standing silhouette", () => {
+test("temporary pixel fallbacks fold their knees on hotel sofas while 3D models are unavailable", () => {
   for (const hotel of UYUNI_HOTELS) {
     for (const skin of [1, 2]) {
       const { engine } = fixture();
+      engine.avatarModels = engine.femaleAvatarModels = null;
       engine.skin = skin; engine.view = "third";
       Object.assign(engine.self, { x: hotel.x - 1.8, z: hotel.z - 1.85 });
       engine.updateSelf(0.1);

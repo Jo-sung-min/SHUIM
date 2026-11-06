@@ -308,7 +308,7 @@ test("a model that is not ready keeps a visible atlas avatar until it becomes av
   assert.ok(node.avatar); assert.equal(node.sprite.visible, false);
 });
 
-test("all four appearances switch independently while keeping the remote player identity", () => {
+test("current and legacy selections switch between 3D genders while keeping the remote player identity", () => {
   const { engine, node, scene } = fixture();
   const male = modelPool("male"), female = modelPool("female");
   engine.avatarModels = male.pool; engine.femaleAvatarModels = female.pool;
@@ -323,16 +323,36 @@ test("all four appearances switch independently while keeping the remote player 
   assert.equal(node.avatar, firstFemale, "a stable selection retains its mixer and skeleton");
   for (const skin of [2, 1]) {
     engine.setPlayers([{ ...node.data, skin }]); engine.updatePlayers(0.1);
-    assert.equal(node.avatar, null);
-    assert.equal(node.sprite.visible, true);
-    assert.equal(node.tex.offset.y, skin === 2 ? 0.5 : 0);
+    assert.equal(node.avatar.kind, skin === 2 ? "male" : "female");
+    assert.equal(node.sprite.visible, false);
+    assert.equal(node.avatar.root.parent, scene);
+    const migrated = node.avatar;
+    engine.setPlayers([{ ...node.data, skin: skin === 2 ? 0 : 3 }]); engine.updatePlayers(0.1);
+    assert.equal(node.avatar, migrated, "legacy and current IDs share a gender without resetting its animation");
   }
   assert.equal(firstFemale.disposed, 1);
   assert.equal(engine.players.get(node.data.pid), node);
   engine.setSkin(2); assert.equal(engine.skin, 2);
   engine.setSkin(3); assert.equal(engine.skin, 3);
-  engine.setSkin(4); assert.equal(engine.skin, 3, "unknown IDs cannot silently select another character");
+  engine.setSkin(4); assert.equal(engine.skin, 0, "a retired male selection restores the ordinary male");
+  engine.setSkin(5); assert.equal(engine.skin, 3, "a retired female selection restores the ordinary female");
+  engine.setSkin(6); assert.equal(engine.skin, 3, "unknown IDs cannot silently select another character");
   engine.removePlayer(node);
+});
+
+test("retired remote selections use ordinary male and female models on every map", () => {
+  for (const mapId of ["beach", "uyuni", "bamboo", "garden"]) {
+    const { engine, node } = fixture();
+    engine.mapId = mapId;
+    engine.avatarModels = modelPool("male").pool;
+    engine.femaleAvatarModels = modelPool("female").pool;
+    for (const [skin, expected] of [[4, "male"], [5, "female"]]) {
+      assert.equal(engine.syncAvatar(node, skin, 0, 0).kind, expected);
+      engine.setSkin(skin);
+      assert.equal(engine.skin, skin === 4 ? 0 : 3);
+    }
+    engine.removePlayer(node);
+  }
 });
 
 test("the local 3D avatar hides in first person and receives the authoritative rest poses", () => {
