@@ -273,6 +273,18 @@ void main() {
 }`;
 
 /** Crossed quads for leaf clusters and dry brush. Instances carry position, size and a seed. */
+const BAMBOO_PRIVATE_GARDEN_GLSL = `
+uniform float uGardenInterior;
+uniform vec4 uGardenInnerBounds;
+uniform float uGardenScreenTop;
+bool bambooIntrudesIntoPrivateGarden(vec3 world) {
+  // Keep the dense outside screen and its upper crowns. Only leaf fragments
+  // protruding in front of the private garden's inner backing are trimmed.
+  return uGardenInterior > .5 && uNight > .35 && world.y < uGardenScreenTop
+    && world.x > uGardenInnerBounds.x && world.x < uGardenInnerBounds.z
+    && world.z > uGardenInnerBounds.y && world.z < uGardenInnerBounds.w;
+}`;
+
 export const BAMBOO_FOLIAGE_VERT = `
 attribute vec4 aLeaf;
 attribute vec4 aLeafSeed;
@@ -304,8 +316,10 @@ varying vec2 vUv;
 varying vec3 vWorld;
 varying float vTint;
 ${BAMBOO_LIGHT_GLSL}
+${BAMBOO_PRIVATE_GARDEN_GLSL}
 #include <fog_pars_fragment>
 void main() {
+  if (bambooIntrudesIntoPrivateGarden(vWorld)) discard;
   vec4 leaf = texture2D(uLeaf, vUv);
   if (leaf.a < 0.5) discard;
   vec3 tint = mix(uLeafShade, uLeafLit, vTint);
@@ -340,8 +354,10 @@ varying vec2 vUv;
 varying vec3 vWorld;
 ${BAMBOO_LIGHT_GLSL}
 ${BAMBOO_CLEARING_GLSL}
+${BAMBOO_PRIVATE_GARDEN_GLSL}
 #include <fog_pars_fragment>
 void main() {
+  if (bambooIntrudesIntoPrivateGarden(vWorld)) discard;
   vec2 uv = vUv * uRepeat + vec2(uTime * 0.004, uTime * 0.0025);
   vec4 leaf = texture2D(uLeaf, uv);
   // The canopy opens over the meadow and the summit, thinning out before the clearing edge.

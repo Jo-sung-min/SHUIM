@@ -15,8 +15,9 @@ async function load(file, dependencies, names) {
   vm.runInNewContext(`${source}\nglobalThis.api={${names.join(",")}};`, context);
   return context.api;
 }
-const trail = await load("../lib/beach/bamboo-trail.ts", {}, ["SECRET_GARDEN", "SECRET_GARDEN_ZONES", "SECRET_GARDEN_PATHS", "groundHeight", "insideSecretGarden", "seededRandom"]);
-const { buildBambooSecretGarden } = await load("../lib/beach/bamboo-secret-garden.ts", trail, ["buildBambooSecretGarden"]);
+const trail = await load("../lib/beach/bamboo-trail.ts", {}, ["SECRET_GARDEN", "SECRET_GARDEN_ZONES", "SECRET_GARDEN_PATHS", "groundHeight", "insideSecretGarden", "seededRandom", "resolveTrail"]);
+const stars = await load("../lib/beach/bamboo-garden-stars.ts", trail, ["buildBambooGardenStars"]);
+const { buildBambooSecretGarden } = await load("../lib/beach/bamboo-secret-garden.ts", { ...trail, ...stars }, ["buildBambooSecretGarden"]);
 const build = () => { const parent = new THREE.Scene(), time = { value: 0 }; const garden = buildBambooSecretGarden(parent, time); parent.updateMatrixWorld(true); return { parent, garden, time }; };
 
 test("three inhabited photo clearings share bounded instanced gardens and one fairy-light draw", t => {
@@ -33,7 +34,7 @@ test("three inhabited photo clearings share bounded instanced gardens and one fa
   });
   const light = parent.getObjectByName("secret-garden-fairy-bulbs"), count = light.geometry.getAttribute("position").count;
   t.diagnostic(`${draws} draws, ${triangles} triangles, ${count} bulbs, zero new lights`);
-  assert.ok(draws <= 14); assert.ok(triangles < 140000); assert.ok(count > 65000 && count < 125000);
+  assert.ok(draws <= 15); assert.ok(triangles < 140000); assert.ok(count > 65000 && count < 125000);
   const positions = light.geometry.getAttribute("position");
   let raisedAhead = 0;
   for (let i = 0; i < positions.count; i++) {
@@ -96,7 +97,7 @@ test("the surprise garden lights remain hidden outside, reveal gradually after e
   garden.dispose();
 });
 
-test("a small bounded swarm uses slow independent glows, halves on mobile and reveals only inside at night", () => {
+test("a small bounded swarm stays near the walk with readable mobile glows and reveals only inside at night", () => {
   const { parent, garden } = build(), fireflies = parent.getObjectByName("secret-garden-fireflies");
   const p = fireflies.geometry.getAttribute("position"), flights = fireflies.geometry.getAttribute("aFlight");
   assert.equal(p.count, 84);
@@ -109,7 +110,10 @@ test("a small bounded swarm uses slow independent glows, halves on mobile and re
     phases.add(flights.getX(i));
   }
   assert.ok(phases.size > 80, "fireflies do not blink in unison");
-  garden.setQuality(true); assert.equal(fireflies.geometry.drawRange.count, 42); assert.equal(fireflies.material.uniforms.uFireflyLimit.value, 4);
+  let nearWalk = 0;
+  for (let i = 0; i < p.count; i++) if (Math.abs(p.getX(i) - trail.SECRET_GARDEN.spineX) < 4.5) nearWalk++;
+  assert.ok(nearWalk >= 56, "most of the unchanged swarm is visible beside the walk rather than lost among distant LEDs");
+  garden.setQuality(true); assert.equal(fireflies.geometry.drawRange.count, 84); assert.equal(fireflies.material.uniforms.uFireflyLimit.value, 12);
   garden.setQuality(false); assert.equal(fireflies.geometry.drawRange.count, 84);
   garden.applyDaylight({ lanterns: 1 }); garden.update(0, { x: -18, z: 80 }); assert.equal(fireflies.visible, false);
   garden.update(.1, { x: -38, z: 86 }); assert.equal(fireflies.visible, true);
@@ -118,13 +122,80 @@ test("a small bounded swarm uses slow independent glows, halves on mobile and re
   garden.dispose();
 });
 
-test("the hidden entrance removes solid hedge columns and each branch stays clear of screen walls", () => {
+test("the star backdrop stays on the inner walls, preserves all faces on mobile and shares the secret night reveal", () => {
+  const { parent, garden } = build(), backdrop = parent.getObjectByName("secret-garden-star-backdrop");
+  const starPoints = parent.getObjectByName("secret-garden-backdrop-stars"), geometry = starPoints.geometry;
+  const position = geometry.getAttribute("position");
+  assert.ok(position.count <= 1000, "sparse wall stars leave dark space around the photo ornaments");
+  assert.ok(Object.values(geometry.attributes).reduce((bytes, attribute) => bytes + attribute.array.byteLength, 0) < 80000,
+    "the new backdrop stays within a small fixed buffer budget without texture downloads");
+  garden.setQuality(true);
+  assert.equal(geometry.drawRange.count, position.count, "phones retain the same stars with smaller glows instead of gaps");
+  const faces = new Set(), entranceWings = { left: 0, right: 0 }, halves = { upper: 0, lower: 0 };
+  for (let i = 0; i < geometry.drawRange.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+    assert.ok(trail.insideSecretGarden(x, z));
+    const height = y - trail.groundHeight(x, z);
+    assert.ok(height >= .89 && height < 10.51, "sparse sparkles cover the whole wall without spilling over its edges");
+    halves[height < 5.7 ? "lower" : "upper"]++;
+    if (z < 85.6) faces.add("entrance");
+    else if (z > trail.SECRET_GARDEN.maxZ - 1.1) faces.add("rear");
+    else if (x < trail.SECRET_GARDEN.minX + 1.7) { faces.add("left"); if (z < 92) entranceWings.left++; }
+    else if (x > trail.SECRET_GARDEN.maxX - 1.7) { faces.add("right"); if (z < 92) entranceWings.right++; }
+    else assert.fail("decorative stars must stay against the walls, away from the open walk");
+  }
+  assert.equal(faces.size, 4);
+  assert.equal(halves.upper, halves.lower, "the upper and lower halves have the same number of stars");
+  assert.ok(entranceWings.left >= 35 && entranceWings.right >= 35, "both extended entrance walls retain sparse twinkles");
+  garden.applyDaylight({ lanterns: 1 }); garden.update(0, { x: -18, z: 80 }); assert.equal(backdrop.visible, false);
+  garden.update(.1, { x: -38, z: 86 }); assert.equal(backdrop.visible, true);
+  garden.applyDaylight({ lanterns: 0 }); garden.update(.2, { x: -38, z: 86 }); assert.equal(backdrop.visible, false);
+  garden.applyDaylight({ lanterns: 1 }); garden.update(.3, { x: -18, z: 80 }); assert.equal(backdrop.visible, false);
+  garden.setQuality(false); assert.equal(geometry.drawRange.count, position.count);
+  garden.dispose();
+});
+
+test("the entrance has a visible clear doorway while its sides and header remain private", () => {
+  const { parent, garden } = build(), veil = parent.getObjectByName("secret-garden-entrance-night-veil");
+  const base = trail.groundHeight(-38, 85.25);
+  for (const x of [-39.2, -38, -36.8]) for (const height of [.6, 1.6, 2.7]) {
+    const opening = new THREE.Raycaster(new THREE.Vector3(x, base + height, 90), new THREE.Vector3(0, 0, -1));
+    assert.equal(opening.intersectObject(veil).length, 0, "the walking exit is visibly open, not merely non-colliding");
+  }
+  const fromInside = new THREE.Raycaster(new THREE.Vector3(-42, base + 1.6, 90), new THREE.Vector3(0, 0, -1));
+  const header = new THREE.Raycaster(new THREE.Vector3(-38, base + 4.5, 90), new THREE.Vector3(0, 0, -1));
+  const fromOutside = new THREE.Raycaster(new THREE.Vector3(-42, base + 1.6, 82), new THREE.Vector3(0, 0, 1));
+  assert.equal(veil.material.side, THREE.FrontSide);
+  assert.ok(fromInside.intersectObject(veil).length > 0, "the entrance wings remain enclosed");
+  assert.ok(header.intersectObject(veil).length > 0, "the space above the door remains screened");
+  assert.equal(fromOutside.intersectObject(veil).length, 0, "the back face cannot hide the forest from outside");
+  const stars = parent.getObjectByName("secret-garden-backdrop-stars").geometry.getAttribute("position");
+  for (let i = 0; i < stars.count; i++) {
+    const x = stars.getX(i), z = stars.getZ(i), height = stars.getY(i) - trail.groundHeight(x, z);
+    assert.ok(!(z < 86 && Math.abs(x + 38) < 1.7 && height < 3.4), "no star curtain crosses the visible doorway");
+  }
+  for (let i = 0; i <= 24; i++) {
+    const x = i <= 20 ? -34 - 4 * i / 20 : -38;
+    const z = i <= 20 ? 80 + 5 * i / 20 : 85 + (i - 20) / 4;
+    const resolved = trail.resolveTrail(x, z);
+    assert.ok(Math.hypot(resolved[0] - x, resolved[1] - z) < .001, "the entrance path remains passable");
+  }
+  garden.dispose();
+});
+
+test("dark entrance wings close the side gaps while the approach and every branch stay clear", () => {
   const { parent, garden } = build(), walls = [parent.getObjectByName("secret-garden-opaque-backing"), parent.getObjectByName("secret-garden-bamboo-screen")];
   assert.equal(parent.getObjectByName("secret-garden-entrance-reeds"), undefined, "the large solid reeds at the entrance were removed");
   const backing = walls[0], position = new THREE.Vector3(), scale = new THREE.Vector3(), quaternion = new THREE.Quaternion();
   for (let i = 0; i < backing.count; i++) {
     const matrix = new THREE.Matrix4(); backing.getMatrixAt(i, matrix); matrix.decompose(position, quaternion, scale);
-    assert.ok(position.z >= 92, "the pavilion and southern approach are concealed by real bamboo, never a close opaque box wall");
+    assert.ok(position.z >= 85.25, "the backing starts at the room edge, not in the approach corridor");
+    if (position.z < 92) assert.ok(Math.abs(position.x - trail.SECRET_GARDEN.spineX) > 12, "new columns stay along the side perimeter");
+  }
+  for (const z of [85.5, 87, 90, 91.5]) for (const height of [1.6, 7]) for (const side of [-1, 1]) {
+    const origin = new THREE.Vector3(-38, trail.groundHeight(-38, z) + height, z);
+    const ray = new THREE.Raycaster(origin, new THREE.Vector3(side, 0, 0));
+    assert.ok(ray.intersectObject(backing).length > 0, `opaque columns close the ${side < 0 ? "west" : "east"} gap at ${z}`);
   }
   const expandedWalls = [];
   for (const wall of walls) {

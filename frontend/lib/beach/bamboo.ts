@@ -382,6 +382,7 @@ export class BambooWorld {
   private readonly fogUniforms = THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
   private readonly time = { value: 0 };
   private readonly sway = { value: 1 };
+  private readonly gardenInterior = { value: 0 };
   private readonly clearings = { value: [SUMMIT, MEADOW, NORTH_FACE].map((area) => new THREE.Vector4(area.x, area.z, area.radius, area.feather)) };
   private readonly light = {
     uAmbient: { value: new THREE.Color(0.4, 0.45, 0.3) },
@@ -437,7 +438,12 @@ export class BambooWorld {
     const mask = groundMaskTexture(), leaf = leafClusterTexture(), canopy = canopyTexture(), brush = brushTexture();
     this.textures.push(mask, leaf, canopy, brush);
     this.groundTextures = buildBambooGroundTextures();
-    const shared = () => ({ ...this.light, uTime: this.time, uSway: this.sway, uClearings: this.clearings, ...this.fogUniforms });
+    const shared = () => ({
+      ...this.light, uTime: this.time, uSway: this.sway, uClearings: this.clearings, ...this.fogUniforms,
+      uGardenInterior: this.gardenInterior,
+      uGardenInnerBounds: { value: new THREE.Vector4(SECRET_GARDEN.minX + .25, 85.25, SECRET_GARDEN.maxX - .25, SECRET_GARDEN.maxZ + .05) },
+      uGardenScreenTop: { value: groundHeight(SECRET_GARDEN.spineX, 98) + 11.4 },
+    });
 
     this.groundMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -489,6 +495,8 @@ export class BambooWorld {
       this.geometries.push(geometry);
       const material = index ? canopyMaterial.clone() : canopyMaterial;
       if (index) {
+        material.uniforms.uGardenInterior = this.gardenInterior;
+        material.uniforms.uNight = this.light.uNight;
         material.uniforms.uRepeat.value = new THREE.Vector2(17, 20);
         material.uniforms.uCanopyColor.value = srgb(0x4f6e30);
         this.materials.push(material);
@@ -801,6 +809,10 @@ export class BambooWorld {
       chunk.leaves.geometry.instanceCount = chunk.groveLeaves + (nearby ? (this.low ? Math.ceil(fieldLeaves / 2) : fieldLeaves) : 0);
     }
     const x = walker?.x ?? position.x, z = walker?.z ?? position.z;
+    // Clip only when looking from inside. The same bamboo remains a complete
+    // privacy screen for a visitor or orbit camera outside the enclosure.
+    this.gardenInterior.value = insideSecretGarden(x, z) && z > 84.6
+      && insideSecretGarden(position.x, position.z) ? 1 : 0;
     this.secretGarden.update(time, { x, z });
     const moved = Math.hypot(x - this.lastLampAt.x, z - this.lastLampAt.z);
     if (!(moved < 0.9) || time - this.lastLampAt.t > 1.2) {

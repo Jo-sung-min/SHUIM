@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Daylight } from "./daylight";
 import { SECRET_GARDEN, SECRET_GARDEN_PATHS, SECRET_GARDEN_ZONES, groundHeight, insideSecretGarden, seededRandom } from "./bamboo-trail";
+import { buildBambooGardenStars } from "./bamboo-garden-stars";
 
 type Instance = { x: number; y: number; z: number; sx: number; sy: number; sz: number; color: number; rotation?: THREE.Quaternion };
 type Bulb = { x: number; y: number; z: number; color: number; size: number; phase: number };
@@ -68,24 +69,27 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
   // A continuous leaf backing closes gaps between stems even from a first-person
   // viewpoint. The two bends keep the entrance open while blocking a straight view in.
   const west = SECRET_GARDEN.minX - .5, east = SECRET_GARDEN.maxX + .5, spine = SECRET_GARDEN.spineX;
-  // The approach and southern entrance use real, textured bamboo from BambooWorld.
-  // Do not place tall opaque columns, box walls or oversized reed meshes there.
+  // Continue the dark side backing down to the entrance wings, while the central
+  // dogleg and visible doorway stay open. Exterior bamboo still conceals the room.
   const enclosure = [
     [west, 92, west, 113.8], [east, 92, east, 113.8], [west, 113.8, east, 113.8],
+    [west, 85.25, west, 91], [east, 85.25, east, 91],
   ];
-  for (const [ax, az, bx, bz] of enclosure) {
+  for (const [edgeIndex, [ax, az, bx, bz]] of enclosure.entries()) {
+    // New privacy panels must not reshuffle the established garden's light plants.
+    const edgeRand = edgeIndex < 3 ? rand : seededRandom(9814 + edgeIndex);
     const length = Math.hypot(bx - ax, bz - az), count = Math.ceil(length / 1.05), yaw = Math.atan2(bx - ax, bz - az);
     for (let i = 0; i <= count; i++) {
-      const x = ax + (bx - ax) * i / count, z = az + (bz - az) * i / count, y = groundHeight(x, z), h = 11.7 + rand() * 2.1;
+      const x = ax + (bx - ax) * i / count, z = az + (bz - az) * i / count, y = groundHeight(x, z), h = 11.7 + edgeRand() * 2.1;
       hedge.push({ ...item(x, y + 5.9, z, 1.4, 11.8, 1.55, 0x122b17), rotation: new THREE.Quaternion().setFromAxisAngle(up, yaw) });
       for (let k = 0; k < 4; k++) {
         // Stems sit on both faces of the opaque foliage, not inside its backing.
         const offset = (k < 2 ? -1 : 1) * (.82 + (k % 2) * .2), along = (k % 2 ? -.23 : .23);
         const sx = x + Math.cos(yaw) * offset + Math.sin(yaw) * along, sz = z - Math.sin(yaw) * offset + Math.cos(yaw) * along;
-        stalks.push(item(sx, y + h / 2, sz, .065 + rand() * .04, h, .065 + rand() * .04, k % 2 ? 0x42652c : 0x305525));
+        stalks.push(item(sx, y + h / 2, sz, .065 + edgeRand() * .04, h, .065 + edgeRand() * .04, k % 2 ? 0x42652c : 0x305525));
       }
       for (let k = 0; k < 4; k++) {
-        hedgeLeaves.push(item(x + (rand() - .5) * .8, y + 1.4 + k * 3.05, z + (rand() - .5) * .8, .95 + rand() * .35, 2.2, 1.15, k % 2 ? 0x254b24 : 0x1e3f22));
+        hedgeLeaves.push(item(x + (edgeRand() - .5) * .8, y + 1.4 + k * 3.05, z + (edgeRand() - .5) * .8, .95 + edgeRand() * .35, 2.2, 1.15, k % 2 ? 0x254b24 : 0x1e3f22));
       }
     }
   }
@@ -335,6 +339,7 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
   merge("secret-garden-sculpture-frames", wires, wireMaterial);
 
   const night = { value: 0 }, reveal = { value: 0 }, pointLimit = { value: 11 };
+  const backdropStars = buildBambooGardenStars(root, { time: timeUniform, night, reveal });
   const washMaterial = owned(new THREE.ShaderMaterial({
     uniforms: { uNight: night, uReveal: reveal }, vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending,
     vertexShader: "varying vec2 vUv; varying vec3 vColor; void main(){vUv=uv;vColor=color;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
@@ -363,27 +368,31 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
   // independent of the decorative LEDs and adds no per-frame CPU simulation.
   const fireflyCount = 84, fireflyPositions = new Float32Array(fireflyCount * 3), flights = new Float32Array(fireflyCount * 4);
   for (let i = 0; i < fireflyCount; i++) {
-    const x = SECRET_GARDEN.minX + 2 + rand() * (SECRET_GARDEN.maxX - SECRET_GARDEN.minX - 4);
-    const z = SECRET_GARDEN.minZ + 2 + rand() * (SECRET_GARDEN.maxZ - SECRET_GARDEN.minZ - 4);
+    // Most flights sit beside the walk, where their warm glow remains readable
+    // against the distant LEDs; keep some deeper among the plants for depth.
+    const nearWalk = i % 3 !== 2;
+    const x = nearWalk ? spine + (i % 2 ? -1 : 1) * (1.25 + rand() * 3.2)
+      : SECRET_GARDEN.minX + 2 + rand() * (SECRET_GARDEN.maxX - SECRET_GARDEN.minX - 4);
+    const z = 86 + rand() * 23;
     fireflyPositions.set([x, groundHeight(x, z) + .85 + rand() * 1.15, z], i * 3);
-    flights.set([rand() * Math.PI * 2, 1.26 + rand() * 1.25, rand() * Math.PI * 2, .3 + rand() * .22], i * 4);
+    flights.set([rand() * Math.PI * 2, 1.26 + rand() * 1.25, rand() * Math.PI * 2, .6 + rand() * .3], i * 4);
   }
   const fireflyGeometry = new THREE.BufferGeometry(); geometries.add(fireflyGeometry);
   fireflyGeometry.setAttribute("position", new THREE.BufferAttribute(fireflyPositions, 3));
   fireflyGeometry.setAttribute("aFlight", new THREE.BufferAttribute(flights, 4));
   fireflyGeometry.computeBoundingSphere(); fireflyGeometry.boundingSphere!.radius += 1;
-  const fireflyLimit = { value: 6 };
+  const fireflyLimit = { value: 18 };
   const fireflyMaterial = owned(new THREE.ShaderMaterial({
     uniforms: { uTime: timeUniform, uNight: night, uReveal: reveal, uFireflyLimit: fireflyLimit },
     transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending,
     vertexShader: `attribute vec4 aFlight;uniform float uTime;uniform float uFireflyLimit;varying float vGlow;varying float vWarm;
       void main(){vec3 p=position;float t=uTime*.18;
         p.x+=sin(t+aFlight.x)*.65;p.z+=cos(t*.76+aFlight.z)*.65;p.y+=sin(t*1.35+aFlight.x+aFlight.z)*.3;
-        vGlow=pow(.5+.5*sin(uTime*aFlight.y+aFlight.x),2.);vWarm=.5+.5*sin(aFlight.z);
-        vec4 view=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(aFlight.w*95./max(1.,-view.z),2.,uFireflyLimit);gl_Position=projectionMatrix*view;}`,
+        vGlow=.24+.76*pow(.5+.5*sin(uTime*aFlight.y+aFlight.x),2.);vWarm=.5+.5*sin(aFlight.z);
+        vec4 view=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(aFlight.w*150./max(1.,-view.z),5.,uFireflyLimit);gl_Position=projectionMatrix*view;}`,
     fragmentShader: `uniform float uNight;uniform float uReveal;varying float vGlow;varying float vWarm;
-      void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;float glow=pow(1.-r,2.);float core=1.-smoothstep(.0,.28,r);
-        vec3 color=mix(vec3(.72,1.,.27),vec3(1.,.83,.3),vWarm);gl_FragColor=vec4(color*(1.2+core),glow*vGlow*.82*uNight*uReveal);
+      void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;float glow=pow(1.-r,1.7);float core=1.-smoothstep(.03,.3,r);
+        vec3 color=mix(vec3(.72,1.,.32),vec3(1.,.85,.35),vWarm);gl_FragColor=vec4(color*1.65+vec3(core*.7),(glow*.8+core*.9)*vGlow*uNight*uReveal);
         #include <colorspace_fragment>
       }`,
   }));
@@ -409,17 +418,19 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
       // At night the complete surface is drawn by densely packed light points,
       // letting back-facing lights give each tree real volume without dark blobs.
       crowns.visible = topiary.visible = night.value * reveal.value < .42;
-      lights.visible = wash.visible = fireflies.visible = night.value * reveal.value > .002;
+      lights.visible = wash.visible = fireflies.visible = backdropStars.root.visible = night.value * reveal.value > .002;
       const dx = Math.max(SECRET_GARDEN.minX - viewer.x, 0, viewer.x - SECRET_GARDEN.maxX);
       const dz = Math.max(77.5 - viewer.z, 0, viewer.z - SECRET_GARDEN.maxZ);
       root.visible = Math.hypot(dx, dz) < 56;
     },
     setQuality(low: boolean) { if (!disposed) {
+      backdropStars.setQuality(low);
       pointGeometry.setDrawRange(0, low ? Math.ceil(bulbCount * .7) : bulbCount); pointLimit.value = low ? 8 : 11;
-      fireflyGeometry.setDrawRange(0, low ? fireflyCount / 2 : fireflyCount); fireflyLimit.value = low ? 4 : 6;
+      fireflyGeometry.setDrawRange(0, fireflyCount); fireflyLimit.value = low ? 12 : 18;
     } },
     dispose() {
       if (disposed) return; disposed = true; root.removeFromParent(); root.clear();
+      backdropStars.dispose();
       for (const mesh of instances) mesh.dispose();
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
