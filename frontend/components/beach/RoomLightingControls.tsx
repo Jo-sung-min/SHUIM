@@ -10,9 +10,11 @@ const MODES: readonly { mode: RoomLightingMode; label: string }[] = [
   { mode: "sunset", label: "노을" }, { mode: "night", label: "밤" },
 ];
 
-export default function RoomLightingControls({ mode, open, busy, disabled, onOpenChange, onSelect }: {
+export default function RoomLightingControls({ mode, open, busy, disabled, onOpenChange, onSelect, buttonClass, inline = false }: {
   mode: RoomLightingMode; open: boolean; busy: RoomLightingMode | null; disabled: boolean;
   onOpenChange: (open: boolean) => void; onSelect: (mode: RoomLightingMode) => void;
+  /** 햄버거 메뉴 안: 줄 모양 버튼과 바로 펼쳐지는 패널 */
+  buttonClass?: string; inline?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const panelId = useId();
@@ -30,11 +32,11 @@ export default function RoomLightingControls({ mode, open, busy, disabled, onOpe
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [open, onOpenChange]);
   return <div className={styles.roomClock} ref={container}>
-    <button ref={trigger} type="button" className={styles.glass + " " + styles.roomClockTrigger}
+    <button ref={trigger} type="button" className={buttonClass ?? styles.glass + " " + styles.roomClockTrigger}
       aria-label="방의 시간 조절" aria-expanded={open} aria-controls={panelId} onClick={() => onOpenChange(!open)}>
       <IconMoon />시간 조절
     </button>
-    {open && <div id={panelId} className={styles.roomClockPanel}>
+    {open && <div id={panelId} className={styles.roomClockPanel} data-inline={inline || undefined}>
       <strong>방의 시간</strong>
       <div className={styles.roomClockChoices} role="group" aria-label="방의 낮과 밤" aria-busy={busy !== null}>
         {MODES.map(option => <button key={option.mode} type="button" aria-pressed={mode === option.mode}

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { assetUrl } from "@/lib/assets";
 import { fetchBeachCount, type BeachCount } from "@/lib/beach/net";
 import { MAPS, mapHref, type MapId } from "@/lib/beach/maps";
 import type { Circle } from "@/lib/circles";
-import { IconUsers } from "@/components/Icons";
+import { IconChevronL, IconChevronR, IconUsers } from "@/components/Icons";
 import styles from "./BeachCard.module.css";
 
 type BeachCircle = Pick<Circle, "id" | "name" | "slug" | "pinned" | "spaceCapacity" | "privateTest"> & { primary?: boolean };
@@ -17,6 +17,28 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
   const [occupancy, setOccupancy] = useState<Partial<Record<MapId, BeachCount>>>({});
   const chosen = circles.find((circle) => circle.pinned) ?? circles.find((circle) => circle.primary) ?? circles[0];
   const communityId = chosen?.id;
+  // 넓은 화면에선 옆 카드가 가려지므로 제목 옆 화살표로 한 장씩 넘긴다 (좁은 화면은 손가락으로 넘긴다).
+  const rail = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ start: true, end: true });
+  const syncEdge = useCallback(() => {
+    const el = rail.current;
+    if (!el) return;
+    setEdge({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 });
+  }, []);
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    syncEdge();
+    const observer = new ResizeObserver(syncEdge);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [syncEdge]);
+  const slide = (direction: -1 | 1) => {
+    const el = rail.current;
+    if (!el) return;
+    const card = el.querySelector<HTMLElement>("[data-place]");
+    el.scrollBy({ left: direction * (card ? card.offsetWidth + 14 : el.clientWidth * .6), behavior: "smooth" });
+  };
 
   useEffect(() => {
     setOccupancy({});
@@ -47,8 +69,14 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
 
   return (
     <section className={styles.card} aria-label="소로우에서 함께 쉬기">
-      <h2 className={styles.heading}>만나서 위로하기</h2>
-      <div className={styles.mapChoices} role="group" aria-label="함께 쉴 풍경">
+      <div className={styles.head}>
+        <h2 className={styles.heading}>만나서 위로하기</h2>
+        <div className={styles.arrows}>
+          <button type="button" className={styles.arrow} aria-label="이전 풍경 보기" disabled={edge.start} onClick={() => slide(-1)}><IconChevronL /></button>
+          <button type="button" className={styles.arrow} aria-label="다음 풍경 보기" disabled={edge.end} onClick={() => slide(1)}><IconChevronR /></button>
+        </div>
+      </div>
+      <div ref={rail} className={styles.mapChoices} role="group" aria-label="함께 쉴 풍경" onScroll={syncEdge}>
         {Object.values(MAPS).map((choice, index) => {
           const count = occupancy[choice.id];
           const current = count?.communityId === communityId && count?.mapId === choice.id ? count : undefined;

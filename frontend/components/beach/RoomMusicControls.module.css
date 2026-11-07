@@ -47,3 +47,7 @@
   .control { position:static; }
   .panel { position:fixed; top:calc(64px + env(safe-area-inset-top)); right:max(16px,env(safe-area-inset-right)); }
 }
+
+/* 햄버거 메뉴 안: 메뉴 패널의 낮/밤 색을 그대로 쓰고 줄 아래에 바로 펼친다 */
+.control[data-inline="true"] { position:static; }
+.panel[data-inline="true"] { position:static; width:auto; max-height:none; padding:6px 8px 4px; border:0; border-radius:0; background:transparent; color:inherit; box-shadow:none; }

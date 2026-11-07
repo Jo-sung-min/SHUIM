@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Sheet } from "@/components/ui";
 import { IconCheck, IconSparkle } from "@/components/Icons";
@@ -29,7 +29,7 @@ function noticeFor(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : fallback;
 }
 
-export default function CampfireControls({ fire, near, disconnected, onAddWood, onAddPowder, onFireChange, powderOpen, onPowderOpenChange }: Props) {
+export default function CampfireControls({ fire, disconnected, onAddWood, onAddPowder, onFireChange, powderOpen, onPowderOpenChange }: Props) {
   const [phase, setPhase] = useState<WoodPhase | null>(null);
   const [powderPhase, setPowderPhase] = useState<WoodPhase | null>(null);
   const [cooling, setCooling] = useState(false);
@@ -37,6 +37,10 @@ export default function CampfireControls({ fire, near, disconnected, onAddWood, 
   const [pending, setPending] = useState<{ id: string; color: PowderColor } | null>(null);
   const [retryPauseUntil, setRetryPauseUntil] = useState(0);
   const [serverNow, setServerNow] = useState(fire.serverTime);
+  // 가루 시트는 바닷가 화면 안에 띄워 낮/밤 유리 색(--beach-*)을 그대로 물려받는다.
+  const woodButton = useRef<HTMLButtonElement>(null);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => { setPortalRoot(woodButton.current?.closest<HTMLElement>("[data-map]") ?? document.body); }, []);
   const clockSample = useRef({ server: fire.serverTime, received: performance.now() });
   const alive = useRef(true);
   const woodAttempt = useRef<string | null>(null);
@@ -109,23 +113,22 @@ export default function CampfireControls({ fire, near, disconnected, onAddWood, 
   const sub = phase ? "모닥불 곁으로" : activePowder ? `${activeName} ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : `장작 ${fire.logs}/${fire.maxLogs}`;
   const powderLabel = powderPhase === "walking" ? "걸어가는 중…" : powderPhase === "adding" ? "넣는 중…" : "가루 넣기";
   return <>
-      <button type="button" className={`${styles.trayAction} ${styles.trayWood}`} onClick={() => void addWood()} disabled={busy || cooling || disconnected || full} data-busy={Boolean(phase)} aria-busy={Boolean(phase)} aria-label={`${label}. ${sub}`}>
+      <button ref={woodButton} type="button" className={`${styles.trayAction} ${styles.trayWood}`} onClick={() => void addWood()} disabled={busy || cooling || disconnected || full} data-busy={Boolean(phase)} aria-busy={Boolean(phase)} aria-label={`${label}. ${sub}`}>
         <span className={styles.trayIcon} aria-hidden="true">🪵</span><strong>{label}</strong><small>{sub}</small>
       </button>
       <button type="button" className={`${styles.trayAction} ${styles.trayPowder}`} onClick={openPowder} disabled={busy || disconnected || !powderAvailable || (cooldown > 0 && !pending)} data-busy={Boolean(powderPhase)} aria-busy={Boolean(powderPhase)} aria-haspopup="dialog" aria-expanded={powderOpen}>
         <span className={styles.trayIcon} aria-hidden="true"><IconSparkle /></span><strong>{powderLabel}</strong><small>{!powderAvailable ? "준비 중" : powderPhase ? "잠깐만요" : pending ? "결과 확인" : cooldown > 0 ? `${cooldown}초 뒤` : fire.logs <= 0 ? "장작 먼저" : "색 고르기"}</small>
       </button>
-    {powderOpen && createPortal(<div className={styles.powderScope}><Sheet open={powderOpen} onClose={() => onPowderOpenChange(false)} title="불꽃에 색을 더해요">
+    {powderOpen && portalRoot && createPortal(<div className={styles.powderScope}><Sheet open={powderOpen} onClose={() => onPowderOpenChange(false)} title="불꽃 색 고르기">
       <div className={styles.powderSheet}>
-        <p className={styles.powderIntro}>작은 가루를 넣으면 불꽃이 물들어요.<br /><span>무료 · 약 90초 동안 함께 보여요</span></p>
         <div className={styles.powderChoices} role="group" aria-label="가루 색상">
           {POWDERS.map((item) => <button type="button" key={item.color} className={styles.powderChoice} aria-pressed={selected.color === item.color} disabled={Boolean(pending)} onClick={() => { setChosen(item.color); haptic(6); }}>
             <span className={styles.powderSwatch} style={{ "--powder-fill": item.fill } as CSSProperties} aria-hidden="true"><IconSparkle />{selected.color === item.color && <i><IconCheck /></i>}</span><span>{item.name}</span>
           </button>)}
         </div>
-        {pending ? <p className={styles.powderHint} role="status">이전 응답을 확인하지 못했어요. 같은 색으로 다시 확인하면 돼요.</p> : <p className={styles.powderHint}>{fire.logs <= 0 ? "먼저 장작을 넣어 불꽃을 피워 주세요." : cooldown > 0 ? `다음 가루까지 ${cooldown}초만 기다려 주세요.` : near ? "모닥불 곁에서 천천히 넣어볼까요?" : "불 곁으로 걸어가서 가루를 넣을게요."}</p>}
+        {pending ? <p className={styles.powderHint} role="status">응답을 확인하지 못했어요. 같은 색으로 다시 확인해 주세요.</p> : fire.logs <= 0 && <p className={styles.powderHint}>먼저 장작을 넣어 주세요.</p>}
         <button type="button" className={styles.powderConfirm} disabled={busy || disconnected || !powderAvailable || (fire.logs <= 0 && !pending) || (cooldown > 0 && !pending)} onClick={() => void putPowder()}>{pending ? "같은 색으로 다시 확인" : cooldown > 0 ? `${cooldown}초 뒤 넣기` : `${selected.name} 가루 넣기`}</button>
       </div>
-    </Sheet></div>, document.body)}
+    </Sheet></div>, portalRoot)}
   </>;
 }

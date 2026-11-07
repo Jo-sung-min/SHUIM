@@ -19,3 +19,12 @@
 .row :focus-visible { outline: 2px solid #55785e; outline-offset: 1px; border-radius: 10px; }
 .panel .row input[type="range"]:focus { background: transparent; border: 0; box-shadow: none; }
 .panel .row input[type="range"]:focus-visible { outline: 2px solid #55785e; outline-offset: -2px; }
+
+/* 햄버거 메뉴 안: 메뉴 패널 색을 따르고 자리 잡기는 흐름에 맡긴다 */
+.panel[data-inline="true"] { position: static; width: auto; max-width: none; padding: 6px 10px 0; border: 0; border-radius: 0; background: transparent; color: inherit; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.panel[data-inline="true"] .heading small { color: var(--beach-muted, #5c6b60); }
+:global([data-night="true"]) .panel[data-inline="true"] .row input::-webkit-slider-runnable-track { background: linear-gradient(to right,#a9c9ae var(--filled),#ffffff2e var(--filled)); }
+:global([data-night="true"]) .panel[data-inline="true"] .row input::-webkit-slider-thumb { border-color: #c9dccb; }
+:global([data-night="true"]) .panel[data-inline="true"] .row input::-moz-range-track { background: #ffffff2e; }
+:global([data-night="true"]) .panel[data-inline="true"] .row input::-moz-range-progress { background: #a9c9ae; }
+:global([data-night="true"]) .panel[data-inline="true"] .speaker:active { background: #ffffff1f; }

@@ -389,3 +389,51 @@ export const IconFlame = (p: P) => (
     <path d="M12 22c-1.7 0-3-1.2-3-3 0-1.9 1.6-3 2.4-4.5.9 1.2 3.6 2.4 3.6 4.5 0 1.8-1.3 3-3 3Z" />
   </svg>
 );
+/** 햄버거 메뉴 (바닷가 모바일 상단) */
+export const IconMenu = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+/** 벤치·정자에 앉기 */
+export const IconSeat = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M6 11V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4" />
+    <path d="M3 11h18v3H3z" />
+    <path d="M5 14v5M19 14v5" />
+  </svg>
+);
+/** 별 아래 눕기 */
+export const IconLie = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M8 5h.01M15 7h.01M19 4h.01" />
+    <circle cx="6" cy="14.8" r="2.2" />
+    <path d="M10 16.5h8a2 2 0 0 1 2 1.5" />
+    <path d="M3 18.5h18" />
+  </svg>
+);
+/** 일어나기 */
+export const IconStand = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="4.8" r="2" />
+    <path d="M12 7.5V14" />
+    <path d="M8 10.5h8" />
+    <path d="M9 20.5l3-6.5 3 6.5" />
+  </svg>
+);
+/** 온천에 떠있기 */
+export const IconFloat = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="8" r="2.5" />
+    <path d="M3 15c1.5-1.3 3-1.3 4.5 0s3 1.3 4.5 0 3-1.3 4.5 0 3 1.3 4.5 0" />
+    <path d="M3 19c1.5-1.3 3-1.3 4.5 0s3 1.3 4.5 0 3-1.3 4.5 0 3 1.3 4.5 0" />
+  </svg>
+);
+/** 나룻배 */
+export const IconBoat = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 14h18l-2.5 5h-13z" />
+    <path d="M12 14V4" />
+    <path d="M12 5l6.5 8H12" />
+  </svg>
+);

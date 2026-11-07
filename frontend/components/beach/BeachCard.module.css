@@ -1,5 +1,15 @@
 .card { margin:20px 0 24px; }
-.heading { margin:0 0 13px; color:var(--text); font-size:18px; font-weight:750; letter-spacing:-.035em; }
+.head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 13px; }
+.heading { margin:0; color:var(--text); font-size:18px; font-weight:750; letter-spacing:-.035em; }
+/* 넓은 화면에서만 보이는 단순한 화살표 두 개 */
+.arrows { display:none; gap:6px; }
+.arrow { display:grid; place-items:center; width:34px; height:34px; padding:0; border:1px solid var(--border-strong,#c5d2c9); border-radius:50%; background:var(--surface,#fff); color:var(--text); cursor:pointer; transition:background .15s,opacity .15s,transform .12s; }
+.arrow svg { width:18px; height:18px; }
+.arrow:hover:not(:disabled) { background:var(--surface-2,#f0f4f1); }
+.arrow:active:not(:disabled) { transform:scale(.94); }
+.arrow:disabled { opacity:.35; cursor:default; }
+.arrow:focus-visible { outline:3px solid #86a593; outline-offset:2px; }
+@media(min-width:650px) { .arrows { display:flex; } }
 .mapChoices { display:flex; gap:12px; margin:0 -3px; padding:3px 3px 10px; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x proximity; scroll-padding-inline:3px; overscroll-behavior-x:contain; touch-action:pan-x pan-y; scrollbar-width:none; }
 .mapChoices::-webkit-scrollbar { display:none; }
 .placeCard { position:relative; isolation:isolate; display:block; flex:0 0 60%; scroll-snap-align:start; aspect-ratio:.68; min-width:0; padding:0; overflow:hidden; border:1px solid #ffffff99; border-radius:20px; background:linear-gradient(145deg,#567a7d,#263a4c); color:#fff; font:inherit; text-align:left; text-decoration:none; cursor:pointer; box-shadow:0 3px 10px #24394413; transition:transform .18s ease,border-color .18s,box-shadow .18s; }

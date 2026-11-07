@@ -10,11 +10,13 @@ type Props = {
   ticket: string; communityId: string; mapId: MapId; music?: RoomMusicState; serverTime: number;
   canControl: boolean; disabled: boolean; onSnapshot: (music: RoomMusicState, serverTime: number) => void;
   ambient?: { volume: number; onChange: (percent: number) => void };
+  /** 햄버거 메뉴 안: 줄 모양 버튼과 바로 펼쳐지는 패널 */
+  buttonClass?: string; inline?: boolean;
 };
 
 const IDLE_MUSIC: RoomMusicState = { ...ROOM_TRACKS["morning-v1"], playing: false, startedAt: null, version: 0 };
 
-export default function RoomMusicControls({ ticket, communityId, mapId, music = IDLE_MUSIC, serverTime, canControl, disabled, onSnapshot, ambient }: Props) {
+export default function RoomMusicControls({ ticket, communityId, mapId, music = IDLE_MUSIC, serverTime, canControl, disabled, onSnapshot, ambient, buttonClass, inline = false }: Props) {
   const player = useRef<RoomMusicPlayer | null>(null), request = useRef<AbortController | null>(null);
   const panel = useId(), box = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
@@ -67,12 +69,12 @@ export default function RoomMusicControls({ ticket, communityId, mapId, music = 
   if (!canControl && !music.playing && !hasBackground) return null;
   const quiet = preferences.muted || preferences.volume === 0;
   const needsListen = music.playing && !quiet && (status === "listen" || status === "error");
-  return <div ref={box} className={styles.control}>
-    <button ref={trigger} type="button" className={styles.trigger} aria-label="방 음악" aria-expanded={open} aria-controls={panel}
+  return <div ref={box} className={styles.control} data-inline={inline || undefined}>
+    <button ref={trigger} type="button" className={buttonClass ?? styles.trigger} aria-label="방 음악" aria-expanded={open} aria-controls={panel}
       data-playing={music.playing} onClick={() => { setOpen(!open); player.current?.unlock(); }}>
       <IconMusic /><span>음악</span>
     </button>
-    {open && <section id={panel} className={styles.panel} aria-label="방 음악 설정">
+    {open && <section id={panel} className={styles.panel} data-inline={inline || undefined} aria-label="방 음악 설정">
       {background && <div className={styles.background} data-shared={canControl || music.playing}>
         <div className={styles.heading}><span className={styles.cover}><IconMusic /></span><div>
           <small>우유니 배경음</small><strong>잔잔한 밤</strong>

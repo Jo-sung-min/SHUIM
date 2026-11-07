@@ -11,20 +11,22 @@ function Speaker({ muted }: { muted: boolean }) {
 }
 
 type Props = { map: "beach" | "bamboo" | "garden"; volume: number; open: boolean; buttonClass: string; onOpenChange: (open: boolean) => void;
-  onChange: (volume: number) => void; onToggleMute: () => void };
+  onChange: (volume: number) => void; onToggleMute: () => void;
+  /** 햄버거 메뉴 안: 패널을 띄우지 않고 버튼 아래에 바로 펼친다 */
+  inline?: boolean };
 
-export default function FieldSoundControl({ map, volume, open, buttonClass, onOpenChange, onChange, onToggleMute }: Props) {
+export default function FieldSoundControl({ map, volume, open, buttonClass, onOpenChange, onChange, onToggleMute, inline = false }: Props) {
   const id = useId(), root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), slider = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLElement>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const close = useRef(onOpenChange);
   useEffect(() => { close.current = onOpenChange; }, [onOpenChange]);
   useLayoutEffect(() => {
-    setPortalRoot(open ? root.current?.closest<HTMLElement>("[data-map]") ?? null : null);
-  }, [open]);
+    setPortalRoot(open && !inline ? root.current?.closest<HTMLElement>("[data-map]") ?? null : null);
+  }, [open, inline]);
   useLayoutEffect(() => {
     const popup = panel.current, button = trigger.current;
-    if (!open || !portalRoot || !popup || !button) return;
+    if (!open || inline || !portalRoot || !popup || !button) return;
     const viewport = window.visualViewport;
     let frame = 0;
     const position = () => {
@@ -59,7 +61,7 @@ export default function FieldSoundControl({ map, volume, open, buttonClass, onOp
       window.removeEventListener("scroll", schedule, true);
       viewport?.removeEventListener("resize", schedule); viewport?.removeEventListener("scroll", schedule);
     };
-  }, [open, portalRoot]);
+  }, [open, inline, portalRoot]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: Event) => {
@@ -78,7 +80,7 @@ export default function FieldSoundControl({ map, volume, open, buttonClass, onOp
       aria-controls={open ? id : undefined} onClick={() => onOpenChange(!open)}>
       <Speaker muted={muted} /><span>현장음</span>
     </button>
-    {open && portalRoot && createPortal(<section ref={panel} id={id} className={styles.panel} style={{ visibility: "hidden" }} aria-label="현장음 조절">
+    {open && (inline || portalRoot) && createPortal(<section ref={panel} id={id} className={styles.panel} data-inline={inline || undefined} style={inline ? undefined : { visibility: "hidden" }} aria-label="현장음 조절">
       <div className={styles.heading}><div><label htmlFor={id + "-range"}>내 현장음</label><small>{map === "beach" ? "파도 · 장작불 · 폭죽" : map === "garden" ? "연못 · 창가의 빗소리 · 폭죽" : "풀벌레 · 폭죽"}</small></div>
         <output htmlFor={id + "-range"}>{valueText}</output></div>
       <div className={styles.row}><button type="button" className={styles.speaker} aria-label={muted ? "현장음 음소거 해제" : "현장음 음소거"}
@@ -86,6 +88,6 @@ export default function FieldSoundControl({ map, volume, open, buttonClass, onOp
         <input ref={slider} id={id + "-range"} aria-valuetext={valueText} type="range" min={0} max={100} step={1} value={volume}
           style={{ "--filled": volume + "%" } as CSSProperties} onChange={e => onChange(e.currentTarget.valueAsNumber)} />
       </div>
-    </section>, portalRoot)}
+    </section>, inline ? root.current! : portalRoot!)}
   </div>;
 }

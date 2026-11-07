@@ -2,10 +2,9 @@
 .trayAction { box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1 1 0; gap:1px; width:100%; min-width:0; height:56px; min-height:56px; padding:3px 2px; border:1px solid transparent; border-radius:15px; background:transparent; color:var(--beach-ink,#34433e); font:inherit; cursor:pointer; text-align:center; touch-action:manipulation; transition:transform .15s,background .15s,opacity .15s; }
 .trayAction strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:11px; font-weight:650; line-height:1.2; letter-spacing:-.025em; white-space:nowrap; }
 .trayAction small { max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:9px; font-weight:400; line-height:1.2; color:var(--beach-muted,#68756f); white-space:nowrap; }
-.trayIcon { display:grid; place-items:center; flex:none; width:22px; height:22px; border-radius:8px; font-size:18px; line-height:1; background:#ffffff1f; color:inherit; }
-.trayIcon svg { width:18px; height:18px; }
-.trayWood .trayIcon { background:#edca8a26; color:color-mix(in srgb,var(--beach-ink,#34433e) 72%,#aa895e); }
-.trayPowder .trayIcon { background:#b8a4df26; color:color-mix(in srgb,var(--beach-ink,#34433e) 78%,#ab90c5); }
+/* 아이콘은 상자 없이 그림만: 옆의 앉기·눕기 버튼과 같은 22px 선 아이콘 크기 */
+.trayIcon { display:grid; place-items:center; flex:none; width:22px; height:22px; font-size:19px; line-height:1; color:inherit; }
+.trayIcon svg { width:22px; height:22px; }
 .trayAction:hover:not(:disabled) { background:#ffffff2e; }
 .trayAction:active:not(:disabled) { transform:scale(.95); background:#ffffff2e; }
 .trayAction:focus-visible { outline:2px solid var(--beach-ink,#34433e); outline-offset:-2px; background:#ffffff2e; }
@@ -70,22 +69,23 @@
 .powderButton[data-busy="true"] { opacity:.85; }
 .powderButton:focus-visible, .powderChoice:focus-visible, .powderConfirm:focus-visible { outline:3px solid #dfc6ff; outline-offset:3px; }
 .woodButton[data-busy="true"] .woodLabel > span, .powderButton[data-busy="true"] svg { display:none; }
-.powderScope { --surface:#fff; --surface-2:#f0f4f1; --text:#34433e; --text-2:#55665f; --text-3:#738179; --border:#dfe7e1; --border-strong:#c5d2c9; color:var(--text); color-scheme:light; }
-.powderScope :global(.sheet) { background:linear-gradient(145deg,#fffffff5,#f6faf4ed); border-top-color:#fff; box-shadow:0 -14px 40px #143c2214; -webkit-backdrop-filter:blur(24px) saturate(120%); backdrop-filter:blur(24px) saturate(120%); }
-.powderScope :global(.sheet-backdrop) { background:#17332935; }
-.powderSheet { padding:2px 0 8px; color:var(--text); touch-action:pan-y; }
-.powderIntro { margin:2px 0 18px; font-size:14px; line-height:1.7; color:var(--text-2); }
-.powderIntro > span { font-size:12px; color:var(--text-3); }
+/* 가루 시트는 다른 HUD 처럼 풍경이 비치는 유리 재질 (바닷가 화면 안에 띄워 --beach-* 를 물려받는다). 글은 색 이름만 */
+.powderScope { --surface:transparent; --surface-2:#ffffff1f; --text:var(--beach-ink,#34433e); --text-2:var(--beach-muted,#68756f); --text-3:var(--beach-muted,#68756f); --border:var(--beach-edge,#f8f4e638); --border-strong:var(--beach-edge,#f8f4e638); color:var(--text); }
+.powderScope :global(.sheet) { border:1px solid var(--beach-edge,#f8f4e638); border-bottom:0; background:var(--beach-glass,rgba(250,247,239,.18)); color:var(--beach-ink,#34433e); text-shadow:var(--beach-label-shadow,0 1px 2px #ffffff5c); box-shadow:0 -4px 22px #1c251b14; -webkit-backdrop-filter:blur(10px) saturate(115%); backdrop-filter:blur(10px) saturate(115%); }
+.powderScope :global(.sheet-backdrop) { background:transparent; }
+.powderScope :global(.sheet .handle) { background:#ffffff66; }
+.powderSheet { padding:0 0 6px; color:var(--text); touch-action:pan-y; }
 .powderChoices { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; }
-.powderChoice { display:flex; flex-direction:column; align-items:center; gap:10px; min-width:0; min-height:92px; padding:12px 3px 10px; border:1.5px solid var(--border); border-radius:15px; background:var(--surface); color:var(--text-2); font:inherit; font-size:11px; font-weight:650; cursor:pointer; transition:transform .12s,background .15s,border-color .15s; }
-.powderChoice[aria-pressed="true"] { border-color:#8d9f8e; background:var(--surface-2); color:var(--text); box-shadow:inset 0 0 0 1px #8d9f8e40; }
+.powderChoice { display:flex; flex-direction:column; align-items:center; gap:10px; min-width:0; min-height:88px; padding:12px 3px 10px; border:1px solid var(--beach-edge,#f8f4e638); border-radius:15px; background:#ffffff14; color:var(--text); font:inherit; font-size:11px; font-weight:650; cursor:pointer; transition:transform .12s,background .15s,border-color .15s; }
+.powderChoice[aria-pressed="true"] { border-color:var(--text); background:#ffffff2e; box-shadow:inset 0 0 0 1px var(--text); }
 .powderChoice:disabled { cursor:default; }
-.powderSwatch { position:relative; display:grid; place-items:center; width:35px; height:35px; border-radius:50%; background:var(--powder-fill); box-shadow:inset 0 1px 3px #fff9,0 4px 8px #28213417; color:#fffaf3; }
+.powderSwatch { position:relative; display:grid; place-items:center; width:35px; height:35px; border-radius:50%; background:var(--powder-fill); box-shadow:inset 0 1px 3px #fff9,0 4px 8px #28213417; color:#fffaf3; text-shadow:none; }
 .powderSwatch > svg { width:18px; height:18px; filter:drop-shadow(0 1px 1px #61505d4d); }
-.powderSwatch i { position:absolute; right:-6px; bottom:-3px; display:grid; place-items:center; width:17px; height:17px; border-radius:50%; background:#5d7865; border:2px solid var(--surface); color:#fff; }
+.powderSwatch i { position:absolute; right:-6px; bottom:-3px; display:grid; place-items:center; width:17px; height:17px; border-radius:50%; background:#5d7865; border:2px solid #ffffffd9; color:#fff; }
 .powderSwatch i svg { width:10px; height:10px; }
-.powderHint { margin:16px 0; font-size:12px; line-height:1.7; color:var(--text-3); }
-.powderConfirm { width:100%; min-height:49px; padding:13px 16px; border:0; border-radius:15px; background:#526d60; color:#fffdf8; font:inherit; font-size:14px; font-weight:700; cursor:pointer; transition:transform .12s,opacity .15s; }
+.powderHint { margin:12px 0 0; font-size:12px; line-height:1.6; color:var(--text-2); }
+.powderConfirm { width:100%; min-height:48px; margin-top:14px; padding:12px 16px; border:0; border-radius:15px; background:#526d60; color:#fffdf8; font:inherit; font-size:14px; font-weight:700; text-shadow:none; cursor:pointer; transition:transform .12s,opacity .15s; }
+:global([data-night="true"]) .powderConfirm { background:#dbe8dc; color:#1b3021; }
 @media(max-width:440px) { .withPowder .fireIcon { display:none; }.withPowder .fireCopy small { font-size:10px; } }
 @media(max-width:380px) { .withPowder .woodButton, .withPowder .powderButton { min-width:64px; max-width:83px; padding:6px 7px; font-size:11.5px; }.withPowder .woodLabel > span, .withPowder .powderButton svg { display:none; }.withPowder .viewButton { width:42px; } }
 @media(prefers-reduced-motion:reduce) { .powderButton, .powderChoice, .powderConfirm { transition:none; } }

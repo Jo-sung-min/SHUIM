@@ -23,9 +23,11 @@ const GRAND_STYLES = [
  * 불꽃놀이 버튼. 관리자(tickets === null)는 무료로 전 종류, 회원은 이용권을 한 장씩 쓴다.
  * 상태 우선순위: 준비 중 > 방 쿨타임(모두 같은 시각) > 잠김(이용권 0장 → onUnlock) > 열림.
  */
-export default function RoomFireworksControls({ deadline, busy, disabled, onLaunch, tickets = null, onUnlock }: {
+export default function RoomFireworksControls({ deadline, busy, disabled, onLaunch, tickets = null, onUnlock, buttonClass, inline = false }: {
   deadline: number; busy: boolean; disabled: boolean; onLaunch: (variant: FireworkVariant) => void; mapId?: MapId;
   tickets?: number | null; onUnlock?: () => void;
+  /** 햄버거 메뉴 안: 줄 모양 버튼과 바로 펼쳐지는 패널 */
+  buttonClass?: string; inline?: boolean;
 }) {
   const [now, setNow] = useState(Date.now);
   const [open, setOpen] = useState(false);
@@ -61,13 +63,13 @@ export default function RoomFireworksControls({ deadline, busy, disabled, onLaun
   const styleList = GRAND_STYLES.filter((style) => free || !style.adminOnly);
   const label = busy ? "준비 중…" : remaining ? `${remaining}초 후` : locked ? "불꽃놀이" : free ? "불꽃놀이" : `불꽃놀이 · ${tickets}장`;
   const ariaLabel = busy ? "불꽃놀이 준비 중" : remaining ? `불꽃놀이 ${remaining}초 후 가능` : locked ? "불꽃놀이 잠김 · 이용권이 필요해요" : free ? "불꽃놀이 고르기" : `불꽃놀이 고르기 · 이용권 ${tickets}장`;
-  return <div ref={container} className={styles.fireworksControl}>
-    <button ref={trigger} type="button" className={styles.glass + " " + styles.fireworksTrigger} data-action="fireworks" data-locked={locked || undefined}
+  return <div ref={container} className={styles.fireworksControl} data-inline={inline || undefined}>
+    <button ref={trigger} type="button" className={buttonClass ?? styles.glass + " " + styles.fireworksTrigger} data-action="fireworks" data-locked={locked || undefined}
       disabled={unavailable} aria-busy={busy} aria-expanded={locked ? undefined : open} aria-controls={locked ? undefined : panelId} aria-haspopup={locked ? "dialog" : undefined}
       aria-label={ariaLabel} onClick={() => { if (locked) onUnlock?.(); else setOpen(!open); }}>
       {locked ? <IconLock /> : <IconSparkle />}<span>{label}</span>
     </button>
-    {open && !locked && <div id={panelId} className={styles.fireworksPanel} data-grand="true" role="group" aria-label="불꽃놀이 종류">
+    {open && !locked && <div id={panelId} className={styles.fireworksPanel} data-grand="true" data-inline={inline || undefined} role="group" aria-label="불꽃놀이 종류">
       <strong>하늘에 띄우고 싶은 마음</strong>
       {styleList.map(({ variant, label: name, description, Icon }) => <button key={variant} type="button"
         data-firework-variant={variant} disabled={unavailable}
