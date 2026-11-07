@@ -77,7 +77,8 @@ export default function CircleHomePage() {
               {!("role" in c) && <small>리스닝</small>}
             </Link>
           ))}
-          <Link href="/c" className={`${styles.mineChip} ${styles.add}`}><IconPlus aria-hidden="true" />소로우 찾기</Link>
+          <Link href="/c" className={`${styles.mineChip} ${styles.add}`}><IconSearch aria-hidden="true" />소로우 찾기</Link>
+          <Link href="/c/new" className={`${styles.mineChip} ${styles.add}`}><IconPlus aria-hidden="true" />소로우 열기</Link>
         </div>
 
         <BeachCard circles={mine.member.filter((c) => c.status === "active")} />
@@ -96,6 +97,7 @@ export default function CircleHomePage() {
             </p>
             <div className={styles.actions}>
               <Link href="/c" className="btn"><IconSearch />내 소로우 찾기</Link>
+              <Link href="/c/new" className="btn ghost"><IconPlus />소로우 열기</Link>
             </div>
           </>
         ) : posts.length === 0 ? (

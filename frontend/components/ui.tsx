@@ -7,11 +7,11 @@ import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 
 /* ---------- 상단 바 (인스타그램처럼 내리면 숨고 올리면 다시 나온다) ---------- */
-export function TopBar({ title, eyebrow, right }: { title: string; eyebrow?: ReactNode; right?: ReactNode }) {
+export function TopBar({ title, eyebrow, right, titleHidden }: { title: string; eyebrow?: ReactNode; right?: ReactNode; /** 본문 머리가 제목을 보여 주는 동안 상단 제목을 숨긴다 (스크롤해 머리가 사라지면 나타난다) */ titleHidden?: boolean }) {
   const hidden = useHideOnScroll();
   return (
     <header className="topbar" data-hidden={hidden || undefined}>
-      <h1>
+      <h1 data-faded={titleHidden || undefined}>
         {eyebrow && <span className="eyebrow">{eyebrow}</span>}
         {title}
       </h1>

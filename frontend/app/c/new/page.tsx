@@ -1,26 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CIRCLE_KINDS, CircleKind, JoinMode, Visibility, createCircle } from "@/lib/circles";
+import { CIRCLE_KINDS, CircleKind, JoinMode, Visibility, createCircle, updateCircle } from "@/lib/circles";
 import { fetchMe } from "@/lib/auth";
 import { TopBar } from "@/components/ui";
 import { IconChevronL } from "@/components/Icons";
-import { toastSuccess } from "@/lib/toast";
-import Link from "next/link";
+import CircleIconPicker, { type IconChoice } from "@/components/CircleIconPicker";
+import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../circle.module.css";
 import { route } from "@/lib/routes";
 
+/** 주소를 비워 두면 짧은 무작위 주소를 쓴다 (오픈채팅방처럼 주소까지 고민하지 않아도 되게) */
+function randomSlug() {
+  const abc = "abcdefghjkmnpqrstuvwxyz23456789";
+  let s = "s-";
+  for (let i = 0; i < 6; i++) s += abc[Math.floor(Math.random() * abc.length)];
+  return s;
+}
+const withSuffix = (name: string) => `${name.trim().replace(/\s*소로우$/, "")} 소로우`;
+
 /**
- * 소로우 열기 (관리자만). 회사·학교 같은 소속 이름이 아니라 "미식", "자취", "싱글"처럼 즐기는 일·살아가는 일로 연다.
- * 일반 계정은 둘러보기에서 고르기만 하고, 필요한 소로우는 운영진에게 알린다
+ * 소로우 열기. 카카오톡 오픈채팅방처럼 누구나 열고, 연 사람이 소로우지기가 되어 이름·아이콘·가입 방식·멤버를 관리한다.
+ * 회사·학교 같은 소속 이름이 아니라 "미식", "자취", "싱글"처럼 즐기는 일·살아가는 일로 연다.
  */
 export default function NewCirclePage() {
   const router = useRouter();
-  const [admin, setAdmin] = useState<boolean | null>(null);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [choice, setChoice] = useState<IconChoice>({ icon: null, image: null });
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [kind, setKind] = useState<CircleKind>("work");
+  const [kind, setKind] = useState<CircleKind>("enjoy");
   const [intro, setIntro] = useState("");
   const [joinMode, setJoinMode] = useState<JoinMode>("open");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -28,7 +39,8 @@ export default function NewCirclePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchMe().then((m) => setAdmin(Boolean(m.user && m.admin))).catch(() => setAdmin(false));
+    // 익명(앱인토스) 계정도 소로우를 열 수 있다. 서버도 같은 기준이다
+    fetchMe().then((m) => setSignedIn(Boolean(m.user || m.anonymousId))).catch(() => setSignedIn(false));
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -37,7 +49,12 @@ export default function NewCirclePage() {
     setBusy(true);
     setError(null);
     try {
-      const c = await createCircle({ name, slug, kind, intro, joinMode, visibility });
+      const c = await createCircle({ name, slug: slug.trim() || randomSlug(), kind, intro, joinMode, visibility, icon: choice.icon });
+      if (choice.image) {
+        // 사진은 소로우가 생긴 뒤에 붙는다. 실패해도 소로우는 열렸으니 설정에서 다시 올리면 된다
+        try { await updateCircle(c.slug, { iconImage: choice.image }); }
+        catch (err) { showToast(err instanceof Error ? err.message : "아이콘 사진은 올리지 못했어요. 설정에서 다시 올릴 수 있어요"); }
+      }
       toastSuccess(`${c.name}이 열렸어요`);
       router.replace(route(`/c/${c.slug}`));
     } catch (err) {
@@ -46,19 +63,30 @@ export default function NewCirclePage() {
     }
   };
 
-  const back = <button className="icon-btn" onClick={() => router.back()} aria-label="뒤로"><IconChevronL /></button>;
+  const back = <button className="icon-btn" onClick={() => (history.length > 1 ? router.back() : router.push("/c"))} aria-label="뒤로"><IconChevronL /></button>;
   return (
     <>
       <TopBar title="소로우 열기" right={back} />
       <div className={`screen ${styles.plain}`}>
-        {admin === false ? (
+        {signedIn === false ? (
           <div className={styles.locked}>
-            <b>소로우는 운영진이 열어요</b>
-            회사·학교 이름 대신 미식, 자취, 싱글, 자영업처럼 즐기는 일·살아가는 일로 모여요. 나에게 맞는 소로우가 없으면 알려 주세요.
-            <Link href="/c" className="btn" style={{ marginTop: 8 }}>소로우 둘러보기</Link>
+            <b>로그인하면 바로 열 수 있어요</b>
+            연 사람이 소로우지기가 되어 이름·아이콘·가입 방식을 정하고 멤버를 맞이해요.
+            <Link href="/me" className="btn" style={{ marginTop: 8 }}>로그인하기</Link>
           </div>
         ) : (
           <form className={styles.form} onSubmit={submit}>
+            <div className={styles.field}>
+              <span>아이콘</span>
+              <CircleIconPicker name={name.trim() ? withSuffix(name) : ""} value={choice} onChange={setChoice} disabled={busy} />
+            </div>
+
+            <label className={styles.field}>
+              <span>이름</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 미식" maxLength={26} required />
+              <small>끝에 ‘소로우’가 붙어요 → {name.trim() ? withSuffix(name) : "미식 소로우"}. 회사·학교 이름은 쓰지 않아요.</small>
+            </label>
+
             <div className={styles.field}>
               <span>묶음</span>
               <div className={styles.seg} role="radiogroup" aria-label="소로우 묶음">
@@ -72,20 +100,8 @@ export default function NewCirclePage() {
             </div>
 
             <label className={styles.field}>
-              <span>이름</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 쉬는 중" maxLength={26} required />
-              <small>회사·학교 같은 소속 이름은 쓰지 않아요. 끝에 ‘소로우’가 붙어요 → {name.trim() ? `${name.trim().replace(/\s*소로우$/, "")} 소로우` : "쉬는 중 소로우"}</small>
-            </label>
-
-            <label className={styles.field}>
-              <span>주소</span>
-              <input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} placeholder="resting" maxLength={40} required pattern="[a-z0-9][a-z0-9\-]{1,38}[a-z0-9]" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-              <small>sorow.co.kr/c/{slug || "resting"} · 영문 소문자·숫자·하이픈 3~40자</small>
-            </label>
-
-            <label className={styles.field}>
               <span>소개</span>
-              <textarea value={intro} onChange={(e) => setIntro(e.target.value)} placeholder="어떤 이야기를 나누는 곳인지 한두 줄로" maxLength={200} style={{ minHeight: 96 }} />
+              <textarea value={intro} onChange={(e) => setIntro(e.target.value)} placeholder="어떤 이야기를 나누는 곳인지 한 줄로" maxLength={200} style={{ minHeight: 80 }} />
             </label>
 
             <div className={styles.field}>
@@ -111,8 +127,14 @@ export default function NewCirclePage() {
               </div>
             </div>
 
+            <label className={styles.field}>
+              <span>주소 <small>선택</small></span>
+              <input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} placeholder="비워 두면 자동으로 정해요" maxLength={40} pattern="[a-z0-9][a-z0-9\-]{1,38}[a-z0-9]" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+              <small>sorow.co.kr/c/{slug || "…"} · 영문 소문자·숫자·하이픈 3~40자</small>
+            </label>
+
             <p className={styles.sub} style={{ margin: 0 }}>
-              소로우를 연 사람은 소로우지기가 돼요. 멤버가 보낸 사연을 읽고, 실명·연락처·소속을 가린 뒤 올려요. 보낸 사람이 누구인지는 소로우지기도 알 수 없어요. 연 소로우는 바로 둘러보기에 나와요.
+              연 사람이 소로우지기예요. 멤버가 보낸 사연을 실명·연락처를 가려 올리고, 가입과 멤버를 관리해요. 보낸 사람이 누구인지는 소로우지기도 알 수 없어요.
             </p>
             {error && <div className="notice warn" role="alert">{error}</div>}
             <button className="btn block" disabled={busy} aria-busy={busy}>{busy ? "여는 중…" : "소로우 열기"}</button>

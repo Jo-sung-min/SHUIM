@@ -5,6 +5,7 @@ import Link from "next/link";
 import { assetUrl } from "@/lib/assets";
 import { fetchBeachCount, type BeachCount } from "@/lib/beach/net";
 import { MAPS, mapHref, type MapId } from "@/lib/beach/maps";
+import { rememberBeachReturn } from "@/lib/beach/return";
 import type { Circle } from "@/lib/circles";
 import { IconChevronL, IconChevronR, IconUsers } from "@/components/Icons";
 import styles from "./BeachCard.module.css";
@@ -98,7 +99,7 @@ export default function BeachCard({ circles }: { circles: BeachCircle[] }) {
           return full ? <button key={choice.id} type="button" className={styles.placeCard} data-place={choice.id}
             disabled aria-label={`${choice.name}, 만석`}>{content}</button>
             : <Link key={choice.id} className={styles.placeCard} data-place={choice.id}
-              prefetch={false}
+              prefetch={false} onClick={rememberBeachReturn}
               href={chosen ? mapHref(choice.id, chosen.id) : "/c"}
               aria-label={chosen ? `${chosen.name} ${choice.name} 들어가기` : `${choice.name}, 소로우 찾기`}>{content}</Link>;
         })}

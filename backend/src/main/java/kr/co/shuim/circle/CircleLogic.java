@@ -23,6 +23,10 @@ public final class CircleLogic {
     public static final List<String> VISIBILITIES = List.of("public", "members");
     /** 한 사람(관리자)이 열 수 있는 소로우 */
     public static final int MAX_OWNED = 30;
+    /** 소로우 아이콘으로 고를 수 있는 기본 아이콘 (frontend components/CircleMark CIRCLE_ICONS 와 같은 id) */
+    public static final java.util.Set<String> ICONS = java.util.Set.of("coffee", "leaf", "heart", "star", "moon", "sun", "book", "briefcase", "run", "gamepad", "music", "film", "palette", "plane", "paw", "lotus", "clover", "flame");
+    /** 올린 아이콘 사진 크기 상한 (화면에서 256px 로 줄여 보낸다) */
+    public static final int ICON_MAX_BYTES = 200 * 1024;
     public static final String PRIVATE_TEST_SLUG = "haesongmin-private-test";
     public static final String PRIVATE_TEST_NAME = "헤송민의 소로우";
     public static final int PRIVATE_TEST_CAPACITY = 4;

@@ -6,7 +6,12 @@ import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.community.CommunityConsentService;
 import kr.co.shuim.config.ApiException;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.Duration;
 
 import java.util.*;
 
@@ -44,12 +49,12 @@ public class CircleController {
         return circles.mine(auth.requireUser(req, res));
     }
 
-    /** POST /api/circles { name, slug, kind, intro, joinMode, visibility } — 처지 소로우 열기 (관리자만) */
+    /** POST /api/circles { name, slug, kind, intro, joinMode, visibility, icon? } — 소로우 열기 (누구나, 연 사람이 소로우지기) */
     @PostMapping("/api/circles")
     public Map<String, Object> create(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
         consent.requireAccepted(me);
-        return circles.create(me, new CircleService.CreateInput(s(b, "name"), s(b, "slug"), s(b, "kind"), s(b, "intro"), s(b, "joinMode"), s(b, "visibility"), s(b, "domain")));
+        return circles.create(me, new CircleService.CreateInput(s(b, "name"), s(b, "slug"), s(b, "kind"), s(b, "intro"), s(b, "joinMode"), s(b, "visibility"), s(b, "domain"), s(b, "icon")));
     }
 
     @PostMapping("/api/circles/private-test")
@@ -71,7 +76,15 @@ public class CircleController {
         return circles.detail(auth.currentUser(req).orElse(null), slug);
     }
 
-    /** PUT /api/circles/{slug} { notice?, intro?, visibility?, joinMode?, regenerateInvite? } */
+    /** GET /api/circles/{slug}/icon — 올린 아이콘 사진. 주소에 ?v=iconAt 이 붙어 바뀌면 다른 주소가 되므로 오래 캐시한다 */
+    @GetMapping("/api/circles/{slug}/icon")
+    public ResponseEntity<byte[]> icon(@PathVariable String slug) {
+        CircleService.Image image = circles.icon(slug).orElseThrow(() -> ApiException.notFound("not found"));
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(image.type()))
+            .cacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePublic()).body(image.bytes());
+    }
+
+    /** PUT /api/circles/{slug} { notice?, intro?, name?, icon?, iconImage?, visibility?, joinMode?, regenerateInvite? } */
     @PutMapping("/api/circles/{slug}")
     public Map<String, Object> update(@PathVariable String slug, @RequestBody(required = false) Map<String, Object> b, HttpServletRequest req, HttpServletResponse res) {
         return circles.update(auth.requireUser(req, res), slug, body(b));
@@ -83,6 +96,13 @@ public class CircleController {
         DbUser me = auth.requireUser(req, res);
         consent.requireAccepted(me);
         return circles.join(me, slug, s(b, "code"));
+    }
+
+    /** DELETE /api/circles/{slug} — 소로우 닫기 (연 사람만) */
+    @DeleteMapping("/api/circles/{slug}")
+    public Map<String, Object> close(@PathVariable String slug, HttpServletRequest req, HttpServletResponse res) {
+        circles.close(auth.requireUser(req, res), slug);
+        return Map.of("closed", true);
     }
 
     @PostMapping("/api/circles/{slug}/leave")

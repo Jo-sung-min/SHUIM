@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { CIRCLE_KINDS, Circle, CircleKind, browseCircles, fetchWarmCircles } from "@/lib/circles";
 import ShoutTabs from "@/components/ShoutTabs";
 import { CircleRow } from "@/components/CircleRow";
 import { LoadError } from "@/components/CommunityUI";
 import { Empty, SkeletonList } from "@/components/ui";
-import { IconClose, IconLeaf, IconSearch } from "@/components/Icons";
+import { IconClose, IconLeaf, IconPlus, IconSearch } from "@/components/Icons";
 import shout from "../shout/shout.module.css";
 import styles from "./circle.module.css";
 
@@ -67,7 +68,10 @@ export default function CircleBrowsePage() {
           </>
         )}
 
-        <div className={styles.head}><h2>{query ? `‘${query.trim()}’ 소로우` : kind ? CIRCLE_KINDS.find((k) => k.id === kind)?.label : "모든 소로우"}</h2></div>
+        <div className={styles.head}>
+          <h2>{query ? `‘${query.trim()}’ 소로우` : kind ? CIRCLE_KINDS.find((k) => k.id === kind)?.label : "모든 소로우"}</h2>
+          <Link href="/c/new"><IconPlus aria-hidden="true" />소로우 열기</Link>
+        </div>
         {kind && <p className={styles.sub}>{CIRCLE_KINDS.find((k) => k.id === kind)?.hint}</p>}
         {loadError ? (
           <LoadError message={loadError} onRetry={() => setReload((n) => n + 1)} />
@@ -76,6 +80,7 @@ export default function CircleBrowsePage() {
         ) : list.length === 0 ? (
           <Empty icon={<IconLeaf />} title={query ? "찾는 소로우가 없어요" : "아직 둘러볼 소로우가 없어요"}>
             회사·학교 이름 대신 즐기는 일, 살아가는 일로 모여요. 미식, 자취, 싱글, 자영업처럼 찾아보세요.
+            <div className={styles.actions}><Link href="/c/new" className="btn soft"><IconPlus />직접 열기</Link></div>
           </Empty>
         ) : (
           <ul className={styles.circles}>{list.filter(c => !c.pinned).map((c) => <li key={c.id}><CircleRow c={c} /></li>)}</ul>

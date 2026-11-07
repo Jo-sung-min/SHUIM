@@ -37,6 +37,9 @@
   background: var(--surface-2); color: var(--text); font-size: 17px; font-weight: 800;
 }
 .mark[data-rank] { background: var(--text); color: var(--bg); font-variant-numeric: tabular-nums; }
+.mark svg { width: 22px; height: 22px; }
+.mark[data-image] { overflow: hidden; }
+.mark img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .circleMain { flex: 1; min-width: 0; }
 .circleMain b { display: flex; align-items: center; gap: 4px; font-size: 16px; font-weight: 750; letter-spacing: -0.02em; }
 .circleMain p { margin: 3px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -56,6 +59,7 @@
 .hero { padding: 6px 0 4px; }
 .heroTop { display: flex; align-items: center; gap: 12px; }
 .heroTop .mark { width: 56px; height: 56px; border-radius: 16px; font-size: 22px; }
+.heroTop .mark svg { width: 28px; height: 28px; }
 .heroTop h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; }
 .heroTop h2 .verified svg { width: 20px; height: 20px; }
 .meta { margin: 4px 0 0; color: var(--text-2); font-size: 13px; }
@@ -70,6 +74,19 @@
 .pill { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 650; }
 .pill.warn { background: var(--danger-soft); color: var(--danger); }
 .pill.ok { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- 아이콘 고르기 (소로우 열기·설정) ---------- */
+.iconPicker { display: grid; gap: 12px; }
+.iconPreview { display: flex; align-items: center; gap: 12px; }
+.iconPreview .mark { width: 56px; height: 56px; border-radius: 16px; font-size: 22px; }
+.iconPreview .mark svg { width: 28px; height: 28px; }
+.iconPreviewActions { display: flex; flex-wrap: wrap; gap: 6px; }
+.iconGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.iconChoice { display: grid; place-items: center; aspect-ratio: 1; min-width: 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text-2); cursor: pointer; }
+.iconChoice svg { width: 22px; height: 22px; }
+.iconChoice[aria-checked="true"] { border-color: var(--text); background: var(--text); color: var(--bg); }
+.iconChoice:disabled { opacity: .5; cursor: default; }
+.iconError { color: var(--danger); font-size: 13px; }
 
 /* ---------- 폼 ---------- */
 .form { display: grid; gap: 18px; }

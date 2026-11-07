@@ -63,9 +63,16 @@ public class CircleService {
 
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
                          String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
-                         boolean privateTest, boolean pinned, int spaceCapacity) {
+                         boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt) {
         public Circle {
             spaceCapacity = SpaceCapacity.effective(spaceCapacity);
+        }
+
+        public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
+                      String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
+                      boolean privateTest, boolean pinned, int spaceCapacity) {
+            this(id, slug, name, kind, domain, verified, joinMode, visibility, intro, notice, createdBy, postSeq,
+                createdAt, memberCount, listenerCount, sample, privateTest, pinned, spaceCapacity, null, null);
         }
 
         public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
@@ -97,6 +104,8 @@ public class CircleService {
         m.put("spaceCapacity", c.spaceCapacity());
         m.put("intro", c.intro());
         m.put("notice", c.notice());
+        if (c.icon() != null) m.put("icon", c.icon());
+        if (c.iconAt() != null) m.put("iconUrl", "/api/circles/" + c.slug() + "/icon?v=" + c.iconAt());
         m.put("memberCount", c.memberCount());
         m.put("listenerCount", c.listenerCount());
         m.put("postCount", c.postSeq());
@@ -115,17 +124,22 @@ public class CircleService {
         return new Circle(rs.getString("id"), rs.getString("slug"), rs.getString("name"), rs.getString("kind"), rs.getString("domain"), rs.getBoolean("verified"),
             rs.getString("join_mode"), rs.getString("visibility"), rs.getString("intro"), rs.getString("notice"), rs.getString("created_by"), rs.getInt("post_seq"),
             Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"), rs.getBoolean("sample"),
-            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"));
+            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"), rs.getString("icon"), nullableLong(rs, "icon_at"));
+    }
+
+    private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 
     public Circle bySlug(String slug) {
-        return jdbc.sql(CIRCLE_SELECT + " WHERE c.slug = ?").param(slug == null ? "" : slug.toLowerCase(Locale.ROOT))
+        return jdbc.sql(CIRCLE_SELECT + " WHERE c.slug = ? AND c.closed_at IS NULL").param(slug == null ? "" : slug.toLowerCase(Locale.ROOT))
             .query((rs, i) -> circleRow(rs)).optional().orElseThrow(() -> ApiException.notFound("소로우를 찾을 수 없어요"));
     }
 
     /** 다른 기능이 소로우의 고유 id 로 접근할 때도 실제로 존재하는 소로우인지 확인한다. */
     public Circle byId(String id) {
-        return jdbc.sql(CIRCLE_SELECT + " WHERE c.id = ?").param(id)
+        return jdbc.sql(CIRCLE_SELECT + " WHERE c.id = ? AND c.closed_at IS NULL").param(id)
             .query((rs, i) -> circleRow(rs)).optional().orElseThrow(() -> ApiException.notFound("소로우를 찾을 수 없어요"));
     }
 
@@ -145,7 +159,7 @@ public class CircleService {
         return viewer != null && !viewer.anonymous() && !viewer.blocked() ? viewer.id() : null;
     }
 
-    private static final String VISIBLE_CIRCLE = PrivateCircleAccess.visibleTo("c", ":viewerId");
+    private static final String VISIBLE_CIRCLE = PrivateCircleAccess.visibleTo("c", ":viewerId") + " AND c.closed_at IS NULL";
 
     public boolean canAccess(Circle circle, DbUser viewer) {
         if (!circle.privateTest()) return true;
@@ -238,7 +252,7 @@ public class CircleService {
             .param("viewerId", viewerId(viewer)).query((rs, i) -> rs.getString("community_id")).list();
         if (ids.isEmpty()) return List.of();
         Map<String, Circle> byId = new HashMap<>();
-        jdbc.sql(CIRCLE_SELECT + " WHERE c.id IN (:ids)").param("ids", ids).query((rs, i) -> circleRow(rs)).list().forEach(c -> byId.put(c.id(), c));
+        jdbc.sql(CIRCLE_SELECT + " WHERE c.id IN (:ids) AND c.closed_at IS NULL").param("ids", ids).query((rs, i) -> circleRow(rs)).list().forEach(c -> byId.put(c.id(), c));
         List<Map<String, Object>> out = new ArrayList<>();
         for (String id : ids) {
             Circle c = byId.get(id);
@@ -277,7 +291,11 @@ public class CircleService {
 
     /* ---------- 만들기·설정 ---------- */
 
-    public record CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain) {}
+    public record CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain, String icon) {
+        public CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain) {
+            this(name, slug, kind, intro, joinMode, visibility, domain, null);
+        }
+    }
 
     /** The allowlist is fixed at creation; no invite, domain, keeper or global-admin bypass exists. */
     @Transactional
@@ -328,8 +346,8 @@ public class CircleService {
 
     @Transactional
     public Map<String, Object> create(DbUser me, CreateInput in) {
-        // 처지 소로우는 서비스가 연다 (회사·학교 이름을 단 소로우가 생기지 않게)
-        if (!appAdmin(me)) throw ApiException.forbidden("소로우는 소로우 운영진이 열어요. 필요한 처지가 있으면 알려 주세요");
+        // 오픈채팅방처럼 누구나 연다. 연 사람이 소로우지기(owner)가 되어 이름·아이콘·가입 방식·멤버까지 관리한다
+        assertNotBlocked(me);
         String name = CircleLogic.normalizeName(in.name());
         if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
         String slug = CircleLogic.normalizeSlug(in.slug());
@@ -349,12 +367,13 @@ public class CircleService {
         String visibility = in.visibility() != null && CircleLogic.VISIBILITIES.contains(in.visibility()) ? in.visibility() : "public";
         String intro = in.intro() == null ? "" : in.intro().strip();
         if (intro.length() > 200) intro = intro.substring(0, 200);
+        String icon = in.icon() != null && CircleLogic.ICONS.contains(in.icon()) ? in.icon() : null;
         String id = Ids.uid();
         jdbc.sql("""
-            INSERT INTO communities (id, slug, name, name_key, kind, domain, join_mode, visibility, intro, invite_code, created_by, space_capacity)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
+            INSERT INTO communities (id, slug, name, name_key, kind, domain, join_mode, visibility, intro, invite_code, created_by, space_capacity, icon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
             .param(id).param(slug).param(name).param(key).param(kind).param(domain).param(joinMode).param(visibility).param(intro)
-            .param("invite".equals(joinMode) ? inviteCode() : null).param(me.id()).param(SpaceCapacity.MAX).update();
+            .param("invite".equals(joinMode) ? inviteCode() : null).param(me.id()).param(SpaceCapacity.MAX).param(icon).update();
         boolean hasPrimary = jdbc.sql("SELECT count(*) FROM community_members WHERE user_id = ? AND is_primary").param(me.id()).query(Long.class).single() > 0;
         jdbc.sql("INSERT INTO community_members (community_id, user_id, role, status, is_primary) VALUES (?, ?, 'owner', 'active', ?)")
             .param(id).param(me.id()).param(!hasPrimary).update();
@@ -369,12 +388,36 @@ public class CircleService {
         return sb.toString();
     }
 
-    /** 설정: 소로우지기는 공지만, 연 사람은 소개·가입 방식·공개 범위·초대 코드까지 */
+    /** 올린 아이콘 사진 (png/jpeg/webp data URL, ICON_MAX_BYTES 이하). bytes 는 내려줄 때만 채운다 */
+    public record Image(String type, String base64, byte[] bytes) {}
+    private static final java.util.regex.Pattern ICON_DATA_URL =
+        java.util.regex.Pattern.compile("^data:(image/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\\s]+)$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    static Image decodeIcon(String dataUrl) {
+        var m = ICON_DATA_URL.matcher(dataUrl.strip());
+        if (!m.matches()) throw ApiException.badRequest("PNG·JPEG·WebP 이미지만 올릴 수 있어요");
+        String base64 = m.group(2).replaceAll("\\s", "");
+        byte[] bytes;
+        try { bytes = Base64.getDecoder().decode(base64); }
+        catch (IllegalArgumentException e) { throw ApiException.badRequest("이미지 형식을 읽지 못했어요"); }
+        if (bytes.length == 0) throw ApiException.badRequest("빈 이미지예요");
+        if (bytes.length > CircleLogic.ICON_MAX_BYTES) throw ApiException.badRequest("아이콘 사진은 " + (CircleLogic.ICON_MAX_BYTES / 1024) + "KB 이하로 올려요");
+        return new Image(m.group(1).toLowerCase(Locale.ROOT), base64, bytes);
+    }
+
+    /** GET /api/circles/{slug}/icon 용 바이트 */
+    public Optional<Image> icon(String slug) {
+        return jdbc.sql("SELECT icon_type, icon_data FROM communities WHERE slug = ? AND icon_data IS NOT NULL").param(slug)
+            .query((rs, i) -> { String b64 = rs.getString("icon_data"); return new Image(rs.getString("icon_type"), b64, Base64.getDecoder().decode(b64)); })
+            .optional();
+    }
+
+    /** 설정: 소로우지기는 공지만, 연 사람은 이름·아이콘·소개·가입 방식·공개 범위·초대 코드까지 */
     @Transactional
     public Map<String, Object> update(DbUser me, String slug, Map<String, Object> b) {
         Circle c = bySlug(slug);
         Member m = requireKeeper(c, me);
-        if (c.privateTest() && List.of("visibility", "joinMode", "regenerateInvite", "privateTest", "pinned", "spaceCapacity").stream().anyMatch(b::containsKey)) {
+        if (c.privateTest() && List.of("visibility", "joinMode", "regenerateInvite", "privateTest", "pinned", "spaceCapacity", "name").stream().anyMatch(b::containsKey)) {
             throw ApiException.badRequest("비공개 테스트 소로우의 공개 범위와 참여 설정은 바꿀 수 없어요");
         }
         if (b.get("notice") instanceof String n) {
@@ -387,6 +430,29 @@ public class CircleService {
                 String t = n.strip();
                 jdbc.sql("UPDATE communities SET intro = ? WHERE id = ?").param(t.length() > 200 ? t.substring(0, 200) : t).param(c.id()).update();
             }
+            if (b.get("name") instanceof String raw) {
+                String name = CircleLogic.normalizeName(raw);
+                if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
+                String key = CircleLogic.nameKey(name);
+                if (CircleLogic.nameKey(CircleLogic.PRIVATE_TEST_NAME).equals(key)) throw ApiException.badRequest("이 이름은 비공개 테스트 소로우 전용이에요");
+                if (jdbc.sql("SELECT count(*) FROM communities WHERE name_key = ? AND id <> ?").param(key).param(c.id()).query(Long.class).single() > 0) {
+                    throw ApiException.badRequest("같은 이름의 소로우가 이미 있어요");
+                }
+                jdbc.sql("UPDATE communities SET name = ?, name_key = ? WHERE id = ?").param(name).param(key).param(c.id()).update();
+            }
+            if (b.containsKey("icon")) {
+                String picked = b.get("icon") instanceof String s && CircleLogic.ICONS.contains(s) ? s : null;
+                jdbc.sql("UPDATE communities SET icon = ? WHERE id = ?").param(picked).param(c.id()).update();
+            }
+            if (b.containsKey("iconImage")) {
+                if (b.get("iconImage") instanceof String dataUrl && !dataUrl.isBlank()) {
+                    Image image = decodeIcon(dataUrl);
+                    jdbc.sql("UPDATE communities SET icon_type = ?, icon_data = ?, icon_at = ? WHERE id = ?")
+                        .param(image.type()).param(image.base64()).param(System.currentTimeMillis()).param(c.id()).update();
+                } else {
+                    jdbc.sql("UPDATE communities SET icon_type = NULL, icon_data = NULL, icon_at = NULL WHERE id = ?").param(c.id()).update();
+                }
+            }
             if (b.get("visibility") instanceof String v && CircleLogic.VISIBILITIES.contains(v)) {
                 jdbc.sql("UPDATE communities SET visibility = ? WHERE id = ?").param(v).param(c.id()).update();
             }
@@ -397,10 +463,21 @@ public class CircleService {
             if (Boolean.TRUE.equals(b.get("regenerateInvite"))) {
                 jdbc.sql("UPDATE communities SET invite_code = ? WHERE id = ?").param(inviteCode()).param(c.id()).update();
             }
-        } else if (b.containsKey("intro") || b.containsKey("visibility") || b.containsKey("joinMode") || b.containsKey("regenerateInvite")) {
+        } else if (b.containsKey("intro") || b.containsKey("visibility") || b.containsKey("joinMode") || b.containsKey("regenerateInvite") || b.containsKey("name") || b.containsKey("icon") || b.containsKey("iconImage")) {
             throw ApiException.forbidden("소로우를 연 사람만 바꿀 수 있어요");
         }
         return detail(me, slug);
+    }
+
+    /** 소로우 닫기 (연 사람만). 지우지 않고 closed_at 만 적어 둘러보기·내 소로우·바닷가에서 사라지게 한다. 올라간 사연은 그대로 남는다 */
+    @Transactional
+    public void close(DbUser me, String slug) {
+        Circle c = bySlug(slug);
+        Member m = requireKeeper(c, me);
+        if (!(m.owner() || appAdmin(me))) throw ApiException.forbidden("소로우를 연 사람만 닫을 수 있어요");
+        if (c.privateTest()) throw ApiException.badRequest("비공개 테스트 소로우는 닫을 수 없어요");
+        jdbc.sql("UPDATE communities SET closed_at = ? WHERE id = ? AND closed_at IS NULL").param(System.currentTimeMillis()).param(c.id()).update();
+        badges.refresh(me.id());
     }
 
     /* ---------- 가입·나가기·대표·리스닝 ---------- */

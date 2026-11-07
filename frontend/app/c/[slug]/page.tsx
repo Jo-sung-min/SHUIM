@@ -9,7 +9,8 @@ import {
 } from "@/lib/circles";
 import CirclePosts, { circlePostsOf } from "@/components/CirclePosts";
 import BeachCard from "@/components/beach/BeachCard";
-import { SampleTag, Verified, circleInitial } from "@/components/CircleRow";
+import { SampleTag, Verified } from "@/components/CircleRow";
+import { CircleMark } from "@/components/CircleMark";
 import { LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar } from "@/components/ui";
 import { IconChevronL, IconLeaf, IconLock, IconMegaphone, IconMore, IconPen, IconShare, IconShield } from "@/components/Icons";
@@ -27,6 +28,8 @@ export default function CirclePage() {
   const [busy, setBusy] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [more, setMore] = useState(false);
+  const [titleShown, setTitleShown] = useState(false);
+  const heroRef = useRef<HTMLElement>(null);
   const [leaving, setLeaving] = useState(false);
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
@@ -45,6 +48,16 @@ export default function CirclePage() {
   useEffect(() => {
     load();
   }, [load]);
+  // 머리(이름·아이콘)가 상단 바 아래로 밀려 나가면 그때 상단 바에 이름이 떠오른다 (같은 이름을 두 번 보여 주지 않는다)
+  useEffect(() => {
+    const hero = heroRef.current;
+    if (!hero) return;
+    const check = () => setTitleShown(hero.getBoundingClientRect().bottom < 72);
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => { window.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
+  }, [c]);
 
   const act = async (fn: () => Promise<CircleDetail>, done?: string) => {
     if (locked.current) return;
@@ -83,6 +96,7 @@ export default function CirclePage() {
     <>
       <TopBar
         title={c.name}
+        titleHidden={!titleShown}
         right={
           <div style={{ display: "flex" }}>
             <button className="icon-btn" onClick={share} aria-label="소로우 주소 공유"><IconShare /></button>
@@ -92,13 +106,13 @@ export default function CirclePage() {
         }
       />
       <div className={`screen ${styles.list}`}>
-        <section className={styles.hero} aria-label="소로우 소개">
+        <section ref={heroRef} className={styles.hero} aria-label="소로우 소개">
           <div className={styles.heroTop}>
-            <span className={styles.mark} aria-hidden="true">{circleInitial(c.name)}</span>
+            <CircleMark c={c} />
             <div style={{ minWidth: 0 }}>
               <h2>{c.name}{c.verified && <Verified />}{c.sample && <SampleTag />}</h2>
               <p className={styles.meta}>
-                {c.privateTest ? `비공개 · 공간별 최대 ${c.spaceCapacity ?? 4}명` : `${kindLabel(c.kind)} · 멤버 ${c.memberCount}명 · 리스너 ${c.listenerCount}명`} · 사연 {c.postCount}개
+                {c.privateTest ? `비공개 · 공간별 최대 ${c.spaceCapacity ?? 4}명` : `${kindLabel(c.kind)} · 멤버 ${c.memberCount}명${c.listenerCount ? ` · 리스너 ${c.listenerCount}명` : ""}`} · 사연 {c.postCount}개
               </p>
             </div>
           </div>

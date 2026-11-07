@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { assetCssUrl } from "@/lib/assets";
 import { MAPS, type MapId } from "@/lib/beach/maps";
 import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode, type BoatRideState } from "@/lib/beach/engine";
@@ -28,6 +29,7 @@ import RoomMusicControls from "./RoomMusicControls";
 import BeachMenu from "./BeachMenu";
 import menuStyles from "./BeachMenu.module.css";
 import { readRoomMusic, type RoomMusicState } from "@/lib/beach/room-music";
+import { readBeachReturn } from "@/lib/beach/return";
 import { chooseBambooToy, type BambooFestivalState, type BambooToy } from "@/lib/beach/net";
 import { launchUyuniMoment, type UyuniMoment, type UyuniMomentInput, type UyuniMomentCooldowns } from "@/lib/beach/net";
 import { SPARKLER_DRAW_END } from "@/lib/beach/sparkler-timing";
@@ -55,6 +57,7 @@ function savedView(): ViewMode {
  */
 export default function BeachScene({ communityId, mapId = "beach" }: { communityId: string; mapId?: MapId }) {
   const map = MAPS[mapId];
+  const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<BeachEngine | null>(null);
   const ticketRef = useRef<string | null>(null);
@@ -1320,6 +1323,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const areaSpot = activeBed?.spotId ?? "starlight";
   const skyFull = !lying && restArea.occupied >= restArea.capacity;
   const returnHref = community ? route(`/c/${community.slug}`) : "/c/home";
+  /** 나가기: 소로우 페이지에서 들어왔으면 history 를 되돌려 (뒤로가기가 다시 바닷가로 오지 않게), 아니면 바닷가 기록을 소로우 페이지로 바꾼다 */
+  const exitRoom = (event: MouseEvent) => {
+    event.preventDefault();
+    if (readBeachReturn() === returnHref && window.history.length > 1) router.back();
+    else router.replace(returnHref);
+  };
   const hideHud = () => { setHudHidden(true); setCharacterPickerOpen(false); setPowderOpen(false); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); haptic(); window.requestAnimationFrame(() => restoreTriggerRef.current?.focus()); };
   const restoreHud = () => { setHudHidden(false); haptic(); window.requestAnimationFrame(() => actionsTriggerRef.current?.focus()); };
   const viewLabel = lying ? view === "third" ? activeBed ? "바다 보기" : "하늘 보기" : activeBed || onsen.floating ? "함께 보기" : "모여 보기" : view === "third" ? "내 눈으로" : "캐릭터 보기";
@@ -1395,7 +1404,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
       <div className={styles.top} hidden={hudHidden}>
-        <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
+        <Link href={returnHref} onClick={exitRoom} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
         {statusPill}
         {phase === "ready" && <BeachMenu open={menuOpen} onOpenChange={changeMenu} label={`${map.name} 메뉴`}>
             {fieldSoundTool}

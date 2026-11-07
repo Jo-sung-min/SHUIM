@@ -44,6 +44,10 @@ export interface Circle {
   visibility: Visibility;
   intro: string;
   notice: string;
+  /** 기본 아이콘 id (components/CircleMark CIRCLE_ICONS) */
+  icon?: string | null;
+  /** 올린 아이콘 사진 주소 (서버가 내려 준다) */
+  iconUrl?: string | null;
   memberCount: number;
   listenerCount: number;
   postCount: number;
@@ -128,17 +132,20 @@ export const fetchPrivateTestStatus = async (signal?: AbortSignal): Promise<{ en
   return { enabled: result.enabled };
 };
 
-export async function createCircle(input: { name: string; slug: string; kind: CircleKind; intro: string; joinMode: JoinMode; visibility: Visibility; domain?: string }) {
+export async function createCircle(input: { name: string; slug: string; kind: CircleKind; intro: string; joinMode: JoinMode; visibility: Visibility; domain?: string; icon?: string | null }) {
   await requireCommunityConsent();
   return post<CircleDetail>("/api/circles", input);
 }
-export const updateCircle = (slug: string, input: { notice?: string; intro?: string; visibility?: Visibility; joinMode?: JoinMode; regenerateInvite?: boolean }) =>
+/** iconImage: 새 사진은 data URL, "" 는 사진 지우기, 없으면 그대로 */
+export const updateCircle = (slug: string, input: { notice?: string; intro?: string; name?: string; icon?: string | null; iconImage?: string; visibility?: Visibility; joinMode?: JoinMode; regenerateInvite?: boolean }) =>
   fetch(at(slug), opts("PUT", input)).then((r) => j<CircleDetail>(r));
 export async function joinCircle(slug: string, code?: string) {
   await requireCommunityConsent();
   return post<CircleDetail>(at(slug, "/join"), code ? { code } : {});
 }
 export const leaveCircle = (slug: string) => post<CircleDetail>(at(slug, "/leave"));
+/** 소로우 닫기 (연 사람만): 둘러보기·내 소로우·바닷가에서 사라지고 사연은 남는다 */
+export const closeCircle = (slug: string) => fetch(at(slug), opts("DELETE")).then((r) => j<{ closed: boolean }>(r));
 export const setPrimaryCircle = (slug: string) => post<CircleDetail>(at(slug, "/primary"));
 export const toggleCircleFollow = (slug: string) => post<CircleDetail>(at(slug, "/follow"));
 export async function startVerify(slug: string, email: string) {

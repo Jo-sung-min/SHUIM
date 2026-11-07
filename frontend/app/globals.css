@@ -252,7 +252,9 @@ html[data-keyboard="open"] .app { padding-bottom: calc(var(--kb) + var(--sp-3));
 /* 스크롤로 숨김 (lib/use-hide-on-scroll.ts). sticky 라 자리는 그대로 두고 위로만 밀어 올린다 */
 .topbar[data-hidden] { transform: translateY(-100%); }
 @media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
-.topbar h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.25; }
+.topbar h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.25; transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease; }
+/* 소로우 페이지처럼 본문 머리가 제목을 맡는 동안은 비워 두고, 머리가 스크롤로 사라지면 떠오른다 */
+.topbar h1[data-faded] { opacity: 0; transform: translateY(6px); pointer-events: none; }
 .topbar .eyebrow { display: block; font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 2px; }
 .topbar .right { display: flex; gap: var(--sp-1); align-items: center; }
 .topbar .right > a:not(.icon-btn):not(.account-btn) { font-size: 14px; font-weight: 600; color: var(--text-2); min-height: 40px; display: inline-flex; align-items: center; }

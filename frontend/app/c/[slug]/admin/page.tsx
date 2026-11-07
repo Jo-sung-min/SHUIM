@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { shoutCatById } from "@/lib/community";
 import {
-  CircleDetail, CircleMember, Submission, decideSubmission, draftSubmission, fetchCircle, fetchMembers, fetchQueue, memberAction, updateCircle,
+  CircleDetail, CircleMember, Submission, closeCircle, decideSubmission, draftSubmission, fetchCircle, fetchMembers, fetchQueue, memberAction, updateCircle,
 } from "@/lib/circles";
 import { LoadError } from "@/components/CommunityUI";
-import { Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import { ConfirmSheet, Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
+import CircleIconPicker, { type IconChoice } from "@/components/CircleIconPicker";
 import { IconAlert, IconChevronL, IconInbox, IconSparkle, IconUsers } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../../circle.module.css";
@@ -56,7 +57,7 @@ export default function CircleAdminPage() {
             </a>
           ))}
         </nav>
-        {tab === "queue" ? <Queue slug={c.slug} onCount={load} /> : tab === "members" ? <Members slug={c.slug} owner={c.me.role === "owner"} fixed={c.privateTest === true} onCount={load} /> : <Settings c={c} onSaved={setC} />}
+        {tab === "queue" ? <Queue slug={c.slug} onCount={load} /> : tab === "members" ? <Members slug={c.slug} owner={c.me.role === "owner"} fixed={c.privateTest === true} onCount={load} /> : <Settings key={`${c.name}|${c.icon ?? ""}|${c.iconUrl ?? ""}`} c={c} onSaved={setC} />}
       </div>
     </>
   );
@@ -238,10 +239,21 @@ function Members({ slug, owner, fixed, onCount }: { slug: string; owner: boolean
 }
 
 function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) => void }) {
+  const router = useRouter();
   const owner = c.me.role === "owner";
+  const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState(c.notice);
   const [intro, setIntro] = useState(c.intro);
+  const [name, setName] = useState(c.name);
+  const [choice, setChoice] = useState<IconChoice>({ icon: c.icon ?? null, image: c.iconUrl ?? null });
   const [busy, setBusy] = useState(false);
+  /** 연 사람의 저장: 바뀐 것만 보낸다 (이름·기본 아이콘·사진. 사진은 새 data URL 이거나 "" 로 지우기) */
+  const ownerInput = (): Parameters<typeof updateCircle>[1] => ({
+    notice, intro,
+    ...(name.trim() !== c.name ? { name } : {}),
+    ...(choice.icon !== (c.icon ?? null) ? { icon: choice.icon } : {}),
+    ...(choice.image?.startsWith("data:") ? { iconImage: choice.image } : !choice.image && c.iconUrl ? { iconImage: "" } : {}),
+  });
   const save = async (input: Parameters<typeof updateCircle>[1], done = "저장했어요") => {
     setBusy(true);
     try {
@@ -255,6 +267,19 @@ function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) 
   };
   return (
     <div className={styles.form}>
+      {owner && (
+        <>
+          <div className={styles.field}>
+            <span>아이콘</span>
+            <CircleIconPicker name={name} value={choice} onChange={setChoice} disabled={busy} />
+          </div>
+          <label className={styles.field}>
+            <span>이름</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={26} />
+            <small>끝에 ‘소로우’가 붙어요. 바꾸면 모든 화면과 사연 표시에 새 이름이 보여요.</small>
+          </label>
+        </>
+      )}
       <label className={styles.field}>
         <span>공지 한 줄</span>
         <input value={notice} onChange={(e) => setNotice(e.target.value)} maxLength={200} placeholder="예: 특정인을 저격하는 사연은 올리지 않아요" />
@@ -265,7 +290,7 @@ function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) 
           <textarea value={intro} onChange={(e) => setIntro(e.target.value)} maxLength={200} style={{ minHeight: 96 }} />
         </label>
       )}
-      <button className="btn block" disabled={busy} onClick={() => save(owner ? { notice, intro } : { notice })}>저장</button>
+      <button className="btn block" disabled={busy} onClick={() => save(owner ? ownerInput() : { notice })}>저장</button>
 
       {c.privateTest && <p className={styles.sub}>지정된 두 계정만 사용하는 비공개 소로우예요. 최상단 고정 · 공간별 최대 {c.spaceCapacity ?? 4}명</p>}
       {owner && !c.privateTest && (
@@ -294,6 +319,31 @@ function Settings({ c, onSaved }: { c: CircleDetail; onSaved: (c: CircleDetail) 
               <button className="btn ghost sm" disabled={busy} onClick={() => save({ regenerateInvite: true }, "새 초대 코드를 만들었어요")}>새 코드 만들기</button>
             </div>
           )}
+          <div className={styles.field}>
+            <span>소로우 닫기</span>
+            <small>둘러보기·내 소로우·바닷가에서 사라져요. 이미 올라간 사연은 그대로 남고, 되돌릴 수 없어요.</small>
+            <button type="button" className="btn ghost danger" disabled={busy} onClick={() => setClosing(true)}>소로우 닫기</button>
+          </div>
+          <ConfirmSheet
+            open={closing}
+            title={`${c.name}을 닫을까요?`}
+            confirmLabel="닫기"
+            danger
+            onClose={() => setClosing(false)}
+            onConfirm={async () => {
+              setClosing(false);
+              setBusy(true);
+              try {
+                await closeCircle(c.slug);
+                toastSuccess("소로우를 닫았어요");
+                router.replace("/c/home");
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : "닫지 못했어요");
+                setBusy(false);
+              }
+            }}
+            message="멤버들은 더 이상 들어올 수 없어요. 올라간 사연은 그대로 남아요."
+          />
         </>
       )}
     </div>
