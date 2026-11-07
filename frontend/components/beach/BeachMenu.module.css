@@ -1,4 +1,4 @@
-/* 모바일 상단 햄버거 메뉴. 패널은 낮엔 밝게, 밤엔 어둡게 (방 음악·현장음 패널과 같은 규칙) */
+/* 모바일 상단 햄버거 메뉴. 패널은 독·버튼과 같은 유리 재질이라 뒤 풍경이 비친다 (낮/밤 색은 --beach-* 를 따른다) */
 .menu { position:relative; display:flex; }
 .trigger { display:grid; place-items:center; width:44px; height:44px; padding:0; border:1px solid var(--beach-edge); border-radius:14px; background:var(--beach-glass); color:var(--beach-ink); box-shadow:var(--beach-shadow); backdrop-filter:blur(8px) saturate(115%); -webkit-backdrop-filter:blur(8px) saturate(115%); cursor:pointer; transition:background .16s,transform .13s; }
 .trigger svg { width:22px; height:22px; }
@@ -6,16 +6,14 @@
 .trigger:active { transform:scale(.94); }
 .trigger:focus-visible { outline:3px solid #7e9b86; outline-offset:2px; }
 .panel {
-  --beach-ink:#2b3a33; --beach-muted:#5f6e66; --beach-edge:#2b3a3324; --beach-label-shadow:none;
   position:absolute; top:calc(100% + 8px); right:0; z-index:15; box-sizing:border-box;
   width:min(300px,calc(100vw - 24px)); max-height:calc(100dvh - 84px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; padding:6px;
-  border:1px solid #ffffffb3; border-radius:20px; background:rgba(247,250,248,.94); color:var(--beach-ink);
-  box-shadow:0 10px 30px #10282033; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); text-shadow:none;
+  border:1px solid var(--beach-edge); border-radius:20px; background:var(--beach-glass); color:var(--beach-ink);
+  box-shadow:var(--beach-shadow); text-shadow:var(--beach-label-shadow); backdrop-filter:blur(10px) saturate(115%); -webkit-backdrop-filter:blur(10px) saturate(115%);
   animation:menuDown .18s ease-out;
 }
 .panel[hidden] { display:none; }
-:global([data-night="true"]) .panel { --beach-ink:#eff5ee; --beach-muted:#b4c6b7; --beach-edge:#ffffff30; border-color:#ffffff24; background:rgba(27,38,44,.94); color-scheme:dark; }
 /* 펼친 항목이 있으면 그 항목만 남긴다 */
 .panel:has([aria-expanded="true"]) > :not(:has([aria-expanded="true"])) { display:none; }
 .row { display:flex; align-items:center; gap:12px; box-sizing:border-box; width:100%; min-height:50px; padding:0 12px; border:0; border-radius:14px; background:transparent; color:inherit; font:inherit; font-size:13px; font-weight:600; text-align:left; white-space:nowrap; cursor:pointer; transition:background .16s; -webkit-tap-highlight-color:transparent; }
@@ -24,10 +22,10 @@
 .row > small { flex:none; font-size:11px; font-weight:500; color:var(--beach-muted); }
 .row::after { content:""; flex:none; width:7px; height:7px; margin-right:3px; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:rotate(-45deg); opacity:.45; }
 .row[aria-pressed]::after { display:none; }
-.row[aria-expanded="true"] { margin-bottom:2px; border-radius:12px; background:#7f8f8518; font-weight:700; }
+.row[aria-expanded="true"] { margin-bottom:2px; border-radius:12px; background:#ffffff24; font-weight:700; }
 .row[aria-expanded="true"]::after { order:-1; margin:0 -2px 0 1px; transform:rotate(135deg); }
-.row:hover:not(:disabled) { background:#7f8f8514; }
-.row:active:not(:disabled) { background:#7f8f8524; }
+.row:hover:not(:disabled) { background:#ffffff1a; }
+.row:active:not(:disabled) { background:#ffffff30; }
 .row:disabled { opacity:.45; cursor:default; }
 .row:focus-visible { outline:2px solid #7e9b86; outline-offset:-2px; }
 @keyframes menuDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }

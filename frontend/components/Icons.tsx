@@ -429,6 +429,15 @@ export const IconFloat = (p: P) => (
     <path d="M3 19c1.5-1.3 3-1.3 4.5 0s3 1.3 4.5 0 3-1.3 4.5 0 3 1.3 4.5 0" />
   </svg>
 );
+/** 손 흔들기 (인사) */
+export const IconWave = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M7 11.5V7a1.5 1.5 0 0 1 3 0v4" />
+    <path d="M10 10.5V5a1.5 1.5 0 0 1 3 0v6" />
+    <path d="M13 10.5V6a1.5 1.5 0 0 1 3 0v6" />
+    <path d="M16 12V9a1.5 1.5 0 0 1 3 0v6a7 7 0 0 1-7 7h-.5a7 7 0 0 1-6-3.4L3 14a1.6 1.6 0 0 1 2.7-1.7L7 14" />
+  </svg>
+);
 /** 나룻배 */
 export const IconBoat = (p: P) => (
   <svg {...base(p)}>

@@ -126,15 +126,13 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
       aria-haspopup="dialog" aria-expanded={visible && panel === "sparkler"} aria-controls={`${id}-dialog`}
       aria-label={remaining.sparkler ? `불꽃 막대, ${remaining.sparkler}초 후 가능` : "불꽃 막대"}
       onClick={event => open("sparkler", event.currentTarget)}>
-      <span className={styles.sparklerIcon}><IconSparkle /></span><strong>불꽃 막대</strong>
-      <small>{pending === "sparkler" ? "그리는 중…" : remaining.sparkler ? `${remaining.sparkler}초 후` : "손끝에 남는 빛"}</small>
+      <span className={styles.sparklerIcon}><IconSparkle /></span><strong>{pending === "sparkler" ? "그리는 중…" : remaining.sparkler ? `${remaining.sparkler}초 후` : "불꽃 막대"}</strong>
     </button>
     <button type="button" className={styles.tile} disabled={locked || remaining.lantern > 0}
       aria-haspopup="dialog" aria-expanded={visible && panel === "lantern"} aria-controls={`${id}-dialog`}
       aria-label={remaining.lantern ? `소원등, ${remaining.lantern}초 후 가능` : "소원등"}
       onClick={event => open("lantern", event.currentTarget)}>
-      <span className={styles.lanternIcon}><LanternIcon /></span><strong>소원등</strong>
-      <small>{pending === "lantern" ? "날리는 중…" : remaining.lantern ? `${remaining.lantern}초 후` : "하늘에 전하는 마음"}</small>
+      <span className={styles.lanternIcon}><LanternIcon /></span><strong>{pending === "lantern" ? "날리는 중…" : remaining.lantern ? `${remaining.lantern}초 후` : "소원등"}</strong>
     </button>
     <span className={styles.srOnly} role="status">{notice}</span>
     {visible && createPortal(<div className={styles.backdrop} style={viewport ?? undefined}

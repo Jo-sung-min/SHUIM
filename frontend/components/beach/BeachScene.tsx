@@ -11,7 +11,7 @@ import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconBoat, IconCheck, IconChevronL, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconStand, IconSun, IconUser, IconUsers, IconSparkle } from "@/components/Icons";
+import { IconBoat, IconCheck, IconChevronL, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
 import { route } from "@/lib/routes";
 import { useMediaQuery } from "@/lib/use-media-query";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
@@ -1386,6 +1386,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       {character === option.id && <span className={styles.characterSelected} aria-hidden="true"><IconCheck /></span>}
     </button>)}
   </div>;
+  /** 방의 시간과 인원. 좁은 화면은 상단 가운데, 넓은 화면은 오른쪽 도구 묶음 맨 앞에 선다 */
+  const statusPill = phase === "ready" && (timeLabel || count !== null) && <div className={styles.glass + " " + styles.status}>
+    {timeLabel && <span>{nightControls ? <IconMoon /> : <IconSun />}{timeLabel}</span>}
+    {count !== null && <span aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<small>/ {capacity}</small></span>}
+  </div>;
 
   return (
     <div className={styles.root} data-map={mapId} data-night={nightControls} data-context-row={!hudHidden && phase === "ready" && (contextVisible || fireContextVisible) && !characterPickerOpen && !powderOpen} inert={Boolean(photo)}>
@@ -1394,10 +1399,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
       <div className={styles.top} data-compact={compact} hidden={hudHidden}>
         <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
-        {compact && phase === "ready" && (timeLabel || count !== null) && <div className={styles.glass + " " + styles.status}>
-          {timeLabel && <span>{nightControls ? <IconMoon /> : <IconSun />}{timeLabel}</span>}
-          {count !== null && <span aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<small>/ {capacity}</small></span>}
-        </div>}
+        {compact && statusPill}
         {phase === "ready" && (compact
           ? <BeachMenu open={menuOpen} onOpenChange={changeMenu} label={`${map.name} 메뉴`}>
             {fieldSoundTool(menuStyles.row, true)}
@@ -1410,15 +1412,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             {lightingTool(true)}
           </BeachMenu>
           : <div className={styles.adminTools}>
+            {statusPill}
             {musicTool(false)}
             {fireworksTool(false)}
             {lightingTool(false)}
           </div>)}
       </div>
-      {!compact && <div className={styles.statusBar} hidden={hudHidden || lightingOpen}>
-        {timeLabel && <span className={styles.glass + " " + styles.chip}>{timeLabel}</span>}
-        {count !== null && <span className={styles.glass + " " + styles.chip} aria-label={`정원 ${capacity}명 중 지금 ${count}명`}><IconUsers />{count}<span className={styles.capacity}>/ {capacity}</span></span>}
-      </div>}
 
       {community && !hudHidden && !lightingOpen && phase === "ready" && intro !== "hidden" && <div className={`${styles.place} ${intro === "leaving" ? styles.placeLeaving : ""}`} aria-hidden={intro === "leaving"}>
         <span><IconLock />{map.eyebrow}</span>
@@ -1431,18 +1430,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       <div className={styles.bottomHud} data-lying={lying} data-compact={compact} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
         {lost && <p className={styles.dockNotice} role="status">연결 중…</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
-          <div className={styles.trayHeader}>
-            <div className={styles.trayHeading}>
-              <strong>{carePrompt ? "마음을 건넬 사람을 골라요" : selected ? selected.nick + "님에게" : "무엇을 해볼까요?"}</strong>
-              <small>{careBusy ? "마음을 전하는 중…" : carePrompt ? "직접 고르거나 화면 속 사람을 눌러요" : selected ? "인사와 작은 마음을 건네요" : lying ? "편안히 누워 쉬는 중" : bench.seated ? "모닥불 곁에 앉아 쉬는 중" : pavilion.seated ? (pavilion.kind === "hall" ? (rain > 0.05 ? "비 내리는 호수를 바라보는 중" : "통창 너머 호수를 바라보는 중") : "정자에 걸터앉아 쉬는 중") : boat?.riding ? "나룻배를 타고 호수를 떠가는 중" : "옆으로 넘겨 더 골라요"}</small>
-            </div>
-            {selected && !carePrompt && <button type="button" className={styles.traySmallButton} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }} aria-label="다른 사람 고르기"><IconUsers /></button>}
-            <button type="button" className={styles.traySmallButton} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
-          </div>
           {carePrompt && <div className={styles.peopleRow} role="group" aria-label="마음을 건넬 사람">
-            {people.length ? people.map((person) => <button type="button" key={person.pid} className={styles.personChoice} onClick={() => engineRef.current?.select(person.pid)}><IconUser /><span>{person.nick}</span><small>선택하기</small></button>) : <p className={styles.emptyPeople}>아직 함께 쉬는 사람이 없어요.<br />누군가 오면 인사를 건네 보세요.</p>}
+            {people.length ? people.map((person) => <button type="button" key={person.pid} className={styles.personChoice} onClick={() => engineRef.current?.select(person.pid)}><IconUser /><span>{person.nick}</span></button>) : <p className={styles.emptyPeople}>아직 함께 쉬는 사람이 없어요.</p>}
           </div>}
-          <div className={styles.actionScroll} hidden={Boolean(carePrompt)} role="group" aria-label="할 수 있는 행동" tabIndex={0}>
+          <div className={styles.actionScroll} hidden={Boolean(carePrompt)} role="group" aria-label={selected ? `${selected.nick}님에게 할 수 있는 행동` : "할 수 있는 행동"} tabIndex={0}>
+            {selected && <button type="button" className={styles.actionTile + " " + styles.personTile} aria-label={`${selected.nick}님에게 · 다른 사람 고르기`} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }}><span className={styles.actionIcon}><IconUser /></span><strong>{selected.nick}</strong></button>}
             {mapId === "bamboo" && festival && !selected && <BambooFestivalControls held={festival.held} inFlight={Date.now() < flightUntil}
               disabled={lost || toyBusy} onChoose={choice => void useFestivalToy(choice)} />}
             {mapId === "uyuni" && momentsEnabled && <UyuniMomentControls
@@ -1452,12 +1444,13 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
               busy={momentBusy} cooldowns={momentDeadlines} onOpenChange={setMomentOpen}
               onSparkler={letter => launchMoment({ kind: "sparkler", letter })}
               onLantern={(color, wish) => launchMoment({ kind: "lantern", color, wish })} />}
-            <button type="button" className={styles.actionTile + " " + styles.waveTile} disabled={cooling || lost || !careCapabilities.wave} onClick={() => sendCare("wave")}><span className={styles.actionIcon} aria-hidden="true">👋</span><strong>인사하기</strong><small>{careCapabilities.wave ? "반가운 마음" : "준비 중"}</small></button>
-            <button type="button" className={styles.actionTile + " " + styles.comfortTile} disabled={cooling || lost} onClick={() => sendCare("comfort")}><span className={styles.actionIcon}><IconLeaf /></span><strong>위로 건네기</strong><small>따뜻한 마음</small></button>
-            {careCapabilities.hug && <button type="button" className={styles.actionTile + " " + styles.hugTile} disabled={cooling || lost} onClick={() => sendCare("hug")}><span className={styles.actionIcon}><IconHeart /></span><strong>안아주기</strong><small>관리자 포옹</small></button>}
+            <button type="button" className={styles.actionTile + " " + styles.waveTile} disabled={cooling || lost || !careCapabilities.wave} onClick={() => sendCare("wave")}><span className={styles.actionIcon}><IconWave /></span><strong>인사하기</strong></button>
+            <button type="button" className={styles.actionTile + " " + styles.comfortTile} disabled={cooling || lost} onClick={() => sendCare("comfort")}><span className={styles.actionIcon}><IconLeaf /></span><strong>위로 건네기</strong></button>
+            {careCapabilities.hug && <button type="button" className={styles.actionTile + " " + styles.hugTile} disabled={cooling || lost} onClick={() => sendCare("hug")}><span className={styles.actionIcon}><IconHeart /></span><strong>안아주기</strong></button>}
           </div>
-          {gotAny && !carePrompt && <p className={styles.receivedMini}>받은 인사 {received.wave ?? 0} · 위로 {received.comfort} · 포옹 {received.hug}</p>}
+          <button type="button" className={styles.trayClose} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
         </section>
+        <div className={styles.contextRow}>
         <div className={styles.contextActions} role="group" aria-label="지금 할 수 있는 행동" tabIndex={0} hidden={!(contextVisible || fireContextVisible) || characterPickerOpen || powderOpen}>
           {guestbookVisible && <button type="button" className={styles.contextButton} disabled={lost} aria-haspopup="dialog"
             onClick={() => { setActionsOpen(false); setGuestbookOpen(true); haptic(); }}>
@@ -1512,6 +1505,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             />}
           </div>}
         </div>
+        <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg><span>숨김</span></button>
+        </div>
         {characterPickerOpen && !compact && <div ref={characterPickerRef} id={characterPickerId} className={styles.characterPanel + " " + styles.dockCharacterPanel}>
           <div className={styles.characterPanelHead}><strong>내 캐릭터</strong><button type="button" aria-label="캐릭터 선택 닫기" onClick={() => { setCharacterPickerOpen(false); characterTriggerRef.current?.focus(); }}><IconClose /></button></div>
           {characterChoices}<p>고르면 내 모습이 바로 보여요.</p>
@@ -1524,7 +1519,6 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           {!compact && fieldSoundTool(styles.dockButton, false)}
         </nav>
       </div>
-      {!hudHidden && phase === "ready" && <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg><span>숨김</span></button>}
       {hudHidden && phase === "ready" && <button ref={restoreTriggerRef} type="button" className={styles.restoreHud} onClick={restoreHud} aria-label="화면 버튼 다시 보기"><IconSparkle /><span>버튼 보기</span></button>}
 
       {phase === "loading" && (
