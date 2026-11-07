@@ -13,7 +13,6 @@ import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
 import { IconBoat, IconCheck, IconChevronL, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
 import { route } from "@/lib/routes";
-import { useMediaQuery } from "@/lib/use-media-query";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
 import Joystick from "./Joystick";
 import PhotoPreview, { CameraIcon } from "./PhotoPreview";
@@ -180,8 +179,6 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [character, setCharacter] = useState<BeachCharacter>("male");
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  /** 좁은 화면: 상단 도구를 햄버거 메뉴에 모으고 시간·인원을 맨 위 가운데에 둔다 */
-  const compact = useMediaQuery("(max-width: 600px)");
   const [restEnabled, setRestEnabled] = useState(false);
   const [bedEnabled, setBedEnabled] = useState(false);
   const [bed, setBed] = useState<BedState | null>(null);
@@ -295,7 +292,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     if (!open) { setCharacterPickerOpen(false); setFieldOpen(false); setLightingOpen(false); }
     haptic();
   }, []);
-  useEffect(() => { if (!compact || hudHidden || photo || phase !== "ready") setMenuOpen(false); }, [compact, hudHidden, photo, phase]);
+  useEffect(() => { if (hudHidden || photo || phase !== "ready") setMenuOpen(false); }, [hudHidden, photo, phase]);
 
   const resetMoments = useCallback((preserveRequest = false) => {
     momentOperationRef.current++;
@@ -1343,31 +1340,31 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || Boolean(rest) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
 
-  // 상단 도구는 넓은 화면에선 한 줄로, 좁은 화면에선 햄버거 메뉴 안의 줄(menu)로 그린다.
+  // 상단 도구는 PC 도 모바일처럼 햄버거 메뉴 안의 줄로 그린다.
   const ticket = ticketRef.current;
-  const musicTool = (menu: boolean) => (musicSnapshot || mapId === "uyuni") && ticket && <RoomMusicControls key={ticket} ticket={ticket}
+  const musicTool = (musicSnapshot || mapId === "uyuni") && ticket && <RoomMusicControls key={ticket} ticket={ticket}
     communityId={community?.id ?? communityId} mapId={mapId} music={musicSnapshot?.music} serverTime={musicSnapshot?.serverTime ?? 0}
     canControl={musicSnapshot !== null && musicControl} disabled={lost} onSnapshot={applyMusic}
-    inline={menu} buttonClass={menu ? menuStyles.row : undefined}
+    inline buttonClass={menuStyles.row}
     ambient={mapId === "uyuni" ? { volume: uyuniMusicVolume, onChange: volume => {
       const engine = engineRef.current;
       if (engine) { engine.setUyuniMusicVolume(volume); setUyuniMusicVolume(engine.uyuniMusicVolume); }
     } } : undefined} />;
-  const fireworksTool = (menu: boolean) => fireworksControl && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
+  const fireworksTool = fireworksControl && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
     tickets={fireworksFree ? null : fireworkTickets ?? 0} onUnlock={() => setTicketSheetOpen(true)}
-    inline={menu} buttonClass={menu ? menuStyles.row : undefined}
+    inline buttonClass={menuStyles.row}
     onLaunch={(variant) => void launchFireworks(variant)} />;
-  const lightingTool = (menu: boolean) => lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}
+  const lightingTool = lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}
     busy={lightingBusy} disabled={lost} onOpenChange={openLighting} onSelect={mode => void changeLighting(mode)}
-    inline={menu} buttonClass={menu ? menuStyles.row : undefined} />;
-  const fieldSoundTool = (buttonClass: string, menu: boolean) => mapId !== "uyuni"
-    ? <FieldSoundControl map={mapId} buttonClass={buttonClass} inline={menu} volume={fieldVolume} open={fieldOpen}
+    inline buttonClass={menuStyles.row} />;
+  const fieldSoundTool = mapId !== "uyuni"
+    ? <FieldSoundControl map={mapId} buttonClass={menuStyles.row} inline volume={fieldVolume} open={fieldOpen}
       onOpenChange={open => {
         if (open) { setActionsOpen(false); setCharacterPickerOpen(false); setCarePrompt(null); engineRef.current?.select(null); }
         setFieldOpen(open);
       }} onChange={volume => { const eng = engineRef.current; if (eng) { eng.setFieldVolume(volume); setFieldVolume(eng.fieldVolume); } }}
       onToggleMute={() => { const eng = engineRef.current; if (eng) { eng.setFireworksMuted(eng.fieldVolume > 0); setFieldVolume(eng.fieldVolume); } }} />
-    : <button type="button" className={buttonClass} aria-label="폭죽 소리" aria-pressed={!fireworksMuted}
+    : <button type="button" className={menuStyles.row} aria-label="폭죽 소리" aria-pressed={!fireworksMuted}
       title={"폭죽 소리" + (fireworksMuted ? " 켜기" : " 끄기")} onClick={() => {
         engineRef.current?.setFireworksMuted(!fireworksMuted);
         setFireworksMuted(!fireworksMuted);
@@ -1376,7 +1373,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <path d="M3 9h4l5-4v14l-5-4H3z" />
         {fireworksMuted ? <path d="m16 9 5 6m0-6-5 6" /> : <path d="M16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}
       </svg>
-      <span>폭죽음</span>{menu && <small>{fireworksMuted ? "꺼짐" : "켜짐"}</small>}
+      <span>폭죽음</span><small>{fireworksMuted ? "꺼짐" : "켜짐"}</small>
     </button>;
   const toggleCharacterPicker = () => { haptic(); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); setCharacterPickerOpen((open) => !open); };
   const characterChoices = <div className={styles.characterChoices} role="group" aria-label="캐릭터 선택">
@@ -1397,26 +1394,19 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 ${map.name} (${view === "first" ? "1인칭" : "3인칭"})`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
-      <div className={styles.top} data-compact={compact} hidden={hudHidden}>
+      <div className={styles.top} hidden={hudHidden}>
         <Link href={returnHref} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
-        {compact && statusPill}
-        {phase === "ready" && (compact
-          ? <BeachMenu open={menuOpen} onOpenChange={changeMenu} label={`${map.name} 메뉴`}>
-            {fieldSoundTool(menuStyles.row, true)}
+        {statusPill}
+        {phase === "ready" && <BeachMenu open={menuOpen} onOpenChange={changeMenu} label={`${map.name} 메뉴`}>
+            {fieldSoundTool}
             <div>
               <button ref={characterTriggerRef} type="button" className={menuStyles.row} aria-expanded={characterPickerOpen} aria-controls={characterPickerId} onClick={toggleCharacterPicker}><IconUser /><span>내 캐릭터</span></button>
               {characterPickerOpen && <div ref={characterPickerRef} id={characterPickerId} className={styles.characterInline}>{characterChoices}<p>고르면 내 모습이 바로 보여요.</p></div>}
             </div>
-            {musicTool(true)}
-            {fireworksTool(true)}
-            {lightingTool(true)}
-          </BeachMenu>
-          : <div className={styles.adminTools}>
-            {statusPill}
-            {musicTool(false)}
-            {fireworksTool(false)}
-            {lightingTool(false)}
-          </div>)}
+            {musicTool}
+            {fireworksTool}
+            {lightingTool}
+          </BeachMenu>}
       </div>
 
       {community && !hudHidden && !lightingOpen && phase === "ready" && intro !== "hidden" && <div className={`${styles.place} ${intro === "leaving" ? styles.placeLeaving : ""}`} aria-hidden={intro === "leaving"}>
@@ -1427,7 +1417,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
       {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
-      <div className={styles.bottomHud} data-lying={lying} data-compact={compact} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
+      <div className={styles.bottomHud} data-lying={lying} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
         {lost && <p className={styles.dockNotice} role="status">연결 중…</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
           {carePrompt && <div className={styles.peopleRow} role="group" aria-label="마음을 건넬 사람">
@@ -1505,20 +1495,14 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             />}
           </div>}
         </div>
-        <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg><span>숨김</span></button>
         </div>
-        {characterPickerOpen && !compact && <div ref={characterPickerRef} id={characterPickerId} className={styles.characterPanel + " " + styles.dockCharacterPanel}>
-          <div className={styles.characterPanelHead}><strong>내 캐릭터</strong><button type="button" aria-label="캐릭터 선택 닫기" onClick={() => { setCharacterPickerOpen(false); characterTriggerRef.current?.focus(); }}><IconClose /></button></div>
-          {characterChoices}<p>고르면 내 모습이 바로 보여요.</p>
-        </div>}
         <nav className={styles.dock} aria-label={`${map.name} 조작`} data-lying={lying}>
           <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSparkle /><span>행동</span></button>
           <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
           {!lying && <button type="button" className={styles.dockButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
-          {!compact && <button ref={characterTriggerRef} type="button" className={styles.dockButton} aria-label="내 캐릭터 고르기" aria-expanded={characterPickerOpen} aria-controls={characterPickerId} onClick={toggleCharacterPicker}><IconUser /><span>내 캐릭터</span></button>}
-          {!compact && fieldSoundTool(styles.dockButton, false)}
         </nav>
       </div>
+      {!hudHidden && phase === "ready" && <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg></button>}
       {hudHidden && phase === "ready" && <button ref={restoreTriggerRef} type="button" className={styles.restoreHud} onClick={restoreHud} aria-label="화면 버튼 다시 보기"><IconSparkle /><span>버튼 보기</span></button>}
 
       {phase === "loading" && (
