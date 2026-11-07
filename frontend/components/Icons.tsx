@@ -231,6 +231,15 @@ export const IconSmile = (p: P) => (
     <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 10h.01M15 10h.01" />
   </svg>
 );
+/** 소로우의 둥근 웃는 얼굴: 행동 버튼에 쓰는 채움 마크. */
+export const IconSorowSmile = (p: P) => (
+  <svg {...base({ fill: "none", stroke: "none", ...p })} data-icon="sorow-smile">
+    <circle cx="12" cy="12" r="9.5" fill="#f5f8f5" />
+    <circle cx="8.65" cy="9.45" r="1.1" fill="#18231d" />
+    <circle cx="15.35" cy="9.45" r="1.1" fill="#18231d" />
+    <path d="M8.35 13.65c.65 1.75 2 2.7 3.65 2.7s3-.95 3.65-2.7" stroke="#18231d" strokeWidth="1.7" />
+  </svg>
+);
 export const IconMoon = (p: P) => (
   <svg {...base(p)}>
     <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />

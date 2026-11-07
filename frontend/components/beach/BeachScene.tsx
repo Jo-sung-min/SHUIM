@@ -12,7 +12,7 @@ import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconBoat, IconCheck, IconChevronL, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
+import { IconBoat, IconCheck, IconChevronL, IconChevronR, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconSorowSmile, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
 import { route } from "@/lib/routes";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
 import Joystick from "./Joystick";
@@ -65,6 +65,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const pendingCareRef = useRef<{ to: string; nick: string; kind: CareKind } | null>(null);
   const careBusyRef = useRef(false);
   const actionsTriggerRef = useRef<HTMLButtonElement>(null);
+  const actionScrollRef = useRef<HTMLDivElement>(null);
+  const peopleRowRef = useRef<HTMLDivElement>(null);
   const restoreTriggerRef = useRef<HTMLButtonElement>(null);
   const actionTrayId = useId();
   const timerRef = useRef<number>(0);
@@ -133,6 +135,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [careBusy, setCareBusy] = useState(false);
   const [people, setPeople] = useState<RemotePlayer[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionOverflow, setActionOverflow] = useState({ previous: false, next: false });
   const [hudHidden, setHudHidden] = useState(false);
   const [carePrompt, setCarePrompt] = useState<CareKind | null>(null);
   const [flash, setFlash] = useState<{ kind: CareKind; id: number } | null>(null);
@@ -334,6 +337,30 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   }, [controlsPaused, phase]);
 
   useEffect(() => { if (lying || !nearFire) setPowderOpen(false); }, [lying, nearFire]);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const row = carePrompt ? peopleRowRef.current : actionScrollRef.current;
+    if (!row) return;
+    const measure = () => {
+      const previous = row.scrollLeft > 1;
+      const next = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
+      setActionOverflow(current => current.previous === previous && current.next === next ? current : { previous, next });
+    };
+    const resize = new ResizeObserver(measure);
+    resize.observe(row);
+    for (const child of Array.from(row.children)) resize.observe(child);
+    row.addEventListener("scroll", measure, { passive: true });
+    measure();
+    return () => { resize.disconnect(); row.removeEventListener("scroll", measure); };
+  }, [actionsOpen, carePrompt, selected?.pid, people.length, festival?.held, careCapabilities.hug, momentsEnabled]);
+
+  const scrollActions = (direction: -1 | 1) => {
+    const row = carePrompt ? peopleRowRef.current : actionScrollRef.current;
+    if (!row) return;
+    row.scrollBy({ left: direction * Math.max(72, row.clientWidth * .8),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+  };
 
   useEffect(() => {
     if (!actionsOpen || photo || powderOpen || characterPickerOpen || momentOpen) return;
@@ -1348,6 +1375,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const guestbookVisible = mapId === "bamboo" && nearGuestbook && Boolean(ticketRef.current);
   const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || Boolean(rest) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
+  const joystickVisible = phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden)
+    && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying
+    && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing";
 
   // 상단 도구는 PC 도 모바일처럼 햄버거 메뉴 안의 줄로 그린다.
   const ticket = ticketRef.current;
@@ -1424,15 +1454,16 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <p>{map.welcome}</p>
       </div>}
 
-      {phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden) && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing" && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
+      {joystickVisible && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
-      <div className={styles.bottomHud} data-lying={lying} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
+      <div className={styles.bottomHud} data-lying={lying} data-movement={Boolean(joystickVisible)} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
         {lost && <p className={styles.dockNotice} role="status">연결 중…</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
-          {carePrompt && <div className={styles.peopleRow} role="group" aria-label="마음을 건넬 사람">
+          <button type="button" className={styles.actionArrow} aria-label="이전 행동 보기" aria-controls={actionTrayId + "-list"} disabled={!actionOverflow.previous} onClick={() => scrollActions(-1)}><IconChevronL /></button>
+          {carePrompt && <div ref={peopleRowRef} id={actionTrayId + "-list"} className={styles.peopleRow} role="group" aria-label="마음을 건넬 사람" tabIndex={0}>
             {people.length ? people.map((person) => <button type="button" key={person.pid} className={styles.personChoice} onClick={() => engineRef.current?.select(person.pid)}><IconUser /><span>{person.nick}</span></button>) : <p className={styles.emptyPeople}>아직 함께 쉬는 사람이 없어요.</p>}
           </div>}
-          <div className={styles.actionScroll} hidden={Boolean(carePrompt)} role="group" aria-label={selected ? `${selected.nick}님에게 할 수 있는 행동` : "할 수 있는 행동"} tabIndex={0}>
+          <div ref={actionScrollRef} id={carePrompt ? undefined : actionTrayId + "-list"} className={styles.actionScroll} hidden={Boolean(carePrompt)} role="group" aria-label={selected ? `${selected.nick}님에게 할 수 있는 행동` : "할 수 있는 행동"} tabIndex={0}>
             {selected && <button type="button" className={styles.actionTile + " " + styles.personTile} aria-label={`${selected.nick}님에게 · 다른 사람 고르기`} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }}><span className={styles.actionIcon}><IconUser /></span><strong>{selected.nick}</strong></button>}
             {mapId === "bamboo" && festival && !selected && <BambooFestivalControls held={festival.held} inFlight={Date.now() < flightUntil}
               disabled={lost || toyBusy} onChoose={choice => void useFestivalToy(choice)} />}
@@ -1447,9 +1478,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             <button type="button" className={styles.actionTile + " " + styles.comfortTile} disabled={cooling || lost} onClick={() => sendCare("comfort")}><span className={styles.actionIcon}><IconLeaf /></span><strong>위로 건네기</strong></button>
             {careCapabilities.hug && <button type="button" className={styles.actionTile + " " + styles.hugTile} disabled={cooling || lost} onClick={() => sendCare("hug")}><span className={styles.actionIcon}><IconHeart /></span><strong>안아주기</strong></button>}
           </div>
+          <button type="button" className={styles.actionArrow} aria-label="다음 행동 보기" aria-controls={actionTrayId + "-list"} disabled={!actionOverflow.next} onClick={() => scrollActions(1)}><IconChevronR /></button>
           <button type="button" className={styles.trayClose} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
         </section>
         <div className={styles.contextRow}>
+        <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg></button>
         <div className={styles.contextActions} role="group" aria-label="지금 할 수 있는 행동" tabIndex={0} hidden={!(contextVisible || fireContextVisible) || characterPickerOpen || powderOpen}>
           {guestbookVisible && <button type="button" className={styles.contextButton} disabled={lost} aria-haspopup="dialog"
             onClick={() => { setActionsOpen(false); setGuestbookOpen(true); haptic(); }}>
@@ -1506,12 +1539,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         </div>
         </div>
         <nav className={styles.dock} aria-label={`${map.name} 조작`} data-lying={lying}>
-          <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSparkle /><span>행동</span></button>
+          <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSorowSmile /><span>행동</span></button>
           <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
           {!lying && <button type="button" className={styles.dockButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
         </nav>
       </div>
-      {!hudHidden && phase === "ready" && <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg></button>}
       {hudHidden && phase === "ready" && <button ref={restoreTriggerRef} type="button" className={styles.restoreHud} onClick={restoreHud} aria-label="화면 버튼 다시 보기"><IconSparkle /><span>버튼 보기</span></button>}
 
       {phase === "loading" && (

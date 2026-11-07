@@ -138,14 +138,12 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
     {visible && createPortal(<div className={styles.backdrop} style={viewport ?? undefined}
       onPointerDown={event => { if (event.target === event.currentTarget) setPanel(null); }}>
       <div ref={dialog} id={`${id}-dialog`} className={styles.dialog} role="dialog" aria-modal="true"
-        aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} aria-busy={pending !== null || busy}
+        aria-labelledby={`${id}-title`} aria-busy={pending !== null || busy}
         tabIndex={-1} onKeyDown={onKeyDown} onKeyUp={event => event.stopPropagation()}>
         <header className={styles.header}>
           <h2 id={`${id}-title`}>{panel === "sparkler" ? "불꽃으로 마음 남기기" : "소원을 담은 등"}</h2>
           <button type="button" className={styles.close} aria-label="닫기" onClick={() => setPanel(null)}><IconClose /></button>
         </header>
-        <p id={`${id}-description`} className={styles.description}>{panel === "sparkler"
-          ? "글자나 모양을 고르면 불꽃 막대로 다섯 번 겹쳐 그려요. 손이 지나간 자리마다 빛줄기가 조금씩 포개져요." : "작은 바람을 적어 하늘에 보내요."}</p>
         {panel === "sparkler" ? <>
           <div className={styles.letters} role="group" aria-label="불꽃으로 그릴 글자와 모양">
             {LETTERS.map((letter, index) => <button key={letter} type="button" data-initial-focus={index === 0 || undefined}
@@ -167,12 +165,11 @@ export default function UyuniMomentControls({ disabled, busy, cooldowns, onSpark
               </button>)}
             </div>
           </fieldset>
-          <div className={styles.wishHeading}><label htmlFor={`${id}-wish`}>나의 소원</label>
+          <div className={styles.wishHeading}><label htmlFor={`${id}-wish`}>함께 나눌 소원</label>
             <span id={`${id}-count`} aria-label={`${length}자, 최대 80자`} data-invalid={length > 80}>{length}/80</span></div>
           <input id={`${id}-wish`} data-initial-focus type="text" value={wish} disabled={locked} autoComplete="off"
-            placeholder="이루고 싶은 작은 바람" aria-invalid={length > 80} aria-describedby={`${id}-count ${id}-sharing`}
+            placeholder="이루고 싶은 작은 바람" aria-invalid={length > 80} aria-describedby={`${id}-count`}
             onChange={event => setWish(event.target.value.replace(/[\r\n\t]+/g, " ").replace(/[\u0000-\u001f\u007f-\u009f]/g, ""))} />
-          <p id={`${id}-sharing`} className={styles.hint}>같은 공간에 있는 사람들도 소원을 읽을 수 있어요.</p>
           {length > 80 && <p className={styles.error}>소원은 80자 이내로 적어 주세요.</p>}
           <button className={styles.submit} type="submit" disabled={locked || remaining.lantern > 0 || !validWish}>
             {pending === "lantern" ? "날리는 중…" : remaining.lantern ? `${remaining.lantern}초 후 등 날리기` : "등 날리기"}

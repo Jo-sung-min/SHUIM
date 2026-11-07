@@ -138,15 +138,20 @@
 .dockButton > svg { width:22px; height:22px; flex:none; }
 .dockButton[aria-expanded="true"], .dockButton[aria-pressed="true"] { background:#dcebdE26; }
 .fireContext { display:contents; }
-.fireContext > button { display:grid; grid-template-rows:22px 14px 10px; row-gap:1px; align-content:center; align-items:center; justify-items:center; flex:0 0 var(--slot); width:var(--slot); padding:3px 3px 2px; border:1px solid var(--beach-edge); border-radius:14px; pointer-events:auto; animation:contextPop .18s ease-out; }
+.fireContext > button { display:grid; grid-template-rows:22px 14px 10px; row-gap:1px; align-content:center; align-items:center; justify-items:center; flex:0 0 var(--context-slot); width:var(--context-slot); padding:3px 3px 2px; border:1px solid var(--beach-edge); border-radius:14px; pointer-events:auto; animation:contextPop .18s ease-out; }
 .fireContext > button small { display:none; }
 .fireContext > button > span { background:transparent; color:inherit; }
-/* 행동 트레이: 설명 없이 아이콘·제목 타일 한 줄과 오른쪽 닫기. 지도(바닷가·대나무숲·우유니)가 달라도 같은 모양 */
-.actionTray { box-sizing:border-box; display:flex; align-items:center; width:100%; padding:4px 4px 4px 0; overflow:hidden; border-radius:23px; pointer-events:auto; animation:trayRise .22s ease-out; }
-.trayClose { display:grid; place-items:center; flex:none; width:40px; height:56px; padding:0; border:0; border-radius:14px; background:transparent; color:var(--beach-muted); cursor:pointer; }
+/* 닫기는 창 안쪽 우측 위, 목록과 넘김 화살표는 그 아래에 둔다. */
+.actionTray { box-sizing:border-box; position:relative; display:flex; align-items:center; width:100%; padding:42px 4px 4px; overflow:hidden; border-radius:23px; pointer-events:auto; animation:trayRise .22s ease-out; }
+.trayClose { position:absolute; right:6px; top:4px; display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:12px; background:transparent; color:var(--beach-ink); cursor:pointer; }
 .trayClose svg { width:18px; height:18px; }
 .trayClose:active { background:#ffffff24; }
 .trayClose:focus-visible { outline:3px solid #7e9b86; outline-offset:-3px; }
+.actionArrow { display:grid; place-items:center; flex:0 0 32px; width:32px; height:48px; padding:0; border:0; border-radius:14px; background:transparent; color:var(--beach-ink); cursor:pointer; transition:background .15s,opacity .15s; }
+.actionArrow svg { width:18px; height:18px; }
+.actionArrow:hover:not(:disabled), .actionArrow:active:not(:disabled) { background:#ffffff24; }
+.actionArrow:focus-visible { outline:2px solid #7e9b86; outline-offset:-2px; }
+.actionArrow:disabled { opacity:.2; cursor:default; }
 .actionScroll, .peopleRow { display:flex; flex:1 1 auto; gap:2px; min-width:0; overflow-x:auto; overflow-y:hidden; padding:0 2px 0 4px; overscroll-behavior-x:contain; touch-action:pan-x; scroll-padding:4px; scrollbar-width:none; }
 .actionScroll::-webkit-scrollbar, .peopleRow::-webkit-scrollbar { display:none; }
 .actionScroll:focus-visible { outline:2px solid #7e9b86; outline-offset:-3px; }
@@ -170,13 +175,13 @@
 .personChoice:active { background:#ffffff24; }
 .personChoice:focus-visible { outline:3px solid #7e9b86; outline-offset:-3px; }
 .emptyPeople { display:grid; place-items:center; flex:1; min-height:56px; margin:0; padding:0 8px; color:var(--beach-muted); text-align:center; font-size:12px; line-height:1.5; }
-/* 주변 행동 줄: 독과 같은 칸 너비(--slot)로 왼쪽부터 채우고, 맨 오른쪽 칸은 늘 '숨김' 자리. 칸이 다 차면 윗줄로 올라간다 */
-.contextRow { position:relative; box-sizing:border-box; width:100%; min-height:64px; pointer-events:none; }
-.contextActions { box-sizing:border-box; display:flex; flex-wrap:wrap-reverse; align-content:flex-start; gap:2px; width:100%; min-width:0; min-height:64px; padding:4px; padding-right:calc(6px + var(--slot)); border:1px solid transparent; pointer-events:none; }
+/* 주변 행동은 독과 독립된 줄. 숨김 아이콘은 위에 분리해 행동 슬롯을 차지하지 않는다. */
+.contextRow { --context-slot:var(--slot); position:relative; box-sizing:border-box; width:100%; min-height:40px; padding-top:40px; pointer-events:none; }
+.contextActions { box-sizing:border-box; display:flex; flex-wrap:wrap-reverse; align-content:flex-start; gap:2px; width:100%; min-width:0; min-height:64px; padding:4px; border:1px solid transparent; pointer-events:none; }
 .contextActions::-webkit-scrollbar { display:none; }
 .contextActions:focus-visible { outline:2px solid #a4bea8; outline-offset:-2px; border-radius:18px; }
 /* 아이콘 · 이름 · 수치 세 줄 격자. 수치가 없는 버튼도 같은 줄 높이를 써서 이름이 나란히 선다 */
-.contextButton { box-sizing:border-box; position:relative; display:grid; grid-template-rows:22px 14px 10px; row-gap:1px; align-content:center; align-items:center; justify-items:center; flex:0 0 var(--slot); width:var(--slot); min-width:0; height:56px; min-height:56px; padding:3px 3px 2px; border-radius:14px; font:inherit; text-align:center; cursor:pointer; pointer-events:auto; animation:contextPop .18s ease-out; transition:transform .14s,background .14s; }
+.contextButton { box-sizing:border-box; position:relative; display:grid; grid-template-rows:22px 14px 10px; row-gap:1px; align-content:center; align-items:center; justify-items:center; flex:0 0 var(--context-slot); width:var(--context-slot); min-width:0; height:56px; min-height:56px; padding:3px 3px 2px; border-radius:14px; font:inherit; text-align:center; cursor:pointer; pointer-events:auto; animation:contextPop .18s ease-out; transition:transform .14s,background .14s; }
 .contextIcon { display:grid; place-items:center; flex:none; width:22px; height:22px; color:inherit; font-size:20px; line-height:1; }
 .contextIcon svg, .contextButton > svg { width:22px; height:22px; flex:none; }
 .contextCopy { display:block; max-width:100%; min-width:0; }
@@ -189,8 +194,8 @@
 .contextButton:disabled { opacity:.55; cursor:default; transform:none; }
 .contextCancel { color:var(--beach-muted); }
 .restoreHud { position:absolute; right:max(12px,env(safe-area-inset-right)); bottom:calc(19px + env(safe-area-inset-bottom)); z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; width:48px; min-height:56px; padding:6px 2px; border-radius:18px; font:inherit; font-size:9px; font-weight:600; white-space:nowrap; cursor:pointer; transition:background .16s,transform .13s; }
-/* 숨김: 상자·글자 없는 아이콘 하나. 독 바로 윗줄 높이, 화면 오른쪽 끝 (모바일에선 행동 줄의 맨 오른쪽 칸 자리와 겹친다) */
-.hideHud { position:absolute; right:max(12px,env(safe-area-inset-right)); bottom:calc(var(--beach-hud-bottom) + 66px + var(--beach-hud-gap) + 4px); z-index:5; display:grid; place-items:center; width:48px; height:56px; padding:0; border:0; border-radius:14px; background:transparent; color:var(--beach-ink); filter:drop-shadow(0 1px 3px #0d1a1466); cursor:pointer; transition:background .16s,transform .13s,opacity .16s; }
+/* 숨김은 확장된 행동 줄의 우측 위에 따로 둔다. */
+.hideHud { position:absolute; top:0; right:0; z-index:5; display:grid; place-items:center; width:40px; height:36px; padding:0; border:0; border-radius:14px; background:transparent; color:var(--beach-ink); filter:drop-shadow(0 1px 3px #0d1a1466); cursor:pointer; pointer-events:auto; transition:background .16s,transform .13s,opacity .16s; }
 .hideHud svg { width:24px; height:24px; }
 .restoreHud svg { width:20px; height:20px; }
 .hideHud:disabled { opacity:.45; cursor:default; transform:none; }
@@ -217,7 +222,7 @@
 @keyframes beachUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
 @keyframes beachDots { from { clip-path:inset(0 100% 0 0); } to { clip-path:inset(0 -20% 0 0); } }
 @media(max-width:360px) { .dockButton { font-size:10px; gap:5px; }.dockButton > svg { width:20px; height:20px; }.exitButton { font-size:11px; padding:0 10px 0 7px; }.contextCopy strong, .fireContext > button strong { font-size:10px; } }
-@media(max-height:520px) { .top { top:calc(7px + env(safe-area-inset-top)); }.root { --beach-hud-bottom:calc(7px + env(safe-area-inset-bottom)); --beach-hud-gap:5px; }.restoreHud { bottom:calc(12px + env(safe-area-inset-bottom)); }.actionTray { max-height:42dvh; overflow-y:auto; touch-action:pan-y; } }
+@media(max-height:520px) { .top { top:calc(7px + env(safe-area-inset-top)); }.root { --beach-hud-bottom:calc(7px + env(safe-area-inset-bottom)); --beach-hud-gap:5px; }.restoreHud { bottom:calc(12px + env(safe-area-inset-bottom)); } }
 /* Reserve the left thumb area for both rows, including when nearby actions appear. */
 @media(pointer:coarse) {
   .root { --beach-mobile-glass:rgba(250,247,239,.18); }
@@ -237,6 +242,19 @@
     width:min(400px,calc(100% - var(--beach-pad-left) - var(--beach-pad-size) - 20px - max(12px,env(safe-area-inset-right))));
     align-items:stretch;
   }
+  .bottomHud[data-movement="false"] {
+    left:50%; right:auto; transform:translateX(-50%);
+    width:min(320px,calc(100% - 32px)); align-items:center;
+  }
+  .contextRow {
+    --context-width:min(400px,calc(100vw - 24px));
+    --context-slot:calc((var(--context-width) - 18px) / 5);
+    width:var(--context-width); align-self:flex-end;
+  }
+  .bottomHud[data-movement="false"] .contextRow { align-self:center; }
+  .root[data-context-row="true"] .bottomHud[data-movement="true"] .contextRow {
+    margin-bottom:max(0px,calc(var(--beach-pad-bottom) + var(--beach-pad-size) + 8px - var(--beach-hud-bottom) - 66px - var(--beach-hud-gap)));
+  }
   .dock {
     box-sizing:border-box; width:100%; min-width:0;
     grid-template-columns:none; grid-auto-flow:column;
@@ -248,6 +266,8 @@
   .dock > * { scroll-snap-align:start; }
   /* These panels replace walking controls while open, so retain a comfortable reading width. */
   .actionTray { align-self:flex-end; flex:none; width:min(340px,calc(100vw - 32px)); }
+  .bottomHud[data-movement="false"] .actionTray { align-self:center; }
+  .actionArrow { flex-basis:44px; width:44px; }
 }
 @media(pointer:coarse) and (max-width:360px), (pointer:coarse) and (max-height:520px) {
   .root { --beach-pad-size:100px; }
