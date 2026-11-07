@@ -141,13 +141,13 @@
 .fireContext > button { display:grid; grid-template-rows:22px 14px 10px; row-gap:1px; align-content:center; align-items:center; justify-items:center; flex:0 0 var(--context-slot); width:var(--context-slot); padding:3px 3px 2px; border:1px solid var(--beach-edge); border-radius:14px; pointer-events:auto; animation:contextPop .18s ease-out; }
 .fireContext > button small { display:none; }
 .fireContext > button > span { background:transparent; color:inherit; }
-/* 닫기는 창 안쪽 우측 위, 목록과 넘김 화살표는 그 아래에 둔다. */
-.actionTray { box-sizing:border-box; position:relative; display:flex; align-items:center; width:100%; padding:42px 4px 4px; overflow:hidden; border-radius:23px; pointer-events:auto; animation:trayRise .22s ease-out; }
-.trayClose { position:absolute; right:6px; top:4px; display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:12px; background:transparent; color:var(--beach-ink); cursor:pointer; }
+/* 한 줄 높이를 유지하며 오른쪽 칸 위에는 닫기, 양쪽 아래에는 넘김 화살표를 둔다. */
+.actionTray { box-sizing:border-box; position:relative; display:flex; align-items:center; width:100%; padding:4px; overflow:hidden; border-radius:23px; pointer-events:auto; animation:trayRise .22s ease-out; }
+.trayClose { position:absolute; right:4px; top:3px; display:grid; place-items:center; width:40px; height:28px; padding:0; border:0; border-radius:10px; background:transparent; color:var(--beach-ink); cursor:pointer; }
 .trayClose svg { width:18px; height:18px; }
 .trayClose:active { background:#ffffff24; }
 .trayClose:focus-visible { outline:3px solid #7e9b86; outline-offset:-3px; }
-.actionArrow { display:grid; place-items:center; flex:0 0 32px; width:32px; height:48px; padding:0; border:0; border-radius:14px; background:transparent; color:var(--beach-ink); cursor:pointer; transition:background .15s,opacity .15s; }
+.actionArrow { display:grid; place-items:center; align-self:flex-end; flex:0 0 40px; width:40px; height:28px; padding:0; border:0; border-radius:10px; background:transparent; color:var(--beach-ink); cursor:pointer; transition:background .15s,opacity .15s; }
 .actionArrow svg { width:18px; height:18px; }
 .actionArrow:hover:not(:disabled), .actionArrow:active:not(:disabled) { background:#ffffff24; }
 .actionArrow:focus-visible { outline:2px solid #7e9b86; outline-offset:-2px; }
@@ -246,14 +246,12 @@
     left:50%; right:auto; transform:translateX(-50%);
     width:min(320px,calc(100% - 32px)); align-items:center;
   }
-  .contextRow {
+  /* 이동 중에는 오른쪽 독 바로 위에 같은 너비로 행동을 쌓는다.
+     이동 원이 사라진 때만 중앙의 넓은 다섯 칸을 사용한다. */
+  .bottomHud[data-movement="false"] .contextRow {
     --context-width:min(400px,calc(100vw - 24px));
     --context-slot:calc((var(--context-width) - 18px) / 5);
-    width:var(--context-width); align-self:flex-end;
-  }
-  .bottomHud[data-movement="false"] .contextRow { align-self:center; }
-  .root[data-context-row="true"] .bottomHud[data-movement="true"] .contextRow {
-    margin-bottom:max(0px,calc(var(--beach-pad-bottom) + var(--beach-pad-size) + 8px - var(--beach-hud-bottom) - 66px - var(--beach-hud-gap)));
+    width:var(--context-width); align-self:center;
   }
   .dock {
     box-sizing:border-box; width:100%; min-width:0;
@@ -268,6 +266,7 @@
   .actionTray { align-self:flex-end; flex:none; width:min(340px,calc(100vw - 32px)); }
   .bottomHud[data-movement="false"] .actionTray { align-self:center; }
   .actionArrow { flex-basis:44px; width:44px; }
+  .trayClose { width:44px; }
 }
 @media(pointer:coarse) and (max-width:360px), (pointer:coarse) and (max-height:520px) {
   .root { --beach-pad-size:100px; }
