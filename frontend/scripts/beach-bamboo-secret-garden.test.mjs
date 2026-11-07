@@ -46,7 +46,7 @@ test("three inhabited photo clearings share bounded instanced gardens and one fa
   garden.setQuality(true); assert.ok(light.geometry.drawRange.count <= Math.ceil(count * .7));
   assert.equal(light.material.uniforms.uPointLimit.value, 8, "denser LEDs use smaller mobile glows to bound overdraw");
   garden.setQuality(false); assert.equal(light.geometry.drawRange.count, count);
-  const walls = [parent.getObjectByName("secret-garden-opaque-backing"), parent.getObjectByName("secret-garden-bamboo-screen")];
+  const walls = [parent.getObjectByName("secret-garden-interior-night-walls"), parent.getObjectByName("secret-garden-bamboo-screen")];
   for (const zone of trail.SECRET_GARDEN_ZONES) {
     const ray = new THREE.Raycaster(new THREE.Vector3(zone.x, trail.groundHeight(zone.x, zone.z) + .3, zone.z), new THREE.Vector3(0, 1, 0), 0, 2.1);
     assert.equal(ray.intersectObjects(walls).length, 0, `${zone.id} has a clear posing area`);
@@ -88,12 +88,19 @@ test("the surprise garden lights remain hidden outside, reveal gradually after e
   assert.ok(light.material.uniforms.uReveal.value > .99);
   assert.equal(parent.getObjectByName("secret-garden-tree-crowns").visible, false, "night silhouettes are made of light points without opaque green blobs");
   assert.equal(parent.getObjectByName("secret-garden-topiary").visible, false);
-  assert.ok(parent.getObjectByName("secret-garden-opaque-backing").material.color.r < .5, "night foliage stays dark behind the colourful LEDs");
+  assert.equal(parent.getObjectByName("secret-garden-bamboo-leaves").visible, false, "broad leaves cannot protrude through the inner black surface");
+  assert.equal(parent.getObjectByName("secret-garden-opaque-backing"), undefined, "no solid wall boxes are exposed to the surrounding forest");
   garden.applyDaylight({ lanterns: 0 }); garden.update(6.1, { x: -32, z: 86 }); assert.ok(!light.visible);
   assert.equal(parent.getObjectByName("secret-garden-tree-crowns").visible, true, "daytime still has natural foliage");
-  assert.equal(parent.getObjectByName("secret-garden-opaque-backing").material.color.r, 1, "the backdrop dimmer is completely disabled by daylight");
+  assert.equal(parent.getObjectByName("secret-garden-bamboo-leaves").visible, true, "daylight retains the natural bamboo screen");
   garden.applyDaylight({ lanterns: 1 }); garden.update(6.2, { x: -18, z: 80 }); assert.ok(!light.visible);
-  assert.equal(time.value, 6.2); assert.ok(garden.root.visible, "the opaque boundary remains present from the pavilion");
+  assert.equal(time.value, 6.2); assert.ok(garden.root.visible, "the natural bamboo remains present from the pavilion");
+  for (const camera of [{ x: -62, z: 99 }, { x: -15, z: 99 }, { x: -38, z: 121 }]) {
+    garden.update(6.3, { x: -38, z: 98 }, camera);
+    assert.equal(parent.getObjectByName("secret-garden-star-backdrop").visible, false, "orbiting outside cannot expose a black far wall");
+    assert.equal(light.visible, false);
+    assert.equal(parent.getObjectByName("secret-garden-bamboo-leaves").visible, true, "the exterior stays leafy when the walker is still inside");
+  }
   garden.dispose();
 });
 
@@ -183,22 +190,28 @@ test("the entrance has a visible clear doorway while its sides and header remain
   garden.dispose();
 });
 
-test("dark entrance wings close the side gaps while the approach and every branch stay clear", () => {
-  const { parent, garden } = build(), walls = [parent.getObjectByName("secret-garden-opaque-backing"), parent.getObjectByName("secret-garden-bamboo-screen")];
+test("inward-only walls close all three sides while the approach and every branch stay clear", () => {
+  const { parent, garden } = build(), walls = [parent.getObjectByName("secret-garden-interior-night-walls"), parent.getObjectByName("secret-garden-bamboo-screen")];
   assert.equal(parent.getObjectByName("secret-garden-entrance-reeds"), undefined, "the large solid reeds at the entrance were removed");
-  const backing = walls[0], position = new THREE.Vector3(), scale = new THREE.Vector3(), quaternion = new THREE.Quaternion();
-  for (let i = 0; i < backing.count; i++) {
-    const matrix = new THREE.Matrix4(); backing.getMatrixAt(i, matrix); matrix.decompose(position, quaternion, scale);
-    assert.ok(position.z >= 85.25, "the backing starts at the room edge, not in the approach corridor");
-    if (position.z < 92) assert.ok(Math.abs(position.x - trail.SECRET_GARDEN.spineX) > 12, "new columns stay along the side perimeter");
+  const backing = walls[0], positions = backing.geometry.getAttribute("position");
+  assert.equal(backing.material.side, THREE.FrontSide);
+  for (let i = 0; i < positions.count; i++) {
+    assert.ok(positions.getZ(i) >= 85.25, "the surface starts at the room edge, not in the approach corridor");
+    if (positions.getZ(i) < 92) assert.ok(Math.abs(positions.getX(i) - trail.SECRET_GARDEN.spineX) > 12, "the entrance wings stay along the side perimeter");
   }
   for (const z of [85.5, 87, 90, 91.5]) for (const height of [1.6, 7]) for (const side of [-1, 1]) {
     const origin = new THREE.Vector3(-38, trail.groundHeight(-38, z) + height, z);
     const ray = new THREE.Raycaster(origin, new THREE.Vector3(side, 0, 0));
-    assert.ok(ray.intersectObject(backing).length > 0, `opaque columns close the ${side < 0 ? "west" : "east"} gap at ${z}`);
+    assert.ok(ray.intersectObject(backing).length > 0, `the inside surface closes the ${side < 0 ? "west" : "east"} gap at ${z}`);
+  }
+  assert.ok(new THREE.Raycaster(new THREE.Vector3(-38, trail.groundHeight(-38, 109) + 4, 109), new THREE.Vector3(0, 0, 1)).intersectObject(backing).length > 0);
+  for (const [x, z, dx, dz] of [[-56, 99, 1, 0], [-20, 99, -1, 0], [-38, 115, 0, -1]]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, trail.groundHeight(x, z) + 4, z), new THREE.Vector3(dx, 0, dz), 0, 4);
+    assert.equal(ray.intersectObject(backing).length, 0, "each near wall is absent from its exterior face");
   }
   const expandedWalls = [];
   for (const wall of walls) {
+    if (!wall.isInstancedMesh) continue;
     wall.geometry.computeBoundingBox();
     for (let i = 0; i < wall.count; i++) {
       const matrix = new THREE.Matrix4(); wall.getMatrixAt(i, matrix);
@@ -212,6 +225,8 @@ test("dark entrance wings close the side gaps while the approach and every branc
       const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
       const body = new THREE.Vector3(x, trail.groundHeight(x, z) + 1, z);
       assert.ok(!expandedWalls.some(box => box.containsPoint(body)), `${path.id} at ${x},${z} leaves room for the character's body`);
+      for (const direction of [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)])
+        assert.equal(new THREE.Raycaster(body, direction, 0, .3).intersectObject(backing).length, 0, "the inner surface leaves walking room");
       for (const side of [-.3, 0, .3]) {
         const px = x - (b[1] - a[1]) / length * side, pz = z + (b[0] - a[0]) / length * side;
         const ray = new THREE.Raycaster(new THREE.Vector3(px, trail.groundHeight(px, pz) + .25, pz), new THREE.Vector3(0, 1, 0), 0, 2);

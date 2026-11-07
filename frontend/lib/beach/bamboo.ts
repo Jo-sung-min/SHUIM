@@ -813,7 +813,7 @@ export class BambooWorld {
     // privacy screen for a visitor or orbit camera outside the enclosure.
     this.gardenInterior.value = insideSecretGarden(x, z) && z > 84.6
       && insideSecretGarden(position.x, position.z) ? 1 : 0;
-    this.secretGarden.update(time, { x, z });
+    this.secretGarden.update(time, { x, z }, position);
     const moved = Math.hypot(x - this.lastLampAt.x, z - this.lastLampAt.z);
     if (!(moved < 0.9) || time - this.lastLampAt.t > 1.2) {
       this.lastLampAt = { x, z, t: time };

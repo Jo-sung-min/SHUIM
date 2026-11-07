@@ -2,7 +2,7 @@ import {
   BAMBOO_PAVILIONS, DECK_YARD, PAVILION_YARD_HALF, SECRET_GARDEN, SECRET_GARDEN_PATHS, nearestOnTrail, onTrail, pavilionLocal, seededRandom, type StalkSite,
 } from "./bamboo-trail";
 
-/** Real, leafy bamboo in front of the opaque garden backing. It shares the forest's
+/** Real, leafy bamboo conceals the garden exterior. It shares the forest's
  * instanced materials and is retained in the mobile/distant visibility prefix. */
 export function secretGardenScreenSites(heightAt: (x: number, z: number) => number): StalkSite[] {
   const rand = seededRandom(31487), sites: StalkSite[] = [];

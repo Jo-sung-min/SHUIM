@@ -21,7 +21,7 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
   const rand = seededRandom(6481), geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   const instances: THREE.InstancedMesh[] = [];
   const wood: Instance[] = [], leaves: Instance[] = [], shrubs: Instance[] = [], stones: Instance[] = [];
-  const petals: Instance[] = [], stalks: Instance[] = [], hedge: Instance[] = [], hedgeLeaves: Instance[] = [];
+  const petals: Instance[] = [], stalks: Instance[] = [], hedgeLeaves: Instance[] = [];
   const bulbs: Bulb[] = [], wires: THREE.BufferGeometry[] = [], paving: THREE.BufferGeometry[] = [], pools: THREE.BufferGeometry[] = [];
   const colors = [0x9464ff, 0x30f5cb, 0xff55b7, 0xffc85b, 0xc4eaff, 0x477dff];
   const up = new THREE.Vector3(0, 1, 0), transform = new THREE.Object3D();
@@ -66,24 +66,23 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name; root.add(mesh); return mesh;
   };
 
-  // A continuous leaf backing closes gaps between stems even from a first-person
-  // viewpoint. The two bends keep the entrance open while blocking a straight view in.
+  // Dense stems and foliage conceal the garden from outside without a solid wall.
+  // The one-sided dark interior is supplied by the backdrop, not by exterior boxes.
   const west = SECRET_GARDEN.minX - .5, east = SECRET_GARDEN.maxX + .5, spine = SECRET_GARDEN.spineX;
-  // Continue the dark side backing down to the entrance wings, while the central
-  // dogleg and visible doorway stay open. Exterior bamboo still conceals the room.
+  // Continue the natural screen down to the entrance wings, while the central
+  // dogleg and visible doorway stay open.
   const enclosure = [
     [west, 92, west, 113.8], [east, 92, east, 113.8], [west, 113.8, east, 113.8],
     [west, 85.25, west, 91], [east, 85.25, east, 91],
   ];
   for (const [edgeIndex, [ax, az, bx, bz]] of enclosure.entries()) {
-    // New privacy panels must not reshuffle the established garden's light plants.
+    // Additional screen sections must not reshuffle the established light plants.
     const edgeRand = edgeIndex < 3 ? rand : seededRandom(9814 + edgeIndex);
     const length = Math.hypot(bx - ax, bz - az), count = Math.ceil(length / 1.05), yaw = Math.atan2(bx - ax, bz - az);
     for (let i = 0; i <= count; i++) {
       const x = ax + (bx - ax) * i / count, z = az + (bz - az) * i / count, y = groundHeight(x, z), h = 11.7 + edgeRand() * 2.1;
-      hedge.push({ ...item(x, y + 5.9, z, 1.4, 11.8, 1.55, 0x122b17), rotation: new THREE.Quaternion().setFromAxisAngle(up, yaw) });
       for (let k = 0; k < 4; k++) {
-        // Stems sit on both faces of the opaque foliage, not inside its backing.
+        // Stems frame both sides of the dense foliage screen.
         const offset = (k < 2 ? -1 : 1) * (.82 + (k % 2) * .2), along = (k % 2 ? -.23 : .23);
         const sx = x + Math.cos(yaw) * offset + Math.sin(yaw) * along, sz = z - Math.sin(yaw) * offset + Math.cos(yaw) * along;
         stalks.push(item(sx, y + h / 2, sz, .065 + edgeRand() * .04, h, .065 + edgeRand() * .04, k % 2 ? 0x42652c : 0x305525));
@@ -331,9 +330,8 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
   const topiary = batch("secret-garden-topiary", shrubs, sphere(10, 7), foliage);
   batch("secret-garden-flowers", petals, sphere(6, 4), natural);
   batch("secret-garden-stone-border", stones, new THREE.DodecahedronGeometry(1, 0), natural);
-  batch("secret-garden-opaque-backing", hedge, new THREE.BoxGeometry(1, 1, 1), boundary);
   batch("secret-garden-bamboo-screen", stalks, new THREE.CylinderGeometry(.8, 1, 1, 6), bambooMaterial);
-  batch("secret-garden-bamboo-leaves", hedgeLeaves, sphere(8, 6), boundary);
+  const screenLeaves = batch("secret-garden-bamboo-leaves", hedgeLeaves, sphere(8, 6), boundary);
   merge("secret-garden-stepping-stones", paving, owned(new THREE.MeshStandardMaterial({ color: 0x737565, roughness: 1 })));
   const wireMaterial = owned(new THREE.MeshBasicMaterial({ vertexColors: true, color: 0x777777, toneMapped: false }));
   merge("secret-garden-sculpture-frames", wires, wireMaterial);
@@ -403,13 +401,15 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
   return {
     root,
     applyDaylight(d: Daylight) { if (!disposed) night.value = THREE.MathUtils.clamp(d.lanterns, 0, 1); },
-    update(time: number, viewer: { x: number; z: number }) {
-      if (disposed || !Number.isFinite(time) || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)) return;
+    update(time: number, viewer: { x: number; z: number }, camera = viewer) {
+      if (disposed || !Number.isFinite(time) || !Number.isFinite(viewer.x) || !Number.isFinite(viewer.z)
+        || !Number.isFinite(camera.x) || !Number.isFinite(camera.z)) return;
       const dt = previousTime === null ? 0 : Math.min(.2, Math.max(0, time - previousTime)); previousTime = time; timeUniform.value = time;
-      const inside = insideSecretGarden(viewer.x, viewer.z) && viewer.z > 84.6;
+      const inside = insideSecretGarden(viewer.x, viewer.z) && viewer.z > 84.6
+        && insideSecretGarden(camera.x, camera.z) && camera.z > 84.6;
       const target = inside ? 1 : 0;
-      // Outside the enclosure lights are off immediately, so moving a camera behind
-      // the pavilion cannot reveal the surprise through a leaf or render-LOD gap.
+      // An orbit camera can leave the garden while its walker stays inside. Hide the
+      // dark backdrop and lights immediately there, keeping only natural vegetation.
       reveal.value = inside ? THREE.MathUtils.lerp(reveal.value, target, 1 - Math.exp(-dt / .65)) : 0;
       wireMaterial.color.setScalar(.35 + night.value * reveal.value * 1.15);
       boundary.color.setScalar(1 - night.value * reveal.value * .55);
@@ -418,6 +418,9 @@ export function buildBambooSecretGarden(parent: THREE.Object3D, timeUniform: { v
       // At night the complete surface is drawn by densely packed light points,
       // letting back-facing lights give each tree real volume without dark blobs.
       crowns.visible = topiary.visible = night.value * reveal.value < .42;
+      // These broad outer leaf clusters overlap the inward panels. Keep them for
+      // every exterior view and daytime, but not in front of the private night sky.
+      screenLeaves.visible = night.value * reveal.value < .42;
       lights.visible = wash.visible = fireflies.visible = backdropStars.root.visible = night.value * reveal.value > .002;
       const dx = Math.max(SECRET_GARDEN.minX - viewer.x, 0, viewer.x - SECRET_GARDEN.maxX);
       const dz = Math.max(77.5 - viewer.z, 0, viewer.z - SECRET_GARDEN.maxZ);

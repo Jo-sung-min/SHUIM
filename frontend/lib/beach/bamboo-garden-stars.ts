@@ -81,6 +81,33 @@ export function buildBambooGardenStars(parent: THREE.Object3D, uniforms: { time:
   const entranceVeil = new THREE.Mesh(veilGeometry, veilMaterial);
   entranceVeil.name = "secret-garden-entrance-night-veil"; entranceVeil.renderOrder = 1; root.add(entranceVeil);
   entranceVeil.userData.opening = { x: SECRET_GARDEN.spineX, z: veilZ, halfWidth: doorHalfWidth, height: doorHeight };
+  // The remaining three walls use the same inward-only night surface. There is
+  // no solid box on the outside: the surrounding real bamboo remains visible.
+  const wallGeometry = new THREE.BufferGeometry(), wallVertices: number[] = [], wallUvs: number[] = [];
+  const wallVertex = (x: number, z: number, height: number) => {
+    wallVertices.push(x, groundHeight(x, z) + height, z);
+    // No horizontal edge fade at shared corners; only the upper rim softens.
+    wallUvs.push(.5, Math.max(0, height / veilHeight));
+  };
+  const wallPanel = (ax: number, az: number, bx: number, bz: number) => {
+    const segments = Math.ceil(Math.hypot(bx - ax, bz - az) / 2);
+    for (let i = 0; i < segments; i++) {
+      const a = i / segments, b = (i + 1) / segments;
+      const x1 = THREE.MathUtils.lerp(ax, bx, a), z1 = THREE.MathUtils.lerp(az, bz, a);
+      const x2 = THREE.MathUtils.lerp(ax, bx, b), z2 = THREE.MathUtils.lerp(az, bz, b);
+      wallVertex(x1, z1, -.08); wallVertex(x2, z2, -.08); wallVertex(x2, z2, veilHeight);
+      wallVertex(x1, z1, -.08); wallVertex(x2, z2, veilHeight); wallVertex(x1, z1, veilHeight);
+    }
+  };
+  const west = SECRET_GARDEN.minX + .85, east = SECRET_GARDEN.maxX - .85, rear = SECRET_GARDEN.maxZ - .45;
+  wallPanel(west, rear, west, veilZ);
+  wallPanel(east, veilZ, east, rear);
+  wallPanel(east, rear, west, rear);
+  wallGeometry.setAttribute("position", new THREE.Float32BufferAttribute(wallVertices, 3));
+  wallGeometry.setAttribute("uv", new THREE.Float32BufferAttribute(wallUvs, 2));
+  wallGeometry.computeVertexNormals(); wallGeometry.computeBoundingSphere();
+  const interiorWalls = new THREE.Mesh(wallGeometry, veilMaterial);
+  interiorWalls.name = "secret-garden-interior-night-walls"; interiorWalls.renderOrder = 1; root.add(interiorWalls);
   // Interleave all faces while retaining the same small star field on phones.
   for (let i = stars.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1)); [stars[i], stars[j]] = [stars[j], stars[i]];
@@ -137,7 +164,7 @@ export function buildBambooGardenStars(parent: THREE.Object3D, uniforms: { time:
   const points = new THREE.Points(geometry, material); points.name = "secret-garden-backdrop-stars"; points.renderOrder = 3; root.add(points);
   let disposed = false;
   return {
-    root, points, entranceVeil,
+    root, points, entranceVeil, interiorWalls,
     setQuality(low: boolean) {
       if (disposed) return;
       geometry.setDrawRange(0, count); pointLimit.value = low ? 10 : 14;
@@ -145,7 +172,7 @@ export function buildBambooGardenStars(parent: THREE.Object3D, uniforms: { time:
     dispose() {
       if (disposed) return;
       disposed = true; root.removeFromParent(); root.clear(); geometry.dispose(); material.dispose();
-      veilGeometry.dispose(); veilMaterial.dispose();
+      veilGeometry.dispose(); wallGeometry.dispose(); veilMaterial.dispose();
     },
   };
 }
