@@ -7,7 +7,9 @@ import java.util.Properties;
 /** Only these versioned private S3 objects may be selected or streamed. */
 enum RoomMusicTrack {
     MORNING("morning-v1", "아침만남겨주고", 257_520),
-    TOMORROW("tomorrow-v1", "내일의우리", 240_000);
+    TOMORROW("tomorrow-v1", "내일의우리", 240_000),
+    CHRISTMAS("christmas-v1", "Make It To Christmas", 211_013),
+    MY_LOVE("my-love-v1", "My Love Mine All Mine", 137_773);
 
     final String id;
     final String title;

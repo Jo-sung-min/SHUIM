@@ -4,6 +4,8 @@ import type { MapId } from "./maps";
 export const ROOM_TRACKS = {
   "morning-v1": { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 257520 },
   "tomorrow-v1": { trackId: "tomorrow-v1", title: "내일의우리", durationMs: 240000 },
+  "christmas-v1": { trackId: "christmas-v1", title: "Make It To Christmas", durationMs: 211013 },
+  "my-love-v1": { trackId: "my-love-v1", title: "My Love Mine All Mine", durationMs: 137773 },
 } as const;
 export type TrackId = keyof typeof ROOM_TRACKS;
 export type RoomMusicState = (typeof ROOM_TRACKS)[TrackId] & { playing: boolean; startedAt: number | null; version: number };

@@ -89,6 +89,35 @@ class BeachMusicTest {
     }
 
     @Test
+    void newSongsCanBeSwitchedByAdminsAndSharedWithListenersWhoCannotControlPlayback() throws Exception {
+        for (BeachMap map : BeachMap.values()) {
+            String operatorTicket = enter("operator", map.id());
+            String listenerTicket = enter("listener", map.id());
+            long version = 0;
+            for (RoomMusicTrack track : List.of(RoomMusicTrack.CHRISTMAS, RoomMusicTrack.MY_LOVE)) {
+                actor("operator", "admin");
+                mvc.perform(post("/api/beach/music").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"ticket\":\"" + operatorTicket + "\",\"action\":\"play\",\"trackId\":\"" + track.id + "\",\"expectedVersion\":" + version + "}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.music.trackId").value(track.id))
+                    .andExpect(jsonPath("$.music.title").value(track.title))
+                    .andExpect(jsonPath("$.music.durationMs").value(track.durationMs))
+                    .andExpect(jsonPath("$.music.playing").value(true))
+                    .andExpect(jsonPath("$.music.version").value(++version));
+                var shared = beach.music("room", map.id()).music();
+                actor("listener", "user");
+                for (String action : List.of("play", "stop")) {
+                    mvc.perform(post("/api/beach/music").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ticket\":\"" + listenerTicket + "\",\"action\":\"" + action + "\",\"trackId\":\"" + track.id + "\",\"expectedVersion\":" + version + "}"))
+                        .andExpect(status().isForbidden());
+                }
+                assertEquals(shared, beach.tick(listenerTicket, 0, 12, 0, false, null, null).music());
+                assertEquals(shared, beach.music("room", map.id()).music());
+                clock.addAndGet(500);
+            }
+        }
+    }
+
+    @Test
     void retriesSwitchesStopsAndNaturalCompletionDoNotReplayStaleMusic() {
         String ticket = enter("operator", "bamboo");
         var first = command(ticket, "play", null, 0).music();

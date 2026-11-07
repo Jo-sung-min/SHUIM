@@ -94,7 +94,7 @@ export default function RoomMusicControls({ ticket, communityId, mapId, music = 
         <fieldset className={styles.tracks} disabled={busy || disabled}><legend>{background ? "방 음악 선택" : "곡 선택"}</legend>
           {Object.values(ROOM_TRACKS).map(track => <label key={track.trackId}>
             <input type="radio" name={panel + "-track"} checked={choice === track.trackId} onChange={() => setChoice(track.trackId)} />
-            <span>{track.title}</span><small>{track.trackId === "morning-v1" ? "2:43" : "4:16"}</small>
+            <span>{track.title}</span><small>{Math.floor(track.durationMs / 60000)}:{String(Math.floor(track.durationMs / 1000) % 60).padStart(2, "0")}</small>
           </label>)}
         </fieldset>
         <div className={styles.actions}>

@@ -9,6 +9,8 @@ const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/room-mu
 const flags = (trackId, version, startedAt) => ({ ...({
   "morning-v1": {trackId, title:"아침만남겨주고", durationMs:257520},
   "tomorrow-v1": {trackId, title:"내일의우리", durationMs:240000},
+  "christmas-v1": {trackId, title:"Make It To Christmas", durationMs:211013},
+  "my-love-v1": {trackId, title:"My Love Mine All Mine", durationMs:137773},
 })[trackId], playing:startedAt !== null, startedAt, version });
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
@@ -51,14 +53,33 @@ function fixture({ mini=false, blocked=false, defer=false }={}) {
     tap:()=>window.dispatchEvent(new Event("pointerup")),advance:ms=>now+=ms,hidden:hidden=>{document.hidden=hidden; document.dispatchEvent(new Event("visibilitychange"));}};
 }
 
-test("both catalogue entries require the approved title, timing and server version",()=>{
+test("all catalogue entries require the approved title, timing and server version",()=>{
   const h=fixture();
-  for(const id of ["morning-v1","tomorrow-v1"]){
+  for(const id of ["morning-v1","tomorrow-v1","christmas-v1","my-love-v1"]){
     const state=flags(id,3,150);assert.equal(h.readRoomMusic(state).trackId,id);
     for(const wrong of [{...state,trackId:"custom"},{...state,title:"other"},{...state,durationMs:5},{...state,playing:false},{...state,version:-1}])
       assert.equal(h.readRoomMusic(wrong),null);
     assert.equal(h.readRoomMusic(flags(id,4,null)).startedAt,null);
   }h.player.dispose();
+});
+
+test("the new songs switch shared playback without changing listener volume and stop at their exact duration",async()=>{
+  const h=fixture();
+  h.player.setPreferences({muted:false,volume:.46});
+  let version=1, previous;
+  for(const id of ["christmas-v1","my-love-v1"]){
+    const state=flags(id,version++,1000);
+    h.player.sync(state,6000);const media=h.elements.at(-1);media.metadata();await settle();
+    assert.match(media.src,new RegExp("trackId="+id+"$"));assert.equal(media.currentTime,5);
+    assert.equal(h.contexts[0].gains[0].value,.46);
+    if(previous){assert.ok(previous.paused);assert.equal(previous.src,"");}
+    h.player.sync(state,1000+state.durationMs-1);assert.ok(media.src);assert.equal(media.paused,false);
+    previous=media;
+  }
+  h.player.sync(flags("my-love-v1",2,1000),138773);
+  assert.equal(previous.src,"");assert.equal(previous.paused,true);
+  assert.equal(h.calls.length,0,"joining and switching songs remain listener-only operations");
+  h.player.dispose();
 });
 
 test("late joining, switching tracks and stale snapshots preserve the listener's private Web Audio gain",async()=>{

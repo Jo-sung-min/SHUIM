@@ -1,4 +1,4 @@
-"""Publish the two approved private recordings with KMS. Pass the source directory and --apply to upload."""
+"""Publish inventoried private recordings with KMS. Pass the source directory and --apply to upload."""
 import argparse
 import hashlib
 import os
@@ -27,12 +27,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--track", action="append", help="Publish only this selection ID; may be repeated")
     args = parser.parse_args()
     tracks = {}
+    requested = set(args.track or [])
+    found = set()
     for line in INVENTORY.read_text().splitlines():
         if not line or line.startswith("#"):
             continue
         track, expected = line.split("=", 1)
+        if requested and track not in requested:
+            continue
+        found.add(track)
         filename, size, digest = expected.split(",")
         if not re.fullmatch(r"[a-z0-9-]+-v[0-9]+\.mp3", filename):
             raise SystemExit(f"{track}: invalid versioned recording filename")
@@ -40,6 +46,10 @@ def main():
         if len(body) != int(size) or hashlib.sha256(body).hexdigest() != digest:
             raise SystemExit(f"{track}: original does not match the inventory")
         tracks[PREFIX + filename] = (body, digest)
+    if requested - found:
+        parser.error("Unknown track selection: " + ", ".join(sorted(requested - found)))
+    if not tracks:
+        parser.error("No inventoried recordings selected")
     if not args.apply:
         print(f"{len(tracks)} original recordings verified locally. Use --apply to publish.")
         return
