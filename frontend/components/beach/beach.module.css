@@ -130,8 +130,8 @@
 .place svg { width:12px; height:12px; }
 .place h1 { margin:6px 0; font-size:clamp(20px,3vw,28px); font-weight:800; letter-spacing:-.04em; line-height:1.25; overflow-wrap:anywhere; }
 .place p { margin:0; font-size:12px; line-height:1.6; color:#fff5e2d9; }
-/* --slot: 독의 한 칸 너비. 행동 줄과 숨김 버튼이 같은 칸에 맞춰 선다 (cqw 는 .bottomHud 너비 기준) */
-.bottomHud { --dock-columns:3; --slot:calc((100cqw - 10px - (var(--dock-columns) - 1) * 2px) / var(--dock-columns)); container-type:inline-size; position:absolute; left:50%; bottom:var(--beach-hud-bottom); transform:translateX(-50%); width:min(calc(100% - 32px),320px); display:flex; flex-direction:column; align-items:center; gap:var(--beach-hud-gap); pointer-events:none; z-index:4; }
+/* --hud-width 를 한 번 정해 독 너비와 한 칸(--slot) 을 같은 식에서 뽑는다. 컨테이너 쿼리 단위(cqw) 를 모르는 WebView 에서도 행동 줄이 독과 같은 칸에 선다 */
+.bottomHud { --dock-columns:3; --hud-width:min(calc(100vw - 32px),320px); --slot:calc((var(--hud-width) - 10px - (var(--dock-columns) - 1) * 2px) / var(--dock-columns)); position:absolute; left:50%; bottom:var(--beach-hud-bottom); transform:translateX(-50%); width:var(--hud-width); display:flex; flex-direction:column; align-items:center; gap:var(--beach-hud-gap); pointer-events:none; z-index:4; }
 .bottomHud[data-lying="true"] { --dock-columns:2; }
 .dock { box-sizing:border-box; display:grid; grid-template-columns:repeat(var(--dock-columns),minmax(0,1fr)); gap:2px; width:100%; padding:4px; border-radius:22px; pointer-events:auto; }
 .dockButton { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:56px; min-width:0; padding:5px 3px; border:0; border-radius:16px; background:transparent; color:inherit; font:inherit; font-size:11px; font-weight:600; white-space:nowrap; cursor:pointer; transition:background .16s,transform .13s; }
@@ -239,19 +239,15 @@
   /* 조이스틱(왼쪽 아래 패드) 오른쪽 공간만 쓰고, 넘치는 행동은 가로로 잘리지 않게 윗줄로 올라간다 */
   .bottomHud {
     left:auto; right:max(12px,env(safe-area-inset-right)); transform:none;
-    width:min(400px,calc(100% - var(--beach-pad-left) - var(--beach-pad-size) - 20px - max(12px,env(safe-area-inset-right))));
+    --hud-width:min(400px,calc(100vw - var(--beach-pad-left) - var(--beach-pad-size) - 20px - max(12px,env(safe-area-inset-right))));
+    width:var(--hud-width);
     align-items:stretch;
   }
+  /* 이동 원이 사라지면(앉기·눕기) 독이 가운데로 오고, 행동 줄도 같은 너비·같은 칸(--slot)을 써서 시작점이 독과 맞는다 */
   .bottomHud[data-movement="false"] {
     left:50%; right:auto; transform:translateX(-50%);
-    width:min(320px,calc(100% - 32px)); align-items:center;
-  }
-  /* 이동 중에는 오른쪽 독 바로 위에 같은 너비로 행동을 쌓는다.
-     이동 원이 사라진 때만 중앙의 넓은 다섯 칸을 사용한다. */
-  .bottomHud[data-movement="false"] .contextRow {
-    --context-width:min(400px,calc(100vw - 24px));
-    --context-slot:calc((var(--context-width) - 18px) / 5);
-    width:var(--context-width); align-self:center;
+    --hud-width:min(320px,calc(100vw - 32px));
+    width:var(--hud-width); align-items:stretch;
   }
   .dock {
     box-sizing:border-box; width:100%; min-width:0;
