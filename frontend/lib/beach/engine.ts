@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
 import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
-import { type Daylight, bambooDaylightAt, bambooSunsetAmount, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
+import { type Daylight, bambooDaylightAt, bambooSunsetAmount, cloudSpaDaylightAt, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
 import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringBathDistance, hotSpringBathIndex, hotSpringFloorHeight, hotSpringCeilingHeight, hotSpringInWater } from "./hot-spring";
@@ -20,6 +20,7 @@ import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
+import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
 import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
 import { BambooWorld } from "./bamboo";
@@ -29,6 +30,9 @@ import type { BambooNote } from "./bamboo-notes";
 import type { BambooFestivalState, PropellerFlight } from "./net";
 import { BAMBOO_SKY_FRAGMENT } from "./bamboo-shader";
 import { GardenWorld } from "./garden";
+import { CloudSpaWorld } from "./cloud-spa";
+import { CLOUD_SPA_SKY_FRAGMENT } from "./cloud-spa-sky";
+import { CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_SEATS, CLOUD_SPA_SEAT_REACH, CLOUD_SPA_WALLS, cloudSpaFloorHeight, cloudSpaCeilingHeight, resolveCloudSpaWalk, nearbyCloudSpaPlace, cloudSpaForSpot, claimedCloudSpaSeat } from "./cloud-spa-layout";
 import { GARDEN_SKY_FRAGMENT } from "./garden-shader";
 import { BOAT_DECK_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, PIER_Y, claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, insideHall, nearbyGardenPavilion, pierEnd, resolveGardenWalk, type BoatStop } from "./garden-layout";
 import type { BoatRideState, RemoteRider } from "./garden-boat";
@@ -45,34 +49,39 @@ import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-a
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
-import type { CareKind, FireState, FireworkEvent, UyuniMoment, RemotePlayer, RestPresence } from "./net";
+import type { CareKind, FireState, FireworkEvent, UyuniMoment, GardenMoment, RemotePlayer, RestPresence } from "./net";
 export type { StargazingState } from "./stargazing";
 export type { BedState } from "./shelters";
 function claimedRestSlot(state: { pose?: string; spotId?: string | null; slot?: number | null }): StargazingSlot | null {
   return claimedStargazingSlot(state) ?? claimedBedSlot(state) ?? claimedUyuniHotelBed(state) ?? claimedOnsenFloat(state);
 }
 function claimedSeatSlot(state: { pose?: string; spotId?: string | null; slot?: number | null }) {
-  return claimedFireBenchSlot(state) ?? claimedOnsenSeat(state) ?? claimedPavilionSeat(state) ?? claimedGardenSeat(state);
+  if (state.spotId?.startsWith("cloud-")) return claimedCloudSpaSeat(state);
+  return claimedFireBenchSlot(state) ?? claimedOnsenSeat(state) ?? claimedPavilionSeat(state) ?? claimedGardenSeat(state) ?? claimedBunkerSeat(state);
 }
 
 /** Which shared rest spots exist on a map; claims for the others are ignored, never drawn at a stray coordinate. */
 function mapSupportsSpot(mapId: MapId, spotId: string | null | undefined): boolean {
   if (spotId == null) return true;
+  if (mapId === "cloudspa") return cloudSpaForSpot(spotId) !== null;
+  if (spotId.startsWith("cloud-")) return false;
   if (mapId === "garden") return gardenPavilionForSpot(spotId) !== null;
   if (gardenPavilionForSpot(spotId)) return false;
   if (mapId === "bamboo") return bambooPavilionForSpot(spotId) !== null;
   if (bambooPavilionForSpot(spotId)) return false;
+  if (bunkerForSpot(spotId)) return mapId === "uyuni";
   if (mapId === "uyuni") return spotId === STARGAZING.id || uyuniHotelForSpot(spotId) !== null;
   return uyuniHotelForSpot(spotId) === null;
 }
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
-export interface SelfState { x: number; z: number; yaw: number; moving: boolean }
+export interface SelfState { x: number; z: number; yaw: number; moving: boolean; bunkerId?: UyuniBunkerId | null }
+export interface BunkerState { bunkerId: UyuniBunkerId | null; nearId: UyuniBunkerId | null; name: string; inside: boolean; ladderNear: boolean; sofaNear: boolean; seated: boolean; spotId: string | null; occupied: number; capacity: number; available: boolean }
 export interface RestState { shelterName: string; seated: boolean }
 export interface BenchState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean }
 export interface OnsenState { inWater: boolean; canSit: boolean; canFloat: boolean; sitting: boolean; floating: boolean; occupiedSeats: number[]; occupiedFloats: number[] }
 /** 대나무숲 정자: 가까운 정자의 좌석 상황. spotId 는 앉아 있는 정자 또는 가장 가까운 정자 */
-export interface PavilionState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean; spotId: string | null; name: string; kind: "pavilion" | "deck" | "hall" }
+export interface PavilionState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean; spotId: string | null; name: string; kind: "pavilion" | "deck" | "hall" | "bench" | "pool" | "lounge" }
 export type { BoatRideState } from "./garden-boat";
 /** 자동으로 걸어간 결과: 도착 · 사용자가 직접 움직여 멈춤 · 길이 막힘 */
 export type AutoWalkResult = "arrived" | "cancelled" | "blocked";
@@ -99,6 +108,8 @@ export interface EngineHandlers {
   onOnsenChange?: (state: OnsenState) => void;
   onPavilionChange?: (state: PavilionState) => void;
   onPavilionAction?: () => void;
+  onBunkerChange?: (state: BunkerState) => void;
+  onBunkerAction?: () => void;
   /** 봄물 정원 나룻배: 잔교 가까이·타는 중·정류장 정차가 바뀔 때 */
   onBoatChange?: (state: BoatRideState) => void;
   onBoatAction?: () => void;
@@ -352,10 +363,17 @@ export class BeachEngine {
   private sandMat!: THREE.MeshStandardMaterial;
   private photo: THREE.Texture | null = null;
   private assetLoads: Promise<void>[] = [];
-  private cove!: Cove | UyuniWorld | BambooWorld | GardenWorld;
+  private cove!: Cove | UyuniWorld | BambooWorld | GardenWorld | CloudSpaWorld;
   private uyuni: UyuniWorld | null = null;
+  private uyuniTextures: THREE.Texture[] = [];
+  private activeBunkerId: UyuniBunkerId | null = null;
+  private lastBunkerState = "";
+  private bunkerClimbOffset = 0;
+  private bunkerTransition: { elapsed: number; confirmed: RestPresence; swapped: boolean; resolve: () => void } | null = null;
   private bamboo: BambooWorld | null = null;
   private garden: GardenWorld | null = null;
+  private cloudSpa: CloudSpaWorld | null = null;
+  private cloudSpaTextures: THREE.Texture[] = [];
   private rainOverride: number | null = null;
   private serverClockOffset: number | null = null;
   private rainNow = 0;
@@ -477,18 +495,35 @@ export class BeachEngine {
     this.renderer.shadowMap.enabled = this.mapId === "beach";
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
-    this.camera = new THREE.PerspectiveCamera(this.cameraFov(), 1, 0.1, 520);
+    this.camera = new THREE.PerspectiveCamera(this.cameraFov(), 1, 0.1, this.mapId === "cloudspa" ? 1600 : 520);
     this.camera.rotation.order = "YXZ";
     this.daylight = this.mapDaylight();
     this.scene.fog = new THREE.Fog(0xffffff, this.daylight.fogNear, this.daylight.fogFar);
 
     this.buildSky();
-    if (this.mapId === "uyuni") {
+    if (this.mapId === "cloudspa") {
+      const cloud = this.loadEnvironmentTexture(this.mobile ? "/cloudspa/art/cloud-bank-mobile-v1.webp" : "/cloudspa/art/cloud-bank-v1.webp", true);
+      const cityTiles = ["nw", "ne", "sw", "se"].map(id => this.loadEnvironmentTexture(`/cloudspa/art/city-${id}-v2.webp`, true));
+      for (const tile of cityTiles) tile.anisotropy = Math.min(this.mobile ? 4 : 8, this.renderer.capabilities.getMaxAnisotropy());
+      const city = cityTiles[0];
+      const surface = this.loadEnvironmentTexture(this.mobile ? "/cloudspa/art/cloud-surface-mobile-v1.webp" : "/cloudspa/art/cloud-surface-v1.webp", true);
+      surface.wrapS = surface.wrapT = THREE.MirroredRepeatWrapping;
+      surface.anisotropy = Math.min(this.mobile ? 2 : 4, this.renderer.capabilities.getMaxAnisotropy());
+      const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
+      const cotton = this.loadEnvironmentTexture("/beach/real/white-cotton-v1.webp", true);
+      wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
+      cloud.anisotropy = Math.min(this.mobile ? 2 : 4, this.renderer.capabilities.getMaxAnisotropy());
+      this.cloudSpaTextures = [cloud, ...cityTiles, wood, cotton, surface];
+      this.cloudSpa = new CloudSpaWorld(this.scene, this.skyMat.uniforms, { cloud, city, cityTiles, wood, cotton, surface }, this.mobile);
+      this.cove = this.cloudSpa;
+      this.eyeHeight = cloudSpaFloorHeight(this.self.x, this.self.z) + EYE;
+    } else if (this.mapId === "uyuni") {
       const sand = this.loadEnvironmentTexture("/beach/real/white-sand-v1.webp", true);
       sand.wrapS = sand.wrapT = THREE.RepeatWrapping;
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
       const cotton = this.loadEnvironmentTexture("/beach/real/white-cotton-v1.webp", true);
       wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
+      this.uyuniTextures = [sand, wood, cotton];
       this.uyuni = new UyuniWorld(this.scene, this.skyMat.uniforms, sand, { wood, cotton });
       this.cove = this.uyuni;
     } else if (this.mapId === "bamboo") {
@@ -503,10 +538,12 @@ export class BeachEngine {
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
       wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
       wood.repeat.set(2, 2);
-      // These generated garden assets ship with the app; they do not depend on a CDN upload.
+      // Garden artwork follows the same verified public CDN path as the other map textures.
       const landscape = this.loadEnvironmentTexture("/garden/art/spring-hills-panorama-v1.webp", false);
       const willow = this.loadEnvironmentTexture("/garden/art/willow-canopy-v1.webp", true);
-      this.garden = new GardenWorld(this.scene, this.skyMat.uniforms, { wood, landscape, willow }, this.mobile);
+      const grass = this.loadEnvironmentTexture(this.mobile ? "/garden/art/grass-natural-mobile-v1.webp" : "/garden/art/grass-natural-v1.webp", true, [1, 1]);
+      grass.anisotropy = Math.min(this.mobile ? 2 : 4, this.renderer.capabilities.getMaxAnisotropy());
+      this.garden = new GardenWorld(this.scene, this.skyMat.uniforms, { wood, landscape, willow, grass }, this.mobile);
       this.cove = this.garden;
       this.obstacles.push(...GARDEN_OBSTACLES.map((o) => ({ ...o })));
     } else {
@@ -560,7 +597,7 @@ export class BeachEngine {
   }
 
   private buildSky() {
-    this.photo = this.mapId === "uyuni" || this.mapId === "garden" ? null : this.loadEnvironmentTexture("/beach/real/paradise-panorama-v1.webp", false);
+    this.photo = this.mapId === "uyuni" || this.mapId === "garden" || this.mapId === "cloudspa" ? null : this.loadEnvironmentTexture("/beach/real/paradise-panorama-v1.webp", false);
     if (this.photo) this.photo.wrapS = THREE.RepeatWrapping;
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -574,7 +611,7 @@ export class BeachEngine {
         uBambooSunset: { value: 0 },
       },
       vertexShader: SKY_VERT,
-      fragmentShader: this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : this.mapId === "bamboo" ? BAMBOO_SKY_FRAGMENT : this.mapId === "garden" ? GARDEN_SKY_FRAGMENT : SKY_FRAGMENT,
+      fragmentShader: this.mapId === "cloudspa" ? CLOUD_SPA_SKY_FRAGMENT : this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : this.mapId === "bamboo" ? BAMBOO_SKY_FRAGMENT : this.mapId === "garden" ? GARDEN_SKY_FRAGMENT : SKY_FRAGMENT,
       depthWrite: false,
       // The forest canopy covers most of the sky: draw it after the opaque world at the far plane, so covered pixels are rejected early.
       depthTest: this.mapId === "bamboo",
@@ -676,6 +713,7 @@ export class BeachEngine {
     tex.needsUpdate = true;
     const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.1, depthWrite: true, toneMapped: false });
     mat.color.setRGB(this.daylight.tint[0], this.daylight.tint[1], this.daylight.tint[2], THREE.SRGBColorSpace);
+    if (this.activeBunkerId) mat.color.setHex(0xffffff);
     const geometry = avatarGeometry();
     const sprite = new THREE.Mesh(geometry, mat);
     sprite.renderOrder = 3;
@@ -711,8 +749,10 @@ export class BeachEngine {
     const robeKind = female ? "female-onsen" : "male-onsen";
     const radius = hotSpringBathDistance(x, z);
     const wearingRobe = node.avatar?.kind === robeKind;
-    const wantsRobe = this.mapId === "beach" && radius <= (wearingRobe ? 7.65 : 7.05)
-      && (hotSpringFloorHeight(x, z) ?? -Infinity) >= HOT_SPRING.floorY - 0.01;
+    const wantsRobe = (this.mapId === "cloudspa"
+      ? CLOUD_SPA_POOLS.some(pool => Math.hypot(x - pool.x, z - pool.z) < pool.radius + (wearingRobe ? 1.5 : .7))
+      : this.mapId === "beach" && radius <= (wearingRobe ? 7.65 : 7.05)
+        && (hotSpringFloorHeight(x, z) ?? -Infinity) >= HOT_SPRING.floorY - 0.01);
     const robePool = female ? this.femaleOnsenAvatarModels : this.onsenAvatarModels;
     if (wantsRobe && robePool?.canLoad && !(female ? this.femaleOnsenAvatarRequested : this.onsenAvatarRequested)) {
       if (female) this.femaleOnsenAvatarRequested = true;
@@ -797,7 +837,7 @@ export class BeachEngine {
 
   private buildProps() {
     if (this.mapId !== "beach") {
-      if (!this.bamboo && !this.garden) buildStargazingZone(this.scene);
+      if (!this.bamboo && !this.garden && !this.cloudSpa) buildStargazingZone(this.scene);
       this.updateStargazingState();
       return;
     }
@@ -827,7 +867,7 @@ export class BeachEngine {
 
   /** Confirmed room events are shared; the effects module deduplicates their IDs. */
   applyFireworks(events: FireworkEvent[], serverTime: number) {
-    if (this.disposed || (!this.fireworks && events.length === 0)) return;
+    if (this.disposed || this.activeBunkerId || (!this.fireworks && events.length === 0)) return;
     this.fireworks ??= new BeachFireworks(this.scene, {
       mobile: this.mobile,
       grand: true,
@@ -869,8 +909,12 @@ export class BeachEngine {
     this.festivalToys.hold(state.held, grip, pose.yaw, pid, firstPerson ? this.camera : undefined, state.balloonHue ?? undefined);
   }
 
+  applyGardenMoments(events: GardenMoment[], serverTime: number) {
+    if (!this.disposed && this.mapId === "garden") this.garden?.applyMoments(events, serverTime);
+  }
+
   applyUyuniMoments(events: UyuniMoment[], serverTime: number, ownPid?: string) {
-    if (this.disposed || this.mapId !== "uyuni" || (!this.uyuniMoments && events.length === 0)) return;
+    if (this.disposed || this.activeBunkerId || this.mapId !== "uyuni" || (!this.uyuniMoments && events.length === 0)) return;
     this.momentOwnPid = ownPid ?? null;
     this.sparklerActors.clear();
     for (const event of events) if (event.kind === "sparkler") {
@@ -903,7 +947,7 @@ export class BeachEngine {
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
   setMove(x: number, y: number) {
-    if (this.inputPaused || this.anchored) return;
+    if (this.inputPaused || this.bunkerTransition || this.anchored) return;
     this.move.x = Math.max(-1, Math.min(1, x || 0));
     this.move.y = Math.max(-1, Math.min(1, y || 0));
   }
@@ -921,7 +965,7 @@ export class BeachEngine {
 
   /** Approach the shared circle. Claiming a mat still requires the server's response. */
   walkToStargazing(): Promise<AutoWalkResult> {
-    if (this.disposed || this.bamboo || this.garden || this.skyRest || this.fixedSeat) return Promise.resolve("cancelled");
+    if (this.disposed || this.activeBunkerId || this.bamboo || this.garden || this.cloudSpa || this.skyRest || this.fixedSeat) return Promise.resolve("cancelled");
     if (this.restSeat) this.standUp();
     const target = stargazingApproach(this.self.x, this.self.z);
     if (this.uyuni) {
@@ -935,7 +979,7 @@ export class BeachEngine {
   }
 
   walkToBed(spotId: string): Promise<AutoWalkResult> {
-    if (this.bamboo || this.garden) return Promise.resolve("cancelled");
+    if (this.activeBunkerId || this.bamboo || this.garden || this.cloudSpa) return Promise.resolve("cancelled");
     if (this.uyuni) {
       const hotel = uyuniHotelForSpot(spotId);
       if (this.disposed || this.skyRest || this.fixedSeat || !hotel) return Promise.resolve("cancelled");
@@ -985,6 +1029,65 @@ export class BeachEngine {
       x: slot.x + Math.sin(head) * FLOAT_BODY_OFFSET + Math.sin(t * 0.37 + i) * 0.05,
       z: slot.z + Math.cos(head) * FLOAT_BODY_OFFSET + Math.cos(t * 0.29 + i * 1.3) * 0.05,
       avatarY: onsenFloatingY(t, i), roll: Math.sin(t * 0.6 + i) * 0.05 };
+  }
+
+  get bunkerId(): UyuniBunkerId | null { return this.activeBunkerId; }
+
+  get bunkerState(): BunkerState {
+    const room = bunkerById(this.activeBunkerId);
+    const nearby = this.uyuni && !room && !this.skyRest && !this.fixedSeat && !this.restSeat ? nearbyBunkerEntry(this.self.x, this.self.z) : null;
+    const used = new Set<number>();
+    if (room) for (const player of this.players.values()) {
+      const seat = claimedBunkerSeat(player.data);
+      if (seat?.spotId === room.spotId) used.add(seat.slot);
+    }
+    const seated = Boolean(room && this.pavilionSeat?.spotId === room.spotId);
+    if (seated && this.pavilionSeat) used.add(this.pavilionSeat.slot);
+    return { bunkerId: room?.id ?? null, nearId: nearby?.id ?? null, name: room?.name ?? nearby?.name ?? "",
+      inside: Boolean(room), ladderNear: Boolean(room && !seated && nearbyBunkerLadder(room.id, this.self.x, this.self.z)),
+      sofaNear: Boolean(room && (seated || nearbyBunkerSofa(room.id, this.self.x, this.self.z))), seated,
+      spotId: room?.spotId ?? null, occupied: used.size, capacity: BUNKER_SEAT_CAPACITY,
+      available: Boolean(room && !seated && BUNKER_SEATS.some(seat => seat.spotId === room.spotId && !used.has(seat.slot)
+        && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= BUNKER_SEAT_REACH)) };
+  }
+
+  private updateBunkerState() {
+    if (!this.uyuni) return;
+    const state = this.bunkerState, key = JSON.stringify(state);
+    if (key === this.lastBunkerState) return;
+    this.lastBunkerState = key;
+    this.handlers.onBunkerChange?.(state);
+  }
+
+  private setBunkerLayer(id: UyuniBunkerId | null) {
+    if (!this.uyuni || (this.activeBunkerId ?? null) === id) return false;
+    this.activeBunkerId = id;
+    this.uyuni.setBunkerActive(id);
+    this.sky.visible = !id;
+    this.fireworkAudio?.setSceneRunning(!id && this.running);
+    this.uyuniMoments?.dispose(); this.uyuniMoments = null; this.sparklerActors.clear();
+    this.fireworks?.dispose(); this.fireworks = null;
+    for (const node of this.players.values()) this.removePlayer(node);
+    this.players.clear(); this.select(null);
+    this.remoteClock?.resetPlayback();
+    this.applyDaylight(this.daylight);
+    this.followSnap = true;
+    return true;
+  }
+
+  /** Server-confirmed floor change, with ladder motion under the UI fade. */
+  transitionBunker(confirmed: RestPresence): Promise<void> {
+    if (this.disposed || !this.uyuni) return Promise.resolve();
+    this.cancelBunkerTransition();
+    this.keys.clear(); this.move = { x: 0, y: 0 }; this.cancelAutoWalk(); this.faceGoal = null;
+    if (!this.running || (confirmed.bunkerId ?? null) === this.activeBunkerId) { this.applyRest(confirmed); return Promise.resolve(); }
+    return new Promise(resolve => { this.bunkerTransition = { elapsed: 0, confirmed, swapped: false, resolve }; });
+  }
+
+  private cancelBunkerTransition() {
+    const transition = this.bunkerTransition;
+    this.bunkerTransition = null; this.bunkerClimbOffset = 0;
+    transition?.resolve();
   }
 
   get onsenState(): OnsenState {
@@ -1042,7 +1145,7 @@ export class BeachEngine {
   /** 가까운 정자(또는 앉아 있는 정자)의 좌석 상황. 좌석은 서버가 배정하므로 여기서는 보이는 사람들로만 센다 */
   getPavilionState(): PavilionState {
     const empty: PavilionState = { near: false, seated: false, occupied: 0, capacity: PAVILION_SEAT_CAPACITY, available: false, spotId: null, name: "", kind: "pavilion" };
-    if (!this.bamboo && !this.garden) return empty;
+    if (!this.bamboo && !this.garden && !this.cloudSpa) return empty;
     const layout = this.seatLayout();
     const pavilion = this.pavilionSeat ? layout.forSpot(this.pavilionSeat.spotId) : layout.nearby(this.self.x, this.self.z);
     if (!pavilion) return empty;
@@ -1052,15 +1155,16 @@ export class BeachEngine {
       if (seat?.spotId === pavilion.spotId) used.add(seat.slot);
     }
     if (this.pavilionSeat?.spotId === pavilion.spotId) used.add(this.pavilionSeat.slot);
-    const reachable = layout.seats.filter((seat) => seat.spotId === pavilion.spotId && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= PAVILION_REACH);
+    const reachable = layout.seats.filter((seat) => seat.spotId === pavilion.spotId && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= (this.cloudSpa ? CLOUD_SPA_SEAT_REACH : PAVILION_REACH));
     return { near: !this.skyRest && (reachable.length > 0 || Boolean(this.pavilionSeat)), seated: Boolean(this.pavilionSeat), occupied: used.size,
-      capacity: PAVILION_SEAT_CAPACITY, available: reachable.some((seat) => !used.has(seat.slot)), spotId: pavilion.spotId, name: pavilion.name, kind: pavilion.kind };
+      capacity: layout.seats.filter(seat => seat.spotId === pavilion.spotId).length, available: reachable.some((seat) => !used.has(seat.slot)), spotId: pavilion.spotId, name: pavilion.name, kind: pavilion.kind };
   }
 
   setGuestbookEntries(entries: readonly BambooNote[]) { this.bamboo?.setGuestbookEntries(entries); }
 
   /** 정자(대나무숲) 또는 청우헌 단·연향정(봄물 정원)의 좌석 표. 두 지도의 자리는 같은 모양이라 같은 코드로 다룬다. */
   private seatLayout() {
+    if (this.cloudSpa) return { seats: CLOUD_SPA_SEATS, forSpot: cloudSpaForSpot, nearby: nearbyCloudSpaPlace, claimed: claimedCloudSpaSeat };
     if (this.garden) {
       return { seats: GARDEN_SEATS, forSpot: gardenPavilionForSpot, nearby: nearbyGardenPavilion, claimed: claimedGardenSeat };
     }
@@ -1104,6 +1208,11 @@ export class BeachEngine {
     this.followSnap = true;
   }
 
+  setRainOverride(amount: number | null) {
+    if (this.disposed || this.mapId !== "garden") return;
+    this.rainOverride = amount === null || !Number.isFinite(amount) ? null : THREE.MathUtils.clamp(amount, 0, 1);
+  }
+
   private updateRain() {
     if (!this.garden) return;
     const serverNow = this.serverClockOffset === null ? Date.now() : performance.now() + this.serverClockOffset;
@@ -1121,7 +1230,7 @@ export class BeachEngine {
   }
 
   private updatePavilionState() {
-    if (!this.bamboo && !this.garden) return;
+    if (!this.bamboo && !this.garden && !this.cloudSpa) return;
     if (this.bamboo) {
       const inSight = Math.hypot(this.self.x - BAMBOO_GUESTBOOK.x, this.self.z - BAMBOO_GUESTBOOK.z) < 30;
       if (inSight !== this.guestbookInSight) {
@@ -1142,7 +1251,7 @@ export class BeachEngine {
   }
 
   getBedState(): BedState | null {
-    if (this.bamboo || this.garden) return null;
+    if (this.bamboo || this.garden || this.cloudSpa || this.activeBunkerId) return null;
     if (this.uyuni) {
       const hotel = uyuniHotelForSpot(this.skyRest?.spotId) ?? nearbyUyuniHotel(this.self.x, this.self.z);
       if (!hotel) return null;
@@ -1181,9 +1290,12 @@ export class BeachEngine {
   applyRest(state: RestPresence) {
     if (this.disposed || !state) return;
     if (state.pose !== "standing" && !mapSupportsSpot(this.mapId, state.spotId)) return;
+    const nextLayer = this.mapId === "uyuni" ? bunkerById(state.bunkerId)?.id ?? null : null;
+    if (state.pose !== "standing" && (nextLayer ? bunkerForSpot(state.spotId)?.id !== nextLayer : Boolean(bunkerForSpot(state.spotId)))) return;
+    const layerChanged = this.setBunkerLayer(nextLayer);
     const slot = claimedRestSlot(state);
     const bench = claimedFireBenchSlot(state);
-    const pavilion = this.garden ? claimedGardenSeat(state) : claimedPavilionSeat(state);
+    const pavilion = this.cloudSpa ? claimedCloudSpaSeat(state) : this.uyuni ? claimedBunkerSeat(state) : this.garden ? claimedGardenSeat(state) : claimedPavilionSeat(state);
     if (pavilion && this.garden?.isRiding) this.garden.cancelRide();
     const onsen = claimedOnsenSeat(state), seat = onsen ?? bench ?? pavilion;
     if (seat) {
@@ -1200,7 +1312,7 @@ export class BeachEngine {
       this.self.pitch = pavilion?.pavilionId === "summit" ? -0.20 : -0.08;
       this.eyeHeight = seat.avatarY + 0.78;
       this.setView("third");
-      this.orbitYaw = seat.yaw;
+      this.orbitYaw = seat.yaw + (this.cloudSpa && seat.spotId === "cloud-lounge" ? Math.PI + .45 : 0);
     } else if (slot) {
       if (this.skyRest?.spotId === slot.spotId && this.skyRest.slot === slot.slot) return;
       if (!this.skyRest && !this.fixedSeat) this.beforeSkyRest = { pitch: this.self.pitch };
@@ -1216,17 +1328,19 @@ export class BeachEngine {
       this.self.yaw = slot.yaw; this.self.pitch = this.floating ? 0.5 : 1.25;
       this.orbitYaw = this.floating ? slot.yaw + 1.4 : slot.yaw; // From straight behind, a reclined body is only the back of a head.
       this.eyeHeight = (slot.avatarY ?? STARGAZING.avatarY) + 0.16;
-    } else if (state.pose === "standing" && (this.skyRest || this.fixedSeat)) {
+    } else if (state.pose === "standing" && (layerChanged || this.skyRest || this.fixedSeat)) {
       if (![state.x, state.z, state.yaw].every(Number.isFinite)) return;
       this.skyRest = null;
       this.skyLook = null;
       this.benchSeat = null;
       this.onsenSeat = null;
       this.pavilionSeat = null;
+      this.restSeat = null; this.returnFromSeat = null;
       this.self.x = state.x; this.self.z = state.z; this.self.yaw = state.yaw;
       this.self.pitch = THREE.MathUtils.clamp(this.beforeSkyRest?.pitch ?? 0.07, -0.55, 0.5);
       this.beforeSkyRest = null;
       this.eyeHeight = this.deckHeight(state.x, state.z) + EYE;
+      if (layerChanged && nextLayer) this.orbitYaw = this.self.yaw + 1.05;
     } else return;
     this.keys.clear(); this.move = { x: 0, y: 0 };
     this.cancelAutoWalk();
@@ -1236,11 +1350,12 @@ export class BeachEngine {
   }
 
   private updateStargazingState() {
+    this.updateBunkerState();
     this.updateBedState();
     this.updateBenchState();
     this.updateOnsenState();
     this.updatePavilionState();
-    if (this.bamboo || this.garden) {
+    if (this.bamboo || this.garden || this.cloudSpa || this.activeBunkerId) {
       // The forest and the garden have no starlight circle; never offer the shared mats there.
       if (this.lastStargazingState !== "forest") {
         this.lastStargazingState = "forest";
@@ -1287,7 +1402,7 @@ export class BeachEngine {
     if (a.face) {
       const dx = a.face.x - this.self.x, dz = a.face.z - this.self.z;
       const dist = Math.hypot(dx, dz) || 1;
-      this.faceGoal = { yaw: Math.atan2(-dx, -dz), pitch: -Math.atan2(this.eyeHeight - 0.6, dist) * 0.8 };
+      this.faceGoal = { yaw: Math.atan2(-dx, -dz), pitch: -Math.atan2(this.eyeHeight - (this.cloudSpa ? this.deckHeight(a.face.x, a.face.z) : 0) - 0.6, dist) * 0.8 };
     }
     a.resolve("arrived");
   }
@@ -1305,7 +1420,7 @@ export class BeachEngine {
       return;
     }
     const step = Math.min(dist, WALK_SPEED * dt);
-    const [cx, cz] = this.collide(this.self.x + (dx / dist) * step, this.self.z + (dz / dist) * step);
+    const [cx, cz] = this.collide(this.self.x + (dx / dist) * step, this.self.z + (dz / dist) * step, true);
     const nx = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
     const nz = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
     const progressed = Math.hypot(nx - this.self.x, nz - this.self.z);
@@ -1346,7 +1461,7 @@ export class BeachEngine {
   }
 
   private mapDaylight(): Daylight {
-    return (this.mapId === "uyuni" ? uyuniDaylightAt : this.mapId === "bamboo" ? bambooDaylightAt : this.mapId === "garden" ? gardenDaylightAt : daylightAt)(this.hour());
+    return (this.mapId === "cloudspa" ? cloudSpaDaylightAt : this.mapId === "uyuni" ? uyuniDaylightAt : this.mapId === "bamboo" ? bambooDaylightAt : this.mapId === "garden" ? gardenDaylightAt : daylightAt)(this.hour());
   }
 
   get daylightNow() {
@@ -1394,16 +1509,22 @@ export class BeachEngine {
 
     const fog = this.scene.fog as THREE.Fog;
     fog.color.setRGB(...d.fog, THREE.SRGBColorSpace);
+    if (this.activeBunkerId) fog.color.setHex(0x211b15);
     // The forest closes in: its own near/far keep the far stalks and world edge inside the haze.
-    const ownFog = Boolean(this.bamboo || this.garden);
+    const ownFog = Boolean(this.bamboo || this.garden || this.cloudSpa);
     fog.near = ownFog ? d.fogNear * (this.garden ? 1 - this.rainNow * 0.3 : 1) : 70;
     fog.far = ownFog ? d.fogFar * (this.garden ? 1 - this.rainNow * 0.4 : 1) : 270;
+    if (this.activeBunkerId) { fog.near = 80; fog.far = 120; }
     this.renderer.setClearColor(fog.color, 1);
 
     for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
     for (const p of this.players.values()) p.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
     this.selfNode?.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
-    if (this.shadowMat) this.shadowMat.opacity = 0.35 + 0.45 * Math.max(0, d.sun[1]);
+    if (this.activeBunkerId) {
+      this.selfNode?.mat.color.setHex(0xffffff);
+      for (const p of this.players.values()) p.mat.color.setHex(0xffffff);
+    }
+    if (this.shadowMat) this.shadowMat.opacity = this.activeBunkerId ? .3 : 0.35 + 0.45 * Math.max(0, d.sun[1]);
   }
 
   /* ---------------- 입력 ---------------- */
@@ -1452,7 +1573,7 @@ export class BeachEngine {
         if (this.view === "third") this.orbitYaw -= dx * k;
         else this.self.yaw -= dx * k;
         const [lowest, highest] = this.floating ? (this.view === "third" ? [0.2, 1.25] : [-0.55, 0.5])
-          : this.skyRest ? [SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch] : [-0.55, 0.5];
+          : this.skyRest ? [SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch] : this.cloudSpa ? [-1.05, 1.0] : [-0.55, 0.5];
         this.self.pitch = THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, lowest, highest);
       }
       if (this.view === "first") this.faceGoal = null;
@@ -1474,6 +1595,12 @@ export class BeachEngine {
     const target = e.target as HTMLElement | null;
     if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const bunker = this.bunkerState;
+    if (this.uyuni && ((k === "e" && (bunker.nearId || bunker.ladderNear || bunker.sofaNear || bunker.seated)) || (k === "Escape" && bunker.seated))) {
+      this.keys.delete(k);
+      if (e.type === "keydown" && !e.repeat) this.handlers.onBunkerAction?.();
+      e.preventDefault(); return;
+    }
     if ((k === "e" && (this.benchSeat || this.getBenchState().near)) || (k === "Escape" && this.benchSeat)) {
       this.keys.delete(k);
       if (e.type === "keydown" && !e.repeat) this.handlers.onBenchAction?.();
@@ -1486,7 +1613,7 @@ export class BeachEngine {
       e.preventDefault();
       return;
     }
-    if ((this.bamboo || this.garden) && ((k === "e" && (this.pavilionSeat || this.getPavilionState().near)) || (k === "Escape" && this.pavilionSeat))) {
+    if ((this.bamboo || this.garden || this.cloudSpa) && ((k === "e" && (this.pavilionSeat || this.getPavilionState().near)) || (k === "Escape" && this.pavilionSeat))) {
       this.keys.delete(k);
       if (e.type === "keydown" && !e.repeat) this.handlers.onPavilionAction?.();
       e.preventDefault();
@@ -1571,6 +1698,7 @@ export class BeachEngine {
     if (stamp.serverOffset !== null) this.serverClockOffset = -stamp.serverOffset;
     const seen = new Set<string>();
     for (const incoming of list) {
+      if (this.uyuni && (incoming.bunkerId ?? null) !== this.activeBunkerId) continue;
       const wrongMap = incoming.spotId != null && !mapSupportsSpot(this.mapId, incoming.spotId);
       const p: RemotePlayer = wrongMap
         ? { ...incoming, pose: "standing", spotId: null, slot: null } : incoming;
@@ -1799,7 +1927,7 @@ export class BeachEngine {
 
   /* ---------------- 프레임 ---------------- */
   getSelf(): SelfState {
-    return { x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.fixedSeat?.yaw ?? this.self.yaw, moving: this.anchored ? false : this.self.moving };
+    return { ...(this.uyuni ? { bunkerId: this.activeBunkerId } : {}), x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.fixedSeat?.yaw ?? this.self.yaw, moving: this.anchored ? false : this.self.moving };
   }
 
   getContinuityView(): ContinuityView {
@@ -1811,13 +1939,15 @@ export class BeachEngine {
   /** Restore the same visitor, while only the server may restore a shared resting-place claim. */
   restoreVisit(spawn: { x: number; z: number; yaw: number }, selfRest?: RestPresence, cameraState?: ContinuityView, preserveLocal = false, bounds?: Bounds) {
     if (this.disposed) return;
+    this.cancelBunkerTransition();
+    const layerChanged = this.setBunkerLayer(this.mapId === "uyuni" ? bunkerById(selfRest?.bunkerId)?.id ?? null : null);
     // A resumed room may have expanded since this engine was created.
     if (bounds && [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ].every(Number.isFinite)
       && bounds.maxX - bounds.minX > 0.8 && bounds.maxZ - bounds.minZ > 0.7) {
       this.bounds = { ...bounds };
     }
     const saved = cameraState ?? this.getContinuityView();
-    const origin = preserveLocal ? this.returnFromSeat ?? this.self : spawn;
+    const origin = preserveLocal && !layerChanged ? this.returnFromSeat ?? this.self : spawn;
     const finite = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
     const yaw = (value: number) => Math.atan2(Math.sin(value), Math.cos(value));
     const clamp = THREE.MathUtils.clamp;
@@ -1842,13 +1972,13 @@ export class BeachEngine {
     this.eyeHeight = this.deckHeight(this.self.x, this.self.z) + EYE;
     this.keys.clear(); this.move = { x: 0, y: 0 }; this.look.active = false;
     this.cancelAutoWalk(); this.faceGoal = null;
-    if (selfRest && selfRest.pose !== "standing") this.applyRest(selfRest);
+    if (selfRest) this.applyRest(selfRest);
     this.setView(saved.view === "third" ? "third" : "first");
     const sameRest = saved.restSpot === this.getContinuityView().restSpot;
     this.orbitYaw = yaw(finite(saved.orbitYaw, this.self.yaw));
     if (!this.skyRest && !this.fixedSeat) {
       if (this.view === "first") this.self.yaw = yaw(finite(saved.yaw, this.self.yaw));
-      this.self.pitch = sameRest ? clamp(finite(saved.pitch, 0.07), -0.55, 0.5) : 0.07;
+      this.self.pitch = sameRest ? clamp(finite(saved.pitch, 0.07), this.cloudSpa ? -1.05 : -0.55, this.cloudSpa ? 1 : 0.5) : 0.07;
     } else if (sameRest) {
       if (this.isBedLying && this.view === "first") {
         this.self.yaw = clamp(finite(saved.yaw, 0), -BED_VIEW.yawLimit, BED_VIEW.yawLimit);
@@ -1861,7 +1991,7 @@ export class BeachEngine {
           : clamp(finite(saved.pitch, 1.25), SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch);
         if (this.view === "first") this.skyLook = this.limitSkyLook(finite(saved.skyYaw, 0), finite(saved.skyPitch, 0));
       } else {
-        this.self.pitch = clamp(finite(saved.pitch, -0.08), -0.55, 0.5);
+        this.self.pitch = clamp(finite(saved.pitch, -0.08), this.cloudSpa ? -1.05 : -0.55, this.cloudSpa ? 1 : 0.5);
         if (this.view === "first") this.self.yaw = yaw(finite(saved.yaw, this.self.yaw));
       }
     }
@@ -1875,7 +2005,7 @@ export class BeachEngine {
 
   start() {
     if (this.running || this.disposed) return;
-    this.fireworkAudio?.setSceneRunning(true);
+    this.fireworkAudio?.setSceneRunning(!this.activeBunkerId);
     this.lastStarView = null;
     this.remoteClock?.resetPlayback();
     for (const player of this.players.values()) {
@@ -1895,6 +2025,7 @@ export class BeachEngine {
   }
 
   stop() {
+    this.cancelBunkerTransition();
     this.running = false;
     this.fireworkAudio?.setSceneRunning(false);
     cancelAnimationFrame(this.raf);
@@ -1933,6 +2064,7 @@ export class BeachEngine {
     this.uyuni?.setQuality(level === "low");
     this.bamboo?.setQuality(level === "low");
     this.garden?.setQuality(level === "low");
+    this.cloudSpa?.setQuality(level === "low");
     this.uyuniMoments?.setQuality(level);
     this.resize();
     this.handlers.onQuality?.(level);
@@ -1979,6 +2111,23 @@ export class BeachEngine {
   }
 
   private updateSelf(dt: number) {
+    const transition = this.bunkerTransition;
+    if (transition) {
+      transition.elapsed += dt;
+      if (transition.elapsed >= .7 && !transition.swapped) {
+        transition.swapped = true; this.applyRest(transition.confirmed);
+        this.orbitYaw = this.self.yaw + (transition.confirmed.bunkerId ? 1.05 : 0); this.eyeHeight = this.deckHeight(this.self.x, this.self.z) + EYE;
+      }
+      this.self.moving = false;
+      const enter = Boolean(transition.confirmed.bunkerId);
+      this.bunkerClimbOffset = (enter ? -1 : 1) * (transition.swapped ? -(1 - Math.min(1, (transition.elapsed - .7) / .7)) : transition.elapsed / .7) * .6;
+      if (this.view === "third") this.placeFollowCamera(dt);
+      else { this.camera.position.set(this.self.x, this.eyeHeight, this.self.z); this.camera.rotation.set(this.self.pitch, this.self.yaw, 0, "YXZ"); }
+      this.camera.position.y += this.bunkerClimbOffset;
+      this.sky.position.copy(this.camera.position); this.updateSelfAvatar(dt);
+      if (transition.elapsed >= 1.4) { this.cancelBunkerTransition(); this.followSnap = true; this.updateStargazingState(); }
+      return;
+    }
     this.camera.layers?.set(this.skyOnlyView ? 1 : 0);
     if (this.skyRest) {
       if (this.floating) this.driftOnWater(dt);
@@ -2054,7 +2203,7 @@ export class BeachEngine {
         }
         const nx = this.self.x + dx * speed * dt;
         const nz = this.self.z + dz * speed * dt;
-        const [cx, cz] = this.collide(nx, nz);
+        const [cx, cz] = this.collide(nx, nz, true);
         this.self.x = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
         this.self.z = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
         this.self.bobT += dt * speed * 2.6;
@@ -2223,12 +2372,16 @@ export class BeachEngine {
   /** Keep both the seated character and the fire in view, including narrow phone screens. */
   private placeBenchCamera(dt: number) {
     const direction = this.facing(this.orbitYaw);
-    const reach = FOLLOW_DISTANCE_SEATED;
-    const baseY = (this.fixedSeat?.avatarY ?? 0.52) - 0.52;
+    const reach = this.activeBunkerId ? 3.1 : FOLLOW_DISTANCE_SEATED;
+    const baseY = this.cloudSpa && this.pavilionSeat ? this.pavilionSeat.baseY : (this.fixedSeat?.avatarY ?? 0.52) - 0.52;
+    const pond = this.pavilionSeat?.spotId.startsWith("pond-bench-") === true;
+    const cityVista = this.cloudSpa && this.pavilionSeat?.spotId === "cloud-pool-5" && direction.z < -.25;
+    // Look over the bench onto the water so a seated head cannot hide a coin or duck on a phone.
+    const eyeY = baseY + (cityVista ? 6.8 : pond ? 4.2 : this.cloudSpa && this.pavilionSeat?.spotId === "cloud-lounge" ? 3.8 : 2.5) - this.self.pitch * 1.4;
     const wanted = new THREE.Vector3(this.self.x - direction.x * reach,
-      baseY + 2.5 - this.self.pitch * 1.4, this.self.z - direction.z * reach);
+      eyeY, this.self.z - direction.z * reach);
     // Pavilion seats face outward, so the orbit sits inside the roof: stay below the rafters.
-    const seatCeiling = this.bamboo ? bambooCeilingHeight(wanted.x, wanted.z) : this.garden ? gardenCeilingHeight(wanted.x, wanted.z) : null;
+    const seatCeiling = this.cloudSpa ? cloudSpaCeilingHeight(wanted.x, wanted.z) : this.activeBunkerId ? bunkerById(this.activeBunkerId)!.ceilingY : this.bamboo ? bambooCeilingHeight(wanted.x, wanted.z) : this.garden ? gardenCeilingHeight(wanted.x, wanted.z) : null;
     if (seatCeiling !== null) wanted.y = Math.min(wanted.y, seatCeiling - 0.2);
     // Onsen seats have their backs to the rock: the orbit stays over the bath instead of ending up inside the hillside.
     if (this.onsenSeat) {
@@ -2238,13 +2391,16 @@ export class BeachEngine {
         wanted.z = this.self.z - direction.z * reach * k;
       }
     }
-    if (this.garden) for (let k = 1; k >= 0.25 && !this.cameraFree(wanted); k -= 0.15) {
-      wanted.set(this.self.x - direction.x * reach * k, baseY + 2.5 - this.self.pitch * 1.4, this.self.z - direction.z * reach * k);
+    if (this.garden || this.cloudSpa || this.activeBunkerId) for (let k = 1; k >= 0.1 && (!this.cameraFree(wanted) || (this.activeBunkerId && !this.hotelCameraSightClear(wanted, baseY + 1.25)) || (this.cloudSpa && !this.cloudSpaCameraSightClear(wanted, baseY + 1.25))); k -= 0.15) {
+      wanted.set(this.self.x - direction.x * reach * k, eyeY, this.self.z - direction.z * reach * k);
     }
     if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
     else this.followCam.lerp(wanted, Math.min(1, dt * 10));
+    if (this.activeBunkerId && (!this.cameraFree(this.followCam) || !this.hotelCameraSightClear(this.followCam, baseY + 1.25))) this.followCam.copy(wanted);
+    if (this.cloudSpa && (!this.cameraFree(this.followCam) || !this.cloudSpaCameraSightClear(this.followCam, baseY + 1.25))) this.followCam.copy(wanted);
     this.camera.position.copy(this.followCam);
-    this.camera.lookAt(this.self.x + direction.x * 1.4, baseY + 1.0, this.self.z + direction.z * 1.4);
+    const ahead = cityVista ? 13 : pond ? 4.5 : 1.4;
+    this.camera.lookAt(this.self.x + direction.x * ahead, baseY + (cityVista ? -3 : pond ? .7 : 1.0), this.self.z + direction.z * ahead);
   }
 
   /** Follow the standing character, shortening the orbit near shelter walls. */
@@ -2253,15 +2409,15 @@ export class BeachEngine {
     const focusY = this.deckHeight(x, z) + (this.restSeat ? 1.0 : 1.25);
     const elev = Math.max(0.08, Math.min(1.0, 0.4 - this.self.pitch * 0.8));
     const f = this.facing(this.orbitYaw);
-    const reach = this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
-    const ceiling = this.uyuni ? uyuniHotelCeilingHeight(x, z) : this.bamboo ? bambooCeilingHeight(x, z) : this.garden ? gardenCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
+    const reach = this.activeBunkerId ? 3.6 : this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
+    const ceiling = this.cloudSpa ? cloudSpaCeilingHeight(x, z) : this.activeBunkerId ? bunkerById(this.activeBunkerId)!.ceilingY : this.uyuni ? uyuniHotelCeilingHeight(x, z) : this.bamboo ? bambooCeilingHeight(x, z) : this.garden ? gardenCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
     const cosE = Math.cos(elev), sinE = Math.sin(elev);
     const wanted = new THREE.Vector3();
     for (let k = 1; k >= 0.06; k -= 0.06) {
       wanted.set(x - f.x * reach * k * cosE, focusY + reach * k * sinE, z - f.z * reach * k * cosE);
       if (this.uyuni && this.restSeat) wanted.y = Math.max(2.05, wanted.y);
       if (ceiling !== null) wanted.y = Math.min(wanted.y, ceiling - 0.18);
-      if (this.cameraFree(wanted) && (!this.uyuni || this.hotelCameraSightClear(wanted, focusY))) break;
+      if (this.cameraFree(wanted) && (!this.uyuni || this.hotelCameraSightClear(wanted, focusY)) && (!this.cloudSpa || this.cloudSpaCameraSightClear(wanted, focusY))) break;
     }
     this.bamboo?.clipGuestbookCamera(x, focusY, z, wanted);
     if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
@@ -2269,6 +2425,7 @@ export class BeachEngine {
       this.followCam.lerp(wanted, Math.min(1, dt * 10));
       this.bamboo?.clipGuestbookCamera(x, focusY, z, this.followCam);
     }
+    if (this.cloudSpa && (!this.cameraFree(this.followCam) || !this.cloudSpaCameraSightClear(this.followCam, focusY))) this.followCam.copy(wanted);
     // An interpolated orbit must not cut through the curved roof between two valid positions.
     if (this.uyuni && (!this.cameraFree(this.followCam) || !this.hotelCameraSightClear(this.followCam, focusY))) this.followCam.copy(wanted);
     this.camera.position.copy(this.followCam);
@@ -2277,6 +2434,16 @@ export class BeachEngine {
   }
 
   private hotelCameraSightClear(to: THREE.Vector3, focusY: number) {
+    if (this.activeBunkerId) {
+      const steps = Math.max(1, Math.ceil(to.distanceTo(new THREE.Vector3(this.self.x, focusY, this.self.z)) / .12));
+      const point = new THREE.Vector3();
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        point.set(this.self.x + (to.x - this.self.x) * t, focusY + (to.y - focusY) * t, this.self.z + (to.z - this.self.z) * t);
+        if (!this.cameraFree(point)) return false;
+      }
+      return true;
+    }
     const steps = Math.max(1, Math.ceil(Math.hypot(to.x - this.self.x, to.y - focusY, to.z - this.self.z) / 0.15));
     for (let i = 1; i <= steps; i++) {
       const t = i / steps, x = this.self.x + (to.x - this.self.x) * t,
@@ -2290,9 +2457,35 @@ export class BeachEngine {
     return true;
   }
 
+  private cloudSpaCameraSightClear(to: THREE.Vector3, focusY: number) {
+    const count = Math.max(1, Math.ceil(Math.hypot(to.x - this.self.x, to.z - this.self.z) / .18));
+    const point = new THREE.Vector3();
+    for (let i = 1; i <= count; i++) {
+      const t = i / count;
+      point.set(this.self.x + (to.x - this.self.x) * t, focusY + (to.y - focusY) * t, this.self.z + (to.z - this.self.z) * t);
+      if (!this.cameraFree(point)) return false;
+    }
+    return true;
+  }
+
   private cameraFree(p: THREE.Vector3) {
+    const bunker = bunkerById(this.activeBunkerId);
+    if (bunker) {
+      const b = bunker.bounds;
+      if (p.x < b.minX + .25 || p.x > b.maxX - .25 || p.z < b.minZ + .25 || p.z > b.maxZ - .25 || p.y < bunker.floorY + .25 || p.y > bunker.ceilingY - .25) return false;
+      return !bunkerColliders(bunker.id).some(wall => (wall.kind === "wall" || wall.kind === "shelf" || wall.kind === "ladder")
+        && p.x > wall.minX - .2 && p.x < wall.maxX + .2 && p.z > wall.minZ - .2 && p.z < wall.maxZ + .2);
+    }
     const b = this.bounds;
     if (p.x < b.minX + 0.3 || p.x > b.maxX - 0.3 || p.z < b.minZ + 0.3 || p.z > b.maxZ - 0.3) return false;
+    if (this.cloudSpa) {
+      for (let i = 0; i < 5; i++) {
+        const wall = CLOUD_SPA_WALLS[i];
+        if (p.x > wall.minX - .2 && p.x < wall.maxX + .2 && p.z > wall.minZ - .2 && p.z < wall.maxZ + .2 && p.y < CLOUD_SPA_RESORT.ceilingY + 6) return false;
+      }
+      const ceiling = cloudSpaCeilingHeight(p.x, p.z);
+      return (ceiling === null || p.y < ceiling - .2) && p.y > cloudSpaFloorHeight(p.x, p.z) + .2;
+    }
     if (this.bamboo) {
       // Keep the orbit out of the stalks: on the path, a yard, or just beyond the fence.
       if (!onTrail(p.x, p.z) && nearestOnTrail(p.x, p.z).distance > TRAIL_WALK_HALF + 0.9) return false;
@@ -2328,11 +2521,13 @@ export class BeachEngine {
   private updateSelfAvatar(dt: number) {
     const n = this.selfNode;
     if (!n) return;
-    const shown = this.view === "third";
+    // In a narrow indoor orbit the character must not fill the lens when a wall or ladder pulls it forward.
+    const tooClose = (this.activeBunkerId || this.cloudSpa) && Math.hypot(this.camera.position.x - this.self.x, this.camera.position.z - this.self.z) < 1.35;
+    const shown = this.view === "third" && !tooClose;
     const avatar = this.syncAvatar(n, this.skin, this.self.x, this.self.z);
     const lying = this.floatingPose(this.skyRest);
     avatar?.update(dt, {
-      ...this.self, y: this.deckHeight(this.self.x, this.self.z), visible: shown, lying,
+      ...this.self, y: this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0), visible: shown, lying,
       seated: this.fixedSeat ?? (this.restSeat ? { ...this.restSeat, avatarY: this.deckHeight(this.restSeat.x, this.restSeat.z) + 0.52 } : null),
     });
     n.sprite.visible = shown && !avatar;
@@ -2358,7 +2553,7 @@ export class BeachEngine {
       this.setFrameOn(n.tex, CHAR_VIEW.front, CHAR_ANIM.idle.from, this.skin);
       return;
     }
-    const deck = this.deckHeight(this.self.x, this.self.z);
+    const deck = this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0);
     const cam = this.camera.position;
     n.sprite.position.set(this.self.x, deck, this.self.z);
     n.sprite.rotation.set(0, Math.atan2(cam.x - this.self.x, cam.z - this.self.z), 0, "YXZ");
@@ -2367,7 +2562,26 @@ export class BeachEngine {
     this.setFrameOn(n.tex, viewFor(this.self.yaw, this.self.x, this.self.z, cam), charFrame(this.self.moving, n.animT), this.skin);
   }
 
-  private collide(x: number, z: number): [number, number] {
+  private collide(x: number, z: number, walking = false): [number, number] {
+    if (this.cloudSpa) {
+      const project = (x: number, z: number) => {
+        const point = resolveWalls(x, z, CLOUD_SPA_WALLS);
+        return resolveCloudSpaWalk(point[0], point[1]);
+      };
+      const target = project(x, z);
+      if (!walking || this.cloudSpaStepClear(target[0], target[1])) return target;
+      // The fronts of the terraces are steep; keep walking on the broad side steps instead of jumping floors.
+      const slides = [project(target[0], this.self.z), project(this.self.x, target[1])]
+        .filter(p => this.cloudSpaStepClear(p[0], p[1]))
+        .sort((a, b) => Math.hypot(a[0] - x, a[1] - z) - Math.hypot(b[0] - x, b[1] - z));
+      return slides[0] ?? [this.self.x, this.self.z];
+    }
+    const bunker = bunkerById(this.activeBunkerId);
+    if (bunker) {
+      const b = bunker.bounds;
+      [x, z] = resolveWalls(x, z, bunkerColliders(bunker.id));
+      return [THREE.MathUtils.clamp(x, b.minX + .4, b.maxX - .4), THREE.MathUtils.clamp(z, b.minZ + .4, b.maxZ - .4)];
+    }
     if (this.uyuni) return resolveWalls(x, z, UYUNI_HOTEL_COLLIDERS);
     for (const o of this.obstacles) {
       const dx = x - o.x, dz = z - o.z;
@@ -2389,7 +2603,22 @@ export class BeachEngine {
     return resolveWalls(sheltered[0], sheltered[1], HOT_SPRING_COLLIDERS);
   }
 
+  private cloudSpaStepClear(x: number, z: number) {
+    const distance = Math.hypot(x - this.self.x, z - this.self.z);
+    const count = Math.max(1, Math.ceil(distance / .08));
+    let previous = cloudSpaFloorHeight(this.self.x, this.self.z);
+    for (let i = 1; i <= count; i++) {
+      const t = i / count;
+      const height = cloudSpaFloorHeight(this.self.x + (x - this.self.x) * t, this.self.z + (z - this.self.z) * t);
+      if (Math.abs(height - previous) > .38) return false;
+      previous = height;
+    }
+    return true;
+  }
+
   private deckHeight(x: number, z: number) {
+    if (this.cloudSpa) return cloudSpaFloorHeight(x, z);
+    if (this.activeBunkerId) return bunkerById(this.activeBunkerId)!.floorY;
     if (this.uyuni) return uyuniHotelFloorHeight(x, z);
     if (this.bamboo) return this.bamboo.floorHeight(x, z);
     if (this.garden) return gardenFloorHeight(x, z);
@@ -2401,7 +2630,7 @@ export class BeachEngine {
   }
 
   private nearbySeat() {
-    if (this.bamboo || this.garden) return null;
+    if (this.bamboo || this.garden || this.cloudSpa || this.activeBunkerId) return null;
     if (this.uyuni) {
       const hotel = nearbyUyuniHotel(this.self.x, this.self.z);
       if (!hotel) return null;
@@ -2485,7 +2714,7 @@ export class BeachEngine {
       if (!fixed && !p.motion) p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
       const resting = this.floatingPose(claimed && drifting ? { ...claimed, x: p.cur.x, z: p.cur.z, yaw: p.cur.yaw } : claimed);
       // Pavilion seats are on the deck edge with legs over the side: the folded sprite stands on the ground below.
-      const pavilionSeat = seated !== null ? claimedPavilionSeat(p.data) : null;
+      const pavilionSeat = seated !== null ? (this.cloudSpa ? claimedCloudSpaSeat(p.data) : this.uyuni ? claimedBunkerSeat(p.data) : this.garden ? claimedGardenSeat(p.data) : claimedPavilionSeat(p.data)) : null;
       if (!seated) shapeSeatedAvatar(p.sprite, null);
       if (resting) {
         applyLyingTransform(p.sprite, resting);
@@ -2533,14 +2762,16 @@ export class BeachEngine {
   private updateWorld(dt: number) {
     this.skyMat.uniforms.uTime.value = this.time;
     const motion = this.skyMat.uniforms.uStarMotion;
-    if ((this.uyuni || this.bamboo) && motion && this.skyMat.uniforms.uStars.value > 0) {
+    if ((this.uyuni || this.bamboo || this.cloudSpa) && motion && this.skyMat.uniforms.uStars.value > 0) {
       const orientation = this.camera.quaternion;
       const turn = this.lastStarView ? this.lastStarView.angleTo(orientation) / Math.max(dt, 0.001) : 0;
       const strength = Math.max(this.self.moving ? 0.72 : 0, THREE.MathUtils.smoothstep(turn, 0.025, 0.7));
       motion.value = THREE.MathUtils.damp(motion.value, strength, strength > motion.value ? 12 : 4, dt);
       (this.lastStarView ??= new THREE.Quaternion()).copy(orientation);
     }
-    if (this.uyuni) {
+    if (this.cloudSpa) {
+      this.cloudSpa.update(this.time, this.camera, this.self, this.pavilionSeat);
+    } else if (this.uyuni) {
       this.uyuni.update(this.time, this.camera, this.self);
     } else if (this.bamboo) {
       this.bamboo.update(this.time, this.camera, this.self);
@@ -2554,7 +2785,7 @@ export class BeachEngine {
     } else if (this.garden) {
       const riders: RemoteRider[] = [];
       for (const [pid, node] of this.players) riders.push({ pid, x: node.cur.x, z: node.cur.z });
-      const alighted = this.garden.update(this.time, this.camera, this.self, riders);
+      const alighted = this.garden.update(this.time, this.camera, this.self, riders, this.pavilionSeat);
       if (alighted) this.finishRide(alighted);
       if (this.garden.boatStateChanged()) this.handlers.onBoatChange?.(this.garden.boatState);
     } else {
@@ -2622,12 +2853,16 @@ export class BeachEngine {
     this.momentOwnPid = null;
     this.fire?.dispose();
     this.fire = null;
+    this.uyuni?.dispose(); this.uyuni = null;
     this.bamboo?.dispose();
     this.garden?.dispose();
     this.garden = null;
     this.festivalToys?.dispose();
     this.bamboo = null;
-    const textures = new Set<THREE.Texture>();
+    this.cloudSpa?.dispose(); this.cloudSpa = null;
+    const textures = new Set<THREE.Texture>([...(this.uyuniTextures ?? []), ...(this.cloudSpaTextures ?? [])]);
+    this.cloudSpaTextures = [];
+    this.uyuniTextures = [];
     for (const texture of Object.values(this.fxTex ?? {})) textures.add(texture);
     const materials = new Set<THREE.Material>();
     const geometries = new Set<THREE.BufferGeometry>();

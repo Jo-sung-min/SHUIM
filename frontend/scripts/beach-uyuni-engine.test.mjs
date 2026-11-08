@@ -21,7 +21,7 @@ const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["cre
 const huts = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "bedSlot", "claimedBedSlot"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls", "findWalkingPath", "findClearApproach"]);
-const daylight = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "uyuniDaylightAt"]);
+const daylight = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "uyuniDaylightAt", "cloudSpaDaylightAt"]);
 const sky = await load("../lib/beach/sky-shader.ts", {}, ["SKY_FRAGMENT", "SKY_UNIFORMS", "SKY_FUNCTIONS"]);
 const coast = await load("../lib/beach/uyuni-coast.ts", {}, ["UYUNI_COAST_FUNCTIONS"]);
 const uyuniSky = await load("../lib/beach/uyuni-shader.ts", { ...sky, ...coast }, ["UYUNI_SKY_FRAGMENT"]);
@@ -47,6 +47,93 @@ const close = (actual, expected, message = `${actual} ≈ ${expected}`) => asser
 const pool = kind => ({ ready: true, canLoad: true, create() {
   return { kind, root: new THREE.Group(), states: [], update(dt, state) { this.states.push({ dt, ...state }); }, dispose() {} };
 } });
+
+function bunkerFixture() {
+  const value = fixture(), { engine, uyuni } = value;
+  Object.assign(engine, { bunkerTransition: null, lastBunkerState: "", running: true, pavilionSeat: null });
+  uyuni.layers = []; uyuni.setBunkerActive = id => uyuni.layers.push(id);
+  engine.applyDaylight = () => {};
+  return value;
+}
+function bunkerRest(id = "dawn") {
+  const room = hotSpring.bunkerById(id);
+  return { pose: "standing", spotId: null, slot: null, x: room.arrival.x, z: room.arrival.z, yaw: room.arrival.yaw, bunkerId: id };
+}
+
+test("bunker floor isolates sky, outdoor actions and collisions until confirmed exit", async () => {
+  const { engine, uyuni } = bunkerFixture(), room = hotSpring.bunkerById("dawn");
+  Object.assign(engine.self, room.entry); engine.updateSelf(0);
+  assert.equal(engine.bunkerState.nearId, "dawn");
+  engine.applyRest(bunkerRest()); engine.updateSelf(0);
+  assert.equal(engine.bunkerId, "dawn"); assert.equal(engine.sky.visible, false);
+  assert.equal(engine.getSelf().bunkerId, "dawn"); assert.equal(engine.bunkerState.ladderNear, true);
+  assert.equal(engine.getBedState(), null); assert.equal(engine.nearbySeat(), null);
+  close(engine.deckHeight(room.x, room.z), -8.6);
+  assert.equal(await engine.walkToBed("hotel-dawn"), "cancelled");
+  assert.equal(await engine.walkToStargazing(), "cancelled");
+  for (const [x,z] of [[room.x-60,room.z],[room.x+60,room.z],[room.x,room.z-50],[room.x,room.z+50]]) {
+    const [cx,cz] = engine.collide(x,z);
+    assert.ok(cx >= room.bounds.minX+.4 && cx <= room.bounds.maxX-.4);
+    assert.ok(cz >= room.bounds.minZ+.4 && cz <= room.bounds.maxZ-.4);
+  }
+  engine.applyRest({ pose:"standing",spotId:null,slot:null,x:room.entry.x,z:room.entry.z,yaw:0,bunkerId:null });
+  engine.updateSelf(0); assert.equal(engine.bunkerId,null); assert.equal(engine.sky.visible,true);
+  close(engine.eyeHeight,.48+1.55); assert.deepEqual(uyuni.layers,["dawn",null]);
+});
+
+test("all twelve bunker sofas keep shared posture and camera orbits below sealed ceilings", () => {
+  for (const room of hotSpring.UYUNI_BUNKERS) for (const seat of hotSpring.BUNKER_SEATS.filter(s => s.spotId === room.spotId)) {
+    const { engine, camera } = bunkerFixture();
+    engine.applyRest(bunkerRest(room.id)); engine.applyRest({ ...seat,pose:"sitting",bunkerId:room.id });
+    assert.equal(engine.bunkerState.seated,true); assert.equal(engine.bunkerState.occupied,1);
+    assert.equal(engine.pavilionSeat.slot,seat.slot); assert.equal(engine.bunkerState.capacity,6);
+    for (let angle=0;angle<Math.PI*2;angle+=.12) {
+      engine.orbitYaw=angle; engine.self.pitch=Math.sin(angle)*.45; engine.updateSelf(.016);
+      assert.equal(engine.cameraFree(camera.position),true,`${seat.id} orbit=${angle}`);
+      assert.ok(camera.position.y < room.ceilingY-.2);
+      close(engine.selfNode.avatar.states.at(-1).seated.avatarY,-8.08);
+    }
+    engine.setView("first"); engine.updateSelf(.016); close(camera.position.y,-8.08+.78);
+    assert.equal(engine.cameraFree(camera.position),true);
+    engine.applyRest({ ...bunkerRest(room.id), x:seat.x+(seat.slot<3?1.5:-1.5), z:seat.z });
+    assert.equal(engine.bunkerState.seated,false); assert.equal(engine.bunkerId,room.id);
+  }
+});
+
+test("standing and seated resumes restore the indoor floor before collision projection", () => {
+  const { engine,camera }=bunkerFixture(), rest={ ...bunkerRest("dusk"),x:20,z:24 };
+  engine.restoreVisit(rest,rest,{ view:"first",yaw:1.1,pitch:.1,orbitYaw:1.1,restSpot:null },true);
+  assert.equal(engine.bunkerId,"dusk"); close(engine.self.x,20); close(engine.self.z,24);
+  close(camera.position.y,-8.6+1.55); assert.equal(engine.sky.visible,false);
+  const seat=hotSpring.BUNKER_SEATS.find(s=>s.spotId==="bunker-dusk-sofa" && s.slot===4);
+  engine.restoreVisit(seat,{ ...seat,pose:"sitting",bunkerId:"dusk" });
+  assert.equal(engine.bunkerState.seated,true); assert.equal(engine.pavilionSeat.slot,4);
+});
+
+test("ladder finishes once and resumed visits cancel a suspended old transition", async () => {
+  const { engine }=bunkerFixture(), room=hotSpring.bunkerById("dawn"); Object.assign(engine.self,room.entry);
+  const finished=engine.transitionBunker(bunkerRest()); engine.setMove(1,1); assert.equal(engine.move.x,0);
+  for(let i=0;i<12;i++) engine.updateSelf(.05);
+  assert.equal(engine.bunkerId,null);
+  for(let i=0;i<18;i++) engine.updateSelf(.05);
+  await finished; assert.equal(engine.bunkerId,"dawn"); assert.equal(engine.bunkerTransition,null); close(engine.bunkerClimbOffset,0);
+  const pending=engine.transitionBunker({ pose:"standing",spotId:null,slot:null,x:room.entry.x,z:room.entry.z,yaw:0,bunkerId:null });
+  engine.updateSelf(.2); engine.restoreVisit(bunkerRest(),bunkerRest()); await pending;
+  for(let i=0;i<35;i++) engine.updateSelf(.05);
+  assert.equal(engine.bunkerId,"dawn","old animation cannot overwrite resumed indoor presence");
+});
+
+test("arrival frames the lounge beside the ladder and close indoor orbits never render a head inside the lens", () => {
+  const { engine,camera }=bunkerFixture(); engine.setView("third");
+  engine.applyRest(bunkerRest()); engine.updateSelf(.016);
+  close(engine.orbitYaw,Math.PI+1.05);
+  assert.ok(Math.hypot(camera.position.x-engine.self.x,camera.position.z-engine.self.z)>2);
+  assert.equal(engine.hotelCameraSightClear(camera.position,-8.6+1.25),true);
+  assert.equal(engine.selfNode.avatar.states.at(-1).visible,true);
+  engine.orbitYaw=Math.PI; engine.followSnap=true; engine.updateSelf(.016);
+  assert.equal(engine.hotelCameraSightClear(camera.position,-8.6+1.25),true);
+  assert.equal(engine.selfNode.avatar.states.at(-1).visible,false);
+});
 
 test("each confirmed map launches the grand show on its own stage", () => {
   for (const mapId of ["uyuni", "beach", "bamboo"]) {
@@ -111,12 +198,12 @@ test("Uyuni sky requests no panorama texture while the beach retains and shares 
 function fixture(mapId = "uyuni") {
   const events = { fire: [], star: [], bench: [], onsen: [], quality: [], world: [], waterQuality: [], buffers: [] };
   const uyuni = mapId === "uyuni" ? {
-    update: (...args) => events.world.push(args), setQuality: low => events.waterQuality.push(low),
+    setBunkerActive() {}, update: (...args) => events.world.push(args), setQuality: low => events.waterQuality.push(low),
   } : null;
   const camera = new THREE.PerspectiveCamera(62, 390 / 844, 0.1, 520);
   camera.rotation.order = "YXZ";
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
-    mapId, uyuni, disposed: false, inputPaused: false, scene: new THREE.Scene(), camera, sky: new THREE.Mesh(),
+    mapId, uyuni, activeBunkerId: null, bunkerClimbOffset: 0, disposed: false, inputPaused: false, scene: new THREE.Scene(), camera, sky: new THREE.Mesh(),
     sparklerActors: new Map(), momentOwnPid: null, uyuniMoments: null,
     self: { x: 0, z: 3, yaw: 0.2, pitch: 0.07, moving: false, bobT: 0 }, orbitYaw: 0.2,
     view: "first", mobile: true, followCam: new THREE.Vector3(), followSnap: true,
@@ -140,6 +227,79 @@ function fixture(mapId = "uyuni") {
   engine.selfNode = engine.createSelfAvatar();
   return { engine, camera, events, uyuni };
 }
+
+function cloudFixture() {
+  const value=fixture("cloudspa"), {engine,events}=value;
+  Object.assign(engine, { cloudSpa: { update:(...args)=>events.world.push(args), setQuality:low=>events.waterQuality.push(low) },
+    bounds:hotSpring.CLOUD_SPA_BOUNDS, pavilionSeat:null, lastPavilionState:"", running:true });
+  Object.assign(engine.self,hotSpring.CLOUD_SPA_SPAWN);
+  engine.eyeHeight=engine.deckHeight(engine.self.x,engine.self.z)+1.55;
+  return value;
+}
+
+test("cloud terraces keep all 36 resting poses and orbit cameras on their actual floor",()=>{
+  for(const seat of hotSpring.CLOUD_SPA_SEATS) {
+    const {engine,camera}=cloudFixture();
+    engine.applyRest({...seat,pose:"sitting"}); engine.updateSelf(.016);
+    assert.equal(engine.pavilionSeat.id,seat.id); assert.equal(engine.getPavilionState().capacity,6);
+    close(engine.selfNode.avatar.states.at(-1).seated.avatarY,seat.avatarY);
+    for(let angle=0;angle<Math.PI*2;angle+=.25) {
+      engine.orbitYaw=angle;engine.followSnap=true;engine.updateSelf(.016);
+      assert.equal(engine.cameraFree(camera.position),true,seat.id+" camera="+angle);
+      assert.equal(engine.cloudSpaCameraSightClear(camera.position,seat.baseY+1.25),true,seat.id+" sight="+angle);
+      const ceiling=hotSpring.cloudSpaCeilingHeight(camera.position.x,camera.position.z);
+      if(ceiling!==null) assert.ok(camera.position.y<ceiling-.19);
+    }
+    engine.setView("first");engine.updateSelf(.016);close(camera.position.y,seat.avatarY+.78);
+    engine.applyRest({...seat,pose:"standing",spotId:null,slot:null});engine.updateSelf(.016);
+    assert.equal(engine.getPavilionState().seated,false);close(engine.eyeHeight,engine.deckHeight(seat.x,seat.z)+1.55);
+  }
+});
+
+test("cloud terrace visits restore high and low floors and a downward city view",()=>{
+  for(const place of hotSpring.CLOUD_SPA_POOLS){
+    const {engine,camera}=cloudFixture(), rest={pose:"standing",spotId:null,slot:null,x:place.x,z:place.z,yaw:0};
+    Object.assign(engine.self,rest);
+    engine.restoreVisit(rest,rest,{view:"first",yaw:0,pitch:-1.02,orbitYaw:0,restSpot:null},true);
+    close(camera.position.y,place.floorY+1.55);close(engine.self.pitch,-1.02);
+    close(engine.selfNode.avatar.states.at(-1).y,place.floorY);
+  }
+});
+
+test("cloud rest claims stay isolated from other maps and only count matching seats",async()=>{
+  const {engine}=cloudFixture();
+  for(const foreign of [hotSpring.BUNKER_SEATS[0],hotSpring.GARDEN_SEATS[0],hotSpring.BAMBOO_PAVILION_SEATS[0]]){
+    engine.applyRest({...foreign,pose:"sitting"});assert.equal(engine.pavilionSeat,null);
+  }
+  const seat=hotSpring.CLOUD_SPA_SEATS[0];Object.assign(engine.self,seat);
+  const state=engine.getPavilionState();assert.equal(state.near,true);assert.equal(state.kind,"pool");assert.equal(state.occupied,0);
+  engine.players.set("other-map",{data:{...hotSpring.GARDEN_SEATS[0],pose:"sitting"}});
+  engine.players.set("same-pool",{data:{...seat,pose:"sitting"}});
+  assert.equal(engine.getPavilionState().occupied,1);
+  assert.equal(await engine.walkToBed("hotel-dawn"),"cancelled");assert.equal(await engine.walkToStargazing(),"cancelled");
+  assert.equal(engine.getBedState(),null);assert.equal(engine.nearbySeat(),null);
+});
+
+test("both cloud stairways descend and climb every terrace without a rejected step",()=>{
+  for(const side of [-1,1]) for(const direction of [-1,1]){
+    const {engine}=cloudFixture(), start=direction===-1?70:-66, end=direction===-1?-66:70;
+    Object.assign(engine.self,{x:side*hotSpring.cloudSpaStairRouteX(start),z:start});
+    for(let z=start+direction*.05;direction*(end-z)>=0;z+=direction*.05){
+      const x=side*hotSpring.cloudSpaStairRouteX(z), old=engine.deckHeight(engine.self.x,engine.self.z);
+      const next=engine.collide(x,z,true);
+      close(next[0],x);close(next[1],z);assert.ok(Math.abs(engine.deckHeight(...next)-old)<.26);
+      engine.self.x=next[0];engine.self.z=next[1];
+    }
+  }
+});
+
+test("cloud resort lounge frames the seated character above the sofa back",()=>{
+  for(const seat of hotSpring.CLOUD_SPA_SEATS.filter(s=>s.spotId==="cloud-lounge")){
+    const {engine,camera}=cloudFixture();engine.applyRest({...seat,pose:"sitting"});engine.updateSelf(.016);
+    close(engine.orbitYaw,seat.yaw+Math.PI+.45);assert.ok(camera.position.y>seat.baseY+3.5);
+    assert.equal(engine.selfNode.avatar.states.at(-1).visible,true);
+  }
+});
 
 test("sparkler drawing view opens only for a standing Uyuni visitor and remains manually controllable", () => {
   for (const mapId of ["uyuni", "beach", "bamboo"]) {

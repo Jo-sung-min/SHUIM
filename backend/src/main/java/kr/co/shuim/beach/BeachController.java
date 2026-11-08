@@ -82,7 +82,11 @@ public class BeachController {
     public record Care(String to, String kind) {}
     /** character changes the map's permitted appearance; omitting it preserves the current choice. */
     public record TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character,
-                           @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {
+                           @JsonDeserialize(using = SequenceDeserializer.class) Long sequence,
+                           @JsonDeserialize(using = MomentTextDeserializer.class) String bunkerId) {
+        public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character, Long sequence) {
+            this(ticket, x, z, yaw, moving, care, character, sequence, null);
+        }
         public TickBody(String ticket, Double x, Double z, Double yaw, Boolean moving, Care care, String character) {
             this(ticket, x, z, yaw, moving, care, character, null);
         }
@@ -99,7 +103,14 @@ public class BeachController {
         public EnterBody(String communityId, String character) { this(communityId, character, null); }
     }
     public record SuspendBody(String ticket, Double x, Double z, Double yaw,
-                              @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {}
+                              @JsonDeserialize(using = SequenceDeserializer.class) Long sequence,
+                              @JsonDeserialize(using = MomentTextDeserializer.class) String bunkerId) {
+        public SuspendBody(String ticket, Double x, Double z, Double yaw, Long sequence) { this(ticket, x, z, yaw, sequence, null); }
+    }
+    public record BunkerBody(@JsonDeserialize(using = MomentTextDeserializer.class) String ticket,
+                             @JsonDeserialize(using = MomentTextDeserializer.class) String action,
+                             @JsonDeserialize(using = MomentTextDeserializer.class) String bunkerId,
+                             @JsonDeserialize(using = SequenceDeserializer.class) Long sequence) {}
     /** Jackson's default Long coercion truncates decimals, which would undermine request ordering. */
     public static final class SequenceDeserializer extends StdDeserializer<Long> {
         public SequenceDeserializer() { super(Long.class); }
@@ -115,6 +126,10 @@ public class BeachController {
     public record PowderBody(String ticket, String requestId, String color) {}
     public record RestBody(String ticket, String action, String spotId) {}
     public record LightingBody(String ticket, String mode) {}
+    public record GardenMomentBody(
+        @JsonDeserialize(using = MomentTextDeserializer.class) String ticket,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String requestId,
+        @JsonDeserialize(using = MomentTextDeserializer.class) String kind) {}
     public record MusicBody(String ticket, String action, String trackId,
                             @JsonDeserialize(using = SequenceDeserializer.class) Long expectedVersion) {}
     public record MomentBody(
@@ -191,6 +206,7 @@ public class BeachController {
         out.put("capacity", circle.spaceCapacity());
         out.put("restEnabled", map.hasStarlight());
         out.put("bedEnabled", map.hasBeds());
+        out.put("bunkerEnabled", map == BeachMap.UYUNI && !me.anonymous());
         out.put("pavilionEnabled", map.hasPavilions());
         out.put("benchEnabled", map.hasBeachFacilities());
         out.put("onsenEnabled", map.hasBeachFacilities());
@@ -210,6 +226,10 @@ public class BeachController {
         out.put("uyuniMomentsEnabled", map == BeachMap.UYUNI && !me.anonymous());
         out.put("uyuniMoments", moments.events());
         out.put("uyuniMomentCooldowns", moments.cooldowns());
+        BeachGardenMoments.State pond = beach.gardenMoments(p.ticket());
+        out.put("gardenMomentsEnabled", map == BeachMap.GARDEN && !me.anonymous());
+        out.put("gardenMoments", pond.events());
+        out.put("gardenMomentCooldowns", pond.cooldowns());
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", map.minX(), "maxX", map.maxX(), "minZ", map.minZ(), "maxZ", map.maxZ()));
@@ -258,7 +278,7 @@ public class BeachController {
             body.x() == null ? Double.NaN : body.x(),
             body.z() == null ? Double.NaN : body.z(),
             body.yaw() == null ? Double.NaN : body.yaw(),
-            Boolean.TRUE.equals(body.moving()), denied ? null : careTo, careKind, body.character(), capabilities != null && capabilities.hug(), body.sequence());
+            Boolean.TRUE.equals(body.moving()), denied ? null : careTo, careKind, body.character(), capabilities != null && capabilities.hug(), body.sequence(), body.bunkerId());
         if (r == null) throw ApiException.gone(GONE);
         return capabilities == null ? r : r.withCareCapabilities(capabilities, denied);
     }
@@ -273,14 +293,24 @@ public class BeachController {
         return beach.rest(body.ticket(), body.action(), body.spotId());
     }
 
-    /** POST /api/beach/lighting { ticket, mode: auto|day|sunset|night }. Shared by this visit's room. */
+    @PostMapping("/api/beach/bunker")
+    public BeachRoom.RestPresence bunker(@RequestBody(required = false) BunkerBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 지하 쉼터를 이용해 주세요."));
+        if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 지하 쉼터를 이용해 주세요.");
+        if (body == null) throw ApiException.badRequest("지하 쉼터의 출입을 다시 확인해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        return beach.bunker(body.ticket(), me.id(), body.action(), body.bunkerId(), body.sequence());
+    }
+
+    /** POST /api/beach/lighting { ticket, mode: auto|day|sunset|night|rainy-night }. Rain is garden-only. */
     @PostMapping("/api/beach/lighting")
     public BeachRoom.Lighting lighting(@RequestBody(required = false) LightingBody body, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
-        if (body == null) throw ApiException.badRequest("바닷가 시간 설정을 다시 골라 주세요.");
+        if (body == null) throw ApiException.badRequest("방의 시간 설정을 다시 골라 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireMember(visit.communityId(), me);
-        if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 바닷가 시간을 바꿀 수 있어요.");
+        if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 방의 시간을 바꿀 수 있어요.");
         return beach.setLighting(body.ticket(), me.id(), body.mode());
     }
 
@@ -346,6 +376,16 @@ public class BeachController {
 
     public record FestivalBody(String ticket, java.util.UUID requestId, String choice) {}
 
+    @PostMapping("/api/beach/garden-moments")
+    public BeachGardenMoments.Launch gardenMoment(@RequestBody(required = false) GardenMomentBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 함께 띄워 주세요."));
+        if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 함께 띄워 주세요.");
+        if (body == null) throw ApiException.badRequest("연못에 띄울 내용을 다시 확인해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        return beach.launchGardenMoment(body.ticket(), me.id(), body.requestId(), body.kind(), blocks.excludedIds(me.id()));
+    }
+
     @PostMapping("/api/beach/festival")
     public BeachRoom.FestivalChange festival(@RequestBody FestivalBody body, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("대나무숲에 다시 들어와 주세요."));
@@ -365,7 +405,7 @@ public class BeachController {
     @PostMapping("/api/beach/suspend")
     public Map<String, Object> suspend(@RequestBody(required = false) SuspendBody body) {
         if (body != null) beach.suspend(body.ticket(), body.x() == null ? Double.NaN : body.x(),
-            body.z() == null ? Double.NaN : body.z(), body.yaw() == null ? Double.NaN : body.yaw(), body.sequence());
+            body.z() == null ? Double.NaN : body.z(), body.yaw() == null ? Double.NaN : body.yaw(), body.sequence(), body.bunkerId());
         return Map.of("ok", true);
     }
 

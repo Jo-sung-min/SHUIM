@@ -40,11 +40,13 @@ function fixture(mapId = "beach") {
   const events = { fire: [], star: [], bench: [], onsen: [], quality: [], world: [], waterQuality: [], buffers: [] };
   const uyuni = mapId === "uyuni" ? {
     update: (...args) => events.world.push(args), setQuality: low => events.waterQuality.push(low),
+    setBunkerActive() {},
   } : null;
   const camera = new THREE.PerspectiveCamera(62, 390 / 844, 0.1, 520);
   camera.rotation.order = "YXZ";
   const engine = Object.assign(Object.create(BeachEngine.prototype), {
-    mapId, uyuni, running: false, clock: { reset() {} }, disposed: false, inputPaused: false, scene: new THREE.Scene(), camera, sky: new THREE.Mesh(),
+    mapId, uyuni, activeBunkerId: null, bunkerClimbOffset: 0, bunkerTransition: null,
+    running: false, clock: { reset() {} }, disposed: false, inputPaused: false, scene: new THREE.Scene(), camera, sky: new THREE.Mesh(),
     self: { x: 0, z: 3, yaw: 0.2, pitch: 0.07, moving: false, bobT: 0 }, orbitYaw: 0.2,
     view: "first", mobile: true, followCam: new THREE.Vector3(), followSnap: true,
     skyRest: null, onsenSeat: null, benchSeat: null, beforeSkyRest: null, restSeat: null, returnFromSeat: null,

@@ -113,6 +113,8 @@ uniform vec4 uLakeRect;
 uniform float uTime;
 uniform float uWet;
 uniform vec3 uGrass; uniform vec3 uGrassLight; uniform vec3 uGrassDeep;
+uniform sampler2D uGrassPhoto;
+uniform float uGrassPhotoAmount;
 uniform vec3 uEarth; uniform vec3 uEarthLight;
 uniform vec3 uStone; uniform vec3 uStoneLight;
 uniform vec3 uMud;
@@ -132,12 +134,18 @@ void main() {
   float wash = gardenNoise(p * 0.18 + 7.7);
   vec3 grass = mix(uGrass, uGrassLight, fine * 0.4 + coarse * 0.6);
   grass = mix(grass, uGrassDeep, smoothstep(0.55, 0.85, wash) * 0.6);
+  // One small repeating albedo, with mipmaps and a broad second sample to soften repeated patches.
+  vec3 grassFine = texture2D(uGrassPhoto, p * .38).rgb;
+  vec3 grassWide = texture2D(uGrassPhoto, p * .071 + vec2(.31,.57)).rgb;
+  float grassDetail = 1.0 - smoothstep(18.0, 65.0, distance(cameraPosition.xz, p));
+  vec3 grassPhoto = mix(grassWide, grassFine, .62 + .25 * grassDetail) * (.88 + coarse * .18);
+  grass = mix(grass, grassPhoto, uGrassPhotoAmount);
   float path = smoothstep(0.3, 0.6, mask.r + (fine - 0.5) * 0.2);
   vec3 earth = mix(uEarth, uEarthLight, fine * 0.5 + coarse * 0.5);
   // Small gravel and moss follow world coordinates, so they do not shimmer with the camera.
   float grit = gardenNoise(p * 34.0);
   earth *= 0.88 + grit * 0.24;
-  grass *= 0.92 + gardenNoise(p * 19.0) * 0.16;
+  grass *= 0.96 + fine * .08;
   float slab = smoothstep(0.35, 0.55, mask.g + (fine - 0.5) * 0.08);
   vec3 stone = mix(uStone, uStoneLight, gardenNoise(p * 4.0 + 2.0) * 0.6 + fine * 0.4);
   vec3 color = mix(grass, mix(earth, stone, slab), path);
@@ -428,96 +436,101 @@ void main() {
   #include <fog_fragment>
 }`;
 
-/** 통창 유리: 옅은 비취빛 + 프레넬, 비가 오면 격자마다 맺힌 물방울과 흘러내리는 줄기. 안쪽이 다 비친다. */
+/** Clear glazing keeps the landscape visible, with only a subtle reflection at glancing angles. */
 export const GARDEN_GLASS_VERT = `
-varying vec2 vUv;
 varying vec3 vWorld;
 varying vec3 vNormal;
 void main() {
-  vUv = uv;
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorld = world.xyz;
   vNormal = mat3(modelMatrix) * normal;
   gl_Position = projectionMatrix * viewMatrix * world;
 }`;
 export const GARDEN_GLASS_FRAG = `
-uniform vec2 uPane;
-uniform float uTime;
-uniform float uRain;
-uniform float uNight;
 uniform vec3 uTint;
-uniform vec3 uGlow;
-varying vec2 vUv;
+uniform float uGlassOpacity;
+uniform float uGlassEdgeOpacity;
 varying vec3 vWorld;
 varying vec3 vNormal;
-${GARDEN_NOISE_GLSL}
 void main() {
-  vec2 m = vUv * uPane;
   vec3 normal = normalize(vNormal);
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float facing = abs(dot(normal, viewDir));
   float fresnel = pow(1.0 - facing, 3.0);
-  float alpha = 0.1 + fresnel * 0.3;
-  vec3 color = uTint;
-  float drops = 0.0, highlight = 0.0;
-  if (uRain > 0.01) {
-    // 맺힌 방울: 0.16 m 격자마다 하나, 비 세기만큼만 보인다.
-    vec2 cell = floor(m / 0.16);
-    vec2 f = fract(m / 0.16);
-    float h = gardenHash(cell);
-    vec2 centre = vec2(0.3 + 0.4 * gardenHash(cell + 3.1), 0.3 + 0.4 * gardenHash(cell + 5.7));
-    float r = 0.07 + 0.17 * gardenHash(cell + 7.9);
-    float d = length((f - centre) * vec2(1.0, 1.25));
-    // Only some cells hold a drop, more as the rain gets heavier, so the glass never reads as a dot grid.
-    float drop = (1.0 - smoothstep(r * 0.7, r, d)) * step(h, uRain * 0.5);
-    drops += drop;
-    highlight += (1.0 - smoothstep(r * 0.25, r * 0.55, length(f - centre + vec2(0.03, -0.04)))) * drop;
-    // 흘러내리는 줄기: 세로 띠 몇 줄이 느리게 내려간다.
-    float column = floor(m.x / 0.34);
-    float ch = gardenHash(vec2(column, 9.0));
-    float speed = 0.25 + 0.35 * ch;
-    float y = fract(m.y / (uPane.y + 0.001) * 1.0 + uTime * speed * 0.08 + ch);
-    float xoff = abs(fract(m.x / 0.34) - 0.5 - 0.1 * sin(m.y * 7.0 + ch * 20.0)) ;
-    float trail = (1.0 - smoothstep(0.02, 0.05, xoff)) * smoothstep(0.0, 0.1, y) * (1.0 - smoothstep(0.1, 0.5, y)) * step(ch, uRain * 0.7);
-    drops += trail * 0.7;
-    highlight += trail * 0.25;
-  }
-  alpha = clamp(alpha + drops * 0.42, 0.0, 0.9);
-  color = mix(color, vec3(0.86, 0.9, 0.92), drops * 0.6);
-  color += vec3(1.0) * highlight * 0.5;
-  color += uGlow * uNight * 0.25 * (1.0 - drops);
-  gl_FragColor = vec4(color, alpha);
+  float alpha = uGlassOpacity + fresnel * uGlassEdgeOpacity;
+  gl_FragColor = vec4(uTint, alpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
 
-/** 빗줄기: 카메라 둘레 원통에 가는 띠가 떨어진다. 인스턴스마다 자리·위상이 있고 카메라를 향해 선다. */
+/** Near/far rain remains fixed in world space while the camera walks around the whole garden. */
 export const GARDEN_RAIN_VERT = `
-attribute vec3 aDrop;
+attribute vec4 aDrop;
 uniform float uTime;
-uniform float uRadius;
+uniform float uNearSpan;
+uniform float uFarSpan;
 uniform float uHeight;
 uniform float uSpeed;
+uniform sampler2D uRainSurface;
+uniform vec4 uRainArea;
+uniform vec4 uRainHall;
+uniform vec2 uRainHallRoof;
+uniform vec4 uRainPavilion;
 varying float vAlpha;
-varying float vAcross;
+varying vec2 vRainUv;
+varying float vRainAboveSurface;
+float rainSurface(vec2 point) {
+  vec2 uv = (point - uRainArea.xy) * uRainArea.zw;
+  vec4 surfaceSample = texture2D(uRainSurface, clamp(uv, 0.0, 1.0));
+  float height = (surfaceSample.r * 255.0 * 256.0 + surfaceSample.g * 255.0) / 65535.0 * 4.0;
+  // Analytic roof footprints prevent coarse height-mask pixels from leaking drops indoors.
+  vec2 hall = abs(point - uRainHall.xy);
+  if (hall.x <= uRainHall.z && hall.y <= uRainHall.w) {
+    float inset = min(uRainHall.z - hall.x, uRainHall.w - hall.y);
+    float t = clamp(inset / uRainHall.w, 0.0, 1.0);
+    float corner = pow(hall.x / uRainHall.z, 2.4) * pow(hall.y / uRainHall.w, 2.4);
+    height = max(height, uRainHallRoof.x + uRainHallRoof.y * t - .4 * sin(t * 3.141593) * (1.0 - corner * .5) + .9 * corner * (1.0 - t));
+  }
+  vec2 pavilion = abs(point - uRainPavilion.xy);
+  float reach = max(pavilion.x, pavilion.y);
+  if (reach <= uRainPavilion.z) {
+    float t = 1.0 - reach / uRainPavilion.z;
+    float side = min(pavilion.x, pavilion.y) / max(.001, reach);
+    float edge = .42 * pow(side, 2.4);
+    height = max(height, uRainPavilion.w + edge + (1.55 - edge) * t - .3 * sin(t * 3.141593) * (1.0 - side * .35));
+  }
+  return height;
+}
 void main() {
-  vAcross = position.x;
-  float fall = mod(uTime * uSpeed + aDrop.z * uHeight, uHeight);
-  vec3 origin = cameraPosition + vec3(aDrop.x * uRadius, uHeight * 0.55 - fall, aDrop.y * uRadius);
-  vec3 toCam = normalize(vec3(cameraPosition.x - origin.x, 0.0, cameraPosition.z - origin.z));
-  vec3 right = vec3(-toCam.z, 0.0, toCam.x);
-  float radial = length(aDrop.xy);
-  vec3 world = origin + right * position.x * 0.022 + vec3(0.0, position.y * 0.6, 0.0);
-  vAlpha = (1.0 - smoothstep(0.75, 1.0, radial)) * smoothstep(0.0, 0.25, radial);
+  vRainUv = uv;
+  float span = mix(uNearSpan, uFarSpan, aDrop.w);
+  vec2 offset = mod(aDrop.xy * span - cameraPosition.xz + span * .5, span) - span * .5;
+  vec2 site = cameraPosition.xz + offset;
+  float surface = rainSurface(site), column = mix(uHeight, uHeight * 1.65, aDrop.w);
+  float top = max(cameraPosition.y + column * .6, surface + column);
+  float fall = mod(uTime * uSpeed + aDrop.z * column, top - surface);
+  vec3 origin = vec3(site.x, top - fall, site.y);
+  vec2 toCamera = -offset / max(length(offset), .001);
+  // right x up must face the camera; the previous sign culled every FrontSide streak.
+  vec3 right = vec3(toCamera.y, 0.0, -toCamera.x);
+  float distanceToCamera = length(offset), edge = max(abs(offset.x), abs(offset.y)) / (span * .5);
+  float width = mix(.032, .052, aDrop.w), lengthOfDrop = mix(.64, 1.05, aDrop.w) * (.85 + aDrop.z * .3);
+  vec3 world = origin + right * position.x * width + vec3(0.0, position.y * lengthOfDrop, 0.0);
+  vRainAboveSurface = world.y - surface;
+  vAlpha = (1.0 - smoothstep(.72, 1.0, edge)) * smoothstep(.35, 1.4, distanceToCamera)
+    * mix(1.0, smoothstep(9.0, 16.0, distanceToCamera) * .72, aDrop.w);
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }`;
 export const GARDEN_RAIN_FRAG = `
 uniform float uRain;
 uniform vec3 uDropColor;
 varying float vAlpha;
-varying float vAcross;
+varying vec2 vRainUv;
+varying float vRainAboveSurface;
 void main() {
-  float a = (1.0 - abs(vAcross) * 2.0) * vAlpha * uRain * 0.42;
+  if (vRainAboveSurface < .005) discard;
+  float ends = smoothstep(0.0, .14, vRainUv.y) * (1.0 - smoothstep(.82, 1.0, vRainUv.y));
+  float a = (1.0 - abs(vRainUv.x * 2.0 - 1.0)) * ends * vAlpha * uRain * .64;
   if (a < 0.01) discard;
   gl_FragColor = vec4(uDropColor, a);
   #include <tonemapping_fragment>

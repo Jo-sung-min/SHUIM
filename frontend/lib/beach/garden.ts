@@ -17,6 +17,9 @@ import { GardenBoats, type BoatRideState, type RemoteRider } from "./garden-boat
 import { GardenRain } from "./garden-rain";
 import { PAVILION_POST_HEIGHT } from "./bamboo-trail";
 import { buildGardenLandscapeDetail } from "./garden-landscape-detail";
+import { GardenSeatLight } from "./garden-seat-light";
+import { GardenPond } from "./garden-pond";
+import type { GardenMoment } from "./net";
 
 export interface GardenWalker { x: number; z: number; moving: boolean }
 export type GardenSkyUniforms = Record<string, THREE.IUniform>;
@@ -95,6 +98,8 @@ export class GardenWorld {
   private readonly willowStrands: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   private readonly reeds: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   private readonly structures: GardenStructures;
+  private readonly seatLight: GardenSeatLight;
+  private readonly pond: GardenPond;
   private readonly landscapeDetail: ReturnType<typeof buildGardenLandscapeDetail>;
   private readonly boats: GardenBoats;
   private readonly rain: GardenRain;
@@ -113,7 +118,7 @@ export class GardenWorld {
   private lastLampAt = { x: NaN, z: NaN, t: -Infinity };
   private disposed = false;
 
-  constructor(private readonly scene: THREE.Scene, skyUniforms: GardenSkyUniforms, textures: { wood: THREE.Texture; landscape?: THREE.Texture; willow?: THREE.Texture }, private readonly mobile = false) {
+  constructor(private readonly scene: THREE.Scene, skyUniforms: GardenSkyUniforms, textures: { wood: THREE.Texture; landscape?: THREE.Texture; willow?: THREE.Texture; grass?: THREE.Texture }, private readonly mobile = false) {
     this.root.name = "garden";
     scene.add(this.root);
     this.hemi.name = "garden-sky-light"; this.sun.name = "garden-sun";
@@ -129,6 +134,7 @@ export class GardenWorld {
     const ink = textures.landscape ?? inkMountainTexture(), willow = textures.willow ?? willowTexture();
     const pad = lotusPadTexture(), flower = lotusFlowerTexture(), reed = reedTexture(), mistTex = mistTexture();
     this.textures.push(mask, lake, ink, willow, pad, flower, reed, mistTex, this.gradient);
+    if (textures.grass) this.textures.push(textures.grass);
     const shared = () => ({ ...this.light, uTime: this.time, uSway: this.sway, uWet: this.wet, ...this.fogUniforms });
     const lakeRect = new THREE.Vector4(LAKE_MASK.minX, LAKE_MASK.minZ, 1 / LAKE_MASK.width, 1 / LAKE_MASK.depth);
 
@@ -138,6 +144,7 @@ export class GardenWorld {
         ...shared(), uMask: { value: mask }, uMaskRect: { value: new THREE.Vector4(GARDEN_MASK.minX, GARDEN_MASK.minZ, 1 / GARDEN_MASK.width, 1 / GARDEN_MASK.depth) },
         uLake: { value: lake }, uLakeRect: { value: lakeRect },
         uGrass: { value: srgb(0x778766) }, uGrassLight: { value: srgb(0xa0ad85) }, uGrassDeep: { value: srgb(0x4e6852) },
+        uGrassPhoto: { value: textures.grass ?? mask }, uGrassPhotoAmount: { value: textures.grass ? 1 : 0 },
         uEarth: { value: srgb(0xaea390) }, uEarthLight: { value: srgb(0xd8cebb) }, uStone: { value: srgb(0x858b83) }, uStoneLight: { value: srgb(0xc2c2b4) },
         uMud: { value: srgb(0x646953) }, uPoolColor: { value: srgb(0xffbf80).multiplyScalar(0.35) },
       },
@@ -202,6 +209,8 @@ export class GardenWorld {
     this.buildLotus(pad, flower, shared);
     this.mist = this.buildMist(mistTex);
     this.structures = buildGardenStructures(this.root, textures, this.gradient, mobile);
+    this.seatLight = new GardenSeatLight(this.root);
+    this.pond = new GardenPond(this.root, mobile);
     this.landscapeDetail = buildGardenLandscapeDetail(this.root, mobile);
     this.boats = new GardenBoats(this.root, this.gradient);
     this.rain = new GardenRain(this.root, this.time);
@@ -401,7 +410,7 @@ export class GardenWorld {
     this.lastLampAt.t = -Infinity;
   }
 
-  /** 비 세기 0~1: 물·유리·빗줄기·잎·안개·조명을 함께 바꾼다. 안개는 엔진이 fogFar 에 곱한다. */
+  /** 비 세기 0~1: 물·빗줄기·잎·안개·조명을 함께 바꾼다. 안개는 엔진이 fogFar 에 곱한다. */
   setRain(amount: number) {
     if (this.disposed) return;
     const rain = THREE.MathUtils.clamp(amount, 0, 1);
@@ -411,7 +420,6 @@ export class GardenWorld {
     this.mountains.material.uniforms.uRain.value = rain;
     this.wet.value = rain;
     this.rain.setAmount(rain);
-    this.structures.setRain(rain);
     if (this.daylight) this.applyDaylight(this.daylight);
   }
   get rainAmountNow() { return this.rainAmount; }
@@ -426,10 +434,15 @@ export class GardenWorld {
   boatStateChanged() { return this.boats.changed(); }
 
   /* ---------------- 프레임 ---------------- */
-  update(time: number, camera: THREE.Camera, walker?: GardenWalker, riders: readonly RemoteRider[] = []): BoatStop | null {
+  applyMoments(events: GardenMoment[], serverTime: number) { this.pond.apply(events, serverTime); }
+
+  update(time: number, camera: THREE.Camera, walker?: GardenWalker, riders: readonly RemoteRider[] = [], seat?: { spotId: string; slot: number } | null): BoatStop | null {
     if (this.disposed || !Number.isFinite(time)) return null;
     const dt = Math.max(0, Math.min(0.1, time - this.time.value));
     this.time.value = time;
+    this.seatLight.setSeat(seat);
+    this.seatLight.update(dt, this.lampAmount, this.rainAmount);
+    this.pond.update(time, this.lampAmount);
     this.structures.setTime(time);
     const position = camera.getWorldPosition(new THREE.Vector3());
     (this.water.material.uniforms.uCamPos.value as THREE.Vector3).copy(position);
@@ -535,6 +548,8 @@ export class GardenWorld {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.seatLight.dispose();
+    this.pond.dispose();
     this.structures.dispose();
     this.landscapeDetail.dispose();
     this.boats.dispose();

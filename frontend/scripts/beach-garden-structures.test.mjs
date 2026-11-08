@@ -25,7 +25,7 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
 const layout = await load("../lib/beach/garden-layout.ts", trail, [
   "BRIDGE_Y", "GARDEN_BRIDGE", "GARDEN_LANTERNS", "GARDEN_PAVILIONS", "GARDEN_PIERS", "GARDEN_PHOTO_ZONE", "GROUND_Y", "HALL", "HALL_BENCH_HEIGHT", "HALL_SEAT_LX", "HALL_STAIR_HALF", "HALL_STAIR_RUN",
   "HALL_TIERS", "PIER_Y", "WATER_Y", "gardenPavilionWorld", "pierEnd", "GARDEN_SEATS",
-  "BOAT_STOPS", "GARDEN_POLYLINES", "GARDEN_WILLOWS", "LAKE", "insideHall", "lakeRadiusAt", "lakeSigned", "onBridge", "onPier",
+  "BOAT_STOPS", "GARDEN_POLYLINES", "GARDEN_POND_BENCHES", "GARDEN_WILLOWS", "LAKE", "insideHall", "lakeRadiusAt", "lakeSigned", "onBridge", "onPier",
 ]);
 const roofs = await load("../lib/beach/bamboo-pavilions.ts", trail, ["hipRoofGeometry", "hipRidgeGeometry", "roofTileTexture"]);
 const stone = await load("../lib/beach/bamboo.ts", trail, ["stoneLanternGeometry"]);
@@ -47,6 +47,86 @@ function build(mobile) {
   scene.updateMatrixWorld(true);
   return { scene, wood, gradient, structures };
 }
+
+test("clear hall glazing preserves the outside view in every weather without texture resources", () => {
+  const { scene, structures, wood, gradient } = build(true);
+  const glass = scene.getObjectByName("garden-hall-glass"), material = glass.material;
+  assert.equal(material.transparent, true); assert.equal(material.depthWrite, false);
+  assert.equal(material.side, THREE.DoubleSide); assert.equal(material.forceSinglePass, true);
+  assert.equal(material.uniforms.uGlassOpacity.value, .008, "head-on clear glass barely tints the landscape");
+  assert.equal(material.uniforms.uGlassEdgeOpacity.value, .035);
+  assert.ok(material.uniforms.uGlassOpacity.value + material.uniforms.uGlassEdgeOpacity.value < .05, "even glancing glass cannot become a cloudy sheet");
+  assert.ok(Object.values(material.uniforms).every(uniform => !uniform.value?.isTexture), "clear glass needs no image or fallback texture");
+  const version = material.version, geometry = glass.geometry;
+  for (const rain of [0, .25, 1, .4, 0]) {
+    structures.applyDaylight({ lanterns: rain ? 1 : 0 }, rain); structures.setTime(100);
+    assert.equal(material.uniforms.uGlassOpacity.value, .008);
+    assert.equal(material.uniforms.uGlassEdgeOpacity.value, .035);
+    assert.equal(material.version, version, "weather never recompiles the clear glass");
+    assert.equal(glass.geometry, geometry);
+  }
+  structures.dispose(); structures.dispose();
+  wood.dispose(); gradient.dispose();
+});
+
+function floorHits(scene, x, z) {
+  const surfaces = ["garden-oak-floor", "garden-weathered-timber", "garden-stone-foundation"].map(name => scene.getObjectByName(name));
+  return new THREE.Raycaster(new THREE.Vector3(x, 5, z), new THREE.Vector3(0, -1, 0), 0, 6).intersectObjects(surfaces);
+}
+
+test("hall decks and tier edges have a single visible surface instead of coplanar wood and stone", () => {
+  const { scene, structures, gradient } = build(true);
+  for (const tier of layout.HALL_TIERS) {
+    for (const z of [layout.HALL.glassZ + tier.from + 0.04, layout.HALL.glassZ + tier.from + 0.63]) {
+      const hits = floorHits(scene, layout.HALL.x + 5.31, z);
+      assert.ok(hits.length > 0);
+      assert.ok(Math.abs(hits[0].point.y - tier.y) < 1e-5, "floor height remains aligned with walking height");
+      const atFloor = hits.filter(hit => Math.abs(hit.point.y - tier.y) < 1e-5);
+      assert.equal(atFloor.length, 1, `tier ${tier.y}, z ${z}: ${atFloor.map(hit => hit.object.name).join(", ")} must not fight for the same depth`);
+    }
+  }
+  structures.dispose(); gradient.dispose();
+});
+
+test("all hall stair treads stay exposed without overlapping a tier landing", () => {
+  const { scene, structures, gradient } = build(false);
+  for (let index = 0; index < layout.HALL_TIERS.length - 1; index++) {
+    const lower = layout.HALL_TIERS[index], upper = layout.HALL_TIERS[index + 1];
+    const boundary = layout.HALL.glassZ + lower.to;
+    for (let step = 0; step < 3; step++) {
+      const z = boundary - layout.HALL_STAIR_RUN / 2 + layout.HALL_STAIR_RUN * (step + 0.63) / 3;
+      const top = lower.y + (upper.y - lower.y) * (step + 1) / 3;
+      const hits = floorHits(scene, layout.HALL.x + 0.37, z);
+      assert.ok(Math.abs(hits[0].point.y - top) < 1e-5, `tier ${index}, tread ${step} is not buried under the next floor`);
+      assert.equal(hits.filter(hit => Math.abs(hit.point.y - top) < 1e-5).length, 1, `tier ${index}, tread ${step} has no overlapping top faces`);
+    }
+    for (const [z, top] of [[boundary - layout.HALL_STAIR_RUN / 2 - 0.04, lower.y], [boundary + layout.HALL_STAIR_RUN / 2 + 0.04, upper.y]]) {
+      const hits = floorHits(scene, layout.HALL.x + 0.37, z);
+      assert.ok(Math.abs(hits[0].point.y - top) < 1e-5, "landings still join the stair run");
+    }
+  }
+  structures.dispose(); gradient.dispose();
+});
+
+test("elevated hall decks and stair sides have solid risers instead of exposing green ground underneath", () => {
+  const { scene, structures, gradient } = build(true);
+  const floor = scene.getObjectByName("garden-oak-floor");
+  for (let index = 0; index < layout.HALL_TIERS.length - 1; index++) {
+    const lower = layout.HALL_TIERS[index], boundary = layout.HALL.glassZ + lower.to;
+    // Look under the higher deck, above the lower walking surface. A thin slab leaves a hole.
+    const front = new THREE.Raycaster(new THREE.Vector3(layout.HALL.x + 5.31, lower.y + .1, boundary - .4), new THREE.Vector3(0, 0, 1), 0, .6);
+    const frontHit = front.intersectObject(floor)[0];
+    assert.ok(frontHit && Math.abs(frontHit.point.z - boundary) < 1e-5, `tier ${index + 1} has a closed front riser`);
+    // The side of the highest tread must also be filled below its former thin top slab.
+    const side = new THREE.Raycaster(new THREE.Vector3(layout.HALL.x + .37, lower.y + .1, boundary + layout.HALL_STAIR_RUN * .35), new THREE.Vector3(1, 0, 0), 0, layout.HALL_STAIR_HALF);
+    const previousSide = floor.material.side;
+    floor.material.side = THREE.DoubleSide;
+    const sideHit = side.intersectObject(floor)[0];
+    floor.material.side = previousSide;
+    assert.ok(sideHit && Math.abs(sideHit.point.x - (layout.HALL.x + layout.HALL_STAIR_HALF)) < 1e-5, `tier ${index + 1} stair side reaches its foundation`);
+  }
+  structures.dispose(); gradient.dispose();
+});
 
 test("rounded hall cushions still meet all 24 server-aligned seat positions", () => {
   const { scene, structures, gradient } = build(true);
@@ -139,10 +219,8 @@ test("day, rain and night update the shared lamps and release owned GPU resource
   const glow = scene.getObjectByName("garden-glow");
   assert.ok(glow.visible && glow.material.uniforms.uNight.value > 0, "rain lamps have a visible glow even in daytime");
   structures.applyDaylight({ lanterns: 1 }, 0);
-  structures.setRain(0.5); structures.setTime(15);
-  const glass = scene.getObjectByName("garden-hall-glass").material;
-  assert.equal(glass.uniforms.uRain.value, 0.5);
-  assert.equal(glass.uniforms.uTime.value, 15);
+  structures.setTime(15);
+  assert.equal(glow.material.uniforms.uTime.value, 15, "ambient lamp animation still receives time");
   const beads = scene.getObjectByName("garden-chandelier-crystals"), full = beads.count;
   structures.setQuality(true); assert.ok(beads.count < full);
   structures.setQuality(false); assert.equal(beads.count, full);

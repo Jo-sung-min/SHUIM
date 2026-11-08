@@ -24,7 +24,7 @@ export function assetUrl(path: string): string {
     const url = new URL(path, "https://public-assets.invalid");
     if (url.origin !== "https://public-assets.invalid") return path;
     const publicMedia = ROOT_MEDIA.has(url.pathname)
-      || (/^\/(beach|feed|garden)\//.test(url.pathname) && /\.(?:avif|webp|png|jpe?g|gif|svg|glb|gltf|ktx2|basis|bin|mp3)$/i.test(url.pathname));
+      || (/^\/(?:(?:beach|feed)\/|(?:garden|cloudspa)\/art\/)/.test(url.pathname) && /\.(?:avif|webp|png|jpe?g|gif|svg|glb|gltf|ktx2|basis|bin|mp3)$/i.test(url.pathname));
     return publicMedia ? `${BASE}${url.pathname}${url.search}${url.hash}` : path;
   } catch { return path; }
 }

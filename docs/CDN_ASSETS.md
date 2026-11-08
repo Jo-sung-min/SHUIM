@@ -68,3 +68,8 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 기존 남녀 온천복 `v1.glb`의 일부 CloudFront 캐시 응답에서 `Access-Control-Allow-Origin`이 빠져, 실제 Chrome이 모델을 차단하는 현상을 재현했습니다. 단순 GET 확인으로는 드러나지 않았고 브라우저의 압축·출처 헤더를 포함한 요청에서 확인했습니다. 현재 업로드용 IAM에는 CloudFront 무효화 권한이 없어 같은 모델을 `tripo-male-onsen-mobile-v2.glb`, `tripo-female-onsen-mobile-v2.glb`로 발행했습니다. 원본 크기·SHA256·모델 내용은 동일하며, 이전 주소는 기존 배포용으로 유지합니다. manifest에는 두 버전을 모두 기록합니다.
 
 새 주소는 로컬 및 운영 사이트 출처에서 실제 브라우저 GET 200, CORS 허용, 원본 바이트 일치를 확인했습니다. 런타임은 v2를 사용하고, 일시적인 로딩 실패에도 기존 캐릭터를 유지하며 5초 뒤 다시 시도합니다. 이 주소 변경은 프런트엔드를 새로 배포해야 운영 화면에 적용됩니다.
+
+
+## 정원·구름 온천 이미지 소스 보관 (2026-11-09)
+
+사용자 요청에 따라 `frontend/public/garden/art/*.webp`와 `frontend/public/cloudspa/art/*.webp`의 이미지 소스 15개는 GitHub 저장소에도 포함합니다. 기존에 검증한 CDN 주소와 파일 해시는 유지하며, 이 병합 작업에서는 S3에 추가 업로드하지 않습니다. 이 두 폴더의 WebP만 `.gitignore` 예외로 관리하므로 다른 공개 미디어의 기존 관리 방식은 유지됩니다.

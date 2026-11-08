@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { nearestOnTrail, seededRandom, TRAIL_WALK_HALF } from "./bamboo-trail";
 import {
-  BOAT_STOPS, GARDEN_LANTERNS, GARDEN_POLYLINES, GARDEN_WILLOWS, GROUND_Y, LAKE,
+  BOAT_STOPS, GARDEN_LANTERNS, GARDEN_POLYLINES, GARDEN_POND_BENCHES, GARDEN_WILLOWS, GROUND_Y, LAKE,
   insideHall, lakeRadiusAt, lakeSigned, onBridge, onPier,
 } from "./garden-layout";
 
@@ -27,10 +27,16 @@ export function gardenDetailSites(mobile: boolean): DetailSite[] {
     if (onPier(x, z, radius + 0.6) || onBridge(x, z, radius + 0.6)) return false;
     if (BOAT_STOPS.some(stop => Math.hypot(stop.x - x, stop.z - z) < 4.2 + radius)) return false;
     if (GARDEN_LANTERNS.some(lamp => Math.hypot(lamp.x - x, lamp.z - z) < 0.6 + radius)) return false;
+    if (GARDEN_POND_BENCHES.some(bench => {
+      const dx = x - bench.x, dz = z - bench.z;
+      const across = Math.abs(-dx * bench.fz + dz * bench.fx);
+      const along = Math.abs(dx * bench.fx + dz * bench.fz);
+      return across < 1.65 + radius && along < .65 + radius;
+    })) return false;
     return !GARDEN_WILLOWS.some(tree => Math.hypot(tree.x - x, tree.z - z) < 0.4 + radius);
   };
   for (const cluster of clusters) {
-    for (let i = 0; i < 29; i++) {
+    for (let i = 0; i < 27; i++) {
       const a = rand() * Math.PI * 2, distance = Math.sqrt(rand()) * cluster.radius;
       const x = cluster.x + Math.cos(a) * distance, z = cluster.z + Math.sin(a) * distance;
       const kind = i < 4 ? "rock" : i % 4 === 0 ? "flower" : "grass";

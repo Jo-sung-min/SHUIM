@@ -24,6 +24,8 @@ const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["cre
 const bedding = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "claimedBedSlot", "bedSlot"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE, RoundedBoxGeometry }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls"]);
+const garden = await load("../lib/beach/garden-layout.ts", {}, ["GARDEN_POND_BENCHES", "GARDEN_SEATS", "GROUND_Y", "WATER_Y", "LAKE", "gardenPavilionWorld", "isWater", "lakeSigned"]);
+const { gardenMomentWaterTarget } = await load("../lib/beach/garden-pond.ts", { THREE, ...garden }, ["gardenMomentWaterTarget"]);
 const { BeachEngine } = await load("../lib/beach/engine.ts", {
   THREE, ...atlas, ...resting, ...bedding, ...benches, ...navigation, CAMPFIRE: { x: 0, z: 12 }, performance,
   document: { createElement: () => ({ getContext: () => null }) },
@@ -58,6 +60,25 @@ function fixture() {
   const key = key => engine.onKey({ key, type: "keydown", repeat: false, target: null, preventDefault() {} });
   return { engine, camera, drag, key };
 }
+
+test("portrait pond seating leaves its water effects above the character's head", () => {
+  for (const seat of garden.GARDEN_SEATS.filter(seat => seat.spotId.startsWith("pond-bench-"))) {
+    const { engine, camera } = fixture();
+    engine.pavilionSeat = seat;
+    Object.assign(engine.self, { ...seat, pitch: -.08 }); engine.orbitYaw = seat.yaw;
+    engine.placeBenchCamera(1 / 60); camera.updateMatrixWorld(true);
+    const target = gardenMomentWaterTarget(seat.x, seat.z);
+    assert.ok(target);
+    const duck = new THREE.Vector3(target.x, garden.WATER_Y + .3, target.z).project(camera);
+    const head = new THREE.Vector3(seat.x, seat.avatarY + 1.8, seat.z).project(camera);
+    assert.ok(Math.abs(duck.x) < .8 && Math.abs(duck.y) < .85, `${seat.id}: the actual small-duck landing fits a narrow portrait view`);
+    assert.ok(duck.y > head.y + .025, `${seat.id}: the actual water target remains visible above the head`);
+    const pondHeight = camera.position.y;
+    engine.pavilionSeat = { ...seat, spotId: "hall-tier-1" }; engine.followSnap = true;
+    engine.placeBenchCamera(1 / 60);
+    assert.ok(pondHeight - camera.position.y > 1.5, "the elevated view is limited to outdoor pond benches");
+  }
+});
 
 test("mouse and touch orbit reveal the front of a stationary avatar without changing the shared body yaw", () => {
   for (const [type, sensitivity] of [["mouse", 0.0042], ["touch", 0.0072]]) {

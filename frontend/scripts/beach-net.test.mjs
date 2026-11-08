@@ -348,7 +348,7 @@ test("room time controls require both an explicit server grant and a valid share
 
 test("clock changes send the owned visit ticket and accept only confirmed matching presets", async () => {
   const calls = [];
-  const hours = { auto: null, day: 12, sunset: 18, night: 20 };
+  const hours = { auto: null, day: 12, sunset: 18, night: 20, "rainy-night": 21 };
   const api = setup(async (url, options) => {
     const body = JSON.parse(options.body); calls.push({ url, options, body });
     return response({ mode: body.mode, hour: hours[body.mode], version: calls.length });
@@ -462,6 +462,22 @@ test("hut claims send the selected hut, accept only its three slots, and preserv
     assert.equal(sent.spotId, spotId);
     await assert.rejects(setup(async () => response({ ...state, slot: 3 })).setBeachRest("ticket", "lie", spotId), /쉴 자리의 상태/);
   }
+});
+
+test("garden rainy night survives entry and polling while invalid rain clocks and denied changes are rejected", async () => {
+  const value = { mode: "rainy-night", hour: 21, version: 9 };
+  const visitor = setup(async () => response({ mapId: "garden", lighting: value, lightingControl: false }));
+  const entered = await visitor.enterBeach("ours", "male", "garden");
+  assert.deepEqual(JSON.parse(JSON.stringify(entered.lighting)), value);
+  assert.equal(entered.lightingControl, false, "a shared weather preset never grants administration");
+  const tick = await visitor.tickBeach({ ticket: "garden-visit", x: 0, z: 8, yaw: 0, moving: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(tick.lighting)), value);
+  for (const invalid of [{ ...value, hour: 20 }, { ...value, hour: null }, { ...value, version: -1 }]) {
+    await assert.rejects(setup(async () => response(invalid)).setBeachLighting("admin-visit", "rainy-night"));
+    await assert.rejects(setup(async () => response({ lighting: invalid })).tickBeach({ ticket: "garden-visit" }));
+  }
+  const denied = setup(async () => response({ error: "관리자만 방의 시간을 바꿀 수 있어요." }, 403));
+  await assert.rejects(denied.setBeachLighting("member-visit", "rainy-night"), error => error instanceof denied.BeachUnavailable && error.status === 403);
 });
 
 test("hotel beds require an explicit server grant on either map", async () => {

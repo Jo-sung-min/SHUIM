@@ -48,7 +48,22 @@
   --beach-pad-active:rgba(50,72,76,.8);
 }
 .root[data-map="garden"][data-night="true"] { --beach-glass:rgba(25,37,31,.24); }
+.root[data-map="cloudspa"] {
+  --beach-glass:rgba(31,41,67,.24);
+  --beach-ink:#f6f3f5;
+  --beach-muted:#d9dfed;
+  --beach-edge:#e6e7f257;
+  --beach-shadow:inset 0 1px 0 #ffffff1f,0 5px 20px #141b3528;
+  --beach-label-shadow:0 1px 3px #10162ba6;
+  --beach-pad-glass:rgba(31,41,67,.58);
+  --beach-pad-active:rgba(47,60,88,.8);
+}
+.root[data-map="cloudspa"][data-night="true"] { --beach-glass:rgba(22,31,53,.24); }
 .canvas { display:block; width:100%; height:100%; touch-action:none; outline:none; }
+.bunkerTransition { position:absolute; inset:0; z-index:12; display:grid; place-items:center; background:#10171dee; color:#f5ead8; opacity:0; pointer-events:none; transition:opacity .24s ease; }
+.bunkerTransition[data-active="true"] { opacity:1; pointer-events:auto; }
+.bunkerTransition span { padding:18px 24px; font-size:13px; letter-spacing:.02em; text-align:center; }
+@media(prefers-reduced-motion:reduce) { .bunkerTransition { transition:none; } }
 .glass, .dock, .actionTray, .contextButton, .fireContext > button, .restoreHud, .roomClockPanel, .fireworksPanel {
   border:1px solid var(--beach-edge); background:var(--beach-glass); color:var(--beach-ink);
   box-shadow:var(--beach-shadow); text-shadow:var(--beach-label-shadow); backdrop-filter:blur(8px) saturate(115%); -webkit-backdrop-filter:blur(8px) saturate(115%);
@@ -88,6 +103,9 @@
   .fireworksPanel[data-grand="true"] > button small { display:none; }
   .fireworksPanel[data-grand="true"] > button > svg { flex-basis:18px; width:18px; height:18px; }
 }
+.root[data-map="cloudspa"] .center { background:radial-gradient(ellipse at 20% 76%,#b1c7df88,transparent 42%),radial-gradient(ellipse at 85% 63%,#99aecb66,transparent 44%),linear-gradient(180deg,#101b35 0%,#344766 62%,#788fa9 100%); }
+.root[data-map="cloudspa"] .fireworksPanel, .root[data-map="cloudspa"] .roomClockPanel { background:rgba(27,37,62,.94); }
+.root[data-map="cloudspa"] :is(.exitButton:hover,.contextButton:hover,.roomClockTrigger[aria-expanded="true"],.fireworksTrigger[aria-expanded="true"],.fireworksTrigger:hover:not(:disabled)) { background:rgba(47,60,88,.88); }
 @media(max-width:360px) { .fireworksTrigger { min-width:92px; padding-inline:10px; } }
 .roomClock { position:relative; }
 .roomClockTrigger { min-height:44px; cursor:pointer; transition:transform .13s,background .16s; }
@@ -101,6 +119,8 @@
 .roomClockChoices button[aria-pressed="true"] { background:#e7f2e4d9; color:#34583d; border-color:#a6c2a8; font-weight:700; text-shadow:none; }
 .roomClockChoices button:active { transform:scale(.94); }
 .roomClockChoices button:disabled { opacity:.5; cursor:default; transform:none; }
+.roomClockChoices .roomClockRain { grid-column:1 / -1; display:flex; align-items:center; justify-content:center; gap:7px; margin-top:3px; }
+.roomClockRain svg { width:20px; height:20px; }
 .roomClockTrigger:focus-visible, .roomClockChoices button:focus-visible { outline:3px solid #7e9b86; outline-offset:2px; }
 .top[hidden], .bottomHud[hidden], .actionTray[hidden], .actionScroll[hidden], .contextActions[hidden], .fireContext[hidden] { display:none; }
 .exitButton { min-height:44px; padding:0 12px 0 9px; transition:background .16s,transform .13s; }
@@ -200,6 +220,11 @@
 .restoreHud svg { width:20px; height:20px; }
 .hideHud:disabled { opacity:.45; cursor:default; transform:none; }
 .hideHud:hover:not(:disabled) { background:#ffffff1f; }
+
+.pondActions { display:contents; }
+.contextCopy small { display:none; }
+.pondButton .contextCopy { display:contents; }
+.pondButton .contextCopy small { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:9px; line-height:1.1; color:var(--beach-muted); }
 .flash { position:absolute; inset:0; pointer-events:none; animation:beachFlash 1.4s ease-out forwards; }
 .flash.hug { background:radial-gradient(ellipse at center,#ff78a000 42%,#ff78a09e 100%); }
 .flash.comfort { background:radial-gradient(ellipse at center,#ffd27800 42%,#ffcd788c 100%); }

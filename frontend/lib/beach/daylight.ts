@@ -255,6 +255,18 @@ export function gardenDaylightAt(hourIn: number): Daylight {
   return { ...base, fog, fogNear: 55, fogFar: 220, tint: washed };
 }
 
+/** 구름 위 온천: 은청색 구름과 호박색 등불, 아래 도시까지 열려 있는 높은 공기층. */
+export function cloudSpaDaylightAt(hourIn: number): Daylight {
+  const base = uyuniDaylightAt(hourIn);
+  const night = Math.max(0, Math.min(1, base.stars));
+  return { ...base,
+    fog: mixRgb([0.69, 0.78, 0.88], [0.055, 0.08, 0.14], night), fogNear: 105, fogFar: 460,
+    cloud: mixRgb([0.96, 0.97, 1], [0.54, 0.63, 0.79], night),
+    tint: mixRgb([1, 0.98, 0.96], [0.81, 0.85, 0.95], night),
+    cloudAmount: 0.36,
+  };
+}
+
 /** 지금 시각 (분까지, 0~24) */
 export function currentHour(now = new Date()): number {
   return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;

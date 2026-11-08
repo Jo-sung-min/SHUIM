@@ -11,6 +11,13 @@ test("the spring water recording is served by the app, not the CDN", () => {
   assert.equal(assetsFor().assetUrl("/audio/onsen-water-v1.mp3"), "/audio/onsen-water-v1.mp3");
 });
 
+const MAP_TEXTURES = [
+  "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp",
+  "/garden/art/grass-natural-v1.webp", "/garden/art/grass-natural-mobile-v1.webp",
+  "/cloudspa/art/cloud-bank-v1.webp", "/cloudspa/art/cloud-bank-mobile-v1.webp",
+  "/cloudspa/art/cloud-surface-v1.webp", "/cloudspa/art/cloud-surface-mobile-v1.webp",
+  ...["nw", "ne", "sw", "se"].map(direction => `/cloudspa/art/city-${direction}-v2.webp`),
+];
 test("public media defaults to the verified CDN and supports an optional replacement origin", () => {
   const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v2.glb", "/beach/fx/firework-boom-v1.mp3", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png", "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp"];
   for (const path of paths) {
@@ -25,12 +32,26 @@ test("public media defaults to the verified CDN and supports an optional replace
   assert.equal(assetsFor(CDN).assetUrl("/beach/real/soft sand.webp?v=2#detail"), `${CDN}/beach/real/soft%20sand.webp?v=2#detail`);
 });
 
+test("garden and cloud spa art use the CDN for desktop, mobile and map cards", () => {
+  for (const base of [CDN, "https://media.example.com/static"]) {
+    const { assetUrl, assetCssUrl } = assetsFor(base);
+    for (const path of [...MAP_TEXTURES, "/cloudspa/art/city-nw-card-v2.webp"]) {
+      assert.equal(assetUrl(path), `${base}${path}`);
+      assert.equal(assetCssUrl(path), `url("${base}${path}")`);
+    }
+    assert.equal(assetUrl("/cloudspa/art/city-nw-v2.webp?v=2#detail"), `${base}/cloudspa/art/city-nw-v2.webp?v=2#detail`);
+  }
+});
+
 test("CDN mapping leaves API, private uploads, external images and app navigation untouched", () => {
   const { assetUrl } = assetsFor(CDN);
   for (const path of [
     "/api/site/favicon?v=7", "/api/private/photo.png", "/uploads/member/photo.jpg", "/beach/../api/photo.jpg",
     "/beach/%2e%2e/api/photo.jpg", "/beach", "/beach/models/source.json", "/manifest.webmanifest",
     "/offline.html", "/sw.js", "//private.example/photo.jpg",
+    "/garden?communityId=jc-exam", "/cloudspa?communityId=jc-exam", "/uyuni?communityId=jc-exam",
+    "/garden/private/photo.webp", "/cloudspa/uploads/photo.webp", "/cloudspa/art/manifest.json",
+    "/garden/art/../../api/photo.jpg", "/cloudspa/art/%2e%2e/%2e%2e/uploads/photo.jpg",
     "https://uploads.example/photo.jpg?signature=abc", `${CDN}/beach/chars-v2.png`, "blob:local-photo", "data:image/png;base64,AA==",
   ]) assert.equal(assetUrl(path), path);
 });
@@ -102,7 +123,8 @@ test("actual Three.js loading entry points request CDN textures and models with 
   const atlas = await load("atlas", ["CHAR_ANIM", "CHAR_ATLAS", "CHAR_VIEW"]);
   const { BeachEngine } = await load("engine", ["BeachEngine"], { ...atlas, CAMPFIRE: { x: 0, z: 12 } });
   const engine = Object.assign(Object.create(BeachEngine.prototype), { assetLoads: [], renderer: { capabilities: { getMaxAnisotropy: () => 4 } } });
-  for (const path of ["/beach/real/white-sand-v1.webp", "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp"]) engine.loadEnvironmentTexture(path);
+  const environmentPaths = ["/beach/real/white-sand-v1.webp", "/beach/real/white-cotton-v1.webp", ...MAP_TEXTURES];
+  for (const path of environmentPaths) engine.loadEnvironmentTexture(path);
   await Promise.all(engine.assetLoads);
   // Mark disposed to exercise requests and their late-load cleanup without constructing actors.
   engine.disposed = true; await engine.loadAtlases();
@@ -111,8 +133,7 @@ test("actual Three.js loading entry points request CDN textures and models with 
     "/beach/real/wood-normal.jpg", "/beach/real/wood.jpg", "/beach/real/sky-lantern-v2.png", "/beach/fx/firework-spark-v1.webp",
     "/beach/models/tripo-male-rigged-mobile-v3.glb", "/beach/models/tripo-female-rigged-mobile-v2.glb",
     "/beach/models/tripo-male-onsen-mobile-v2.glb", "/beach/models/tripo-female-onsen-mobile-v2.glb",
-    "/beach/models/tripo-firewood-mobile-v2.glb", "/beach/real/white-sand-v1.webp", "/beach/chars-v2.png", "/beach/props.png",
-    "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp",
+    "/beach/models/tripo-firewood-mobile-v2.glb", ...environmentPaths, "/beach/chars-v2.png", "/beach/props.png",
   ];
   assert.deepEqual(new Set(requests), new Set(expected.map(path => CDN + path)));
   lanterns.dispose(); fireworks.dispose(); campfire.dispose();

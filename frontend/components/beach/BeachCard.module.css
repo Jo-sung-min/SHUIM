@@ -33,3 +33,6 @@
 @media(min-width:650px) { .mapChoices { gap:14px; }.placeCard { flex-basis:47%; aspect-ratio:.74; }.placeCopy { left:18px; right:18px; bottom:20px; }.placeTitle { font-size:23px; }.placeCaption { font-size:12px; } }
 @media(max-width:360px) { .mapChoices { gap:10px; }.placeCard { border-radius:17px; }.placeCopy { left:13px; right:13px; bottom:14px; gap:6px; }.placeTitle { font-size:17px; }.placeCaption { font-size:10px; } }
 @media(prefers-reduced-motion:reduce) { .placeCard, .photo { transition:none; }.placeCard:not(:disabled):active { transform:none; } }
+
+.placeCard[data-place="cloudspa"] { background:linear-gradient(145deg,#8b9eb7,#172b48); }
+.placeCard[data-place="cloudspa"] .photo { object-position:center 65%; }

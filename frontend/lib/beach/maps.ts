@@ -1,4 +1,4 @@
-export type MapId = "beach" | "uyuni" | "bamboo" | "garden";
+export type MapId = "beach" | "uyuni" | "bamboo" | "garden" | "cloudspa";
 
 export const MAPS = {
   beach: {
@@ -28,6 +28,13 @@ export const MAPS = {
     description: "버드나무 호수를 걷고, 통창 아래 앉아 비 내리는 물을 바라봐요.",
     welcome: "봄물이 고인 호수를 천천히 걸어요.",
     loading: "봄물 정원으로 가는 중", loadingDetail: "버드나무 그늘 곁으로",
+  },
+  cloudspa: {
+    id: "cloudspa", name: "구름미그린 온천", path: "/cloudspa",
+    eyebrow: "도시의 불빛 위에 머무는 밤",
+    description: "구름산을 따라 이어지는 다섯 온천과 포근한 리조트. 발아래 도시의 야경을 바라봐요.",
+    welcome: "구름 위 따뜻한 물에 몸을 맡겨요.",
+    loading: "구름미그린 온천으로 가는 중", loadingDetail: "도시의 불빛을 품은 구름 위로",
   },
 } as const;
 

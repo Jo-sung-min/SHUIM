@@ -1,7 +1,7 @@
 /**
  * 봄물 정원의 배치 수학. three.js 없이 순수 함수만 두어 노드 테스트와 서버(BeachRoom.PAVILIONS)가 같은 식을 쓴다.
  *  - 호수: 중심 (0, 34) 의 울퉁불퉁한 타원. 부호 거리 하나(lakeSigned)로 걷기 금지·물 셰이더·연잎 배치·다른 사람의 배 그리기를 모두 판정한다.
- *  - 길: 호수를 한 바퀴 도는 산책로(청우헌 뒤로 돌아간다) + 남문·선착장·다리·청우헌 옆문 샛길. 걷는 범위는 길·잔교·다리·섬·청우헌 바닥으로 제한한다.
+ *  - 길: 호수를 한 바퀴 도는 산책로와 남문·선착장·다리·옆문 샛길. 호수 중심에서 시작 지점까지의 원 안 잔디도 자유롭게 걷는다.
  *  - 청우헌: 북쪽 호숫가의 통창 건물. 창 쪽이 가장 낮은 4단 계단식 바닥, 단마다 6자리. 좌석 표는 서버와 같다.
  *  - 연향정: 서쪽 섬의 기와 정자(대나무숲 정자와 같은 좌석 표), 구곡교로 건넌다.
  *  - 나룻배: 선착장·청우헌 잔교·섬 잔교 세 정류장을 도는 닫힌 경로. 서버 상태 없이 시간으로만 움직인다.
@@ -20,6 +20,8 @@ export const GARDEN_PATH_WIDTH = 2.6;
 export const GARDEN_SPAWN = { x: 0, z: -11, yaw: Math.PI } as const;
 
 export const LAKE = { x: 0, z: 34, rx: 36, rz: 28 } as const;
+/** The entrance sets the radius of the open lawn; existing paths beyond it remain connected. */
+export const GARDEN_WALK_RADIUS = Math.hypot(GARDEN_SPAWN.x - LAKE.x, GARDEN_SPAWN.z - LAKE.z) + 2;
 export const ISLAND = { x: -16, z: 36, radius: 7 } as const;
 
 /** 청우헌: x −15~15, z 60~80. 남면(z=60)이 통창, 창 쪽이 가장 낮다. */
@@ -90,19 +92,30 @@ export function hallFloorHeight(x: number, z: number): number | null {
 }
 
 /* ---------------- 정자·좌석 ---------------- */
-export type GardenSeatKind = "pavilion" | "hall";
+export type GardenSeatKind = "pavilion" | "hall" | "bench";
 export interface GardenPavilion {
   id: string; spotId: string; name: string; kind: GardenSeatKind;
   x: number; z: number; fx: number; fz: number; yaw: number; groundY: number; floorY: number;
 }
 const pavilion = (id: string, name: string, kind: GardenSeatKind, x: number, z: number, fx: number, fz: number, groundY: number, floorY: number): GardenPavilion =>
-  ({ id, spotId: kind === "hall" ? `hall-tier-${id}` : `pavilion-${id}`, name, kind, x, z, fx, fz, yaw: Math.atan2(0 - fx, 0 - fz), groundY, floorY });
+  ({ id, spotId: kind === "hall" ? `hall-tier-${id}` : kind === "bench" ? id : `pavilion-${id}`, name, kind, x, z, fx, fz, yaw: Math.atan2(0 - fx, 0 - fz), groundY, floorY });
+
+/** Two-person pond benches; the same positions and orientation are mirrored by BeachRoom. */
+export const GARDEN_POND_BENCHES: readonly GardenPavilion[] = [
+  ["sw", -21.31678586, 9.13041650], ["se", 27.05566953, 15.49022060], ["w", -34.83661939, 34],
+  ["e", 39.92414302, 34], ["nw", -30.53993522, 53.43450423], ["ne", 27.90771696, 51.75945625],
+].map(([id, x, z], index) => {
+  const cx = Number(x), cz = Number(z), dx = LAKE.x - cx, dz = LAKE.z - cz;
+  const length = Math.hypot(dx, dz);
+  return pavilion(`pond-bench-${id}`, `호숫가 벤치 ${index + 1}`, "bench", cx, cz, dx / length, dz / length, GROUND_Y, GROUND_Y + .45);
+});
 
 /** 서버 BeachRoom.PAVILIONS(garden) 와 같은 중심·축·좌석 표. 청우헌 단은 창(−z)을 본다. */
 export const GARDEN_PAVILIONS: readonly GardenPavilion[] = [
   pavilion("island", "연향정", "pavilion", -15, 36, -1, 0, GROUND_Y, GROUND_Y + PAVILION_RISE),
   ...HALL_TIERS.map((tier, index) => pavilion(String(index + 1), index === 0 ? "창가 자리" : `${index + 1}단 자리`, "hall",
     HALL.x, HALL.glassZ + (tier.from + tier.to) / 2, 0, -1, tier.y, tier.y)),
+  ...GARDEN_POND_BENCHES,
 ];
 export const GARDEN_HALL_SPOTS: readonly string[] = GARDEN_PAVILIONS.filter((p) => p.kind === "hall").map((p) => p.spotId);
 
@@ -112,6 +125,7 @@ const SEAT_LOCAL: readonly [number, number, number, number][] = [
   [2.42, -0.9, 1, 0], [2.42, 0.9, 1, 0],
 ];
 const HALL_SEAT_LOCAL: readonly [number, number, number, number][] = HALL_SEAT_LX.map((lx) => [lx, 0, 0, 1]);
+const BENCH_SEAT_LOCAL: readonly [number, number, number, number][] = [[-.6, 0, 0, 1], [.6, 0, 0, 1]];
 
 export function gardenPavilionWorld(p: GardenPavilion, lx: number, lz: number): { x: number; z: number } {
   const rx = -p.fz, rz = p.fx;
@@ -123,7 +137,7 @@ export function gardenPavilionLocal(p: GardenPavilion, x: number, z: number): { 
 }
 
 export const GARDEN_SEATS: readonly PavilionSeat[] = GARDEN_PAVILIONS.flatMap((p) =>
-  (p.kind === "hall" ? HALL_SEAT_LOCAL : SEAT_LOCAL).map(([lx, lz, flx, flz], slot) => {
+  (p.kind === "hall" ? HALL_SEAT_LOCAL : p.kind === "bench" ? BENCH_SEAT_LOCAL : SEAT_LOCAL).map(([lx, lz, flx, flz], slot) => {
     const rx = -p.fz, rz = p.fx;
     const { x, z } = gardenPavilionWorld(p, lx, lz);
     const fx = flx * rx + flz * p.fx, fz = flx * rz + flz * p.fz;
@@ -154,7 +168,7 @@ export function nearbyGardenPavilion(x: number, z: number): GardenPavilion | nul
 
 const ISLAND_PAVILION = GARDEN_PAVILIONS[0];
 const POST_LOCAL: readonly [number, number][] = [[-2.15, -2.15], [2.15, -2.15], [-2.15, 2.15], [2.15, 2.15], [-2.15, 0], [2.15, 0]];
-export const GARDEN_OBSTACLES: readonly { x: number; z: number; r: number }[] = POST_LOCAL.map(([lx, lz]) => ({ ...gardenPavilionWorld(ISLAND_PAVILION, lx, lz), r: 0.16 }));
+
 
 /* ---------------- 길·잔교·다리 ---------------- */
 /** 남문에서 시작해 서안 → 청우헌 뒤 → 동안으로 한 바퀴 (물가에서 4~5 m). */
@@ -205,6 +219,12 @@ const SPURS: TrailPolyline[] = [
   { id: "east-door", points: [[20.5, 76], [15.2, 76]], closed: false },
 ];
 export const GARDEN_POLYLINES: readonly TrailPolyline[] = [LOOP, ...SPURS];
+// Short grassy approaches connect the shore seats to the loop without painting new dirt paths.
+const BENCH_APPROACHES: TrailPolyline[] = GARDEN_POND_BENCHES.map(bench => {
+  const start = nearestOnTrail(bench.x, bench.z, [LOOP]);
+  return { id: `approach-${bench.id}`, points: [[start.x, start.z], [bench.x, bench.z]], closed: false };
+});
+const WALK_POLYLINES: readonly TrailPolyline[] = [...GARDEN_POLYLINES, ...BENCH_APPROACHES];
 export const GARDEN_LOOP_POINTS: readonly TrailPoint[] = LOOP.points;
 /** 남문 안마당 */
 export const GATE_YARD = { minX: -4.5, maxX: 4.5, minZ: -15, maxZ: 2 } as const;
@@ -231,20 +251,36 @@ export function isWater(x: number, z: number): boolean {
 }
 
 export function onGardenGround(x: number, z: number): boolean {
+  if (!Number.isFinite(x) || !Number.isFinite(z) || x < GARDEN_BOUNDS.minX || x > GARDEN_BOUNDS.maxX || z < GARDEN_BOUNDS.minZ || z > GARDEN_BOUNDS.maxZ) return false;
   if (onStructure(x, z)) return true;
   if (lakeSigned(x, z) < 0.25) return false;
+  if (Math.hypot(x - LAKE.x, z - LAKE.z) <= GARDEN_WALK_RADIUS) return true;
   if (insideIsland(x, z) || insideGateYard(x, z) || insideGardenPhotoZone(x, z)) return true;
-  return nearestOnTrail(x, z, GARDEN_POLYLINES).distance <= TRAIL_WALK_HALF;
+  // Grass around each shore seat stays walkable without adding a separate ground disk.
+  if (GARDEN_POND_BENCHES.some(bench => Math.hypot(x - bench.x, z - bench.z) <= 2.6)) return true;
+  return nearestOnTrail(x, z, WALK_POLYLINES).distance <= TRAIL_WALK_HALF;
 }
 
 /** 걷기 범위를 벗어나면 가장 가까운 허용 지점으로 미끄러진다 (멈추지 않고). 물로는 절대 들어가지 않는다. */
 export function resolveGardenWalk(x: number, z: number): [number, number] {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return [GARDEN_SPAWN.x, GARDEN_SPAWN.z];
   if (onGardenGround(x, z)) return [x, z];
   const candidates: [number, number][] = [];
-  const near = nearestOnTrail(x, z, GARDEN_POLYLINES);
+  const fromLakeX = x - LAKE.x, fromLakeZ = z - LAKE.z;
+  const angle = Math.atan2(fromLakeZ, fromLakeX);
+  const ring = GARDEN_WALK_RADIUS - .01, shore = lakeRadiusAt(angle) + .3;
+  // Glide along the lawn boundary or nearest shore instead of jumping back onto a narrow path.
+  candidates.push([LAKE.x + Math.cos(angle) * ring, LAKE.z + Math.sin(angle) * ring]);
+  candidates.push([LAKE.x + Math.cos(angle) * shore, LAKE.z + Math.sin(angle) * shore]);
+  for (const bench of GARDEN_POND_BENCHES) {
+    const dx = x - bench.x, dz = z - bench.z, distance = Math.hypot(dx, dz) || 1;
+    const scale = Math.min(1, 2.58 / distance);
+    candidates.push([bench.x + dx * scale, bench.z + dz * scale]);
+  }
+  const near = nearestOnTrail(x, z, WALK_POLYLINES);
   const scale = (TRAIL_WALK_HALF - 0.01) / (near.distance || 1);
   candidates.push([near.x + (x - near.x) * scale, near.z + (z - near.z) * scale]);
-  for (const line of GARDEN_POLYLINES) {
+  for (const line of WALK_POLYLINES) {
     const hit = nearestOnTrail(x, z, [line]);
     const s = (TRAIL_WALK_HALF - 0.01) / (hit.distance || 1);
     candidates.push([hit.x + (x - hit.x) * s, hit.z + (z - hit.z) * s]);
@@ -265,13 +301,14 @@ export function resolveGardenWalk(x: number, z: number): [number, number] {
   candidates.push([bridge.x + (x - bridge.x) * Math.min(1, bs), bridge.z + (z - bridge.z) * Math.min(1, bs)]);
   const { lx, lz } = hallLocal(x, z);
   const depth = HALL.backZ - HALL.glassZ;
-  candidates.push([HALL.x + clamp(lx, -HALL.halfX + 0.45, HALL.halfX - 0.45), HALL.glassZ + clamp(lz, 0.55, depth - 0.45)]);
+  if (hallFloorHeight(x, z) !== null) candidates.push([HALL.x + clamp(lx, -HALL.halfX + 0.45, HALL.halfX - 0.45), HALL.glassZ + clamp(lz, 0.55, depth - 0.45)]);
   for (const side of [-1, 1]) {
     candidates.push([HALL.x + side * clamp(Math.abs(lx), HALL.halfX - 0.45, HALL.halfX + HALL_DOOR_RAMP), HALL.glassZ + clamp(lz, HALL.doorZ - HALL.glassZ - HALL.doorHalf + 0.05, HALL.doorZ - HALL.glassZ + HALL.doorHalf - 0.05)]);
   }
   let best: [number, number] | null = null, bestDistance = Infinity;
   for (const candidate of candidates) {
     if (!onGardenGround(candidate[0], candidate[1])) continue;
+    if (insideHall(candidate[0], candidate[1]) && hallFloorHeight(x, z) === null) continue;
     const distance = Math.hypot(x - candidate[0], z - candidate[1]);
     if (distance < bestDistance) { best = candidate; bestDistance = distance; }
   }
@@ -445,11 +482,19 @@ export const GARDEN_WILLOWS: readonly Planting[] = (() => {
     const s = loopSample(f);
     let x = s.x + s.nx * 3.1, z = s.z + s.nz * 3.1;
     if (lakeSigned(x, z) < 1.1) { x = s.x - s.nx * 2.2; z = s.z - s.nz * 2.2; }
+    // Leave the seated view open: hanging branches belong beside the bench, away from its camera.
+    const nearView = GARDEN_POND_BENCHES.find(bench => Math.hypot(x - (bench.x - bench.fx * 3.8), z - (bench.z - bench.fz * 3.8)) < 3.2);
+    if (nearView) { x += nearView.fz * 5.2; z -= nearView.fx * 5.2; }
     if (onStructure(x, z) || insideHall(x, z, 3)) continue;
     out.push({ x, z, y: GROUND_Y, yaw: rand() * Math.PI * 2, scale: 0.85 + rand() * 0.35, seed: rand() });
   }
   return out;
 })();
+export const GARDEN_OBSTACLES: readonly { x: number; z: number; r: number }[] = [
+  ...POST_LOCAL.map(([lx, lz]) => ({ ...gardenPavilionWorld(ISLAND_PAVILION, lx, lz), r: 0.16 })),
+  ...GARDEN_WILLOWS.map(tree => ({ x: tree.x, z: tree.z, r: .3 * tree.scale })),
+];
+
 /** 석등 24개: 산책로 호수 쪽 1.9 m */
 export const GARDEN_LANTERNS: readonly Planting[] = (() => {
   const out: Planting[] = [];

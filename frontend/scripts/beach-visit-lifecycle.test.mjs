@@ -17,6 +17,9 @@ for (const [name, path] of Object.entries({ scene: "components/beach/BeachScene.
   roomMusic: "lib/beach/room-music.ts" })) {
   sources[name] = compile(await readFile(new URL(`../${path}`, import.meta.url), "utf8"));
 }
+const cloudLayout = { exports: {} };
+vm.runInNewContext(compile(await readFile(new URL("../lib/beach/cloud-spa-layout.ts", import.meta.url), "utf8")), cloudLayout);
+const cloudSeats = cloudLayout.exports.CLOUD_SPA_SEATS;
 const plain = value => JSON.parse(JSON.stringify(value));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 function storage(values = new Map()) {
@@ -66,22 +69,39 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     constructor(canvas, options) {
       this.options = options; this.self = { ...options.spawn, moving: false };
       this.camera = { view: options.view, yaw: options.spawn.yaw, pitch: 0.07, orbitYaw: options.spawn.yaw, restSpot: null };
+      this.isPavilionSeated = false;
+      this.pavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "", kind: "pool" };
       this.isLying = false; this.isBenchSeated = false; this.onsenState = { sitting: false, floating: false };
       this.daylightNow = { hour: 12, deepNight: 0 }; this.events = []; engines.push(this);
+      this.bunkerId = null; this.transitionVersion = 0;
+      this.bunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false,
+        seated: false, spotId: null, occupied: 0, capacity: 6, available: false };
     }
     getSelf() { return { ...this.self }; }
+    getPavilionState() { return this.pavilionState; }
+    setPavilionState(value) { this.pavilionState = { ...this.pavilionState, ...value }; this.isPavilionSeated = this.pavilionState.seated; this.options.handlers.onPavilionChange(this.pavilionState); }
+    applyPavilionRest(value) {
+      if (value.spotId?.startsWith("cloud-") || this.isPavilionSeated) {
+        Object.assign(this.self, value);
+        this.setPavilionState({ seated: value.pose === "sitting", near: true, available: true, spotId: value.spotId ?? this.pavilionState.spotId });
+      }
+    }
     getContinuityView() { return { ...this.camera }; }
     restoreVisit(spawn, rest, camera, keepLocal = false) {
       this.events.push(["restore", plain(spawn), rest && plain(rest), camera && plain(camera), keepLocal]);
       if (!keepLocal) Object.assign(this.self, spawn);
       if (rest && rest.pose !== "standing") Object.assign(this.self, rest);
+      if (rest) this.applyPavilionRest(rest);
+      if (rest && "bunkerId" in rest) this.applyBunkerRest(rest);
       if (camera) this.camera = { ...camera };
     }
     whenReady() { return Promise.resolve(); }
     start() { this.events.push(["start"]); }
-    stop() { this.events.push(["stop"]); this.self.moving = false; }
+    stop() { this.events.push(["stop"]); this.self.moving = false; this.transitionVersion++; }
     dispose() { this.events.push(["dispose"]); }
-    setInputPaused() {} setSkin() {} setHourOverride() {} resize() {}
+    setInputPaused(value) { this.inputPaused = value; } setSkin() {} setHourOverride() {} resize() {} cancelAutoWalk() {}
+    setRainOverride(amount) { this.events.push(["rainOverride", amount]); }
+    applyGardenMoments(events, serverTime) { this.events.push(["pond", plain(events), serverTime]); }
     uyuniMusicVolume = 25;
     setUyuniMusicVolume(percent) { this.uyuniMusicVolume = percent; }
     setRoomMusicPlaying(playing) { this.events.push(["musicPriority", playing]); }
@@ -89,7 +109,21 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     applyFireworks() {} select() {} playCare() {}
     applyUyuniMoments(events, serverTime, ownPid) { this.events.push(["moments", plain(events), serverTime, ownPid]); }
     showSparklerDrawing() { this.events.push(["sparklerView"]); }
-    applyRest(value) { this.events.push(["rest", plain(value)]); }
+    applyRest(value) { this.events.push(["rest", plain(value)]); this.applyPavilionRest(value); if ("bunkerId" in value) this.applyBunkerRest(value); }
+    setBunkerState(value) {
+      this.bunkerState = { ...this.bunkerState, ...value }; this.bunkerId = this.bunkerState.bunkerId;
+      this.self.bunkerId = this.bunkerId; this.options.handlers.onBunkerChange(this.bunkerState);
+    }
+    applyBunkerRest(value) {
+      Object.assign(this.self, value);
+      this.setBunkerState({ bunkerId: value.bunkerId ?? null, inside: !!value.bunkerId, seated: value.pose === "sitting",
+        spotId: value.spotId, nearId: value.bunkerId ?? "dawn", ladderNear: value.pose === "standing", sofaNear: value.pose === "sitting" });
+    }
+    async transitionBunker(value) {
+      const version = ++this.transitionVersion; this.events.push(["bunkerTransition", plain(value)]);
+      await this.transitionGate?.promise;
+      if (version === this.transitionVersion) this.applyRest(value);
+    }
     setPlayers(value) { this.events.push(["players", plain(value)]); }
   }
   const env = { window, document, navigator, localStorage, AbortController, AbortSignal, URL, console, Error, crypto: { randomUUID },
@@ -171,6 +205,201 @@ const tick = (request, extra = {}) => ({ sequence: request.body.sequence, server
 const of = (h, path) => h.requests.filter(request => request.path === `/api/beach/${path}`);
 async function joined(h, payload = entry()) { await h.mount(); of(h, "enter")[0].resolve(payload); await h.flush(); return h.engines[0]; }
 
+function bunkerControls(h) {
+  let controls;
+  walkElements(h.tree, node => { if (node.props.state?.capacity === 6 && typeof node.props.onAction === "function") controls = node.props; });
+  return controls;
+}
+const bunkerArrival = { pose: "standing", spotId: null, slot: null, x: -12, z: 17.6, yaw: Math.PI, bunkerId: "dawn" };
+async function nearBunker(h, engine) {
+  engine.setBunkerState({ nearId: "dawn", name: "새벽 쉼터" }); await h.flush();
+}
+
+test("bunker entry flushes position, consumes its own sequence and waits for both server and ladder before unlocking", async () => {
+  const h = harness(), engine = await joined(h, entry({ bunkerEnabled: true, ...moments(h.now), fireworksControl: true })); await nearBunker(h, engine);
+  assert.ok(momentControls(h), "outdoor light activities remain available beside the hatch");
+  engine.transitionGate = deferred();
+  bunkerControls(h).onAction("enter"); await h.flush();
+  const pose = of(h, "tick").at(-1);
+  assert.equal(pose.body.bunkerId, null); assert.equal(of(h, "bunker").length, 0);
+  bunkerControls(h).onAction("enter"); await h.flush();
+  assert.equal(of(h, "tick").length, 1, "a second click cannot take the mutation lane");
+  pose.resolve(tick(pose)); await h.flush();
+  const request = of(h, "bunker").at(-1);
+  assert.deepEqual(request.body, { ticket: "visit-1", action: "enter", bunkerId: "dawn", sequence: pose.body.sequence + 1 });
+  assert.equal(engine.bunkerId, null, "a sent request does not move the visitor indoors");
+  request.resolve(bunkerArrival); await h.flush();
+  assert.equal(bunkerControls(h).busy, "enter"); assert.equal(engine.inputPaused, true);
+  assert.equal(engine.bunkerId, null, "the transition owns the intermediate floor");
+  engine.transitionGate.resolve(); await h.flush();
+  assert.equal(engine.bunkerId, "dawn"); assert.equal(bunkerControls(h).busy, null); assert.equal(engine.inputPaused, false);
+  assert.equal(momentControls(h, false), undefined, "sparklers and lanterns are not offered indoors");
+  engine.setBunkerState({ ladderNear: false, sofaNear: true, available: true }); await h.flush();
+  bunkerControls(h).onAction("sit"); await h.flush();
+  const seatedPose = of(h, "tick").at(-1); assert.equal(seatedPose.body.bunkerId, "dawn");
+  seatedPose.resolve(tick(seatedPose)); await h.flush();
+  const seat = of(h, "rest").at(-1); assert.deepEqual(seat.body, { ticket: "visit-1", action: "sit", spotId: "bunker-dawn-sofa" });
+  seat.resolve({ pose: "sitting", spotId: "bunker-dawn-sofa", slot: 0, x: -17.3, z: 21.2, yaw: -Math.PI / 2, bunkerId: "dawn" }); await h.flush();
+  assert.equal(bunkerControls(h).state.seated, true); assert.equal(bunkerControls(h).busy, null);
+  let view, camera; walkElements(h.tree, node => { if (node.props["aria-keyshortcuts"] === "V") view = node; if (node.props["aria-label"] === "풍경 사진 찍기") camera = node; });
+  assert.ok(view && !view.props.disabled); assert.ok(camera && !camera.props.disabled, "indoor seats retain view and photo controls");
+  await h.unmount();
+});
+
+test("an account change during bunker position synchronization cancels the action and releases its controls", async () => {
+  const h = harness(), engine = await joined(h, entry({ bunkerEnabled: true })); await nearBunker(h, engine);
+  await h.advance(0); of(h, "tick").at(-1).resolve({}, 410); await h.flush();
+  bunkerControls(h).onAction("enter"); await h.flush();
+  const reentry = of(h, "enter").at(-1);
+  reentry.resolve(entry({ bunkerEnabled: true, ticket: "other-account", me: { id: "user-2", pid: "other", nick: "다른 사람", skin: 0 } })); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose)); await h.flush();
+  assert.equal(of(h, "bunker").length, 0); assert.equal(bunkerControls(h).busy, null); assert.equal(engine.inputPaused, false);
+  await h.unmount();
+});
+
+test("bunker capability and rejected entry leave the original floor intact", async () => {
+  const denied = harness(), deniedEngine = await joined(denied); await nearBunker(denied, deniedEngine);
+  bunkerControls(denied).onAction("enter"); await denied.flush(); assert.equal(of(denied, "bunker").length, 0); assert.equal(of(denied, "tick").length, 0);
+  await denied.unmount();
+  const h = harness(), engine = await joined(h, entry({ bunkerEnabled: true })); await nearBunker(h, engine);
+  bunkerControls(h).onAction("enter"); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose)); await h.flush();
+  of(h, "bunker").at(-1).resolve({ error: "사다리 가까이에서 내려갈 수 있어요." }, 409); await h.flush();
+  assert.equal(engine.bunkerId, null); assert.equal(engine.events.filter(e => e[0] === "bunkerTransition").length, 0);
+  assert.equal(bunkerControls(h).busy, null); assert.equal(engine.inputPaused, false); assert.match(h.toasts.at(-1), /사다리/);
+  await h.unmount();
+});
+
+test("a hidden-page bunker acknowledgement cannot change floors; authenticated standing resume restores the server floor", async () => {
+  const h = harness(), engine = await joined(h, entry({ bunkerEnabled: true })); await nearBunker(h, engine);
+  bunkerControls(h).onAction("enter"); await h.flush();
+  const pose = of(h, "tick").at(-1); pose.resolve(tick(pose)); await h.flush();
+  const pending = of(h, "bunker").at(-1);
+  await h.visibility(true); assert.equal(of(h, "suspend").at(-1).body.bunkerId, null);
+  pending.resolve(bunkerArrival); await h.flush();
+  assert.equal(engine.events.filter(e => e[0] === "bunkerTransition").length, 0);
+  assert.equal(bunkerControls(h).busy, null);
+  await h.visibility(false); await h.advance(0);
+  const resumed = of(h, "enter").at(-1);
+  resumed.resolve(entry({ bunkerEnabled: true, resumed: true, sequence: 3, spawn: { x: -12, z: 17.6, yaw: Math.PI }, selfRest: bunkerArrival })); await h.flush();
+  assert.equal(engine.bunkerId, "dawn");
+  const poll = of(h, "tick").at(-1); assert.equal(poll.body.bunkerId, "dawn"); poll.resolve(tick(poll, { selfRest: bunkerArrival })); await h.flush();
+  Object.assign(engine.self, { x: -10, z: 20 }); await h.visibility(true);
+  assert.deepEqual(of(h, "suspend").at(-1).body, { ticket: "visit-1", sequence: poll.body.sequence + 1, x: -10, z: 20, yaw: Math.PI, bunkerId: "dawn" });
+  await h.unmount();
+});
+
+const gardenEntry = (h, extra = {}) => entry({ mapId: "garden", serverTime: h.now, pavilionEnabled: true,
+  bounds: { minX: -60, maxX: 60, minZ: -30, maxZ: 100 }, gardenMomentsEnabled: true,
+  gardenMoments: [], gardenMomentCooldowns: { coin: 0, duck: 0 }, ...extra });
+function pondControls(h) {
+  let controls;
+  walkElements(h.tree, node => { if (typeof node.props.onChoose === "function" && node.props.cooldowns?.coin !== undefined) controls = node.props; });
+  return controls;
+}
+const pondSeat = { x: -20.861231898606682, z: 8.73994167589625, yaw: -2.4329663813958953 };
+async function sitByPond(h, engine) {
+  engine.isPavilionSeated = true;
+  Object.assign(engine.self, pondSeat);
+  engine.options.handlers.onPavilionChange({ near: true, seated: true, occupied: 1, capacity: 2, available: true,
+    spotId: "pond-bench-sw", name: "호숫가 벤치 1", kind: "bench" });
+  await h.flush();
+}
+const pondEvent = (time, kind = "coin") => ({ id: randomUUID(), pid: "self", kind, ...pondSeat,
+  startedAt: time, durationMs: kind === "coin" ? 6000 : 90000 });
+const pondReply = (event, serverTime) => ({ event, events: [event], serverTime,
+  cooldowns: { coin: event.kind === "coin" ? event.startedAt + 3000 : 0, duck: event.kind === "duck" ? event.startedAt + 15000 : 0 } });
+
+test("garden rainy-night follows room versions and ordinary presets stop rain before auto restores the weather cycle", async () => {
+  const h = harness({ props: { communityId: "ours", mapId: "garden" } });
+  const engine = await joined(h, gardenEntry(h, { lighting: { mode: "rainy-night", hour: 21, version: 3 } }));
+  const weather = () => engine.events.filter(event => event[0] === "rainOverride").map(event => event[1]);
+  assert.deepEqual(weather(), [.78]);
+  for (const lighting of [{ mode: "night", hour: 20, version: 4 }, { mode: "rainy-night", hour: 21, version: 3 }, { mode: "auto", hour: null, version: 5 }]) {
+    await h.advance(1000);
+    const poll = of(h, "tick").at(-1); poll.resolve(tick(poll, { serverTime: h.now, lighting })); await h.flush();
+  }
+  assert.deepEqual(weather(), [.78, 0, null]);
+  await h.unmount();
+});
+
+test("reentering a reset room clears the previous administrator rain override", async () => {
+  const h = harness({ props: { communityId: "ours", mapId: "garden" } });
+  const engine = await joined(h, gardenEntry(h, { lighting: { mode: "rainy-night", hour: 21, version: 7 } }));
+  await h.visibility(true); await h.visibility(false); await h.advance(0);
+  of(h, "enter").at(-1).resolve(gardenEntry(h, { ticket: "visit-2", lighting: { mode: "auto", hour: null, version: 0 } })); await h.flush();
+  assert.deepEqual(engine.events.filter(event => event[0] === "rainOverride").map(event => event[1]), [.78, null]);
+  await h.unmount();
+});
+
+test("switching pond action after an uncertain response explains the original request retry", async () => {
+  const h = harness({ props: { communityId: "ours", mapId: "garden" } });
+  const engine = await joined(h, gardenEntry(h)); await sitByPond(h, engine);
+  pondControls(h).onChoose("coin"); await h.flush();
+  const original = of(h, "garden-moments")[0]; original.resolve({ error: "연결이 잠시 끊겼어요" }, 500); await h.flush();
+  pondControls(h).onChoose("duck"); await h.flush();
+  const retry = of(h, "garden-moments").at(-1);
+  assert.equal(retry.body.kind, "coin"); assert.equal(retry.body.requestId, original.body.requestId);
+  assert.equal(h.toasts.at(-1), "앞서 던진 동전을 먼저 확인할게요.");
+  retry.resolve(pondReply(pondEvent(h.now), h.now)); await h.flush();
+  assert.ok(h.toasts.at(-1).includes("오리는 다시 눌러"));
+  await h.unmount();
+});
+
+test("pond controls exist only at confirmed two-person benches and repeated taps launch once", async () => {
+  const h = harness({ props: { communityId: "ours", mapId: "garden" } });
+  const engine = await joined(h, gardenEntry(h));
+  assert.equal(pondControls(h), undefined);
+  await sitByPond(h, engine);
+  pondControls(h).onChoose("coin"); pondControls(h).onChoose("coin"); await h.flush();
+  assert.equal(of(h, "garden-moments").length, 1);
+  assert.equal(pondControls(h).busy, "coin");
+  const event = pondEvent(h.now);
+  of(h, "garden-moments")[0].resolve(pondReply(event, h.now)); await h.flush();
+  assert.equal(pondControls(h).busy, null);
+  assert.equal(pondControls(h).cooldowns.coin, h.now + 3000);
+  assert.deepEqual(engine.events.filter(event => event[0] === "pond").at(-1)[1], [event]);
+  pondControls(h).onChoose("coin"); await h.flush();
+  assert.equal(of(h, "garden-moments").length, 1, "cooldown is also enforced in the handler");
+  engine.options.handlers.onPavilionChange({ near: true, seated: true, kind: "hall", spotId: "hall-tier-1", capacity: 6 }); await h.flush();
+  assert.equal(pondControls(h), undefined);
+  await h.unmount();
+});
+
+test("a delayed pond launch cannot resurrect scenery removed by a newer snapshot", async () => {
+  const h = harness({ props: { communityId: "ours", mapId: "garden" } });
+  const engine = await joined(h, gardenEntry(h)); await sitByPond(h, engine);
+  const start = h.now, event = pondEvent(start);
+  pondControls(h).onChoose("coin"); await h.flush();
+  const request = of(h, "garden-moments")[0];
+  await h.advance(1000);
+  const poll = of(h, "tick").at(-1);
+  poll.resolve(tick(poll, { serverTime: h.now, gardenMoments: [], gardenMomentCooldowns: { coin: 0, duck: 0 } })); await h.flush();
+  request.resolve(pondReply(event, start)); await h.flush();
+  assert.deepEqual(engine.events.filter(event => event[0] === "pond").at(-1)[1], []);
+  await h.unmount();
+});
+
+test("mobile pond retry retains its UUID and ignores the prior visit's late acknowledgement", async () => {
+  const h = harness({ props: { communityId: "ours", mapId: "garden" } });
+  const engine = await joined(h, gardenEntry(h)); await sitByPond(h, engine);
+  pondControls(h).onChoose("duck"); await h.flush();
+  const original = of(h, "garden-moments")[0], event = pondEvent(h.now, "duck");
+  await h.visibility(true); await h.visibility(false); await h.advance(0);
+  of(h, "enter").at(-1).resolve(gardenEntry(h, { ticket: "visit-2", resumed: true, sequence: 3 })); await h.flush();
+  await sitByPond(h, engine);
+  pondControls(h).onChoose("duck"); await h.flush();
+  const retry = of(h, "garden-moments").at(-1);
+  assert.notEqual(retry, original); assert.equal(retry.body.requestId, original.body.requestId);
+  assert.equal(retry.body.ticket, "visit-2");
+  original.resolve(pondReply(event, h.now)); await h.flush();
+  assert.equal(pondControls(h).busy, "duck");
+  retry.resolve(pondReply(event, h.now)); await h.flush();
+  assert.equal(pondControls(h).busy, null);
+  assert.deepEqual(engine.events.filter(event => event[0] === "pond").at(-1)[1], [event]);
+  await h.unmount();
+});
+
 test("Uyuni background music follows confirmed playback and retains its listener's volume", async () => {
   const h = harness();
   const playing = { trackId: "morning-v1", title: "아침만남겨주고", durationMs: 257520, playing: true, startedAt: h.now, version: 4 };
@@ -196,10 +425,10 @@ test("Uyuni background music follows confirmed playback and retains its listener
 
 const moments = (time, events = [], cooldowns = { sparkler: 0, lantern: 0 }) => ({ serverTime: time, uyuniMomentsEnabled: true,
   uyuniMoments: events, uyuniMomentCooldowns: cooldowns });
-function momentControls(h) {
+function momentControls(h, required = true) {
   let controls;
   walkElements(h.tree, node => { if (typeof node.props.onLantern === "function") controls = node; });
-  assert.ok(controls, "a supported Uyuni visit exposes the actions"); return controls.props;
+  if (required) assert.ok(controls, "a supported Uyuni visit exposes the actions"); return controls?.props;
 }
 
 test("local heart and star confirmations show the handheld drawing and announce Korean shape names", async () => {
@@ -336,7 +565,7 @@ test("mobile suspension saves the live position, cancels polling and never sends
   await h.visibility(true); h.window.emit("pagehide", { persisted: true }); await h.flush();
   assert.equal(pending.init.signal.aborted, true);
   assert.equal(of(h, "leave").length, 0); assert.equal(of(h, "suspend").length, 1);
-  assert.deepEqual(of(h, "suspend")[0].body, { ticket: "visit-1", sequence: 2, x: 8.4, z: 26.7, yaw: 0.8 });
+  assert.deepEqual(of(h, "suspend")[0].body, { ticket: "visit-1", sequence: 2, x: 8.4, z: 26.7, yaw: 0.8, bunkerId: null });
   assert.equal(of(h, "suspend")[0].init.keepalive, true);
   const saved = h.continuity.readBeachVisit("ours", "uyuni");
   assert.equal(saved.ticket, "visit-1"); assert.equal(saved.sequence, 2); assert.deepEqual(plain(saved.camera), engine.camera);
@@ -460,4 +689,61 @@ test("the joystick releases a held pointer on app suspension and does not resume
   h.tree.props.onPointerMove({ pointerId: 7, currentTarget: target, clientX: 90, clientY: 50 }); await h.flush();
   assert.equal(movement.length, count, "the frozen pointer no longer owns the pad");
   await h.unmount(); assert.deepEqual(movement.at(-1), [0, 0]);
+});
+
+
+function buttonWithText(h, text) {
+  let found;
+  walkElements(h.tree, node => {
+    if (node.type !== "button") return;
+    walkElements(node, child => { if (child.type === "strong" && child.props.children === text) found = node; });
+  });
+  return found;
+}
+
+test("cloud spa pool and resort sofa use confirmed shared seats and retain photo/view controls", async () => {
+  for (const [spotId, kind, title, exit] of [
+    ["cloud-pool-1", "pool", "온천에 몸 담그기", "온천에서 나오기"],
+    ["cloud-lounge", "lounge", "소파에 앉기", "소파에서 일어나기"],
+  ]) {
+    const seat = cloudSeats.find(seat => seat.spotId === spotId && seat.slot === 0);
+    const position = { x: seat.x, z: seat.z, yaw: seat.yaw };
+    const h = harness({ props: { communityId: "ours", mapId: "cloudspa" } });
+    const engine = await joined(h, entry({ mapId: "cloudspa", pavilionEnabled: true, restEnabled: false, bedEnabled: false }));
+    engine.setPavilionState({ near: true, available: true, spotId, name: kind === "pool" ? "달빛 온천" : "먹구름 리조트 라운지", kind }); await h.flush();
+    const enter = buttonWithText(h, title); assert.ok(enter && !enter.props.disabled);
+    enter.props.onClick(); await h.flush();
+    assert.equal(of(h, "rest").length, 0, "position is confirmed before the claim");
+    const pose = of(h, "tick").at(-1); pose.resolve(tick(pose)); await h.flush();
+    const request = of(h, "rest").at(-1);
+    assert.deepEqual(request.body, { ticket: "visit-1", action: "sit", spotId });
+    assert.equal(engine.isPavilionSeated, false, "a pending claim cannot sit locally");
+    const seated = { pose: "sitting", spotId, slot: 0, ...position };
+    request.resolve(seated); await h.flush(); assert.equal(engine.isPavilionSeated, true);
+    assert.ok(buttonWithText(h, exit));
+    let photo, view; walkElements(h.tree, node => { if (node.props["aria-label"] === "풍경 사진 찍기") photo = node; if (node.props["aria-keyshortcuts"] === "V") view = node; });
+    assert.ok(photo && !photo.props.disabled); assert.ok(view && !view.props.disabled);
+    await h.visibility(true); await h.visibility(false); await h.advance(0);
+    const resumed = of(h, "enter").at(-1); assert.equal(resumed.body.mapId, "cloudspa");
+    resumed.resolve(entry({ mapId: "cloudspa", pavilionEnabled: true, restEnabled: false, bedEnabled: false, resumed: true, sequence: 3, selfRest: seated })); await h.flush();
+    assert.equal(engine.isPavilionSeated, true, "returning to the app retains the confirmed place");
+    const ongoing = of(h, "tick").at(-1); ongoing.resolve(tick(ongoing, { selfRest: seated })); await h.flush();
+    buttonWithText(h, exit).props.onClick(); await h.flush();
+    const leavingPose = of(h, "tick").at(-1); leavingPose.resolve(tick(leavingPose, { selfRest: seated })); await h.flush();
+    const stand = of(h, "rest").at(-1); assert.equal(stand.body.action, "stand");
+    stand.resolve({ pose: "standing", spotId: null, slot: null, ...position }); await h.flush();
+    assert.equal(engine.isPavilionSeated, false); await h.unmount();
+  }
+});
+
+test("cloud spa cannot claim unavailable or disabled places", async () => {
+  for (const enabled of [false, true]) {
+    const h = harness({ props: { communityId: "ours", mapId: "cloudspa" } });
+    const engine = await joined(h, entry({ mapId: "cloudspa", pavilionEnabled: enabled }));
+    engine.setPavilionState({ near: true, available: false, occupied: 6, spotId: "cloud-pool-1", name: "달빛 온천", kind: "pool" }); await h.flush();
+    assert.equal(buttonWithText(h, "자리 없음").props.disabled, true);
+    engine.options.handlers.onPavilionAction(); await h.flush();
+    assert.equal(of(h, "rest").length, 0); assert.equal(of(h, "tick").length, 0);
+    await h.unmount();
+  }
 });

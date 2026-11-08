@@ -13,6 +13,7 @@ const mapSource = stripTypeScriptTypes(await read("../lib/beach/maps.ts")).repla
 const mapContext = {};
 vm.runInNewContext(`${mapSource}\nglobalThis.api = { MAPS, mapHref };`, mapContext);
 const maps = mapContext.api;
+const mapIds = Object.keys(maps.MAPS), mapCount = mapIds.length;
 const cardSource = await read("../components/beach/BeachCard.tsx");
 const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const deferred = () => { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
@@ -74,10 +75,10 @@ function cardHarness(customCircles) {
 test("visitors with no joined circles render the discovery card without dereferencing an empty count", () => {
   const harness = cardHarness([]), tree = harness.render();
   assert.equal(harness.requests.length, 0);
-  assert.equal(elements(tree, "a").length, 4);
+  assert.equal(elements(tree, "a").length, mapCount);
   assert.ok(elements(tree, "a").every(link => link.props.href === "/c"));
   assert.equal(occupancyLabels(tree).length, 0, "unknown occupancy is never invented as zero");
-  assert.deepEqual(elements(tree,"img").map(image=>image.props.src),["beach","uyuni","bamboo","garden"].map(map=>assets.assetUrl(`/beach/places/${map}-v1.webp`)));
+  assert.deepEqual(elements(tree,"img").map(image=>image.props.src),mapIds.map(map => assets.assetUrl(map === "cloudspa" ? "/cloudspa/art/city-nw-card-v2.webp" : `/beach/places/${map}-v1.webp`)));
 });
 
 test("a pinned private circle precedes the primary circle and respects its four-place limit", async () => {
@@ -85,12 +86,12 @@ test("a pinned private circle precedes the primary circle and respects its four-
     { id: "test", name: "헤송민의 소로우", slug: "test", pinned: true, privateTest: true, spaceCapacity: 4 }]);
   let tree = harness.render();
   assert.equal(elements(tree, "select").length, 0, "the surrounding community selection is not duplicated");
-  assert.equal(harness.requests.length, 4);
+  assert.equal(harness.requests.length, mapCount);
   assert.ok(harness.requests.every(request => request.communityId === "test"));
   assert.ok(elements(tree, "a").every(link => link.props.href.endsWith("communityId=test")));
   harness.requests[0].resolve({ communityId: "test", mapId: "beach", count: 4, capacity: 4 });
   await settle(); tree = harness.render();
-  assert.equal(elements(tree, "a").length, 3, "only the full room loses its enter link");
+  assert.equal(elements(tree, "a").length, mapCount - 1, "only the full room loses its enter link");
   assert.equal(placeButtons(tree)[0].props["data-place"], "beach");
   assert.equal(placeButtons(tree)[0].props.disabled, true);
   assert.equal(occupancyLabels(tree)[0].props.children, 4);
@@ -112,7 +113,7 @@ test("all landscape cards enter directly and keep their live counts and effectiv
   harness.requests[1].resolve({ communityId: "circle / one", mapId: "uyuni", count: 9, capacity: 100 });
   await settle(); tree = harness.render();
   assert.equal(placeButtons(tree)[0].props["data-place"], "beach", "legacy capacity 100 is capped at the current 20-person limit");
-  assert.equal(elements(tree, "a").length, 3);
+  assert.equal(elements(tree, "a").length, mapCount - 1);
   assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [20, 9]);
   assert.ok(elements(tree, "span").some(span => span.props["aria-label"] === "9명, 정원 20명"));
 });
@@ -123,18 +124,18 @@ test("changing communities and refreshing discards late counts and restores unkn
   harness.setCircles([{ id: "new-circle", name: "새 소로우", slug: "new" }]);
   harness.render();
   harness.requests[0].resolve({ communityId: "circle / one", mapId: "beach", count: 20, capacity: 20 });
-  harness.requests[4].resolve({ communityId: "new-circle", mapId: "beach", count: 3, capacity: 20 });
+  harness.requests[mapCount].resolve({ communityId: "new-circle", mapId: "beach", count: 3, capacity: 20 });
   await settle();
   let tree = harness.render();
   assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [3]);
   assert.ok(elements(tree, "a").every(link => link.props.href.endsWith("communityId=new-circle")));
   harness.refresh();
-  harness.requests[5].resolve({ communityId: "new-circle", mapId: "uyuni", count: 20, capacity: 20 });
-  harness.requests[9].resolve({ communityId: "new-circle", mapId: "uyuni", count: 7, capacity: 20 });
-  harness.requests[8].reject(new Error("network unavailable"));
+  harness.requests[mapCount + 1].resolve({ communityId: "new-circle", mapId: "uyuni", count: 20, capacity: 20 });
+  harness.requests[mapCount * 2 + 1].resolve({ communityId: "new-circle", mapId: "uyuni", count: 7, capacity: 20 });
+  harness.requests[mapCount * 2].reject(new Error("network unavailable"));
   await settle(); tree = harness.render();
   assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [7], "failed counts become unknown and the old refresh cannot mark a room full");
-  assert.equal(elements(tree, "a").length, 4);
+  assert.equal(elements(tree, "a").length, mapCount);
   assert.equal(placeButtons(tree).length, 0);
 });
 
@@ -162,14 +163,14 @@ test("reconnection keeps Uyuni and a response from a departed visit only release
     const engine = { restoreVisit() {}, select() {}, getContinuityView: () => ({ view: "first", yaw: 0, pitch: 0.07, orbitYaw: 0, restSpot: null }),
       isLying: false, isBenchSeated: false, onsenState: { sitting: false } };
     const ctx = { communityId: "ours", mapId: "uyuni", enterBeach: (...args) => { requests.push(args); return pending.promise; }, leaveBeach: ticket => left.push(ticket) };
-    for (const name of ["aliveRef", "engineRef", "visitGenerationRef", "requestEpochRef", "resumeRecordRef", "sequenceRef", "blockedRef", "meRef", "pendingCareRef", "careBusyRef", "ticketRef", "lightingRef", "lightingBusyRef", "fireEnabledRef", "restEnabledRef", "bedEnabledRef", "benchEnabledRef", "onsenEnabledRef", "pavilionEnabledRef"]) ctx[name] = { current: null };
+    for (const name of ["aliveRef", "engineRef", "visitGenerationRef", "requestEpochRef", "resumeRecordRef", "sequenceRef", "blockedRef", "meRef", "pendingCareRef", "careBusyRef", "ticketRef", "lightingRef", "lightingBusyRef", "fireEnabledRef", "restEnabledRef", "bedEnabledRef", "benchEnabledRef", "onsenEnabledRef", "pavilionEnabledRef", "bunkerEnabledRef"]) ctx[name] = { current: null };
     ctx.aliveRef.current = true; ctx.engineRef.current = engine; ctx.visitGenerationRef.current = 4;
     ctx.setMusicControl = () => {};
     ctx.applyMusic = () => {};
     ctx.setFireworksFree = value => fireworkState.push(["free", value]);
     ctx.setFireworkTickets = value => fireworkState.push(["tickets", value]);
     ctx.requestEpochRef.current = 8; ctx.sequenceRef.current = 0;
-    for (const name of ["setCareBusy", "resetFireworks", "setFireworksControl", "applyFireworks", "resetMoments", "setMomentsEnabled", "applyMoments", "setLightingBusy", "setLightingOpen", "setLightingControl", "setLighting", "applyLighting", "adoptCharacter", "setCareCapabilities", "setCount", "setCapacity", "setCommunity", "setFireEnabled", "setRestEnabled", "setBedEnabled", "setBenchEnabled", "setOnsenEnabled", "setPavilionEnabled", "applyFire", "rememberVisit"]) ctx[name] = () => {};
+    for (const name of ["setCareBusy", "resetFireworks", "setFireworksControl", "applyFireworks", "resetMoments", "setMomentsEnabled", "applyMoments", "setPondEnabled", "applyPondMoments", "setLightingBusy", "setLightingOpen", "setLightingControl", "setLighting", "applyLighting", "adoptCharacter", "setCareCapabilities", "setCount", "setCapacity", "setCommunity", "setFireEnabled", "setRestEnabled", "setBedEnabled", "setBenchEnabled", "setOnsenEnabled", "setPavilionEnabled", "setBunkerEnabled", "applyFire", "rememberVisit"]) ctx[name] = () => {};
     vm.runInNewContext(compile(`globalThis.run = ${reenter.arguments[0].getText(sceneAst)};`), ctx);
     const result = ctx.run(engine, 4, 8, new AbortController().signal);
     if (depart) ctx.visitGenerationRef.current++;
@@ -196,7 +197,7 @@ function hotelRestHarness({ enabled = true, confirm, sync } = {}) {
     resumeForAction: async () => {}, haptic() {}, showToast: text => notices.push(text),
     scheduleTick: () => calls.push(["poll"]), stopWithError: error => { throw error; },
   };
-  for (const name of ["onsenEnabledRef", "benchEnabledRef", "restEnabledRef", "pavilionEnabledRef", "skyBusyRef", "woodBusyRef", "powderBusyRef", "blockedRef", "skyOperationRef", "visitGenerationRef", "aliveRef", "restMutationRef", "inFlightRef", "ticketRef", "meRef", "bedEnabledRef"]) ctx[name] = { current: null };
+  for (const name of ["onsenEnabledRef", "benchEnabledRef", "restEnabledRef", "pavilionEnabledRef", "skyBusyRef", "woodBusyRef", "powderBusyRef", "pondBusyRef", "bunkerBusyRef", "blockedRef", "skyOperationRef", "visitGenerationRef", "aliveRef", "restMutationRef", "inFlightRef", "ticketRef", "meRef", "bedEnabledRef"]) ctx[name] = { current: null };
   ctx.aliveRef.current = true; ctx.bedEnabledRef.current = enabled;
   ctx.skyOperationRef.current = 0; ctx.visitGenerationRef.current = 4;
   ctx.meRef.current = { id: "me" }; ctx.ticketRef.current = "uyuni-visit";
@@ -256,7 +257,7 @@ test("hotel bed and sofa context remain available in Uyuni without changing the 
     assert.equal(context.result.viewLabel, "바다 보기");
   }
   const clicks = [], context = { exports: {}, require: () => jsxRuntime, mapId: "uyuni", rest: { shelterName: "노을 호텔", seated: false },
-    lying: false, bench: { seated: false }, onsenResting: false, skyPhase: null, woodBusy: false, powderPhase: null,
+    lying: false, bunker: { inside: false }, bunkerBusy: null, bench: { seated: false }, onsenResting: false, skyPhase: null, woodBusy: false, powderPhase: null,
     styles: new Proxy({}, { get: (_, key) => String(key) }), IconSeat: "i", IconStand: "i",
     engineRef: { current: { select() {}, toggleRest: () => clicks.push("sit") } } };
   vm.runInNewContext(compile(`globalThis.tree = ${sofa.getText(sceneAst)};`), context);
@@ -273,4 +274,32 @@ test("Uyuni is a private fullscreen route and retains the community from the URL
   assert.match(tabbar, /path === "\/uyuni"/);
   assert.match(sceneSource, /mapId === "beach" && fireEnabled && <div className=\{styles\.fireContext\}/, "Uyuni never mounts campfire controls");
   assert.match(lifecycle.arguments[0].getText(sceneAst), /new BeachEngine\(canvas,\s*\{\s*mapId,/);
+});
+
+
+test("cloud spa photo keeps private membership, independent occupancy and direct entry", async () => {
+  const harness = cardHarness([{ id: "private / two", name: "우리 둘", slug: "two", pinned: true, privateTest: true, spaceCapacity: 4 }]);
+  let tree = harness.render();
+  const cloudLink = () => elements(tree, "a").find(link => link.props["data-place"] === "cloudspa");
+  assert.equal(cloudLink().props.href, "/cloudspa?communityId=private%20%2F%20two");
+  assert.equal(elements(cloudLink(), "img")[0].props.src, assets.assetUrl("/cloudspa/art/city-nw-card-v2.webp"));
+  assert.equal(harness.requests.filter(request => request.mapId === "cloudspa").length, 1);
+  harness.requests.find(request => request.mapId === "beach").resolve({ communityId: "private / two", mapId: "beach", count: 4, capacity: 4 });
+  await settle(); tree = harness.render(); assert.ok(cloudLink(), "a full beach does not disable the cloud spa");
+  harness.requests.find(request => request.mapId === "cloudspa").resolve({ communityId: "private / two", mapId: "cloudspa", count: 4, capacity: 4 });
+  await settle(); tree = harness.render(); assert.equal(cloudLink(), undefined);
+  const full = placeButtons(tree).find(button => button.props["data-place"] === "cloudspa");
+  assert.equal(full.props.disabled, true);
+  assert.equal(occupancyLabels(full)[0].props.children, 4);
+});
+
+
+test("cloud spa is a private fullscreen route with the current capacity and shared entry cards", async () => {
+  const [page, layout, tabs, home, circle] = await Promise.all([read("../app/cloudspa/page.tsx"), read("../app/cloudspa/layout.tsx"), read("../components/TabBar.tsx"), read("../app/c/home/page.tsx"), read("../app/c/[slug]/page.tsx")]);
+  assert.ok(page.includes('search.get("communityId")'));
+  assert.ok(page.includes('communityId={communityId} mapId="cloudspa"'));
+  assert.ok(layout.includes('robots: { index: false, follow: false }'));
+  assert.ok(layout.includes("최대 20명"));
+  assert.ok(tabs.includes('path === "/cloudspa"'));
+  assert.ok(home.includes('<BeachCard circles=')); assert.ok(circle.includes('<BeachCard circles='));
 });

@@ -3,6 +3,8 @@ import type { Daylight } from "./daylight";
 import { UYUNI_SURFACE, UYUNI_WATER_FRAGMENT, UYUNI_WATER_VERTEX, uyuniDryAmount } from "./uyuni-shader";
 import { buildUyuniHotels } from "./uyuni-hotels";
 import { uyuniHotelFloorHeight } from "./uyuni-hotel-layout";
+import { buildUyuniBunkers } from "./uyuni-bunkers";
+import type { UyuniBunkerId } from "./uyuni-bunker-layout";
 
 export interface UyuniWalker { x: number; z: number; moving: boolean }
 export type UyuniSkyUniforms = Record<string, THREE.IUniform>;
@@ -21,6 +23,8 @@ export class UyuniWorld {
   private lastTime: number | null = null;
   private disposed = false;
   private hotels: ReturnType<typeof buildUyuniHotels> | null = null;
+  private bunkers: ReturnType<typeof buildUyuniBunkers> | null = null;
+  private indoor = false;
 
   constructor(scene: THREE.Scene, skyUniforms: UyuniSkyUniforms, sandTexture: THREE.Texture, hotelTextures?: { wood: THREE.Texture; cotton: THREE.Texture }) {
     const material = new THREE.ShaderMaterial({
@@ -43,7 +47,18 @@ export class UyuniWorld {
     this.sun.position.set(20, 50, -30);
     this.sun.castShadow = false;
     scene.add(this.surface, this.fill, this.sun);
-    if (hotelTextures) this.hotels = buildUyuniHotels(scene, hotelTextures);
+    if (hotelTextures) {
+      this.hotels = buildUyuniHotels(scene, hotelTextures);
+      this.bunkers = buildUyuniBunkers(scene, hotelTextures);
+    }
+  }
+
+  setBunkerActive(id: UyuniBunkerId | null) {
+    this.indoor = id !== null;
+    this.surface.visible = this.fill.visible = this.sun.visible = !this.indoor;
+    if (this.hotels) this.hotels.root.visible = !this.indoor;
+    this.bunkers?.setActive(id);
+    this.hasStep = false;
   }
 
   applyDaylight(d: Daylight) {
@@ -63,7 +78,7 @@ export class UyuniWorld {
   }
 
   update(time: number, camera: THREE.Camera, walker?: UyuniWalker) {
-    if (this.disposed || !Number.isFinite(time)) return;
+    if (this.disposed || this.indoor || !Number.isFinite(time)) return;
     const uniforms = this.surface.material.uniforms;
     if (this.lastTime !== null && time < this.lastTime) {
       for (const ripple of this.ripples) ripple.w = 0;
@@ -127,6 +142,8 @@ export class UyuniWorld {
     this.disposed = true;
     this.hotels?.dispose();
     this.hotels = null;
+    this.bunkers?.dispose();
+    this.bunkers = null;
     this.surface.removeFromParent();
     this.fill.removeFromParent();
     this.sun.removeFromParent();

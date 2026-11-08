@@ -124,18 +124,27 @@ public class BeachService {
 
     public BeachRoom.TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind,
                                      String character, boolean hugAllowed, Long sequence) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, character, hugAllowed, sequence, null);
+    }
+
+    public BeachRoom.TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind,
+                                     String character, boolean hugAllowed, Long sequence, String bunkerId) {
         BeachRoom.validateSequence(sequence);
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
         if (binding == null) return null;
-        BeachRoom.TickResult result = binding.room().tick(ticket, x, z, yaw, moving, careTo, careKind, character, hugAllowed, sequence);
+        BeachRoom.TickResult result = binding.room().tick(ticket, x, z, yaw, moving, careTo, careKind, character, hugAllowed, sequence, bunkerId);
         if (result == null) return null;
         return result.withFire(binding.tickFire(fire, clock));
     }
 
     public void suspend(String ticket, double x, double z, double yaw, Long sequence) {
+        suspend(ticket, x, z, yaw, sequence, null);
+    }
+
+    public void suspend(String ticket, double x, double z, double yaw, Long sequence, String bunkerId) {
         BeachRoom.validateSequence(sequence);
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
-        if (binding != null) binding.room().suspend(ticket, x, z, yaw, sequence);
+        if (binding != null) binding.room().suspend(ticket, x, z, yaw, sequence, bunkerId);
     }
 
     public void leave(String ticket) {
@@ -148,6 +157,13 @@ public class BeachService {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
         if (binding == null) throw ApiException.gone(BeachController.GONE);
         return binding.room().rest(ticket, action, spotId);
+    }
+
+    public BeachRoom.RestPresence bunker(String ticket, String userId, String action, String bunkerId, Long sequence) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().bunker(ticket, userId, action, bunkerId, sequence);
     }
 
     public int count(String communityId) {
@@ -180,8 +196,9 @@ public class BeachService {
     }
 
     public BeachRoom.Lighting lighting(String communityId, String mapId) {
-        RoomBinding binding = rooms.get(new RoomKey(communityId, BeachMap.from(mapId)));
-        return binding == null ? BeachRoom.AUTO_LIGHTING : binding.room().lighting();
+        BeachMap map = BeachMap.from(mapId);
+        RoomBinding binding = rooms.get(new RoomKey(communityId, map));
+        return binding == null ? BeachRoom.defaultLighting(map) : binding.room().lighting();
     }
 
     BeachRoom.MusicState music(String communityId, String mapId) {
@@ -215,6 +232,19 @@ public class BeachService {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
         if (binding == null) throw ApiException.gone(BeachController.GONE);
         return binding.room().uyuniMoments(ticket);
+    }
+
+    public BeachGardenMoments.State gardenMoments(String ticket) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().gardenMoments(ticket);
+    }
+
+    public BeachGardenMoments.Launch launchGardenMoment(String ticket, String userId, String requestId, String kind, Set<String> excluded) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().launchGardenMoment(ticket, userId, requestId, kind, excluded);
     }
 
     public BeachUyuniMoments.Launch launchUyuniMoment(String ticket, String userId, String requestId,

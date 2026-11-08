@@ -10,9 +10,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class BeachCapacityTest {
-    @Test void allFourMapsCapLegacyOrdinaryRoomsAtTwentyAndKeepSmallerPrivateLimits() {
+    @Test void allMapsCapLegacyOrdinaryRoomsAtTwentyAndKeepSmallerPrivateLimits() {
         var service = new BeachService(() -> 1_000_000L, mock(BeachFireService.class));
-        for (String map : new String[]{"beach", "uyuni", "bamboo", "garden"}) {
+        for (String map : new String[]{"beach", "uyuni", "bamboo", "garden", "cloudspa"}) {
             for (int limit : new int[]{2, 4}) {
                 String community = "private-" + limit;
                 var first = service.enter(community, "owner", "나", Set.of(), null, map, null, 0L, limit).presence();

@@ -1,0 +1,40 @@
+import { IconSmile } from "@/components/Icons";
+import type { BunkerState } from "@/lib/beach/engine";
+import styles from "./beach.module.css";
+
+export type BunkerAction = "enter" | "exit" | "sit" | "stand";
+
+function LadderIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+    <path d="M7 3v18M17 3v18M7 6h10M7 11h10M7 16h10" />
+  </svg>;
+}
+
+/** Uses the shared nearby-actions column, leaving the fixed left thumb pad clear. */
+export default function UyuniBunkerControls({ state, enabled, busy, disabled, onAction }: {
+  state: BunkerState; enabled: boolean; busy: BunkerAction | null; disabled: boolean;
+  onAction: (action: BunkerAction) => void;
+}) {
+  const ladder = !state.inside ? state.nearId !== null : state.ladderNear && !state.seated;
+  const sofa = state.inside && (state.sofaNear || state.seated);
+  return <>
+    {ladder && <button type="button" className={styles.contextButton} disabled={disabled || !enabled || busy !== null}
+      aria-keyshortcuts="E" onClick={() => onAction(state.inside ? "exit" : "enter")}>
+      <span className={styles.contextIcon}><LadderIcon /></span>
+      <span className={styles.contextCopy}>
+        <strong>{busy === "enter" ? "천천히 내려가는 중…" : busy === "exit" ? "천천히 올라가는 중…" : state.inside ? "사다리 올라가기" : "사다리 내려가기"}</strong>
+        <small>{!enabled ? "쉬어갈 공간을 준비하고 있어요" : state.inside ? "호텔 데크로 돌아가요" : `${state.name || "호텔"} · 아래층의 아늑한 쉼터`}</small>
+      </span>
+    </button>}
+    {sofa && <button type="button" className={styles.contextButton}
+      disabled={disabled || !enabled || busy !== null || (!state.seated && !state.available)}
+      aria-pressed={state.seated} aria-keyshortcuts={ladder ? undefined : "E"} onClick={() => onAction(state.seated ? "stand" : "sit")}>
+      <span className={styles.contextIcon}><IconSmile /></span>
+      <span className={styles.contextCopy}>
+        <strong>{busy === "stand" ? "일어나는 중…" : busy === "sit" ? "자리 잡는 중…" : state.seated ? "소파에서 일어나기" : state.available ? "소파에 앉기" : "소파 자리가 찼어요"}</strong>
+        <small>{state.seated ? "포근한 소파에 기대어 쉬는 중" : "함께 앉아 잠시 쉬어가요"}</small>
+      </span>
+      <span className={styles.contextCount} aria-label={`소파 ${state.capacity}석 중 ${state.occupied}석 사용 중`}>{state.occupied}/{state.capacity}</span>
+    </button>}
+  </>;
+}

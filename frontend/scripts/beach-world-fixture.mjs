@@ -49,6 +49,16 @@ vm.runInNewContext(`${hotelSource}\nglobalThis.api = {
   uyuniHotelForSpot, uyuniHotelBedSlot, claimedUyuniHotelBed, nearbyUyuniHotel,
   uyuniHotelFloorHeight, uyuniHotelCeilingHeight
 };`, hotelContext);
+const bunkerSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-bunker-layout.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const bunkerContext = { ...hotelContext.api };
+vm.runInNewContext(`${bunkerSource}\nglobalThis.api = {
+  UYUNI_BUNKERS, BUNKER_FLOOR_Y, BUNKER_CEILING_Y, BUNKER_PLAYER_INSET,
+  BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, BUNKER_INTERACTION_REACH, BUNKER_COLLIDERS,
+  bunkerById, bunkerForSpot, bunkerSeat, bunkerColliders, claimedBunkerSeat,
+  nearbyBunkerEntry, nearbyBunkerLadder, nearbyBunkerSofa
+};`, bunkerContext);
 const motionSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/remote-motion.ts", import.meta.url), "utf8"))
   .replace(/\bexport\s+(?=class\b)/g, "");
 const motionContext = {};
@@ -75,4 +85,13 @@ vm.runInNewContext(`${gardenSource}\nglobalThis.api = {
   claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, nearbyGardenPavilion, pierEnd, resolveGardenWalk,
   isWater, onGardenGround, boatPoseAt, lakeSigned, insideHall
 };`, gardenContext);
-export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...assets };
+const cloudSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/cloud-spa-layout.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const cloudContext = {};
+vm.runInNewContext(`${cloudSource}\nglobalThis.api = {
+  CLOUD_SPA_BOUNDS, CLOUD_SPA_SPAWN, CLOUD_SPA_GROUND_Y, CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_PLACES,
+  CLOUD_SPA_SEATS, CLOUD_SPA_SEAT_REACH, CLOUD_SPA_WALLS, cloudSpaFloorHeight, cloudSpaCeilingHeight, cloudSpaStairRouteX,
+  resolveCloudSpaWalk, cloudSpaForSpot, cloudSpaSeat, claimedCloudSpaSeat, nearbyCloudSpaPlace
+};`, cloudContext);
+export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...assets };

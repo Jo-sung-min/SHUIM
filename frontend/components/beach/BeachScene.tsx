@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { assetCssUrl } from "@/lib/assets";
 import { MAPS, type MapId } from "@/lib/beach/maps";
-import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode, type BoatRideState } from "@/lib/beach/engine";
-import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
+import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode, type BoatRideState, type BunkerState } from "@/lib/beach/engine";
+import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, enterBeachBunker, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
 import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
 import { ONSEN_SEATS_PER_BATH } from "@/lib/beach/onsen-rest";
@@ -22,6 +22,8 @@ import RoomLightingControls from "./RoomLightingControls";
 import RoomFireworksControls from "./RoomFireworksControls";
 import FireworkTicketSheet from "@/components/FireworkTicketSheet";
 import UyuniMomentControls from "./UyuniMomentControls";
+import UyuniBunkerControls, { type BunkerAction } from "./UyuniBunkerControls";
+import GardenPondControls from "./GardenPondControls";
 import BambooFestivalControls from "./BambooFestivalControls";
 import BambooBulletin from "./BambooBulletin";
 import type { BambooNote } from "@/lib/beach/bamboo-notes";
@@ -33,6 +35,7 @@ import { readRoomMusic, type RoomMusicState } from "@/lib/beach/room-music";
 import { readBeachReturn } from "@/lib/beach/return";
 import { chooseBambooToy, type BambooFestivalState, type BambooToy } from "@/lib/beach/net";
 import { launchUyuniMoment, type UyuniMoment, type UyuniMomentInput, type UyuniMomentCooldowns } from "@/lib/beach/net";
+import { beachGardenMoment, type GardenMoment, type GardenMomentKind, type GardenMomentCooldowns } from "@/lib/beach/net";
 import { SPARKLER_DRAW_END } from "@/lib/beach/sparkler-timing";
 import styles from "./beach.module.css";
 
@@ -42,6 +45,7 @@ const INTRO_VISIBLE_MS = 4000;
 const INTRO_FADE_MS = 700;
 const EMPTY_ONSEN: OnsenState = { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
 const EMPTY_PAVILION: PavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "", kind: "pavilion" };
+const EMPTY_BUNKER: BunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false, seated: false, spotId: null, occupied: 0, capacity: 6, available: false };
 type SkyPhase = "walking" | "joining" | "standing";
 
 /** 마지막에 고른 시점 (기기별로 기억) */
@@ -101,6 +105,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const benchActionRef = useRef<() => void>(() => {});
   const pavilionActionRef = useRef<() => void>(() => {});
   const boatActionRef = useRef<() => void>(() => {});
+  const bunkerActionRef = useRef<() => void>(() => {});
+  const bunkerEnabledRef = useRef(false);
+  const bunkerBusyRef = useRef<BunkerAction | null>(null);
+  const bunkerOperationRef = useRef(0);
+  const bunkerInsideRef = useRef(false);
   const rainRef = useRef(0);
   const captureBusyRef = useRef(false);
   const cameraTriggerRef = useRef<HTMLButtonElement>(null);
@@ -123,6 +132,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const momentOperationRef = useRef(0);
   const momentRequestRef = useRef<{ id: string; input: UyuniMomentInput } | null>(null);
   const momentClockRef = useRef<{ time: number; events: UyuniMoment[]; cooldowns: UyuniMomentCooldowns }>({ time: -1, events: [], cooldowns: { sparkler: 0, lantern: 0 } });
+  const pondBusyRef = useRef(false);
+  const pondOperationRef = useRef(0);
+  const pondRequestRef = useRef<{ id: string; kind: GardenMomentKind } | null>(null);
+  const pondClockRef = useRef<{ time: number; events: GardenMoment[]; cooldowns: GardenMomentCooldowns }>({ time: -1, events: [], cooldowns: { coin: 0, duck: 0 } });
 
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
@@ -162,6 +175,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const musicSnapshotRef = useRef<typeof musicSnapshot>(null);
   const [fireworksDeadline, setFireworksDeadline] = useState(0);
   const [momentsEnabled, setMomentsEnabled] = useState(false);
+  const [pondEnabled, setPondEnabled] = useState(false);
+  const [pondBusy, setPondBusy] = useState<GardenMomentKind | null>(null);
+  const [pondDeadlines, setPondDeadlines] = useState<GardenMomentCooldowns>({ coin: 0, duck: 0 });
   const [festival, setFestival] = useState<BambooFestivalState>();
   const [toyBusy, setToyBusy] = useState(false);
   const [flightUntil, setFlightUntil] = useState(0);
@@ -196,6 +212,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [pavilionEnabled, setPavilionEnabled] = useState(false);
   const [pavilion, setPavilion] = useState<PavilionState>(EMPTY_PAVILION);
   const [boat, setBoat] = useState<BoatRideState | null>(null);
+  const [bunker, setBunker] = useState<BunkerState>(EMPTY_BUNKER);
+  const [bunkerEnabled, setBunkerEnabled] = useState(false);
+  const [bunkerBusy, setBunkerBusy] = useState<BunkerAction | null>(null);
   const [rain, setRain] = useState(0);
   const [photo, setPhoto] = useState<BeachPhoto | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -261,6 +280,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     const engine = engineRef.current;
     if (!engine) return;
     engine.setHourOverride(next.mode === "auto" ? next.version === 0 ? previewHourRef.current : null : next.hour);
+    engine.setRainOverride(next.mode === "rainy-night" ? .78 : next.mode === "auto"
+      ? next.version === 0 ? rainOverride(window.location.search) : null : 0);
     setTimeLabel(hourLabel(engine.daylightNow.hour));
     setNightControls(engine.daylightNow.deepNight > 0.5);
   }, []);
@@ -302,6 +323,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   useEffect(() => { if (hudHidden || photo || phase !== "ready") setMenuOpen(false); }, [hudHidden, photo, phase]);
 
   const resetMoments = useCallback((preserveRequest = false) => {
+    pondOperationRef.current++;
+    pondBusyRef.current = false;
+    if (!preserveRequest) pondRequestRef.current = null;
+    pondClockRef.current = { time: -1, events: [], cooldowns: { coin: 0, duck: 0 } };
+    setPondEnabled(false); setPondBusy(null); setPondDeadlines({ coin: 0, duck: 0 });
     momentOperationRef.current++;
     momentBusyRef.current = false;
     if (!preserveRequest) momentRequestRef.current = null;
@@ -326,12 +352,29 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     }
   }, []);
 
+  const applyPondMoments = useCallback((events: GardenMoment[] | undefined, serverTime: number | undefined, cooldowns: GardenMomentCooldowns | undefined, append = false) => {
+    if (!Number.isSafeInteger(serverTime) || !cooldowns) return;
+    const time = serverTime!, previous = pondClockRef.current;
+    if (time < previous.time) return;
+    const live = new Map((append || time === previous.time ? previous.events : []).map(event => [event.id, event]));
+    for (const event of events ?? []) live.set(event.id, event);
+    const current = [...live.values()].filter(event => event.startedAt + event.durationMs > time);
+    const nextCooldowns = time === previous.time
+      ? { coin: Math.max(previous.cooldowns.coin, cooldowns.coin), duck: Math.max(previous.cooldowns.duck, cooldowns.duck) } : cooldowns;
+    engineRef.current?.applyGardenMoments(current, time);
+    pondClockRef.current = { time, events: current, cooldowns: nextCooldowns };
+    if (previous.time < 0 || previous.cooldowns.coin !== nextCooldowns.coin || previous.cooldowns.duck !== nextCooldowns.duck) {
+      const deadline = (until: number) => until > time ? Date.now() + until - time : 0;
+      setPondDeadlines({ coin: deadline(nextCooldowns.coin), duck: deadline(nextCooldowns.duck) });
+    }
+  }, []);
+
   useEffect(() => {
     if (!lightingControl || hudHidden || photo || phase !== "ready" || actionsOpen || characterPickerOpen || powderOpen) setLightingOpen(false);
   }, [lightingControl, hudHidden, photo, phase, actionsOpen, characterPickerOpen, powderOpen]);
 
   useEffect(() => { if (hudHidden || photo || phase !== "ready" || lost || mapId === "uyuni") setFieldOpen(false); }, [hudHidden, photo, phase, lost, mapId]);
-  const controlsPaused = Boolean(photo) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
+  const controlsPaused = Boolean(photo) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
     controlsPausedRef.current = controlsPaused;
@@ -471,6 +514,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setCareBusy(false);
     skyOperationRef.current++;
     skyBusyRef.current = null;
+    bunkerOperationRef.current++;
+    bunkerBusyRef.current = null;
+    setBunkerBusy(null);
     restMutationRef.current = false;
     setSkyPhase(null);
     setRestActionSpot(null);
@@ -532,6 +578,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     resetMoments(sameAccount);
     setMomentsEnabled(entered.uyuniMomentsEnabled === true);
     applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns, false, entered.me.pid);
+    setPondEnabled(entered.gardenMomentsEnabled === true);
+    applyPondMoments(entered.gardenMoments, entered.serverTime, entered.gardenMomentCooldowns);
     lightingRef.current = null;
     lightingBusyRef.current = false;
     setLightingBusy(null); setLightingOpen(false);
@@ -556,13 +604,15 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setOnsenEnabled(onsenEnabledRef.current);
     pavilionEnabledRef.current = entered.pavilionEnabled === true;
     setPavilionEnabled(pavilionEnabledRef.current);
+    bunkerEnabledRef.current = mapId === "uyuni" && entered.bunkerEnabled === true;
+    setBunkerEnabled(bunkerEnabledRef.current);
     // Only the server may preserve a rest slot; a live local walk keeps its most recent position.
     engine.restoreVisit(entered.spawn, entered.selfRest, camera,
       sameAccount && !engine.isLying && !engine.isBenchSeated && !engine.isPavilionSeated && !engine.onsenState.sitting, entered.bounds);
     rememberVisit(true);
     applyFire(entered.fire);
     return true;
-  }, [communityId, mapId, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, applyMoments, resetMoments, rememberVisit, applyFestival, applyMusic]);
+  }, [communityId, mapId, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, applyMoments, resetMoments, applyPondMoments, rememberVisit, applyFestival, applyMusic]);
 
   const runTick = useCallback(async (allowRestSync = false): Promise<boolean> => {
     const engine = engineRef.current;
@@ -605,6 +655,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         z: Math.round(self.z * 100) / 100,
         yaw: Math.round(self.yaw * 1000) / 1000,
         moving: self.moving,
+        bunkerId: self.bunkerId ?? null,
         character: characterRef.current ?? undefined,
         care: care ? { to: care.to, kind: care.kind } : undefined,
       }, controller.signal);
@@ -625,6 +676,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       if (res.music) applyMusic(res.music, res.serverTime);
       applyFireworks(res.fireworks, res.serverTime, res.fireworksCooldownUntil);
       applyMoments(res.uyuniMoments, res.serverTime, res.uyuniMomentCooldowns);
+      applyPondMoments(res.gardenMoments, res.serverTime, res.gardenMomentCooldowns);
       for (const ev of res.events) handleEvent(ev);
       if (care) {
         careBusyRef.current = false;
@@ -671,7 +723,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         scheduleTick();
       }
     }
-  }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire, applyLighting, applyFireworks, applyMoments, applyMusic, rememberVisit]);
+  }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire, applyLighting, applyFireworks, applyMoments, applyPondMoments, applyMusic, rememberVisit]);
   tickRunnerRef.current = runTick;
 
   useEffect(() => {
@@ -728,6 +780,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setBench({ near: false, seated: false, occupied: 0, capacity: 12, available: false });
     onsenEnabledRef.current = false; setOnsenEnabled(false); setOnsen(EMPTY_ONSEN);
     pavilionEnabledRef.current = false; setPavilionEnabled(false); setPavilion(EMPTY_PAVILION);
+    bunkerEnabledRef.current = false; bunkerInsideRef.current = false; setBunkerEnabled(false); setBunker(EMPTY_BUNKER);
+    bunkerOperationRef.current++; bunkerBusyRef.current = null; setBunkerBusy(null);
     setRestActionSpot(null);
     fireTimeRef.current = 0;
     fireLogsRef.current = null;
@@ -771,6 +825,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         setOnsenEnabled(onsenEnabledRef.current);
         pavilionEnabledRef.current = entered.pavilionEnabled === true;
         setPavilionEnabled(pavilionEnabledRef.current);
+        bunkerEnabledRef.current = mapId === "uyuni" && entered.bunkerEnabled === true;
+        setBunkerEnabled(bunkerEnabledRef.current);
         const initialView = savedView();
         setView(initialView);
         engine = new BeachEngine(canvas, {
@@ -800,6 +856,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             onPavilionAction: () => pavilionActionRef.current(),
             onBoatChange: (state) => setBoat(state),
             onBoatAction: () => boatActionRef.current(),
+            onBunkerChange: (state) => {
+              setBunker(state);
+              if (state.inside && !bunkerInsideRef.current) { setMomentOpen(false); setActionsOpen(false); }
+              bunkerInsideRef.current = state.inside;
+            },
+            onBunkerAction: () => bunkerActionRef.current(),
             onRainChange: (amount) => {
               if (rainRef.current === 0 && amount > 0.05) showToast("봄비가 내리기 시작해요. 청우헌 통창 아래에서 바라봐요.", { kind: "info" });
               rainRef.current = amount;
@@ -824,6 +886,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         applyFireworks(entered.fireworks, entered.serverTime, entered.fireworksCooldownUntil);
         setMomentsEnabled(entered.uyuniMomentsEnabled === true);
         applyMoments(entered.uyuniMoments, entered.serverTime, entered.uyuniMomentCooldowns);
+        setPondEnabled(entered.gardenMomentsEnabled === true);
+        applyPondMoments(entered.gardenMoments, entered.serverTime, entered.gardenMomentCooldowns);
         if (process.env.NODE_ENV !== "production") (window as unknown as { __beach?: BeachEngine }).__beach = engine; // 개발 콘솔에서 들여다보기
         setTimeLabel(hourLabel(engine.daylightNow.hour));
         setNightControls(engine.daylightNow.deepNight > 0.5);
@@ -849,6 +913,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       // A hidden/offline page keeps the uncertain UUID, but no old completion owns the controls.
       momentOperationRef.current++;
       momentBusyRef.current = false; setMomentBusy(false);
+      pondOperationRef.current++;
+      pondBusyRef.current = false; setPondBusy(null);
+      bunkerOperationRef.current++;
+      if (bunkerBusyRef.current) restMutationRef.current = false;
+      bunkerBusyRef.current = null; setBunkerBusy(null);
     };
     function suspend() {
       const eng = engineRef.current;
@@ -860,7 +929,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         const position = eng.getSelf();
         const sequence = ++sequenceRef.current;
         rememberVisit(true);
-        suspendBeach({ ticket, sequence, x: position.x, z: position.z, yaw: position.yaw });
+        suspendBeach({ ticket, sequence, x: position.x, z: position.z, yaw: position.yaw, bunkerId: position.bunkerId ?? null });
         // Resuming must pass the session/membership check even while the 10-second rest grace is alive.
         ticketRef.current = null;
       }
@@ -915,15 +984,51 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       characterRef.current = null;
       skyOperationRef.current++;
       skyBusyRef.current = null;
+      bunkerOperationRef.current++;
+      bunkerBusyRef.current = null;
       restMutationRef.current = false;
       engineRef.current?.dispose();
       engineRef.current = null;
     };
-  }, [communityId, mapId, scheduleTick, stopWithError, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, applyMoments, resetMoments, rememberVisit, applyFestival, applyMusic]);
+  }, [communityId, mapId, scheduleTick, stopWithError, applyFire, adoptCharacter, applyLighting, applyFireworks, resetFireworks, applyMoments, resetMoments, applyPondMoments, rememberVisit, applyFestival, applyMusic]);
+
+  const launchPondMoment = async (kind: GardenMomentKind) => {
+    const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
+    if (!ticket || !engine || mapId !== "garden" || !pondEnabled || pondBusyRef.current || blockedRef.current || lost || skyBusyRef.current
+      || !pavilionRef.current.seated || pavilionRef.current.kind !== "bench" || !engine.isPavilionSeated
+      || (!pondRequestRef.current && Date.now() < pondDeadlines[kind])) return;
+    const epoch = requestEpochRef.current, operation = ++pondOperationRef.current;
+    const ownsOperation = () => requestEpochRef.current === epoch && pondOperationRef.current === operation;
+    const current = () => ownsOperation() && aliveRef.current && !blockedRef.current && engineRef.current === engine && ticketRef.current === ticket && visitGenerationRef.current === visit;
+    const request = pondRequestRef.current ?? { id: crypto.randomUUID(), kind };
+    const sameChoice = request.kind === kind;
+    pondRequestRef.current = request;
+    pondBusyRef.current = true; setPondBusy(request.kind); haptic();
+    if (!sameChoice) showToast(request.kind === "coin" ? "앞서 던진 동전을 먼저 확인할게요." : "앞서 띄운 오리를 먼저 확인할게요.", { kind: "info" });
+    try {
+      const result = await beachGardenMoment(ticket, request.id, request.kind);
+      if (!current()) return;
+      pondRequestRef.current = null;
+      applyPondMoments(result.events, result.serverTime, result.cooldowns, true);
+      const live = result.event.startedAt + result.event.durationMs > Math.max(result.serverTime, pondClockRef.current.time);
+      toastSuccess(!sameChoice ? `앞서 전한 마음을 확인했어요. ${kind === "coin" ? "동전" : "오리"}는 다시 눌러 띄워요` : !live ? "앞서 전한 마음을 확인했어요. 다시 눌러 새로 띄워요" : result.event.kind === "coin" ? "작은 소원이 물결을 따라 번져요" : "작은 오리가 물 위에 둥실 떠올라요");
+    } catch (cause) {
+      if (!current()) return;
+      if (cause instanceof BeachUnavailable || cause instanceof BeachCooldown || cause instanceof BeachGone) pondRequestRef.current = null;
+      if (cause instanceof BeachGone) { ticketRef.current = null; setPondEnabled(false); scheduleTick(0); }
+      if (cause instanceof BeachUnavailable && [401, 403, 404].includes(cause.status)) setPondEnabled(false);
+      if (cause instanceof BeachCooldown) scheduleTick(0);
+      showToast(cause instanceof Error ? cause.message : "마음을 확인하지 못했어요. 다시 눌러 주세요.", { kind: "info" });
+    } finally {
+      if (ownsOperation() && aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit) {
+        pondBusyRef.current = false; setPondBusy(null);
+      }
+    }
+  };
 
   const launchMoment = async (input: UyuniMomentInput): Promise<boolean> => {
     const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
-    if (!ticket || !engine || !momentsEnabled || momentBusyRef.current || blockedRef.current || lost || lying || rest?.seated || bench.seated || skyPhase
+    if (!ticket || !engine || engine.bunkerId || bunkerBusyRef.current || !momentsEnabled || momentBusyRef.current || blockedRef.current || lost || lying || rest?.seated || bench.seated || skyPhase
       || (!momentRequestRef.current && Date.now() < momentDeadlines[input.kind])) return false;
     const epoch = requestEpochRef.current, operation = ++momentOperationRef.current;
     const currentOperation = () => requestEpochRef.current === epoch && momentOperationRef.current === operation;
@@ -1013,7 +1118,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
   const launchFireworks = async (variant: FireworkVariant) => {
     const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
-    if (!ticket || !engine || !fireworksControl || fireworksBusyRef.current || blockedRef.current || lost || Date.now() < fireworksDeadline) return;
+    if (!ticket || !engine || engine.bunkerId || bunkerBusyRef.current || !fireworksControl || fireworksBusyRef.current || blockedRef.current || lost || Date.now() < fireworksDeadline) return;
     if (!fireworksFree && (fireworkTickets ?? 0) <= 0) { setTicketSheetOpen(true); return; }
     const belongsToVisit = () => aliveRef.current && !blockedRef.current && engineRef.current === engine && ticketRef.current === ticket && visitGenerationRef.current === visit;
     fireworksBusyRef.current = true; setFireworksBusy(true);
@@ -1093,7 +1198,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
   const takePhoto = async () => {
     const engine = engineRef.current;
-    if (!engine || phase !== "ready" || captureBusyRef.current || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
+    if (!engine || phase !== "ready" || captureBusyRef.current || bunkerBusyRef.current || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
     const visit = visitGenerationRef.current;
     const current = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit && !blockedRef.current;
     captureBusyRef.current = true;
@@ -1114,12 +1219,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const toggleStargazing = async (spotId = "starlight") => {
     const engine = engineRef.current;
     const isBench = spotId === "fire-benches";
-    const isPavilion = spotId.startsWith("pavilion-") || spotId.startsWith("hall-tier-");
+    const isPavilion = spotId.startsWith("pavilion-") || spotId.startsWith("hall-tier-") || spotId.startsWith("pond-bench-") || spotId.startsWith("cloud-pool-") || spotId === "cloud-lounge";
     const isOnsenSeat = spotId === "onsen-benches", isOnsenFloat = spotId === "onsen-float";
     const isOnsen = isOnsenSeat || isOnsenFloat;
     const isBed = !isBench && !isOnsen && !isPavilion && spotId !== "starlight";
     const enabled = () => isOnsen ? onsenEnabledRef.current : isBench ? benchEnabledRef.current : isPavilion ? pavilionEnabledRef.current : isBed ? bedEnabledRef.current : restEnabledRef.current;
-    if (!engine || !enabled() || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || blockedRef.current) return;
+    if (!engine || engine.bunkerId || bunkerBusyRef.current || !enabled() || skyBusyRef.current || woodBusyRef.current || powderBusyRef.current || pondBusyRef.current || blockedRef.current) return;
     const currentOnsen = engine.onsenState;
     const pavilionSeated = engine.isPavilionSeated === true;
     if ((engine.isBenchSeated && !isBench) || (pavilionSeated && !isPavilion) || (engine.isLying && (isBench || isOnsenSeat || isPavilion))
@@ -1130,7 +1235,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     if (isPavilion && !pavilionSeated) {
       const nearby = engine.getPavilionState();
       if (!nearby.near || !nearby.available) {
-        showToast(nearby.near ? (nearby.kind === "hall" ? "가까운 자리가 찼어요. 벤치의 다른 자리로 가 주세요." : "가까운 자리가 찼어요. 마루의 다른 쪽으로 가 주세요.") : spotId.startsWith("hall-tier-") ? "벤치 가까이에서 앉을 수 있어요." : "정자 마루 끝 가까이에서 앉을 수 있어요.", { kind: "info" });
+        const message = spotId.startsWith("cloud-pool-")
+          ? nearby.near ? "가까운 자리가 찼어요. 온천의 다른 쪽에서 쉬어가요." : "온천 가장자리 가까이에서 몸을 담글 수 있어요."
+          : spotId === "cloud-lounge" ? nearby.near ? "가까운 자리가 찼어요. 소파의 다른 자리로 가 주세요." : "리조트 소파 가까이에서 앉을 수 있어요."
+          : nearby.near ? (nearby.kind === "bench" ? "두 자리가 찼어요. 다른 벤치에서 쉬어가요." : nearby.kind === "hall" ? "가까운 자리가 찼어요. 벤치의 다른 자리로 가 주세요." : "가까운 자리가 찼어요. 마루의 다른 쪽으로 가 주세요.") : spotId.startsWith("hall-tier-") || spotId.startsWith("pond-bench-") ? "벤치 가까이에서 앉을 수 있어요." : "정자 마루 끝 가까이에서 앉을 수 있어요.";
+        showToast(message, { kind: "info" });
         return;
       }
     }
@@ -1213,6 +1322,66 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         if (aliveRef.current) { setSkyPhase(null); setRestActionSpot(null); scheduleTick(0); }
       }
     }
+  };
+  const changeBunker = async (action: BunkerAction) => {
+    const engine = engineRef.current;
+    if (!engine || mapId !== "uyuni" || !bunkerEnabledRef.current || bunkerBusyRef.current || restMutationRef.current
+      || skyBusyRef.current || momentBusyRef.current || fireworksBusyRef.current || captureBusyRef.current || blockedRef.current || lost) return;
+    const state = engine.bunkerState;
+    const id = state.bunkerId ?? state.nearId;
+    const valid = action === "enter" ? !state.inside && state.nearId !== null
+      : action === "exit" ? state.inside && state.ladderNear && !state.seated
+      : action === "sit" ? state.inside && state.sofaNear && !state.seated && state.available : state.inside && state.seated;
+    if (!id || !valid) return;
+    const visit = visitGenerationRef.current, epoch = requestEpochRef.current, actor = meRef.current?.id;
+    const operation = ++bunkerOperationRef.current;
+    const ownsOperation = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit && bunkerOperationRef.current === operation;
+    const current = () => ownsOperation() && !blockedRef.current && requestEpochRef.current === epoch && meRef.current?.id === actor;
+    bunkerBusyRef.current = action; setBunkerBusy(action); restMutationRef.current = true;
+    engine.setInputPaused(true); engine.cancelAutoWalk(); engine.select(null);
+    setActionsOpen(false); setCarePrompt(null); setMomentOpen(false); setCharacterPickerOpen(false);
+    haptic();
+    try {
+      const deadline = performance.now() + 8500;
+      while (inFlightRef.current && current()) {
+        if (performance.now() >= deadline) throw new Error("연결이 늦어지고 있어요. 잠시 후 다시 눌러 주세요.");
+        await new Promise(resolve => window.setTimeout(resolve, 40));
+      }
+      if (!current()) return;
+      if (!(await runTick(true))) throw new Error("지금 서 있는 자리를 확인하지 못했어요. 잠시 후 다시 눌러 주세요.");
+      if (!current()) return;
+      const ticket = ticketRef.current;
+      if (!ticket || !bunkerEnabledRef.current) throw new Error("쉬어갈 공간을 다시 확인하고 있어요.");
+      if (action === "enter" || action === "exit") {
+        const confirmed = await enterBeachBunker(ticket, action, id, ++sequenceRef.current);
+        if (!current() || ticketRef.current !== ticket) return;
+        await engine.transitionBunker(confirmed);
+      } else {
+        const confirmed = await setBeachRest(ticket, action, `bunker-${id}-sofa`);
+        if (!current() || ticketRef.current !== ticket) return;
+        engine.applyRest(confirmed);
+      }
+      if (current()) rememberVisit(true);
+    } catch (cause) {
+      if (!current()) return;
+      if (cause instanceof BeachGone) ticketRef.current = null;
+      if (cause instanceof BeachUnavailable && [401, 403].includes(cause.status)) { stopWithError(cause); return; }
+      if (cause instanceof BeachUnavailable && cause.status === 404) { bunkerEnabledRef.current = false; setBunkerEnabled(false); }
+      showToast(cause instanceof Error ? cause.message : "자리를 확인하지 못했어요. 잠시 후 다시 눌러 주세요.", { kind: "info" });
+    } finally {
+      if (ownsOperation()) {
+        bunkerBusyRef.current = null; setBunkerBusy(null); restMutationRef.current = false;
+        scheduleTick(0);
+      }
+    }
+  };
+  bunkerActionRef.current = () => {
+    const state = engineRef.current?.bunkerState;
+    if (!state) return;
+    if (state.seated) void changeBunker("stand");
+    else if (state.inside && state.ladderNear) void changeBunker("exit");
+    else if (state.inside && state.sofaNear) void changeBunker("sit");
+    else if (!state.inside && state.nearId) void changeBunker("enter");
   };
   benchActionRef.current = () => { void toggleStargazing("fire-benches"); };
   pavilionActionRef.current = () => { const spot = pavilionRef.current.spotId; if (spot) void toggleStargazing(spot); };
@@ -1365,20 +1534,28 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const onsenPhase = restActionSpot?.startsWith("onsen-") ? skyPhase : null;
   const onsenResting = onsen.sitting || onsen.floating;
   const onsenContextVisible = mapId === "beach" && (onsenEnabled || onsenResting) && (onsen.inWater || onsenResting || Boolean(onsenPhase));
-  const pavilionPhase = restActionSpot?.startsWith("pavilion-") || restActionSpot?.startsWith("hall-tier-") ? skyPhase : null;
-  const pavilionContextVisible = (mapId === "bamboo" || mapId === "garden") && (pavilion.near || pavilion.seated || Boolean(pavilionPhase)) && !boat?.riding;
+  const pavilionPhase = restActionSpot?.startsWith("pavilion-") || restActionSpot?.startsWith("hall-tier-") || restActionSpot?.startsWith("pond-bench-") || restActionSpot?.startsWith("cloud-pool-") || restActionSpot === "cloud-lounge" ? skyPhase : null;
+  const pavilionContextVisible = (mapId === "bamboo" || mapId === "garden" || mapId === "cloudspa") && (pavilion.near || pavilion.seated || Boolean(pavilionPhase)) && !boat?.riding;
   const boatContextVisible = mapId === "garden" && Boolean(boat && (boat.near || boat.riding)) && !pavilion.seated;
-  const seatNoun = pavilion.kind === "deck" ? "전망대" : pavilion.kind === "hall" ? "자리" : "정자";
-  const pavilionTitle = pavilionPhase === "standing" ? "일어나는 중" : pavilion.seated ? "일어나기" : pavilionPhase === "joining" ? "준비 중…" : !pavilion.available ? "자리 없음" : "앉기";
+  const cloudPool = pavilion.kind === "pool", cloudLounge = pavilion.kind === "lounge";
+  const seatNoun = cloudPool ? "온천" : cloudLounge ? "소파" : pavilion.kind === "deck" ? "전망대" : pavilion.kind === "bench" ? "벤치" : pavilion.kind === "hall" ? "자리" : "정자";
+  const pavilionTitle = pavilionPhase === "standing" ? cloudPool ? "온천에서 나오는 중…" : "일어나는 중" : pavilion.seated ? cloudPool ? "온천에서 나오기" : cloudLounge ? "소파에서 일어나기" : "일어나기" : pavilionPhase === "joining" ? "준비 중…" : !pavilion.available ? "자리 없음" : cloudPool ? "온천에 몸 담그기" : cloudLounge ? "소파에 앉기" : "앉기";
+  const pavilionDetail = pavilion.seated
+    ? (cloudPool ? `${pavilion.name} · 따뜻한 물에 몸을 맡기는 중` : cloudLounge ? "먹구름 리조트의 포근한 소파에서 쉬는 중" : pavilion.kind === "bench" ? "나란히 앉아 연못을 바라보는 중" : pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : pavilion.kind === "hall" ? (rain > 0.05 ? `${pavilion.name} · 비 내리는 호수를 바라보며 머무는 중` : `${pavilion.name} · 통창 너머 호수를 바라보는 중`) : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`)
+    : !pavilionEnabled ? "앉을 자리를 준비하고 있어요"
+    : !pavilion.available ? (cloudPool ? "온천의 다른 쪽으로 다가가 주세요" : cloudLounge ? "소파의 다른 자리로 가 주세요" : pavilion.kind === "bench" ? "다른 벤치에서 쉬어가요" : pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : pavilion.kind === "hall" ? "벤치의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요")
+    : cloudPool ? `${pavilion.name} · 구름 위에서 도시의 불빛을 바라봐요` : cloudLounge ? "먹구름 리조트에서 편안하게 쉬어가요" : pavilion.kind === "bench" ? "둘이 나란히 · 소원동전과 작은 오리" : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : pavilion.kind === "hall" ? `${pavilion.name} · 벤치에 앉아 통창 너머 호수를 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`;
   const boatTitle = !boat ? "" : !boat.riding ? "나룻배 타기" : boat.docked ? "내리기" : boat.alightArmed ? "내리기 취소" : "내리기 예약";
-  const restContextVisible = !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
+  const restContextVisible = !bunker.inside && !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
   const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
   const guestbookVisible = mapId === "bamboo" && nearGuestbook && Boolean(ticketRef.current);
-  const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || Boolean(rest) || walking;
+  const bunkerContextVisible = mapId === "uyuni" && (bunker.inside ? bunker.ladderNear || bunker.sofaNear || bunker.seated : bunker.nearId !== null);
+  const bunkerTravel = bunkerBusy === "enter" || bunkerBusy === "exit";
+  const contextVisible = bunkerContextVisible || restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || (!bunker.inside && Boolean(rest)) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
   const joystickVisible = phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden)
     && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && (!lying || onsen.floating)
-    && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing";
+    && !bench.seated && !pavilion.seated && !bunker.seated && bunkerBusy === null && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing";
 
   // 상단 도구는 PC 도 모바일처럼 햄버거 메뉴 안의 줄로 그린다.
   const ticket = ticketRef.current;
@@ -1390,21 +1567,21 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       const engine = engineRef.current;
       if (engine) { engine.setUyuniMusicVolume(volume); setUyuniMusicVolume(engine.uyuniMusicVolume); }
     } } : undefined} />;
-  const fireworksTool = fireworksControl && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost}
+  const fireworksTool = fireworksControl && !bunker.inside && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost || bunkerBusy !== null}
     tickets={fireworksFree ? null : fireworkTickets ?? 0} onUnlock={() => setTicketSheetOpen(true)}
     inline buttonClass={menuStyles.row}
     onLaunch={(variant) => void launchFireworks(variant)} />;
-  const lightingTool = lightingControl && lighting && <RoomLightingControls mode={lighting.mode} open={lightingOpen}
+  const lightingTool = lightingControl && lighting && <RoomLightingControls mapId={mapId} mode={lighting.mode} open={lightingOpen}
     busy={lightingBusy} disabled={lost} onOpenChange={openLighting} onSelect={mode => void changeLighting(mode)}
     inline buttonClass={menuStyles.row} />;
-  const fieldSoundTool = mapId !== "uyuni"
+  const fieldSoundTool = (mapId === "beach" || mapId === "bamboo" || mapId === "garden")
     ? <FieldSoundControl map={mapId} buttonClass={menuStyles.row} inline volume={fieldVolume} open={fieldOpen}
       onOpenChange={open => {
         if (open) { setActionsOpen(false); setCharacterPickerOpen(false); setCarePrompt(null); engineRef.current?.select(null); }
         setFieldOpen(open);
       }} onChange={volume => { const eng = engineRef.current; if (eng) { eng.setFieldVolume(volume); setFieldVolume(eng.fieldVolume); } }}
       onToggleMute={() => { const eng = engineRef.current; if (eng) { eng.setFireworksMuted(eng.fieldVolume > 0); setFieldVolume(eng.fieldVolume); } }} />
-    : <button type="button" className={menuStyles.row} aria-label="폭죽 소리" aria-pressed={!fireworksMuted}
+    : mapId === "uyuni" && !bunker.inside && <button type="button" className={menuStyles.row} aria-label="폭죽 소리" aria-pressed={!fireworksMuted}
       title={"폭죽 소리" + (fireworksMuted ? " 켜기" : " 끄기")} onClick={() => {
         engineRef.current?.setFireworksMuted(!fireworksMuted);
         setFireworksMuted(!fireworksMuted);
@@ -1434,7 +1611,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 ${map.name} (${view === "first" ? "1인칭" : "3인칭"})`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
-      <div className={styles.top} hidden={hudHidden}>
+      <div className={styles.top} hidden={hudHidden} inert={bunkerTravel}>
         <Link href={returnHref} onClick={exitRoom} className={styles.glass + " " + styles.exitButton} aria-label={`${map.name} 나가기`}><IconChevronL />나가기</Link>
         {statusPill}
         {phase === "ready" && <BeachMenu open={menuOpen} onOpenChange={changeMenu} label={`${map.name} 메뉴`}>
@@ -1457,7 +1634,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
       {joystickVisible && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 
-      <div className={styles.bottomHud} data-lying={lying} data-movement={Boolean(joystickVisible)} hidden={hudHidden || phase !== "ready" || Boolean(photo)}>
+      <div className={styles.bottomHud} data-lying={lying} data-movement={Boolean(joystickVisible)} hidden={hudHidden || phase !== "ready" || Boolean(photo)} inert={bunkerTravel}>
         {lost && <p className={styles.dockNotice} role="status">연결 중…</p>}
         <section id={actionTrayId} className={styles.actionTray} hidden={!actionsOpen} aria-label={`${map.name} 행동`}>
           <button type="button" className={styles.actionArrow} aria-label="이전 행동 보기" aria-controls={actionTrayId + "-list"} disabled={!actionOverflow.previous} onClick={() => scrollActions(-1)}><IconChevronL /></button>
@@ -1468,10 +1645,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             {selected && <button type="button" className={styles.actionTile + " " + styles.personTile} aria-label={`${selected.nick}님에게 · 다른 사람 고르기`} onClick={() => { engineRef.current?.select(null); setCarePrompt("wave"); }}><span className={styles.actionIcon}><IconUser /></span><strong>{selected.nick}</strong></button>}
             {mapId === "bamboo" && festival && !selected && <BambooFestivalControls held={festival.held} inFlight={Date.now() < flightUntil}
               disabled={lost || toyBusy} onChoose={choice => void useFestivalToy(choice)} />}
-            {mapId === "uyuni" && momentsEnabled && <UyuniMomentControls
+            {mapId === "uyuni" && momentsEnabled && !bunker.inside && <UyuniMomentControls
               key={communityId + ":" + meRef.current?.id}
               active={actionsOpen && !carePrompt && !photo && !hudHidden && !characterPickerOpen && phase === "ready"}
-              disabled={lost || lying || Boolean(rest?.seated) || bench.seated || Boolean(skyPhase)}
+              disabled={lost || bunkerBusy !== null || lying || Boolean(rest?.seated) || bench.seated || Boolean(skyPhase)}
               busy={momentBusy} cooldowns={momentDeadlines} onOpenChange={setMomentOpen}
               onSparkler={letter => launchMoment({ kind: "sparkler", letter })}
               onLantern={(color, wish) => launchMoment({ kind: "lantern", color, wish })} />}
@@ -1485,6 +1662,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <div className={styles.contextRow}>
         <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg></button>
         <div className={styles.contextActions} role="group" aria-label="지금 할 수 있는 행동" tabIndex={0} hidden={!(contextVisible || fireContextVisible) || characterPickerOpen || powderOpen}>
+          {bunkerContextVisible && <UyuniBunkerControls state={bunker} enabled={bunkerEnabled} busy={bunkerBusy}
+            disabled={lost || Boolean(skyPhase) || momentBusy || fireworksBusy || capturing} onAction={action => void changeBunker(action)} />}
           {guestbookVisible && <button type="button" className={styles.contextButton} disabled={lost} aria-haspopup="dialog"
             onClick={() => { setActionsOpen(false); setGuestbookOpen(true); haptic(); }}>
             <span className={styles.contextIcon}><IconPen /></span>
@@ -1499,11 +1678,13 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             <span className={styles.contextCopy}><strong>{benchPhase === "standing" ? "일어나는 중" : bench.seated ? "일어나기" : benchPhase === "joining" ? "준비 중…" : !bench.available ? "자리 없음" : "앉기"}</strong></span>
             <span className={styles.contextCount} aria-label={`벤치 12석 중 ${bench.occupied}석 사용 중`}>{bench.occupied}/{bench.capacity}</span>
           </button>}
-          {pavilionContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || (!pavilion.seated && (!pavilionEnabled || !pavilion.available))} aria-pressed={pavilion.seated} aria-keyshortcuts="E" onClick={() => { const spot = pavilion.spotId; if (spot) void toggleStargazing(spot); }}>
+          {pavilionContextVisible && !lying && <button type="button" className={styles.contextButton} title={pavilionDetail} disabled={Boolean(skyPhase) || pondBusy !== null || lost || (!pavilion.seated && (!pavilionEnabled || !pavilion.available))} aria-pressed={pavilion.seated} aria-keyshortcuts="E" onClick={() => { const spot = pavilion.spotId; if (spot) void toggleStargazing(spot); }}>
             <span className={styles.contextIcon}>{pavilion.seated ? <IconStand /> : <IconSeat />}</span>
             <span className={styles.contextCopy}><strong>{pavilionTitle}</strong></span>
             <span className={styles.contextCount} aria-label={`${seatNoun} ${pavilion.capacity}석 중 ${pavilion.occupied}석 사용 중`}>{pavilion.occupied}/{pavilion.capacity}</span>
           </button>}
+          {mapId === "garden" && pondEnabled && pavilion.seated && pavilion.kind === "bench" && <GardenPondControls
+            disabled={lost || Boolean(skyPhase)} busy={pondBusy} night={nightControls} cooldowns={pondDeadlines} onChoose={kind => void launchPondMoment(kind)} />}
           {boatContextVisible && !lying && <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost} aria-pressed={boat?.riding === true} aria-keyshortcuts="E" onClick={() => boatActionRef.current()}>
             <span className={styles.contextIcon}><IconBoat /></span>
             <span className={styles.contextCopy}><strong>{boatTitle}</strong></span>
@@ -1528,7 +1709,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
               <span className={styles.contextCount} aria-label={`온천 수면 3자리 중 ${onsen.occupiedFloats.length}자리 사용 중`}>{onsen.occupiedFloats.length}/3</span>
             </button>
           </>)}
-          {rest && !lying && !bench.seated && !onsenResting && !skyPhase && <button type="button" className={styles.contextButton} disabled={woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}>{rest.seated ? <IconStand /> : <IconSeat />}</span><span className={styles.contextCopy}><strong>{rest.seated ? "일어나기" : "앉기"}</strong></span></button>}
+          {rest && !bunker.inside && !lying && !bench.seated && !onsenResting && !skyPhase && <button type="button" className={styles.contextButton} disabled={bunkerBusy !== null || woodBusy || Boolean(powderPhase)} onClick={() => { engineRef.current?.select(null); engineRef.current?.toggleRest(); }}><span className={styles.contextIcon}>{rest.seated ? <IconStand /> : <IconSeat />}</span><span className={styles.contextCopy}><strong>{rest.seated ? "일어나기" : "앉기"}</strong></span></button>}
           {walking && <button type="button" className={styles.contextButton + " " + styles.contextCancel} onClick={() => engineRef.current?.cancelAutoWalk()}><span className={styles.contextIcon}><IconClose /></span><span className={styles.contextCopy}><strong>멈추기</strong></span></button>}
           {mapId === "beach" && fireEnabled && <div className={styles.fireContext} role="group" aria-label="모닥불 돌보기" hidden={!fireContextVisible}>
             {fire && meRef.current && <CampfireControls key={communityId + ":" + meRef.current.id}
@@ -1541,9 +1722,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         </div>
         <nav className={styles.dock} aria-label={`${map.name} 조작`} data-lying={lying}>
           <button ref={actionsTriggerRef} type="button" className={styles.dockButton} aria-expanded={actionsOpen} aria-controls={actionTrayId} onClick={() => { haptic(); setActionsOpen((open) => !open); setCarePrompt(null); setCharacterPickerOpen(false); if (actionsOpen) engineRef.current?.select(null); }}><IconSorowSmile /><span>행동</span></button>
-          <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
-          {!lying && <button type="button" className={styles.dockButton} disabled={Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
+          <button ref={cameraTriggerRef} type="button" className={styles.dockButton} aria-label={capturing ? "사진을 담는 중" : "풍경 사진 찍기"} disabled={capturing || bunkerBusy !== null || Boolean(skyPhase) || woodBusy || Boolean(powderPhase)} onClick={() => void takePhoto()}><CameraIcon /><span>{capturing ? "담는 중" : "사진"}</span></button>
+          {!lying && <button type="button" className={styles.dockButton} disabled={bunkerBusy !== null || Boolean(skyPhase)} aria-label={viewLabel} aria-pressed={view === "third"} aria-keyshortcuts="V" onClick={() => { engineRef.current?.toggleView(); haptic(); }}><IconUsers /><span>시점</span></button>}
         </nav>
+      </div>
+      <div className={styles.bunkerTransition} data-active={bunkerTravel} aria-hidden={!bunkerTravel} role="status" aria-live="polite">
+        {bunkerTravel && <span>{bunkerBusy === "enter" ? "아래층 쉼터로 내려가요" : "호텔 데크로 올라가요"}</span>}
       </div>
       {hudHidden && phase === "ready" && <button ref={restoreTriggerRef} type="button" className={styles.restoreHud} onClick={restoreHud} aria-label="화면 버튼 다시 보기"><IconSparkle /><span>버튼 보기</span></button>}
 

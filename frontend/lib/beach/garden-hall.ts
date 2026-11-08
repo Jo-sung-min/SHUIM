@@ -98,7 +98,6 @@ export interface GardenStructures {
   root: THREE.Group;
   /** 밤에 켜지는 창·등: 0(낮)~1(밤) */
   applyDaylight(d: Daylight, rain: number): void;
-  setRain(rain: number): void;
   setTime(time: number): void;
   setQuality(low: boolean): void;
   dispose(): void;
@@ -111,7 +110,7 @@ interface Part { geometry: THREE.BufferGeometry; material: THREE.Material; name:
  * 작은 생활 소품을 재질별로 합쳐 정원의 실내를 차분하게 만든다.
  * 반사 레이어(2)에 올려 물에 비치게 한다. 글자·등불은 밤에 따뜻하게 켜진다.
  */
-export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: THREE.Texture }, _gradient: THREE.DataTexture, mobile: boolean): GardenStructures {
+export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: THREE.Texture }, _gradient: THREE.DataTexture, mobile: boolean): GardenStructures {
   const root = new THREE.Group(); root.name = "garden-structures"; scene.add(root);
   let disposed = false;
   const tiles = roofTileTexture(), plaster = plasterTexture(), lattice = latticeTexture(), timber = gardenTimberTexture();
@@ -165,12 +164,25 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
   /* ---------------- 청우헌 ---------------- */
   const hx = HALL.halfX, depth = HALL.backZ - HALL.glassZ, cz = (HALL.glassZ + HALL.backZ) / 2;
   const topTier = HALL_TIERS[HALL_TIERS.length - 1].y, eaveY = topTier + HALL.eave;
-  place("plinth", box, plinth, HALL.x, -0.45, cz, hx * 2 + 1.4, 2.1, depth + 1.2);
+  // The stone must finish below the timber slab, not at the first deck's visible top.
+  const foundationBottom = -1.5, foundationTop = HALL_TIERS[0].y - 0.26;
+  place("plinth", box, plinth, HALL.x, (foundationBottom + foundationTop) / 2, cz, hx * 2 + 1.4, foundationTop - foundationBottom, depth + 1.2);
   place("plinth-step", box, darkStone, HALL.x, 0.42, HALL.glassZ - 0.9, hx * 2 + 1.4, 0.25, 0.8);
-  for (const tier of HALL_TIERS) {
+  for (const [tierIndex, tier] of HALL_TIERS.entries()) {
     const from = HALL.glassZ + tier.from, to = HALL.glassZ + tier.to;
-    place("floor", box, floorWood, HALL.x, tier.y - 0.12, (from + to) / 2, hx * 2, 0.24, to - from);
-    place("floor-edge", box, darkWood, HALL.x, tier.y - 0.02, from + 0.06, hx * 2, 0.04, 0.12);
+    const floorHeight = tier.y - foundationTop, floorCentreY = (tier.y + foundationTop) / 2;
+    // Leave the central stair run open. A full-width upper slab hides its middle tread
+    // and shares the final tread's top face, causing camera-dependent depth flicker.
+    const landingFrom = from + (tierIndex > 0 ? HALL_STAIR_RUN / 2 : 0);
+    const landingTo = to - (tierIndex < HALL_TIERS.length - 1 ? HALL_STAIR_RUN / 2 : 0);
+    place("floor-landing", box, floorWood, HALL.x, floorCentreY, (landingFrom + landingTo) / 2, HALL_STAIR_HALF * 2, floorHeight, landingTo - landingFrom);
+    if (tierIndex === 0) place("floor-edge", box, darkWood, HALL.x, tier.y - 0.045, from - 0.02, HALL_STAIR_HALF * 2, 0.06, 0.04);
+    for (const side of [-1, 1]) {
+      const floorX = HALL.x + side * (hx + HALL_STAIR_HALF) / 2, floorWidth = hx - HALL_STAIR_HALF;
+      place("floor", box, floorWood, floorX, floorCentreY, (from + to) / 2, floorWidth, floorHeight, to - from);
+      // Vertical fascia abuts the riser and ends below the walking surface.
+      place("floor-edge", box, darkWood, floorX, tier.y - 0.045, from - 0.02, floorWidth, 0.06, 0.04);
+    }
     // 벤치 두 줄과 낮은 책상: 가운데 계단은 비워 둔다.
     for (const side of [-1, 1]) {
       const x0 = side * (HALL_STAIR_HALF + 0.6), x1 = side * (hx - 1.4);
@@ -207,7 +219,8 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
     for (let step = 0; step < 3; step++) {
       const y = lower.y + (upper.y - lower.y) * (step + 1) / 3;
       const z = boundary - HALL_STAIR_RUN / 2 + HALL_STAIR_RUN * (step + 0.5) / 3;
-      place("stair", box, floorWood, HALL.x, y - 0.1, z, HALL_STAIR_HALF * 2, 0.2, HALL_STAIR_RUN / 3 + 0.02);
+      // Solid risers meet the foundation; thin floating treads reveal the outdoor ground.
+      place("stair", box, floorWood, HALL.x, (y + foundationTop) / 2, z, HALL_STAIR_HALF * 2, y - foundationTop, HALL_STAIR_RUN / 3);
     }
   }
   // 벽: 뒤, 옆(문 자리 비움), 처마 밑 상인방
@@ -256,8 +269,10 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
   for (const pane of panes) pane.dispose();
   owned.push(glassGeometry);
   const glass = new THREE.ShaderMaterial({
-    uniforms: { uPane: { value: new THREE.Vector2(paneW, paneH) }, uTime: { value: 0 }, uRain: { value: 0 }, uNight: { value: 0 }, uTint: { value: srgb(0x9fb6b8) }, uGlow: { value: srgb(0xffc07a) } },
-    vertexShader: GARDEN_GLASS_VERT, fragmentShader: GARDEN_GLASS_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: {
+      uTint: { value: srgb(0xdfe9ed) }, uGlassOpacity: { value: .008 }, uGlassEdgeOpacity: { value: .035 },
+    },
+    vertexShader: GARDEN_GLASS_VERT, fragmentShader: GARDEN_GLASS_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
   });
   materials.push(glass);
   const glassMesh = new THREE.Mesh(glassGeometry, glass);
@@ -458,7 +473,6 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
 
   const warm = new THREE.Color(0xffd19b), dim = new THREE.Color(0xe9e2d4), latticeDay = new THREE.Color(0xeee6d2), latticeNight = new THREE.Color(0xffe3b7);
   const crystalGlow = new THREE.Color(0xffd7a2);
-  let lastRain = 0;
   return {
     root,
     applyDaylight(d, rain) {
@@ -473,14 +487,8 @@ export function buildGardenStructures(scene: THREE.Object3D, _textures: { wood: 
       windowMaterial.color.setHex(0x2a2622).lerp(warm, lamps);
       latticeMat.color.copy(latticeDay).lerp(latticeNight, indoor);
       crystal.emissive.setHex(0x000000).lerp(crystalGlow, indoor * 0.25);
-      glass.uniforms.uNight.value = indoor;
     },
-    setRain(rain) {
-      if (disposed || rain === lastRain) return;
-      lastRain = rain;
-      glass.uniforms.uRain.value = rain;
-    },
-    setTime(t) { time.value = t; glass.uniforms.uTime.value = t; },
+    setTime(t) { time.value = t; },
     setQuality(low) { if (!disposed) beads.count = low ? Math.floor(beadSites.length / 2) : beadSites.length; },
     dispose() {
       if (disposed) return;

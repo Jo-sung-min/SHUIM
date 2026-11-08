@@ -387,6 +387,72 @@
       "contentType": "image/png"
     },
     {
+      "key": "cloudspa/art/city-ne-v2.webp",
+      "bytes": 1039634,
+      "sha256": "f23e02e839427ad369e6b3da6507895eb98bb46f8343cf645ffbe7bf411354a5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/city-night-mobile-v1.webp",
+      "bytes": 481070,
+      "sha256": "b01e18806b672c132d49cee543d7b9486186a1f8c09f5c9287b25d1372fda342",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/city-night-v1.webp",
+      "bytes": 780588,
+      "sha256": "c351e161c671711cbb12802d1856ca24a259f16487cc126e3c04b53a9af7457b",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/city-nw-card-v2.webp",
+      "bytes": 229390,
+      "sha256": "e71b9762b83bb9e8358e9a3e4a631b5eb71e909e18f6420e3c55e847d9232b49",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/city-nw-v2.webp",
+      "bytes": 1011098,
+      "sha256": "5873a2b88d96d5c35693dff35fda1f16ecf44b579a5f10ddf4c7f578f309c2f8",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/city-se-v2.webp",
+      "bytes": 1042654,
+      "sha256": "dac368a0ec1272bd445ff907035186fc9dd65ed951f9be9f04b78e6aadd83eee",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/city-sw-v2.webp",
+      "bytes": 1012434,
+      "sha256": "5275f1ed16614a7f117854eccf324cbb67b7f8e389b7d0beda739af4d2fcf7d1",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/cloud-bank-mobile-v1.webp",
+      "bytes": 55390,
+      "sha256": "5dac58024eb68134c8af11c4ab25e7c5197c8d2ab50e30c4b570a8c0d8181926",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/cloud-bank-v1.webp",
+      "bytes": 185168,
+      "sha256": "339a2440ea068a310d0f5dd3d6a25b4eccb7477b8a665ebe195db5ceea104104",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/cloud-surface-mobile-v1.webp",
+      "bytes": 28376,
+      "sha256": "f6efbfa68f38bb50dbb3d8e23ff47774f787752f14da6e1d672f190a1998d2e6",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "cloudspa/art/cloud-surface-v1.webp",
+      "bytes": 73008,
+      "sha256": "f53c5b7f51278c8ffb7dba83196f922f0fbcdbe6ee028ab4e5b3782771545c6b",
+      "contentType": "image/webp"
+    },
+    {
       "key": "favicon.svg",
       "bytes": 441,
       "sha256": "c86dc8c997e2661f614027b06ca6190a3f2cbb1fc2945fc6093270e784ddd0d6",
@@ -421,6 +487,18 @@
       "bytes": 1772,
       "sha256": "2681f3f0f88a31031a601e999e226e015d80ffd7520987267680066fd73fd95e",
       "contentType": "image/svg+xml"
+    },
+    {
+      "key": "garden/art/grass-natural-mobile-v1.webp",
+      "bytes": 116476,
+      "sha256": "9044bfb257fd269d4f64fee08eab0fd26cf08bafcd2b04fdbdd4fe5fcaa36a0d",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "garden/art/grass-natural-v1.webp",
+      "bytes": 381356,
+      "sha256": "53665d2b3c932c7a667d3590f3dd34c2d4b3a3b141e29647adb8690d00e82491",
+      "contentType": "image/webp"
     },
     {
       "key": "garden/art/spring-hills-panorama-v1.webp",

@@ -1,0 +1,21 @@
+# 정원 생성 이미지
+
+내장 image_gen 도구로 만든 실사 느낌 텍스처입니다. Sharp로 크기와 파일 형식만 최적화했습니다.
+
+- 잔디: [일반 1024px](C:/Users/pc/Desktop/project/SHUIM/frontend/public/garden/art/grass-natural-v1.webp), 381,356 bytes
+- 잔디: [모바일 512px](C:/Users/pc/Desktop/project/SHUIM/frontend/public/garden/art/grass-natural-mobile-v1.webp), 116,476 bytes
+
+## 잔디 생성 프롬프트
+
+Generated with the built-in image_gen tool (no CLI/API fallback).
+Original preserved at C:/Users/pc/.codex/generated_images/01a1af49-91ae-74f0-8c36-fc5673479e29/exec-bae9ba21-b37a-498f-bc0e-14d8aa2da868.png
+Product: frontend/public/garden/art/grass-natural-v1.webp
+Optimization: desktop resized to 1024 x 1024, WebP quality 75 (381356 bytes); mobile sibling grass-natural-mobile-v1.webp resized to 512 x 512, WebP quality 80; Sharp format/size optimization only, no artistic post-processing.
+
+Use case: photorealistic-natural.
+Asset type: seamless square ground albedo texture for a romantic natural pond garden in a mobile Three.js scene.
+Primary request: one photorealistic top-down dense fine garden grass texture, like a softly cared-for Korean spring garden lawn with natural botanical texture.
+Composition: orthographic straight down, perfectly flat full-frame texture, grass covers every pixel from edge to edge; seamless tile with all four edges matching continuously; one square 1024 by 1024 image. Fine small blades at a consistent scale, softly interwoven, no focal subject.
+Materials and palette: fresh muted moss and sage greens with subtle olive and warm green variation, tiny unobtrusive clover leaves sparsely intermixed, only occasional pale dry grass blades; richly detailed real grass but low contrast and even tonal distribution across the entire tile. Natural organic variation without big dark or bright patches.
+Lighting: even overcast diffuse neutral daylight, flat albedo-like illumination, no directional shadows, no baked highlights, no vignette, no gradients.
+Avoid: flowers, garden objects, stones, bare soil circles, gravel, paths, footprints, cut stripes, diagonal mowing lines, large leaves, repeated identifiable clusters, borders, horizon, perspective, text, logo, watermark. Do not make a scene or render a garden; deliver only the seamless close-up grass surface.

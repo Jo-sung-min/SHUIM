@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -92,8 +93,29 @@ public class BeachRoom {
     /** The garden hall seats six per tier on a bench row, stairs in the middle, everyone facing the glass (lib/beach/garden-layout.ts HALL_SEAT_LX). */
     private static final double[][] HALL_SEAT_LOCAL = {
         {-10.8, 0, 0, 1}, {-7.2, 0, 0, 1}, {-3.6, 0, 0, 1}, {3.6, 0, 0, 1}, {7.2, 0, 0, 1}, {10.8, 0, 0, 1}};
+    private static final double[][] POND_SEAT_LOCAL = {{-.6, 0, 0, 1}, {.6, 0, 0, 1}};
+    private static final double[][] CLOUD_LOUNGE_SEAT_LOCAL = {
+        {-10.5, 2, 1, 0}, {-10.5, 0, 1, 0}, {-10.5, -2, 1, 0},
+        {10.5, 2, -1, 0}, {10.5, 0, -1, 0}, {10.5, -2, -1, 0}};
+    /** Matches cloud-spa-layout.ts: six submerged places facing the pool centre. */
+    private static double[][] cloudPoolSeats(double radius) {
+        return cloudPoolSeats(radius, false);
+    }
+    private static double[][] cloudPoolSeats(double radius, boolean cityView) {
+        double[][] seats = new double[6][4];
+        for (int slot = 0; slot < seats.length; slot++) {
+            double angle = slot * Math.PI / 3;
+            double facing = cityView && slot >= 2 && slot <= 4 ? -1 : 1;
+            seats[slot] = new double[]{Math.sin(angle) * radius, -Math.cos(angle) * radius, -Math.sin(angle) * facing, Math.cos(angle) * facing};
+        }
+        return seats;
+    }
     /** Centre and the unit axis the steps (pavilion) or the view (deck, hall) face. Right-hand axis is (-fz, fx). Each pavilion belongs to one map. */
-    record Pavilion(String spot, double x, double z, int fx, int fz, double[][] seats, BeachMap map) {}
+    record Pavilion(String spot, double x, double z, double fx, double fz, double[][] seats, BeachMap map) {}
+    private static Pavilion pondBench(String spot, double x, double z) {
+        double dx = -x, dz = 34 - z, length = Math.hypot(dx, dz);
+        return new Pavilion(spot, x, z, dx / length, dz / length, POND_SEAT_LOCAL, BeachMap.GARDEN);
+    }
     static final List<Pavilion> PAVILIONS = List.of(
         new Pavilion("pavilion-step", 14, 10, -1, 0, PAVILION_SEAT_LOCAL, BeachMap.BAMBOO),
         new Pavilion("pavilion-wind", -33, 50, 1, 0, PAVILION_SEAT_LOCAL, BeachMap.BAMBOO),
@@ -105,19 +127,33 @@ public class BeachRoom {
         new Pavilion("hall-tier-1", 0, 62.6, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
         new Pavilion("hall-tier-2", 0, 67.4, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
         new Pavilion("hall-tier-3", 0, 71.8, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
-        new Pavilion("hall-tier-4", 0, 77, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN));
+        new Pavilion("hall-tier-4", 0, 77, 0, -1, HALL_SEAT_LOCAL, BeachMap.GARDEN),
+        pondBench("pond-bench-sw", -21.31678586, 9.13041650),
+        pondBench("pond-bench-se", 27.05566953, 15.49022060),
+        pondBench("pond-bench-w", -34.83661939, 34),
+        pondBench("pond-bench-e", 39.92414302, 34),
+        pondBench("pond-bench-nw", -30.53993522, 53.43450423),
+        pondBench("pond-bench-ne", 27.90771696, 51.75945625),
+        new Pavilion("cloud-pool-1", 0, 70, 0, -1, cloudPoolSeats(17), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-2", -24, 38, 0, -1, cloudPoolSeats(16), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-3", 20, 6, 0, -1, cloudPoolSeats(17), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-4", -18, -26, 0, -1, cloudPoolSeats(16), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-5", 0, -66, 0, -1, cloudPoolSeats(20, true), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-lounge", 0, 104, 0, -1, CLOUD_LOUNGE_SEAT_LOCAL, BeachMap.CLOUDSPA));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
         boolean onsen() { return ONSEN_BENCH_SPOT.equals(id) || ONSEN_FLOAT_SPOT.equals(id); }
         boolean pavilion() { return isPavilionSpot(id); }
-        boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id) || pavilion(); }
+        boolean bunker() { return BeachBunkers.forSofa(id) != null; }
+        boolean sitting() { return bench() || ONSEN_BENCH_SPOT.equals(id) || pavilion() || bunker(); }
     }
     record BenchSeat(double x, double z, double yaw) {}
     /** Fixed spots first, then every pavilion: declared after FIXED_REST_SPOTS so static initialisation sees both tables. */
     private static Map<String, RestSpot> restSpots() {
         Map<String, RestSpot> spots = new LinkedHashMap<>(FIXED_REST_SPOTS);
-        for (Pavilion p : PAVILIONS) spots.put(p.spot(), new RestSpot(p.spot(), p.x(), p.z(), PAVILION_SLOTS, false));
+        for (Pavilion p : PAVILIONS) spots.put(p.spot(), new RestSpot(p.spot(), p.x(), p.z(), p.seats().length, false));
+        for (BeachBunkers.Bunker b : BeachBunkers.ALL) spots.put(b.sofa(), new RestSpot(b.sofa(), b.x(), b.z(), BeachBunkers.SOFA_SLOTS, false));
         return Collections.unmodifiableMap(spots);
     }
     private static final Map<String, RestSpot> FIXED_REST_SPOTS = Map.ofEntries(
@@ -142,15 +178,18 @@ public class BeachRoom {
     static boolean isHallSpot(String spotId) {
         return spotId != null && spotId.startsWith("hall-tier-");
     }
+    static boolean isPondBenchSpot(String spotId) {
+        return spotId != null && spotId.startsWith("pond-bench-") && pavilionOn(BeachMap.GARDEN, spotId);
+    }
 
     private static Pavilion pavilionOf(RestSpot spot) {
         return PAVILIONS.stream().filter(p -> p.spot().equals(spot.id())).findFirst().orElseThrow();
     }
 
-    /** Same arithmetic as the frontend seat table: exact integer axes keep the two sides identical. */
+    /** Same orthonormal axes as the frontend seat table, including pond benches facing the lake centre. */
     static BenchSeat pavilionSeat(Pavilion p, int slot) {
         double[] s = p.seats()[slot];
-        int rx = -p.fz(), rz = p.fx();
+        double rx = -p.fz(), rz = p.fx();
         double x = p.x() + s[0] * rx + s[1] * p.fx();
         double z = p.z() + s[0] * rz + s[1] * p.fz();
         double fx = s[2] * rx + s[3] * p.fx(), fz = s[2] * rz + s[3] * p.fz();
@@ -165,11 +204,11 @@ public class BeachRoom {
         for (int slot = 0; slot < spot.capacity(); slot++) {
             BenchSeat seat = pavilionSeat(pavilion, slot);
             double distance = Math.hypot(me.x - seat.x(), me.z - seat.z());
-            if (distance > PAVILION_REACH + 1e-9) continue;
+            if (distance > (pavilion.map() == BeachMap.CLOUDSPA ? 2.5 : PAVILION_REACH) + 1e-9) continue;
             nearby = true;
             if (!used[slot] && distance < closestDistance) { closest = slot; closestDistance = distance; }
         }
-        boolean hall = isHallSpot(spot.id());
+        boolean hall = isHallSpot(spot.id()) || isPondBenchSpot(spot.id()) || pavilion.map() == BeachMap.CLOUDSPA;
         if (!nearby) throw ApiException.badRequest(hall ? "벤치 가까이에서 앉아 주세요." : "정자 마루 끝 가까이에서 앉아 주세요.");
         if (closest < 0) throw new ApiException(409, hall ? "가까운 자리가 모두 차 있어요. 벤치의 다른 자리로 다가가 주세요." : "가까운 자리가 모두 차 있어요. 마루의 다른 쪽으로 다가가 주세요.");
         return closest;
@@ -189,10 +228,15 @@ public class BeachRoom {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
                              String pose, String spotId, Integer slot, long updatedAt,
-                             @JsonInclude(JsonInclude.Include.NON_NULL) FestivalState festival) {
+                             @JsonInclude(JsonInclude.Include.NON_NULL) FestivalState festival,
+                             @JsonInclude(JsonInclude.Include.NON_NULL) String bunkerId) {
+        public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
+                          String pose, String spotId, Integer slot, long updatedAt, FestivalState festival) {
+            this(pid, id, nick, skin, x, z, yaw, moving, pose, spotId, slot, updatedAt, festival, null);
+        }
         public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving,
                           String pose, String spotId, Integer slot) {
-            this(pid, id, nick, skin, x, z, yaw, moving, pose, spotId, slot, 0, null);
+            this(pid, id, nick, skin, x, z, yaw, moving, pose, spotId, slot, 0, null, null);
         }
         public PlayerView(String pid, String id, String nick, int skin, double x, double z, double yaw, boolean moving) {
             this(pid, id, nick, skin, x, z, yaw, moving, "standing", null, null);
@@ -203,25 +247,30 @@ public class BeachRoom {
         static PlayerView of(Presence p, long now) {
             synchronized (p) {
                 return new PlayerView(p.pid, p.userId, p.nick, p.skin, round2(p.x), round2(p.z), round2(p.yaw), p.moving,
-                    restPose(p), p.restSpot, p.restSlot, p.updatedAt, p.festival == null ? null : p.festivalAt(now));
+                    restPose(p), p.restSpot, p.restSlot, p.updatedAt, p.festival == null ? null : p.festivalAt(now), p.bunkerId);
             }
         }
     }
 
     /** Position and pose are returned together so clients can recover the authoritative resting state. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record RestPresence(String pose, String spotId, Integer slot, double x, double z, double yaw) {
+    public record RestPresence(String pose, String spotId, Integer slot, double x, double z, double yaw,
+                               @JsonInclude(JsonInclude.Include.NON_NULL) String bunkerId) {
+        public RestPresence(String pose, String spotId, Integer slot, double x, double z, double yaw) {
+            this(pose, spotId, slot, x, z, yaw, null);
+        }
         static RestPresence of(Presence p) {
             synchronized (p) {
                 return new RestPresence(restPose(p), p.restSpot,
-                    p.restSlot, p.x, p.z, p.yaw);
+                    p.restSlot, p.x, p.z, p.yaw, p.bunkerId);
             }
         }
     }
 
     private static String restPose(Presence p) {
         return p.restSlot == null ? "standing"
-            : BENCH_SPOT.equals(p.restSpot) || ONSEN_BENCH_SPOT.equals(p.restSpot) || isPavilionSpot(p.restSpot) ? "sitting" : "lying";
+            : BENCH_SPOT.equals(p.restSpot) || ONSEN_BENCH_SPOT.equals(p.restSpot) || isPavilionSpot(p.restSpot)
+                || BeachBunkers.forSofa(p.restSpot) != null ? "sitting" : "lying";
     }
 
     private static BenchSeat benchSeat(int slot) {
@@ -305,6 +354,23 @@ public class BeachRoom {
         return closest;
     }
 
+    private static int nearestBunkerSlot(Presence me, RestSpot spot, boolean[] used) {
+        BeachBunkers.Bunker bunker = BeachBunkers.forSofa(spot.id());
+        boolean nearby = false;
+        int closest = -1;
+        double distance = Double.POSITIVE_INFINITY;
+        for (int slot = 0; slot < spot.capacity(); slot++) {
+            BenchSeat seat = bunker.seat(slot);
+            double d = Math.hypot(me.x - seat.x(), me.z - seat.z());
+            if (d > BeachBunkers.SOFA_REACH + 1e-9) continue;
+            nearby = true;
+            if (!used[slot] && d < distance) { closest = slot; distance = d; }
+        }
+        if (!nearby) throw ApiException.badRequest("소파 가까이에서 앉아 주세요.");
+        if (closest < 0) throw new ApiException(409, "가까운 소파 자리가 모두 차 있어요. 다른 자리로 다가가 주세요.");
+        return closest;
+    }
+
     /** 이번 방문에서 받은 위로·안아주기 수 */
     public record Received(int comfort, int hug, int wave) {
         public Received(int comfort, int hug) { this(comfort, hug, 0); }
@@ -344,6 +410,9 @@ public class BeachRoom {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Lighting(String mode, Integer hour, long version) {}
     public static final Lighting AUTO_LIGHTING = new Lighting("auto", null, 0);
+    static Lighting defaultLighting(BeachMap map) {
+        return map == BeachMap.CLOUDSPA ? new Lighting("night", 20, 0) : AUTO_LIGHTING;
+    }
     private volatile Lighting lighting = AUTO_LIGHTING;
 
     public Lighting lighting() { return lighting; }
@@ -420,6 +489,40 @@ public class BeachRoom {
     private FireworkEvent activeFirework;
     private long fireworksCooldownUntil;
     private final BeachUyuniMoments uyuniMoments = new BeachUyuniMoments();
+    private final BeachGardenMoments gardenMoments = new BeachGardenMoments();
+
+    synchronized BeachGardenMoments.Launch launchGardenMoment(String ticket, String userId, String requestId,
+            String kind, Set<String> excluded) {
+        long now = clock.getAsLong();
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        if (map != BeachMap.GARDEN) throw ApiException.badRequest("봄물 정원의 연못에서 함께 띄워 주세요.");
+        synchronized (me) {
+            if (me.suspended || me.restSlot == null || !isPondBenchSpot(me.restSpot))
+                throw new ApiException(409, "연못가 벤치에 앉은 뒤에 함께 띄워 주세요.");
+            me.excluded = excluded == null ? Set.of() : Set.copyOf(excluded);
+            gardenMoments.refreshExclusions(userId, me.excluded);
+            return gardenMoments.launch(me, requestId, kind, gardenBlockedSenders(me), now);
+        }
+    }
+
+    synchronized BeachGardenMoments.State gardenMoments(String ticket) {
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, clock.getAsLong())) throw ApiException.gone(BeachController.GONE);
+        return gardenMomentsFor(me);
+    }
+
+    private Set<String> gardenBlockedSenders(Presence me) {
+        return byTicket.values().stream().filter(p -> p.excluded.contains(me.userId))
+            .map(Presence::userId).collect(java.util.stream.Collectors.toSet());
+    }
+
+    private synchronized BeachGardenMoments.State gardenMomentsFor(Presence me) {
+        long now = clock.getAsLong();
+        if (map != BeachMap.GARDEN) return new BeachGardenMoments.State(List.of(), BeachGardenMoments.NO_COOLDOWNS, now);
+        return gardenMoments.snapshot(me.userId, me.excluded, gardenBlockedSenders(me), now);
+    }
 
     /** The actor and room are rechecked under the same lock used by rest/leave. */
     synchronized BeachUyuniMoments.Launch launchUyuniMoment(String ticket, String userId, String requestId,
@@ -430,6 +533,7 @@ public class BeachRoom {
         if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
         if (map != BeachMap.UYUNI) throw ApiException.badRequest("반짝이 글자와 소원 풍등은 우유니에서 함께 띄울 수 있어요.");
         synchronized (me) {
+            if (me.bunkerId != null) throw new ApiException(409, "지상으로 올라온 뒤 함께 띄워 주세요.");
             if (me.suspended || me.restSlot != null) throw new ApiException(409, "일어난 뒤에 함께 띄워 주세요.");
             me.excluded = excluded == null ? Set.of() : Set.copyOf(excluded);
             uyuniMoments.refreshExclusions(userId, me.excluded);
@@ -466,6 +570,7 @@ public class BeachRoom {
         Presence me = ticket == null ? null : byTicket.get(ticket);
         if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
         if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        if (me.bunkerId != null) throw new ApiException(409, "지상으로 올라온 뒤 불꽃놀이를 시작해 주세요.");
         UUID key;
         try {
             if (requestId == null || requestId.length() != 36) throw new IllegalArgumentException();
@@ -496,13 +601,17 @@ public class BeachRoom {
 
     /** Called only after the controller verifies the current administrator and owned visit. */
     synchronized Lighting setLighting(String mode) {
-        if (mode == null) throw ApiException.badRequest("낮, 노을, 밤, 자동 중에서 골라 주세요.");
+        if (mode == null) throw ApiException.badRequest("방의 시간 설정을 다시 골라 주세요.");
         Integer hour = switch (mode) {
             case "auto" -> null;
             case "day" -> 12;
             case "sunset" -> 18;
             case "night" -> 20;
-            default -> throw ApiException.badRequest("낮, 노을, 밤, 자동 중에서 골라 주세요.");
+            case "rainy-night" -> {
+                if (map != BeachMap.GARDEN) throw ApiException.badRequest("비 내리는 밤은 봄물 정원에서 감상할 수 있어요.");
+                yield 21;
+            }
+            default -> throw ApiException.badRequest("방의 시간 설정을 다시 골라 주세요.");
         };
         // Repeated clicks/retries preserve the version; every actual change advances it.
         if (!mode.equals(lighting.mode())) lighting = new Lighting(mode, hour, lighting.version() + 1);
@@ -514,12 +623,13 @@ public class BeachRoom {
                              BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                              @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities, Lighting lighting,
                              List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence,
-                             List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns, Music music) {
+                             List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns, Music music,
+                             List<BeachGardenMoments.Event> gardenMoments, BeachGardenMoments.Cooldowns gardenMomentCooldowns) {
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                           CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence) {
             this(players, events, count, received, care, fire, serverTime, selfRest, careCapabilities, lighting, fireworks,
-                fireworksCooldownUntil, sequence, List.of(), BeachUyuniMoments.NO_COOLDOWNS, SILENT);
+                fireworksCooldownUntil, sequence, List.of(), BeachUyuniMoments.NO_COOLDOWNS, SILENT, List.of(), BeachGardenMoments.NO_COOLDOWNS);
         }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
@@ -543,10 +653,10 @@ public class BeachRoom {
             this(players, events, count, received, care, fire, serverTime, selfRest, null, AUTO_LIGHTING);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music);
+            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns);
         }
         public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
-            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music);
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns);
         }
     }
 
@@ -574,6 +684,10 @@ public class BeachRoom {
             return festival;
         }
         private volatile String restSpot;
+        private volatile String bunkerId;
+        private double surfaceX, surfaceZ, surfaceYaw;
+        private long bunkerSequence = -1;
+        private String bunkerAction, bunkerRequestId;
         private double standingX, standingZ, standingYaw;
         private volatile long lastSeen;
         private volatile long updatedAt;
@@ -614,6 +728,7 @@ public class BeachRoom {
         public double x() { return x; }
         public double z() { return z; }
         public double yaw() { return yaw; }
+        public String bunkerId() { return bunkerId; }
         public boolean moving() { return moving; }
         public long lastSeen() { return lastSeen; }
         public long updatedAt() { return updatedAt; }
@@ -653,6 +768,9 @@ public class BeachRoom {
         String currentTicket;
         int skin;
         double x, z, yaw;
+        String bunkerId, bunkerAction, bunkerRequestId;
+        double surfaceX, surfaceZ, surfaceYaw;
+        long bunkerSequence = -1;
         long savedAt, sequence;
         String retryTicket;
         long retryExpiresAt;
@@ -674,6 +792,7 @@ public class BeachRoom {
     public BeachRoom(LongSupplier clock, boolean simulate, BeachMap map) {
         this.clock = clock;
         this.map = java.util.Objects.requireNonNull(map);
+        this.lighting = defaultLighting(map);
         long now = clock.getAsLong();
         this.lastSweep = new AtomicLong(now);
         List<Presence> seeded = new ArrayList<>();
@@ -706,7 +825,7 @@ public class BeachRoom {
         validateSequence(sequence);
         Integer selectedSkin = selectedSkin(character);
         long now = clock.getAsLong();
-        // 입장 확인과 추가를 같은 잠금 안에서 처리해 동시 입장에도 100명을 넘지 않는다.
+        // 입장 확인과 추가를 같은 잠금 안에서 처리해 동시 입장에도 방의 정원을 넘지 않는다.
         sweep(now);
         Presence previous = resumeTicket == null ? null : byTicket.get(resumeTicket);
         ResumeBookmark bookmark = resumeTicket == null ? null : resumeTickets.get(resumeTicket);
@@ -740,8 +859,11 @@ public class BeachRoom {
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick,
             selectedSkin == null ? bookmark == null ? skinOf(userId) : bookmark.skin : selectedSkin, 0,
             excluded == null ? Set.of() : Set.copyOf(excluded), x, z,
-            bookmark == null ? Math.atan2(x, z - BeachFireService.FIRE_Z) : bookmark.yaw, now);
+            bookmark == null ? (map == BeachMap.CLOUDSPA ? 0 : Math.atan2(x, z - BeachFireService.FIRE_Z)) : bookmark.yaw, now);
         if (bookmark != null) {
+            p.bunkerId = bookmark.bunkerId;
+            p.surfaceX = bookmark.surfaceX; p.surfaceZ = bookmark.surfaceZ; p.surfaceYaw = bookmark.surfaceYaw;
+            p.bunkerSequence = bookmark.bunkerSequence; p.bunkerAction = bookmark.bunkerAction; p.bunkerRequestId = bookmark.bunkerRequestId;
             p.bookmark = bookmark;
             p.sequence = bookmark.sequence;
             resumeFence(p, sequence);
@@ -792,13 +914,18 @@ public class BeachRoom {
 
     /** Hidden tabs stop moving immediately; duplicate beacons never renew their ten-second lease. */
     public synchronized void suspend(String ticket, double x, double z, double yaw, Long sequence) {
+        suspend(ticket, x, z, yaw, sequence, null);
+    }
+
+    public synchronized void suspend(String ticket, double x, double z, double yaw, Long sequence, String bunkerId) {
         validateSequence(sequence);
+        BeachBunkers.validate(map, bunkerId);
         long now = clock.getAsLong();
         sweep(now);
         Presence p = ticket == null ? null : byTicket.get(ticket);
         if (p == null || p.bot()) return;
         synchronized (p) {
-            if (p.suspended || !accepts(p, sequence)) return;
+            if (p.suspended || !accepts(p, sequence) || !Objects.equals(p.bunkerId, bunkerId)) return;
             acceptSequence(p, sequence);
             updatePosition(p, x, z, yaw, false, null, now);
             p.suspended = true;
@@ -822,6 +949,9 @@ public class BeachRoom {
         b.x = held ? p.standingX : p.x;
         b.z = held ? p.standingZ : p.z;
         b.yaw = held ? p.standingYaw : p.yaw;
+        b.bunkerId = p.bunkerId;
+        b.surfaceX = p.surfaceX; b.surfaceZ = p.surfaceZ; b.surfaceYaw = p.surfaceYaw;
+        b.bunkerSequence = p.bunkerSequence; b.bunkerAction = p.bunkerAction; b.bunkerRequestId = p.bunkerRequestId;
         b.savedAt = p.lastSeen;
         b.sequence = p.sequence;
         resumeTickets.put(p.ticket, b);
@@ -871,6 +1001,9 @@ public class BeachRoom {
             throw ApiException.badRequest("앉거나 누울 수 있는 자리를 다시 골라 주세요.");
         synchronized (me) {
             if (me.suspended) throw new ApiException(409, "바닷가로 돌아온 뒤 다시 쉬어 주세요.");
+            BeachBunkers.Bunker bunker = BeachBunkers.forSofa(spot.id());
+            if (!"stand".equals(action) && !Objects.equals(me.bunkerId, bunker == null ? null : bunker.id()))
+                throw ApiException.badRequest("지금 머무는 층의 쉴 자리를 골라 주세요.");
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
                     if (!floating(me)) { // A floating visitor simply stands up wherever it drifted to.
@@ -899,7 +1032,7 @@ public class BeachRoom {
                 if (Math.abs(dx) > 4.35 + 1e-9 || dz < -4.5 - 1e-9 || dz > 4.45 + 1e-9
                     || Math.hypot(dx, dz) > REST_REACH + 1e-9)
                     throw ApiException.badRequest("호텔 안으로 들어와 침구 가까이에서 누워 주세요.");
-            } else if (!spot.bench() && !spot.onsen() && !spot.pavilion() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
+            } else if (!spot.bench() && !spot.onsen() && !spot.pavilion() && !spot.bunker() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
                 throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
             boolean[] used = new boolean[spot.capacity()];
@@ -907,9 +1040,9 @@ public class BeachRoom {
                 Integer slot = other.restSlot;
                 if (slot != null && spot.id().equals(other.restSpot) && live(other, now)) used[slot] = true;
             }
-            boolean nearestSeat = spot.bench() || spot.onsen() || spot.pavilion();
+            boolean nearestSeat = spot.bench() || spot.onsen() || spot.pavilion() || spot.bunker();
             int slot = spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used)
-                : spot.pavilion() ? nearestPavilionSlot(me, spot, used) : 0;
+                : spot.pavilion() ? nearestPavilionSlot(me, spot, used) : spot.bunker() ? nearestBunkerSlot(me, spot, used) : 0;
             if (!nearestSeat) while (slot < spot.capacity() && used[slot]) slot++;
             if (slot == spot.capacity()) throw new ApiException(409, spot.hotel()
                 ? "이 호텔의 침구가 모두 사용 중이에요. 다른 호텔을 골라 주세요."
@@ -930,7 +1063,8 @@ public class BeachRoom {
                 me.x = inside[0];
                 me.z = inside[1];
             } else if (nearestSeat) {
-                BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : spot.pavilion() ? pavilionSeat(pavilionOf(spot), slot) : benchSeat(slot);
+                BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : spot.pavilion() ? pavilionSeat(pavilionOf(spot), slot)
+                    : spot.bunker() ? bunker.seat(slot) : benchSeat(slot);
                 me.x = seat.x();
                 me.z = seat.z();
                 me.yaw = seat.yaw();
@@ -952,6 +1086,56 @@ public class BeachRoom {
 
     /* ---------- tick ---------- */
 
+    /** A sequenced transition is the only way to change floors; delayed surface polls cannot move an indoor visitor. */
+    synchronized RestPresence bunker(String ticket, String userId, String action, String bunkerId, Long sequence) {
+        validateSequence(sequence);
+        BeachBunkers.validate(map, bunkerId);
+        BeachBunkers.Bunker bunker = BeachBunkers.find(bunkerId);
+        if (sequence == null || bunker == null || (!"enter".equals(action) && !"exit".equals(action)))
+            throw ApiException.badRequest("지하 쉼터의 출입을 다시 확인해 주세요.");
+        long now = clock.getAsLong();
+        sweep(now);
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        synchronized (me) {
+            if (me.suspended) throw ApiException.gone(BeachController.GONE);
+            if (sequence == me.bunkerSequence) {
+                if (!Objects.equals(action, me.bunkerAction) || !Objects.equals(bunkerId, me.bunkerRequestId))
+                    throw new ApiException(409, "진행 중인 출입을 먼저 확인해 주세요.");
+                return RestPresence.of(me);
+            }
+            if (!accepts(me, sequence)) return RestPresence.of(me);
+            boolean alreadyThere = "enter".equals(action) && bunkerId.equals(me.bunkerId);
+            boolean alreadyOutside = "exit".equals(action) && me.bunkerId == null
+                && "exit".equals(me.bunkerAction) && bunkerId.equals(me.bunkerRequestId);
+            if (!alreadyThere && !alreadyOutside) {
+                if (me.restSlot != null) throw new ApiException(409, "먼저 일어난 뒤 사다리를 이용해 주세요.");
+                if ("enter".equals(action)) {
+                    if (me.bunkerId != null) throw new ApiException(409, "지상으로 올라온 뒤 다른 쉼터를 이용해 주세요.");
+                    if (Math.hypot(me.x - bunker.x(), me.z - bunker.entryZ()) > BeachBunkers.ENTRY_REACH + 1e-9)
+                        throw ApiException.badRequest("호텔 앞 출입구 가까이에서 내려가 주세요.");
+                    me.surfaceX = me.x; me.surfaceZ = me.z; me.surfaceYaw = me.yaw;
+                    me.bunkerId = bunkerId;
+                    me.x = bunker.x(); me.z = bunker.arrivalZ(); me.yaw = Math.PI;
+                } else {
+                    if (!bunkerId.equals(me.bunkerId)) throw ApiException.badRequest("지금 머무는 쉼터의 사다리를 이용해 주세요.");
+                    if (Math.hypot(me.x - bunker.x(), me.z - bunker.entryZ()) > BeachBunkers.ENTRY_REACH + 1e-9)
+                        throw ApiException.badRequest("사다리 가까이에서 올라가 주세요.");
+                    me.bunkerId = null;
+                    me.x = me.surfaceX; me.z = me.surfaceZ; me.yaw = me.surfaceYaw;
+                }
+                me.moving = false;
+                me.inbox.clear();
+                me.updatedAt = Math.max(me.updatedAt + 1, now);
+            }
+            acceptSequence(me, sequence);
+            me.bunkerSequence = sequence; me.bunkerAction = action; me.bunkerRequestId = bunkerId;
+            me.lastSeen = now;
+            return RestPresence.of(me);
+        }
+    }
+
     /**
      * 내 위치를 알리고 다른 사람들을 받아 온다. 위로를 보내려면 careTo(유저 id)·careKind 를 함께.
      * 티켓을 모르거나 만료됐으면 null — 컨트롤러가 410 으로 바꾼다.
@@ -972,7 +1156,13 @@ public class BeachRoom {
 
     public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind,
                            String character, boolean hugAllowed, Long sequence) {
+        return tick(ticket, x, z, yaw, moving, careTo, careKind, character, hugAllowed, sequence, null);
+    }
+
+    public TickResult tick(String ticket, double x, double z, double yaw, boolean moving, String careTo, String careKind,
+                           String character, boolean hugAllowed, Long sequence, String bunkerId) {
         validateSequence(sequence);
+        BeachBunkers.validate(map, bunkerId);
         Integer skin = selectedSkin(character);
         long now = clock.getAsLong();
         maybeSweep(now);
@@ -982,20 +1172,28 @@ public class BeachRoom {
         List<CareEvent> events = new ArrayList<>();
         long acceptedSequence;
         double originX, originZ;
+        String originBunker;
+        RestPresence selfState;
         synchronized (me) {
             // Expiry is archived by the room sweep, never discarded by an individual poll.
             if (byTicket.get(ticket) != me || !live(me, now)) return null;
             if (!me.suspended && accepts(me, sequence)) {
                 acceptSequence(me, sequence);
-                updatePosition(me, x, z, yaw, moving, skin, now);
                 me.lastSeen = now;
-                // Serialize care with this visitor's sequence so a retry cannot send twice.
-                care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now, hugAllowed);
-                for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
+                // A lost transition response is repaired by this acknowledged poll. An old layer
+                // cannot move, change appearance, send care or drain inboxes on the new floor.
+                if (Objects.equals(me.bunkerId, bunkerId)) {
+                    updatePosition(me, x, z, yaw, moving, skin, now);
+                    // Serialize care with this visitor's sequence so a retry cannot send twice.
+                    care = careTo == null || careTo.isBlank() ? null : care(me, careTo.strip(), careKind, now, hugAllowed);
+                    for (CareEvent e; (e = me.inbox.poll()) != null; ) events.add(e);
+                }
             }
             acceptedSequence = me.sequence;
             originX = me.x;
             originZ = me.z;
+            originBunker = me.bunkerId;
+            selfState = RestPresence.of(me);
         }
         advanceBots(now);
 
@@ -1003,6 +1201,7 @@ public class BeachRoom {
         List<PlayerView> players = byTicket.values().stream()
             .filter(p -> p != me && live(p, now) && me.sees(p) && p.sees(me))
             .map(p -> PlayerView.of(p, now))
+            .filter(p -> Objects.equals(originBunker, p.bunkerId()))
             .sorted(Comparator.comparingDouble(p -> {
                 double dx = p.x() - originX, dz = p.z() - originZ;
                 return dx * dx + dz * dz;
@@ -1011,16 +1210,18 @@ public class BeachRoom {
             .toList();
         FireworksState fireworks = fireworks();
         BeachUyuniMoments.State moments = uyuniMomentsFor(me);
+        BeachGardenMoments.State pond = gardenMomentsFor(me);
         MusicState playback = musicSnapshot();
         return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
-            care, null, playback.serverTime(), RestPresence.of(me), null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence,
-            moments.events(), moments.cooldowns(), playback.music());
+            care, null, playback.serverTime(), selfState, null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence,
+            moments.events(), moments.cooldowns(), playback.music(), pond.events(), pond.cooldowns());
     }
 
     private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
+        BeachBunkers.Bunker bunker = BeachBunkers.find(p.bunkerId);
         boolean free = p.restSlot == null || floating(p);
-        double nextX = free ? clamp(x, map.minX(), map.maxX(), p.x) : p.x;
-        double nextZ = free ? clamp(z, map.minZ(), map.maxZ(), p.z) : p.z;
+        double nextX = free ? clamp(x, bunker == null ? map.minX() : bunker.minX(), bunker == null ? map.maxX() : bunker.maxX(), p.x) : p.x;
+        double nextZ = free ? clamp(z, bunker == null ? map.minZ() : bunker.minZ(), bunker == null ? map.maxZ() : bunker.maxZ(), p.z) : p.z;
         if (floating(p)) {
             double[] inside = insideFloatRadius(nextX, nextZ, p.restSlot);
             nextX = inside[0];
@@ -1044,7 +1245,7 @@ public class BeachRoom {
         if (me.userId.equals(toId)) return "gone";
         if (me.excluded.contains(toId)) return "gone";
         List<Presence> targets = byTicket.values().stream()
-            .filter(p -> p != me && p.userId.equals(toId) && live(p, now) && p.sees(me))
+            .filter(p -> p != me && p.userId.equals(toId) && live(p, now) && p.sees(me) && Objects.equals(me.bunkerId, p.bunkerId))
             .toList();
         if (targets.isEmpty()) return "gone";
         if (now - me.lastCareAt < CARE_GLOBAL_MS) return "cooldown";
@@ -1062,6 +1263,7 @@ public class BeachRoom {
             }
             for (Presence r : byTicket.values()) {
                 if (r.bot()) continue; // 가짜 방문자는 inbox 를 비우지 않으니 쌓아 두지 않는다
+                if (!Objects.equals(r.bunkerId, me.bunkerId)) continue;
                 boolean recipient = r == me || r.userId.equals(t.userId) || dist2(r, t) <= CARE_RADIUS * CARE_RADIUS;
                 if (!recipient) continue;
                 if (r != me && !(r.sees(me) && me.sees(r) && r.sees(t) && t.sees(r))) continue;

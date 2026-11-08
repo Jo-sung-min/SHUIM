@@ -93,6 +93,49 @@ class BeachLightingTest {
     }
 
     @Test
+    void rainyNightIsSharedOnlyByTheSelectedGardenAndNormalTimeEndsThePreset() {
+        var admin = beach.enter("room", "operator", "운영자", Set.of(), null, "garden");
+        var observer = beach.enter("room", "observer", "관람자", Set.of(), null, "garden");
+        var otherGarden = beach.enter("other", "operator", "운영자", Set.of(), null, "garden");
+        var beachVisitor = visitor("room", "coast-observer");
+        var rainy = change(admin, "rainy-night");
+        assertEquals(new BeachRoom.Lighting("rainy-night", 21, 1), rainy);
+        assertEquals(rainy, change(admin, "rainy-night"), "retries preserve the room version");
+        assertEquals(rainy, poll(observer).lighting());
+        assertEquals(BeachRoom.AUTO_LIGHTING, poll(otherGarden).lighting());
+        assertEquals(BeachRoom.AUTO_LIGHTING, poll(beachVisitor).lighting());
+        actor(user("late-visitor", "user", false, null));
+        var entered = controller.enter(new BeachController.EnterBody("room", null, "garden"), request, new MockHttpServletResponse());
+        assertEquals(rainy, entered.get("lighting"));
+        assertEquals(false, entered.get("lightingControl"));
+        actor(user("operator", "admin", false, null));
+        assertEquals(new BeachRoom.Lighting("night", 20, 2), change(admin, "night"));
+        assertEquals("night", poll(observer).lighting().mode());
+        assertEquals(new BeachRoom.Lighting("auto", null, 3), change(admin, "auto"));
+    }
+
+    @Test
+    void rainyNightCannotBeEnabledOutsideGardenOrByForgingAdminAndMapClaims() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
+        for (String mapId : List.of("beach", "uyuni", "bamboo")) {
+            var admin = beach.enter("room", "operator", "운영자", Set.of(), null, mapId);
+            assertEquals(400, assertThrows(ApiException.class, () -> change(admin, "rainy-night")).status());
+            mvc.perform(post("/api/beach/lighting").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ticket\":\"" + admin.ticket() + "\",\"mode\":\"rainy-night\",\"mapId\":\"garden\"}"))
+                .andExpect(status().isBadRequest());
+            assertEquals(BeachRoom.AUTO_LIGHTING, poll(admin).lighting());
+        }
+        var member = beach.enter("room", "member", "관람자", Set.of(), null, "garden");
+        actor(user("member", "user", false, null));
+        mvc.perform(post("/api/beach/lighting").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"ticket\":\"" + member.ticket() + "\",\"mode\":\"rainy-night\",\"admin\":true,\"role\":\"admin\"}"))
+            .andExpect(status().isForbidden());
+        assertEquals(BeachRoom.AUTO_LIGHTING, poll(member).lighting());
+        actor(user("operator", "admin", false, null));
+        assertEquals(403, assertThrows(ApiException.class, () -> change(member, "rainy-night")).status());
+    }
+
+    @Test
     void revokingRoleMembershipOrAccountAccessTakesEffectImmediately() {
         var admin = visitor("room", "operator");
         var previous = change(admin, "night");

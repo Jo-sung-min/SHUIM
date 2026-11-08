@@ -3,6 +3,7 @@ import { stripTypeScriptTypes } from "node:module";
 import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 async function load(file, dependencies, exports) {
   const typed = await readFile(new URL(file, import.meta.url), "utf8");
@@ -19,8 +20,8 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
   "PAVILION_SEAT_CAPACITY", "TRAIL_WALK_HALF", "nearestOnTrail", "sampleCatmullRom", "seededRandom",
 ]);
 const garden = await load("../lib/beach/garden-layout.ts", trail, [
-  "GARDEN_BOUNDS", "GROUND_Y", "BRIDGE_Y", "PIER_Y", "BOAT_DECK_Y", "GARDEN_SPAWN", "LAKE", "ISLAND", "HALL", "HALL_TIERS", "HALL_BENCH_HEIGHT",
-  "lakeSigned", "isWater", "hallFloorHeight", "GARDEN_PAVILIONS", "GARDEN_SEATS", "gardenSeat", "claimedGardenSeat", "nearbyGardenPavilion",
+  "GARDEN_BOUNDS", "GARDEN_WALK_RADIUS", "GROUND_Y", "BRIDGE_Y", "PIER_Y", "BOAT_DECK_Y", "GARDEN_SPAWN", "LAKE", "ISLAND", "HALL", "HALL_TIERS", "HALL_BENCH_HEIGHT",
+  "lakeSigned", "lakeRadiusAt", "isWater", "hallFloorHeight", "GARDEN_PAVILIONS", "GARDEN_SEATS", "gardenSeat", "claimedGardenSeat", "nearbyGardenPavilion",
   "gardenPavilionForSpot", "GARDEN_PIERS", "pierEnd", "onPier", "GARDEN_BRIDGE", "onBridge", "GARDEN_LOOP_POINTS", "GARDEN_POLYLINES",
   "onGardenGround", "resolveGardenWalk", "gardenFloorHeight", "gardenCeilingHeight", "GARDEN_WALLS", "BOAT_STOPS", "BOAT_ROUTE", "boatPoseAt",
   "nextBoatStop", "nearestBoatStop", "gardenRainAt", "RAIN_PERIOD_MS", "GARDEN_WILLOWS", "GARDEN_LANTERNS", "lotusPads", "reedSites", "GARDEN_OBSTACLES",
@@ -28,6 +29,14 @@ const garden = await load("../lib/beach/garden-layout.ts", trail, [
 const { daylightAt, gardenDaylightAt } = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "gardenDaylightAt"]);
 const maps = await load("../lib/beach/maps.ts", {}, ["MAPS", "mapHref"]);
 const near = (actual, expected, message, eps = 1e-9) => assert.ok(Math.abs(actual - expected) < eps, `${message}: ${actual} vs ${expected}`);
+const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls"]);
+const engineSource = await readFile(new URL("../lib/beach/engine.ts", import.meta.url), "utf8");
+const collisionStart = engineSource.indexOf("  private collide("), collisionEnd = engineSource.indexOf("  private deckHeight(", collisionStart);
+assert.ok(collisionStart >= 0 && collisionEnd > collisionStart, "the actual engine collision method is exercised");
+const collisionContext = { ...hotSpring, ...garden, ...navigation };
+vm.runInNewContext(stripTypeScriptTypes(`class WalkingEngine { ${engineSource.slice(collisionStart, collisionEnd)} }\nglobalThis.collide = WalkingEngine.prototype.collide;`), collisionContext);
+const walkingEngine = { uyuni: null, bamboo: null, garden: {}, obstacles: garden.GARDEN_OBSTACLES };
+const collide = (x, z) => collisionContext.collide.call(walkingEngine, x, z);
 
 test("the lake is water in the middle, land at the island, the gate and behind the hall", () => {
   assert.ok(garden.lakeSigned(0, 34) < -8, "the middle of the lake is far from every shore, the island included");
@@ -66,9 +75,9 @@ test("walking never enters the water and slides back to the nearest allowed spot
   const [x, z] = garden.resolveGardenWalk(0, 8);
   assert.ok(garden.onGardenGround(x, z) && !garden.isWater(x, z), "south shore water pushes back to the loop");
   assert.ok(Math.hypot(x - 0, z - 8) < 8);
-  const inside = garden.resolveGardenWalk(-15.4, 68);
-  assert.ok(garden.onGardenGround(...inside));
-  assert.ok(Math.abs(inside[0]) <= garden.HALL.halfX, "pushing through the hall wall keeps the walker inside");
+  const outside = garden.resolveGardenWalk(-16, 68);
+  assert.ok(garden.onGardenGround(...outside));
+  near(outside[0], -16, "walking on exterior grass does not teleport through the hall wall");
   const yard = garden.resolveGardenWalk(0, -11);
   assert.ok(yard[0] === 0 && yard[1] === -11);
   const door = garden.resolveGardenWalk(-16.5, 76);
@@ -92,6 +101,109 @@ test("the entrance photo court reaches both sculptures and keeps the old gate pa
   }
 });
 
+test("open lawn remains freely walkable well away from the old narrow paths", () => {
+  near(garden.GARDEN_WALK_RADIUS, 47, "the lawn extends two metres past the spawn radius");
+  for (const side of [-1, 1]) {
+    for (let step = 0; step <= 100; step++) {
+      const x = side * (20 + 11 * step / 100), z = 5 * step / 100;
+      assert.ok(trail.nearestOnTrail(x, z, garden.GARDEN_POLYLINES).distance > trail.TRAIL_WALK_HALF + .5,
+        "this walk exercises grass beyond the former path corridor");
+      assert.ok(garden.onGardenGround(x, z) && !garden.isWater(x, z));
+      const actual = garden.resolveGardenWalk(x, z);
+      near(actual[0], x, "lawn movement keeps its requested x");
+      near(actual[1], z, "lawn movement keeps its requested z");
+    }
+  }
+});
+
+test("small outward steps slide along the lawn edge without snapping to a distant path", () => {
+  let blocked = 0;
+  for (let degrees = 0; degrees < 360; degrees += 2) {
+    const a = degrees * Math.PI / 180, dx = Math.cos(a), dz = Math.sin(a);
+    let x = garden.LAKE.x + dx * (garden.GARDEN_WALK_RADIUS - .2);
+    let z = garden.LAKE.z + dz * (garden.GARDEN_WALK_RADIUS - .2);
+    const initial = collide(x, z);
+    if (Math.hypot(initial[0] - x, initial[1] - z) > 1e-6) continue; // Do not spawn inside a solid wall.
+    for (let frame = 0; frame < 12; frame++) {
+      const requested = [x + dx * .12, z + dz * .12];
+      const next = collide(...requested);
+      assert.ok(Math.hypot(next[0] - x, next[1] - z) <= .25,
+        `boundary movement stays local at ${degrees} degrees`);
+      assert.ok(garden.onGardenGround(...next) && !garden.isWater(...next));
+      if (Math.hypot(next[0] - requested[0], next[1] - requested[1]) > .05) blocked++;
+      [x, z] = next;
+    }
+  }
+  assert.ok(blocked > 100, "the actual circular boundary is exercised, not just existing paths");
+  for (const point of [[NaN, 0], [0, Infinity], [1000, 1000], [-1000, -1000]]) {
+    assert.equal(garden.onGardenGround(...point), false);
+    const next = garden.resolveGardenWalk(...point);
+    assert.ok(next.every(Number.isFinite) && garden.onGardenGround(...next));
+  }
+});
+
+test("walking toward every shore stops safely while the original northern paths stay open", () => {
+  let shores = 0;
+  for (let degrees = 0; degrees < 360; degrees += 5) {
+    const a = degrees * Math.PI / 180, dx = Math.cos(a), dz = Math.sin(a);
+    const radius = garden.lakeRadiusAt(a) + .4;
+    let x = garden.LAKE.x + dx * radius, z = garden.LAKE.z + dz * radius;
+    const initial = collide(x, z);
+    if (Math.hypot(initial[0] - x, initial[1] - z) > 1e-6) continue; // Existing walls and trunks cannot be starting positions.
+    shores++;
+    for (let frame = 0; frame < 120; frame++) {
+      const next = collide(x - dx * .06, z - dz * .06);
+      assert.ok(garden.onGardenGround(...next) && !garden.isWater(...next), `shore remains dry at ${degrees} degrees`);
+      assert.ok(Math.hypot(next[0] - x, next[1] - z) <= .35, `shore movement stays local at ${degrees} degrees`);
+      [x, z] = next;
+    }
+  }
+  assert.ok(shores > 50, "walk toward all accessible shore sectors, including both sides and the south bank");
+  const north = garden.GARDEN_LOOP_POINTS.filter(([x, z]) => Math.hypot(x - garden.LAKE.x, z - garden.LAKE.z) > garden.GARDEN_WALK_RADIUS);
+  assert.ok(north.length > 3, "the old north loop extends beyond the new lawn circle");
+  for (const [x, z] of north) {
+    assert.ok(garden.onGardenGround(x, z));
+    const next = garden.resolveGardenWalk(x, z);
+    near(next[0], x, "north path x is preserved");
+    near(next[1], z, "north path z is preserved");
+  }
+});
+
+test("production walking collisions keep lawn walkers outside hall walls and willow trunks while doors stay open", () => {
+  const { HALL } = garden;
+  for (const side of [-1, 1]) {
+    let x = HALL.x + side * (HALL.halfX + 2), z = HALL.glassZ + 8;
+    for (let frame = 0; frame < 80; frame++) {
+      [x, z] = collide(x - side * .08, z);
+      assert.ok(side * (x - HALL.x) >= HALL.halfX + .5, "grass beside the hall cannot bypass its side wall");
+    }
+    x = HALL.x + side * (HALL.halfX + 2); z = HALL.doorZ;
+    for (let frame = 0; frame < 55; frame++) [x, z] = collide(x - side * .08, z);
+    assert.ok(side * (x - HALL.x) < HALL.halfX - 2, "the existing side doorway remains passable");
+  }
+  for (const [edge, direction] of [[HALL.glassZ, -1], [HALL.backZ, 1]]) {
+    let x = HALL.x, z = edge - direction * 2;
+    for (let frame = 0; frame < 80; frame++) {
+      [x, z] = collide(x, z + direction * .08);
+      assert.ok(direction * (z - edge) <= -.5, "the window and back wall remain solid from inside");
+    }
+  }
+  for (const tree of garden.GARDEN_WILLOWS) {
+    const obstacle = garden.GARDEN_OBSTACLES.find(o => o.x === tree.x && o.z === tree.z);
+    assert.ok(obstacle?.r > .1, "each newly reachable willow has a solid trunk");
+    const distance = Math.hypot(tree.x - garden.LAKE.x, tree.z - garden.LAKE.z);
+    const dx = (tree.x - garden.LAKE.x) / distance, dz = (tree.z - garden.LAKE.z) / distance;
+    let x = tree.x + dx * 1.4, z = tree.z + dz * 1.4;
+    for (let frame = 0; frame < 40; frame++) {
+      const next = collide(x - dx * .06, z - dz * .06);
+      assert.ok(Math.hypot(next[0] - tree.x, next[1] - tree.z) >= obstacle.r + .35 - 1e-8, "walking cannot pass through the trunk");
+      assert.ok(Math.hypot(next[0] - x, next[1] - z) <= .2, "trunk contact does not snap the walker away");
+      assert.ok(!garden.isWater(...next));
+      [x, z] = next;
+    }
+  }
+});
+
 test("hall tiers descend toward the glass, the stairs are continuous and the side doors ramp to the ground", () => {
   const { HALL, HALL_TIERS } = garden;
   near(garden.hallFloorHeight(8, HALL.glassZ + 2), HALL_TIERS[0].y, "window tier");
@@ -112,9 +224,9 @@ test("hall tiers descend toward the glass, the stairs are continuous and the sid
   assert.ok(garden.GARDEN_WALLS.length >= 7);
 });
 
-test("thirty server-mirrored seats: four hall tiers facing the glass and the island pavilion", () => {
-  assert.equal(garden.GARDEN_PAVILIONS.length, 5);
-  assert.equal(garden.GARDEN_SEATS.length, 30);
+test("original thirty seats stay aligned alongside twelve new pond bench seats", () => {
+  assert.equal(garden.GARDEN_PAVILIONS.length, 11);
+  assert.equal(garden.GARDEN_SEATS.length, 42);
   const hall = garden.GARDEN_SEATS.filter((seat) => seat.spotId.startsWith("hall-tier-"));
   assert.equal(hall.length, 24);
   for (const seat of hall) {
@@ -137,7 +249,7 @@ test("thirty server-mirrored seats: four hall tiers facing the glass and the isl
   assert.equal(garden.claimedGardenSeat({ pose: "standing", spotId: "hall-tier-2", slot: 3 }), null);
   assert.equal(garden.nearbyGardenPavilion(hall[0].x + 1, hall[0].z + 0.5)?.spotId, hall[0].spotId);
   assert.equal(garden.nearbyGardenPavilion(0, 34), null);
-  assert.equal(garden.GARDEN_OBSTACLES.length, 6);
+  assert.equal(garden.GARDEN_OBSTACLES.length, 6 + garden.GARDEN_WILLOWS.length, "original pavilion posts and newly reachable willow trunks stay solid");
 });
 
 test("the boat route stays in open water, visits all three piers and reports the next stop", () => {
