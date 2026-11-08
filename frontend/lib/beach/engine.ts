@@ -14,7 +14,7 @@ import { type Daylight, bambooDaylightAt, bambooSunsetAmount, daylightAt, garden
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
 import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringBathDistance, hotSpringBathIndex, hotSpringFloorHeight, hotSpringCeilingHeight, hotSpringInWater } from "./hot-spring";
-import { ONSEN_SEATS, ONSEN_FLOATS, ONSEN_FLOATS_PER_BATH, ONSEN_REST_REACH, ONSEN_SEATS_PER_BATH, claimedOnsenSeat, claimedOnsenFloat, onsenLedgeHeight, onsenFloatingY } from "./onsen-rest";
+import { ONSEN_SEATS, ONSEN_FLOATS, ONSEN_FLOATS_PER_BATH, ONSEN_FLOAT_RADIUS, ONSEN_REST_REACH, ONSEN_SEATS_PER_BATH, claimedOnsenSeat, claimedOnsenFloat, onsenLedgeHeight, onsenFloatingY } from "./onsen-rest";
 import { FIRE_BENCH_SEATS, FIRE_BENCH_REACH, claimedFireBenchSlot } from "./fire-benches";
 import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
@@ -148,6 +148,9 @@ export function beachRenderSettings(width: number, height: number, deviceRatio: 
 }
 
 const WALK_SPEED = 3.2;
+const FLOAT_SPEED = 1.35;
+/** How far a floating body's feet lead its middle. */
+const FLOAT_BODY_OFFSET = 0.55;
 const EYE = 1.55;
 const AVATAR_HEIGHT = 1.8; // World size stays fixed when the artwork gains pixels.
 /** 서 있을 때: 숨쉬기 0→1→2→1→0, 가끔 깜빡임(마지막 프레임). 6fps 로 2초에 한 바퀴 */
@@ -425,6 +428,7 @@ export class BeachEngine {
   private lastBedState = "";
   private eyeHeight = EYE;
   private skyRest: StargazingSlot | null = null;
+  private floatVelocity = { x: 0, z: 0 };
   private skyLook: { yaw: number; pitch: number } | null = null;
   private beforeSkyRest: { pitch: number } | null = null;
   private lastStargazingState = "";
@@ -763,6 +767,8 @@ export class BeachEngine {
     if (this.isBedLying) {
       this.self.yaw = view === "first" ? 0 : this.skyRest!.yaw;
       this.self.pitch = view === "first" ? BED_VIEW.pitch : 1.25;
+    } else if (this.floating) {
+      this.self.pitch = view === "first" ? 0.05 : 0.5;
     } else if (this.skyRest && view === "first") {
       this.self.pitch = SKY_VIEW.pitch;
       this.skyLook = { yaw: 0, pitch: 0 };
@@ -897,7 +903,7 @@ export class BeachEngine {
 
   /** 화면 조이스틱 입력 (-1~1, y 는 앞으로가 양수). 손을 떼면 (0, 0) */
   setMove(x: number, y: number) {
-    if (this.inputPaused || this.skyRest || this.fixedSeat) return;
+    if (this.inputPaused || this.anchored) return;
     this.move.x = Math.max(-1, Math.min(1, x || 0));
     this.move.y = Math.max(-1, Math.min(1, y || 0));
   }
@@ -963,12 +969,22 @@ export class BeachEngine {
   }
 
   get isLying() { return Boolean(this.skyRest); }
+  private get floating() { return this.skyRest?.spotId === "onsen-float"; }
+  /** Held in place by a seat or a mat. A floating visitor keeps moving. */
+  private get anchored() { return Boolean((this.skyRest && !this.floating) || this.fixedSeat); }
+  private get skyOnlyView() { return Boolean(this.skyRest && !this.isBedLying && !this.floating && this.view === "first"); }
   get isBenchSeated() { return Boolean(this.benchSeat); }
   get isPavilionSeated() { return Boolean(this.pavilionSeat); }
   get isBedLying() { return Boolean(this.skyRest?.spotId.startsWith("hut-") || uyuniHotelForSpot(this.skyRest?.spotId)); }
   private get fixedSeat() { return this.onsenSeat ?? this.benchSeat ?? this.pavilionSeat ?? null; }
   private floatingPose(slot: StargazingSlot | null): StargazingSlot | null {
-    return slot?.spotId === "onsen-float" ? { ...slot, avatarY: onsenFloatingY(this.time, slot.slot) } : slot;
+    if (slot?.spotId !== "onsen-float") return slot;
+    // x, z and yaw describe the middle of the body and where it is heading. The feet lead and the head trails.
+    const head = slot.yaw + Math.PI, t = this.time, i = slot.slot;
+    return { ...slot, yaw: head,
+      x: slot.x + Math.sin(head) * FLOAT_BODY_OFFSET + Math.sin(t * 0.37 + i) * 0.05,
+      z: slot.z + Math.cos(head) * FLOAT_BODY_OFFSET + Math.cos(t * 0.29 + i * 1.3) * 0.05,
+      avatarY: onsenFloatingY(t, i), roll: Math.sin(t * 0.6 + i) * 0.05 };
   }
 
   get onsenState(): OnsenState {
@@ -990,7 +1006,7 @@ export class BeachEngine {
     const nearby = (slot: { x: number; z: number }) => Math.hypot(this.self.x - slot.x, this.self.z - slot.z) <= ONSEN_REST_REACH;
     return { inWater, sitting: Boolean(this.onsenSeat), floating,
       canSit: Boolean(available && ONSEN_SEATS.some(slot => !seats.has(slot.slot) && nearby(slot))),
-      canFloat: Boolean(available && ONSEN_FLOATS.some(slot => !floats.has(slot.slot) && nearby(slot))),
+      canFloat: Boolean(available && bath >= 0 && ONSEN_FLOATS.some(slot => here(slot.slot, ONSEN_FLOATS_PER_BATH) && !floats.has(slot.slot))),
       occupiedSeats: [...seats].filter(slot => here(slot, ONSEN_SEATS_PER_BATH)).sort((a, b) => a - b),
       occupiedFloats: [...floats].filter(slot => here(slot, ONSEN_FLOATS_PER_BATH)).sort((a, b) => a - b) };
   }
@@ -1192,12 +1208,13 @@ export class BeachEngine {
       this.benchSeat = null;
       this.onsenSeat = null;
       this.pavilionSeat = null;
-      this.skyRest = slot;
+      this.skyRest = slot.spotId === "onsen-float" ? { ...slot } : slot; // A float keeps its own copy, updated as it drifts.
+      this.floatVelocity = { x: 0, z: 0 };
       this.skyLook = { yaw: 0, pitch: 0 };
       this.setView("third");
       this.self.x = slot.x; this.self.z = slot.z;
-      this.self.yaw = slot.yaw; this.self.pitch = 1.25;
-      this.orbitYaw = slot.yaw;
+      this.self.yaw = slot.yaw; this.self.pitch = this.floating ? 0.5 : 1.25;
+      this.orbitYaw = this.floating ? slot.yaw + 1.4 : slot.yaw; // From straight behind, a reclined body is only the back of a head.
       this.eyeHeight = (slot.avatarY ?? STARGAZING.avatarY) + 0.16;
     } else if (state.pose === "standing" && (this.skyRest || this.fixedSeat)) {
       if (![state.x, state.z, state.yaw].every(Number.isFinite)) return;
@@ -1428,15 +1445,15 @@ export class BeachEngine {
           this.self.yaw = THREE.MathUtils.clamp(this.self.yaw - dx * k, -BED_VIEW.yawLimit, BED_VIEW.yawLimit);
           this.self.pitch = THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, BED_VIEW.minPitch, BED_VIEW.maxPitch);
         }
-      } else if (this.skyRest && this.view === "first") {
+      } else if (this.skyRest && !this.floating && this.view === "first") {
         const head = this.skyLook ??= { yaw: 0, pitch: 0 };
         this.skyLook = this.limitSkyLook(head.yaw - dx * k, head.pitch - dy * k * 0.75);
       } else {
         if (this.view === "third") this.orbitYaw -= dx * k;
         else this.self.yaw -= dx * k;
-        this.self.pitch = this.skyRest
-          ? THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch)
-          : THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, -0.55, 0.5);
+        const [lowest, highest] = this.floating ? (this.view === "third" ? [0.2, 1.25] : [-0.55, 0.5])
+          : this.skyRest ? [SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch] : [-0.55, 0.5];
+        this.self.pitch = THREE.MathUtils.clamp(this.self.pitch - dy * k * 0.75, lowest, highest);
       }
       if (this.view === "first") this.faceGoal = null;
     }
@@ -1489,7 +1506,7 @@ export class BeachEngine {
       if (e.type === "keydown" && !e.repeat) this.toggleView();
       return;
     }
-    if (this.skyRest || this.fixedSeat) {
+    if (this.anchored) {
       if (k.startsWith("Arrow")) e.preventDefault();
       return;
     }
@@ -1782,7 +1799,7 @@ export class BeachEngine {
 
   /* ---------------- 프레임 ---------------- */
   getSelf(): SelfState {
-    return { x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.fixedSeat?.yaw ?? this.self.yaw, moving: this.skyRest || this.fixedSeat ? false : this.self.moving };
+    return { x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.fixedSeat?.yaw ?? this.self.yaw, moving: this.anchored ? false : this.self.moving };
   }
 
   getContinuityView(): ContinuityView {
@@ -1836,6 +1853,8 @@ export class BeachEngine {
       if (this.isBedLying && this.view === "first") {
         this.self.yaw = clamp(finite(saved.yaw, 0), -BED_VIEW.yawLimit, BED_VIEW.yawLimit);
         this.self.pitch = clamp(finite(saved.pitch, BED_VIEW.pitch), BED_VIEW.minPitch, BED_VIEW.maxPitch);
+      } else if (this.floating) {
+        this.self.pitch = this.view === "first" ? clamp(finite(saved.pitch, 0.05), -0.55, 0.5) : clamp(finite(saved.pitch, 0.5), 0.2, 1.25);
       } else if (this.skyRest) {
         this.self.pitch = this.view === "first"
           ? clamp(finite(saved.pitch, SKY_VIEW.pitch), SKY_VIEW.minPitch, SKY_VIEW.maxPitch)
@@ -1888,7 +1907,7 @@ export class BeachEngine {
   resize() {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    this.skyRenderMode = Boolean(this.skyRest && !this.isBedLying && this.view === "first");
+    this.skyRenderMode = this.skyOnlyView;
     const size = beachRenderSettings(w, h, window.devicePixelRatio || 1, this.mobile, this.quality, this.skyRenderMode);
     if (!this.renderSize || size.width !== this.renderSize.width || size.height !== this.renderSize.height || size.pixelRatio !== this.renderSize.pixelRatio) {
       // One allocation sets both dimensions and DPR; unchanged frames never resize the canvas.
@@ -1898,13 +1917,13 @@ export class BeachEngine {
     this.camera.aspect = w / h;
     this.camera.fov = this.cameraFov();
     this.camera.updateProjectionMatrix();
-    if (this.skyRest && !this.isBedLying && this.view === "first" && this.skyLook) {
+    if (this.skyOnlyView && this.skyLook) {
       this.skyLook = this.limitSkyLook(this.skyLook.yaw, this.skyLook.pitch);
     }
   }
 
   private syncSkyResolution() {
-    if (this.skyRenderMode !== Boolean(this.skyRest && !this.isBedLying && this.view === "first")) this.resize();
+    if (this.skyRenderMode !== this.skyOnlyView) this.resize();
   }
 
   private setQuality(level: "high" | "low") {
@@ -1960,10 +1979,10 @@ export class BeachEngine {
   }
 
   private updateSelf(dt: number) {
-    const skyOnly = this.skyRest && !this.isBedLying && this.view === "first";
-    this.camera.layers?.set(skyOnly ? 1 : 0);
+    this.camera.layers?.set(this.skyOnlyView ? 1 : 0);
     if (this.skyRest) {
-      this.self.x = this.skyRest.x; this.self.z = this.skyRest.z; this.self.moving = false;
+      if (this.floating) this.driftOnWater(dt);
+      else { this.self.x = this.skyRest.x; this.self.z = this.skyRest.z; this.self.moving = false; }
       this.placeStargazingCamera(dt);
       this.sky.position.copy(this.camera.position);
       this.updateSelfAvatar(dt);
@@ -2096,6 +2115,43 @@ export class BeachEngine {
     this.camera.rotateX(this.skyLook?.pitch ?? 0);
   }
 
+  /** Joystick and keys steer a floating body: it eases up to a slow glide and coasts to a stop inside its bath. */
+  private driftOnWater(dt: number) {
+    const rest = this.skyRest!, home = ONSEN_FLOATS[rest.slot], k = this.keys, velocity = this.floatVelocity;
+    let mx = this.move.x, my = this.move.y;
+    if (k.has("w") || k.has("ArrowUp")) my += 1;
+    if (k.has("s") || k.has("ArrowDown")) my -= 1;
+    if (k.has("a")) mx -= 1;
+    if (k.has("d")) mx += 1;
+    const turn = (k.has("ArrowLeft") || k.has("q") ? 1 : 0) - (k.has("ArrowRight") || k.has("e") ? 1 : 0);
+    if (turn) {
+      if (this.view === "third") this.orbitYaw += turn * 1.9 * dt;
+      else this.self.yaw += turn * 1.9 * dt;
+    }
+    const length = Math.hypot(mx, my);
+    if (length > 1) { mx /= length; my /= length; }
+    const steering = this.view === "third" ? this.orbitYaw : this.self.yaw;
+    const forward = this.facing(steering), right = { x: Math.cos(steering), z: -Math.sin(steering) };
+    const ease = Math.min(1, dt * 2.2);
+    velocity.x += ((forward.x * my + right.x * mx) * FLOAT_SPEED - velocity.x) * ease;
+    velocity.z += ((forward.z * my + right.z * mx) * FLOAT_SPEED - velocity.z) * ease;
+    let x = this.self.x + velocity.x * dt, z = this.self.z + velocity.z * dt;
+    const fromX = x - home.centerX, fromZ = z - home.centerZ, distance = Math.hypot(fromX, fromZ);
+    if (distance > ONSEN_FLOAT_RADIUS) {
+      const outX = fromX / distance, outZ = fromZ / distance, outward = velocity.x * outX + velocity.z * outZ;
+      x = home.centerX + outX * ONSEN_FLOAT_RADIUS;
+      z = home.centerZ + outZ * ONSEN_FLOAT_RADIUS;
+      if (outward > 0) { velocity.x -= outX * outward; velocity.z -= outZ * outward; }
+    }
+    const speed = Math.hypot(velocity.x, velocity.z);
+    if (speed > 0.12 && this.view === "third") {
+      const change = Math.atan2(-velocity.x, -velocity.z) - this.self.yaw;
+      this.self.yaw += Math.atan2(Math.sin(change), Math.cos(change)) * Math.min(1, dt * 3);
+    }
+    this.self.x = x; this.self.z = z; this.self.moving = speed > 0.08;
+    rest.x = x; rest.z = z; rest.yaw = this.self.yaw;
+  }
+
   /** Lying eyes look at the sky; the alternate camera keeps all eight mats in view. */
   private placeStargazingCamera(dt: number) {
     const resting = this.floatingPose(this.skyRest);
@@ -2103,18 +2159,24 @@ export class BeachEngine {
     if (resting.spotId === "onsen-float") {
       const surface = resting.avatarY!;
       if (this.view === "first") {
-        const head = stargazingBodyPoint(resting, 1.42);
-        this.camera.position.set(head.x, surface + 0.16, head.z);
-        this.orientSkyCamera();
+        const head = stargazingBodyPoint(resting, 1);
+        this.camera.position.set(head.x, surface + 0.92, head.z);
+        this.camera.rotation.set(this.self.pitch, this.self.yaw, 0, "YXZ");
         return;
       }
       const focus = stargazingBodyPoint(resting, 0.9);
-      const elevation = THREE.MathUtils.clamp(this.self.pitch, SKY_VIEW.thirdMinPitch, SKY_VIEW.thirdMaxPitch);
+      const elevation = THREE.MathUtils.clamp(this.self.pitch, 0.2, 1.25);
       const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
       const reach = Math.max(4.4, 1.55 / (Math.tan(halfFov) * Math.max(0.3, Math.min(1, this.camera.aspect))));
       const horizontal = Math.cos(elevation) * reach;
       const wanted = new THREE.Vector3(focus.x + Math.sin(this.orbitYaw) * horizontal,
         surface + Math.sin(elevation) * reach + 0.15, focus.z + Math.cos(this.orbitYaw) * horizontal);
+      // The bath is sunken and walled by rock: the orbit stays over it.
+      const home = ONSEN_FLOATS[resting.slot];
+      for (let k = 1; k >= 0.1 && Math.hypot(wanted.x - home.centerX, wanted.z - home.centerZ) > 5.6; k -= 0.05) {
+        wanted.x = focus.x + Math.sin(this.orbitYaw) * horizontal * k;
+        wanted.z = focus.z + Math.cos(this.orbitYaw) * horizontal * k;
+      }
       if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
       else this.followCam.lerp(wanted, Math.min(1, dt * 10));
       this.camera.position.copy(this.followCam);
@@ -2407,20 +2469,21 @@ export class BeachEngine {
     const now = performance.now(), renderAt = this.remoteClock?.frameTime(now);
     let selectedNode: PlayerNode | null = null;
     for (const [pid, p] of this.players) {
-      const resting = this.floatingPose(claimedRestSlot(p.data));
+      const claimed = claimedRestSlot(p.data), drifting = claimed?.spotId === "onsen-float";
       const seated = claimedSeatSlot(p.data);
       const onsenSeat = claimedOnsenSeat(p.data), onsenSeated = Boolean(onsenSeat);
-      const fixed = resting ?? seated;
+      const fixed = drifting ? null : claimed ?? seated;
       const far = Math.hypot(p.target.x - p.cur.x, p.target.z - p.cur.z);
       if (fixed) { p.cur.x = fixed.x; p.cur.z = fixed.z; p.cur.yaw = fixed.yaw; p.cur.moving = false; }
       else if (p.motion && renderAt !== undefined) p.motion.write(renderAt, now, p.cur);
       else if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
       else { p.cur.x += (p.target.x - p.cur.x) * smooth; p.cur.z += (p.target.z - p.cur.z) * smooth; }
-      const walking = !fixed && (p.motion ? p.cur.moving : p.target.moving || far > 0.12);
+      const walking = !fixed && !drifting && (p.motion ? p.cur.moving : p.target.moving || far > 0.12);
       p.animT += dt;
       const frame = charFrame(walking, p.animT);
       const turn = p.target.yaw - p.cur.yaw;
       if (!fixed && !p.motion) p.cur.yaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * smooth;
+      const resting = this.floatingPose(claimed && drifting ? { ...claimed, x: p.cur.x, z: p.cur.z, yaw: p.cur.yaw } : claimed);
       // Pavilion seats are on the deck edge with legs over the side: the folded sprite stands on the ground below.
       const pavilionSeat = seated !== null ? claimedPavilionSeat(p.data) : null;
       if (!seated) shapeSeatedAvatar(p.sprite, null);

@@ -11,8 +11,12 @@ export const ONSEN_SEATS_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3;
 // Measured on the rigged avatar: the head starts 0.93 above the feet when standing and 0.63 above the seat when sitting,
 // so both leave the water just under the chin.
 export const ONSEN_SEAT_Y = 16.9;
-export const ONSEN_FLOAT_Y = 17.41;
-export const ONSEN_FLOAT_BOB = 0.025;
+export const ONSEN_FLOAT_Y = 17.2;
+export const ONSEN_FLOAT_BOB = 0.05;
+/** How far a floating visitor may drift from the middle of the bath, keeping the body off the sloped bank. */
+export const ONSEN_FLOAT_RADIUS = 3.5;
+/** Floating is half reclined: the head rides above the water and the legs below it. */
+export const ONSEN_FLOAT_INCLINE = 0.75;
 const FLOOR_Y = 16.6, SEAT_RADIUS = 3.55;
 // A bench around three sides of the bowl, open toward the sea, so it reads as a C from above.
 const LEDGE_INNER = 3.2, LEDGE_OUTER = 3.84;
@@ -48,7 +52,7 @@ export const ONSEN_FLOATS: readonly OnsenRestSlot[] = ONSEN_BATHS.flatMap((place
   const slot = bath * ONSEN_FLOATS_PER_BATH + spot;
   return {
     id: `onsen-float-${slot}`, spotId: "onsen-float" as const, slot,
-    x: place.x + x, z: place.z - 1.7, yaw: 0, avatarY: ONSEN_FLOAT_Y + place.lift, incline: 0, baseY: FLOOR_Y + place.lift, centerX: place.x, centerZ: place.z,
+    x: place.x + x, z: place.z - 1.7, yaw: 0, avatarY: ONSEN_FLOAT_Y + place.lift, incline: ONSEN_FLOAT_INCLINE, baseY: FLOOR_Y + place.lift, centerX: place.x, centerZ: place.z,
   };
 }));
 
@@ -62,8 +66,11 @@ export function claimedOnsenSeat(state: RestClaim): OnsenRestSlot | null {
   return validSlot(state, "sitting", "onsen-benches", ONSEN_SEATS);
 }
 
-export function claimedOnsenFloat(state: RestClaim): OnsenRestSlot | null {
-  return validSlot(state, "lying", "onsen-float", ONSEN_FLOATS);
+/** The slot only holds a place in that bath: a floating visitor drifts, so a reported position wins. */
+export function claimedOnsenFloat(state: RestClaim & { x?: number; z?: number; yaw?: number }): OnsenRestSlot | null {
+  const slot = validSlot(state, "lying", "onsen-float", ONSEN_FLOATS);
+  if (!slot || !Number.isFinite(state.x) || !Number.isFinite(state.z)) return slot;
+  return { ...slot, x: state.x as number, z: state.z as number, yaw: Number.isFinite(state.yaw) ? state.yaw as number : slot.yaw };
 }
 
 /** The bench stays walkable; the side open to the sea and the pool centre remain clear. */

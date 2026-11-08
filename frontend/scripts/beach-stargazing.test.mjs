@@ -308,7 +308,7 @@ test("bed dragging uses sea-view limits, duplicate claims preserve the view, and
 });
 
 test("lying head turns explore new sky in all directions while preserving the original lens, framing and body", () => {
-  for (const claim of [rest(2), { pose: "lying", spotId: "onsen-float", slot: 1 }]) {
+  for (const claim of [rest(2)]) {
     for (const pointerType of ["mouse", "touch"]) for (const mobile of [false, true]) for (const aspect of [390 / 844, 16 / 9]) {
       const { engine, camera } = fixture();
       engine.mobile = mobile;

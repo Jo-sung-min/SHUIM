@@ -11,7 +11,7 @@ const restSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/ons
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const restContext = { THREE };
 vm.runInNewContext(`${restSource}\nglobalThis.api = {
-  ONSEN_BATHS, ONSEN_SEATS_PER_BATH, ONSEN_FLOATS_PER_BATH,
+  ONSEN_BATHS, ONSEN_SEATS_PER_BATH, ONSEN_FLOATS_PER_BATH, ONSEN_FLOAT_RADIUS,
   ONSEN_SEATS, ONSEN_FLOATS, ONSEN_REST_REACH, ONSEN_SEAT_Y, ONSEN_FLOAT_Y, ONSEN_FLOAT_BOB,
   claimedOnsenSeat, claimedOnsenFloat, onsenLedgeHeight, onsenFloatingY, buildOnsenRest
 };`, restContext);

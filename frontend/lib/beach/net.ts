@@ -450,7 +450,7 @@ export async function addFirePowder(ticket: string, requestId: string, color: Po
 
 /** Mirrors lib/beach/onsen-rest.ts and BeachRoom. This file carries no runtime imports. */
 const ONSEN_BATH_CENTERS = [[0, 45], [-7.6, 55], [7.6, 55]] as const;
-const ONSEN_SEATS_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3;
+const ONSEN_SEATS_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3, ONSEN_FLOAT_RADIUS = 3.5;
 
 function validRestPresence(value: unknown): value is RestPresence {
   if (!value || typeof value !== "object") return false;
@@ -462,10 +462,12 @@ function validRestPresence(value: unknown): value is RestPresence {
     const sitting = state.spotId === "onsen-benches", perBath = sitting ? ONSEN_SEATS_PER_BATH : ONSEN_FLOATS_PER_BATH;
     if (state.pose !== (sitting ? "sitting" : "lying") || state.slot! >= perBath * ONSEN_BATH_CENTERS.length) return false;
     const [bathX, bathZ] = ONSEN_BATH_CENTERS[Math.floor(state.slot! / perBath)], place = state.slot! % perBath;
+    // A floating visitor drifts anywhere in its bath, facing any way.
+    if (!sitting) return Math.hypot(state.x - bathX, state.z - bathZ) <= ONSEN_FLOAT_RADIUS + 0.02;
     const angle = (-30 + place * 30) * Math.PI / 180;
-    const x = sitting ? bathX + Math.cos(angle) * 3.55 : bathX + (place - 1) * 2.4;
-    const z = sitting ? bathZ + Math.sin(angle) * 3.55 : bathZ - 1.7;
-    const yaw = sitting ? Math.atan2(Math.cos(angle), Math.sin(angle)) : 0;
+    const x = bathX + Math.cos(angle) * 3.55;
+    const z = bathZ + Math.sin(angle) * 3.55;
+    const yaw = Math.atan2(Math.cos(angle), Math.sin(angle));
     return Math.abs(state.x - x) <= 0.02 && Math.abs(state.z - z) <= 0.02 && Math.abs(Math.atan2(Math.sin(state.yaw - yaw), Math.cos(state.yaw - yaw))) < 1e-6;
   }
   if (state.pose === "sitting") {

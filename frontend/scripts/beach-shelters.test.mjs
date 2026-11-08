@@ -172,9 +172,9 @@ test("walls and bed frame stop walking at maximum sprint step without sealing th
   }
 });
 
-test("real front windows admit the sea view while their lower walls stop walking through them", () => {
+test("the glass front admits the sea view while it still stops walking through it", () => {
   scene.updateMatrixWorld(true);
-  const roomMeshes = scene.children.filter(node => node.name.startsWith("shelters-"));
+  const roomMeshes = scene.children.filter(node => node.name.startsWith("shelters-") && !node.material.transparent);
   for (const shelter of SHELTERS) {
     const front = shelter.z - shelter.depth / 2;
     for (const offset of [-2.8, 0, 2.8]) {
@@ -186,6 +186,24 @@ test("real front windows admit the sea view while their lower walls stop walking
         assert.ok(engine.self.z <= front - 0.349, "window sill walls cannot be used as doorways");
       }
     }
+  }
+});
+
+test("each house has a tall glass gable and a solid hearth without losing a walking route", () => {
+  scene.updateMatrixWorld(true);
+  const named = (name) => scene.children.find(node => node.name === name);
+  assert.equal(named("shelter-glass-gable").count, SHELTERS.length);
+  assert.equal(named("shelter-glass-gable").material.transparent, true);
+  assert.equal(named("shelters-stove-flames").count, SHELTERS.length);
+  const roof = new THREE.Box3().setFromObject(named("shelters-roof"));
+  assert.ok(roof.max.y > 7 && roof.max.y < 7.5, `the ridge clears the room and stays under the lantern lines: ${roof.max.y}`);
+  for (const shelter of SHELTERS) for (const side of [-1, 1]) {
+    const [x] = resolveWalls(shelter.x + side * 4.82, shelter.z - 1.35, SHELTER_COLLIDERS);
+    assert.ok(Math.abs(x - (shelter.x + side * 4.82)) > 0.1, "the hearth and the console are solid");
+    const up = new THREE.Raycaster(new THREE.Vector3(shelter.x, 1.8, shelter.z - 0.5), new THREE.Vector3(0, 1, 0), 0, 3.5);
+    assert.equal(up.intersectObject(named("shelters-roof"), false).length, 0, "the middle of the room is open well above head height");
+    const eaves = new THREE.Raycaster(new THREE.Vector3(shelter.x + side * 4.8, 3.9, shelter.z + 1.5), new THREE.Vector3(side, 0, 0), 0, 1);
+    assert.ok(eaves.intersectObject(named("shelters-walls"), false).length > 0, "no strip of sky shows between the side walls and the taller roof");
   }
 });
 

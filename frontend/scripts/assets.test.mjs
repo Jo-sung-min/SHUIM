@@ -7,6 +7,10 @@ import * as THREE from "three";
 import { assetsFor } from "./assets-fixture.mjs";
 
 const CDN = "https://cdn.sorow.co.kr";
+test("the spring water recording is served by the app, not the CDN", () => {
+  assert.equal(assetsFor().assetUrl("/audio/onsen-water-v1.mp3"), "/audio/onsen-water-v1.mp3");
+});
+
 test("public media defaults to the verified CDN and supports an optional replacement origin", () => {
   const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v2.glb", "/beach/fx/firework-boom-v1.mp3", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png", "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp"];
   for (const path of paths) {

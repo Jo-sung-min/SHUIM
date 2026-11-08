@@ -76,6 +76,8 @@ test("sky-only transitions resize once and standing, third-person and bed views 
   engine.skyRest = null; engine.syncSkyResolution();
   assert.deepEqual(buffers.at(-1), original);
   engine.skyRest = { spotId: "onsen-float", slot: 1 }; engine.syncSkyResolution();
+  assert.deepEqual(buffers.at(-1), original, "a floating visitor still sees the bath, so it keeps the normal budget");
+  engine.skyRest = { spotId: "stargazing", slot: 0 }; engine.syncSkyResolution();
   assert.equal(buffers.at(-1).pixelRatio, 2);
   engine.view = "third"; engine.syncSkyResolution();
   assert.deepEqual(buffers.at(-1), original);

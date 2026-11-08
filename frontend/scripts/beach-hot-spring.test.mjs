@@ -144,11 +144,15 @@ test("bathing eye height sees the sea through a 140-degree opening without fence
   const solids = [];
   onsen.group.traverse((object) => { if (object.isMesh && !object.material.transparent) solids.push(object); });
   const origin = new THREE.Vector3(0, spa.floorY + 1.55, 45), ray = new THREE.Raycaster();
+  let lanternRays = 0;
   for (let degrees = -160; degrees <= -20; degrees += 2) {
     const radians = degrees * Math.PI / 180;
     ray.set(origin, new THREE.Vector3(Math.cos(radians), 0, Math.sin(radians))); ray.far = 12;
-    assert.equal(ray.intersectObjects(solids, false).length, 0, `the sea horizon is visible at ${degrees} degrees from inside the water`);
+    const blockers = ray.intersectObjects(solids, false);
+    assert.equal(blockers.filter((hit) => !hit.object.name.includes("lantern")).length, 0, `the sea horizon is visible at ${degrees} degrees from inside the water`);
+    if (blockers.length) lanternRays++;
   }
+  assert.ok(lanternRays <= 20, `the low lantern row only punctuates the horizon: ${lanternRays} rays`);
   const cliff = onsen.group.getObjectByName("onsen-cliff-core");
   const bounds = new THREE.Box3().setFromObject(cliff);
   assert.ok(Math.abs(bounds.min.y) < 1e-5, "the raised bath has a solid foundation down to ground level");
@@ -345,6 +349,27 @@ test("each upper bath falls past a rock face into the first, and neither level l
     const ray = new THREE.Raycaster(new THREE.Vector3(towardX * -5.6, spa.deckY + 1.2, 45 + towardZ * -5.6), new THREE.Vector3(-towardX, 0, -towardZ), 0, 2);
     assert.ok(ray.intersectObject(terrace).length, "seen from the first deck it is a real wall");
   }
+  onsen.dispose();
+});
+
+test("after dark the water mirrors the deck lanterns and fireflies appear, all without another light", () => {
+  const scene = new THREE.Scene(), onsen = buildHotSpring(scene);
+  const flies = onsen.group.getObjectByName("onsen-fireflies");
+  assert.equal(flies.isPoints, true);
+  onsen.applyDaylight(0);
+  assert.equal(flies.visible, false, "no fireflies by day");
+  onsen.applyDaylight(1);
+  assert.equal(flies.visible, true);
+  for (const name of ["onsen-quiet-mineral-water", "onsen-upper-quiet-water"]) {
+    const lamps = onsen.group.getObjectByName(name).material.uniforms.uLamps.value;
+    assert.ok(lamps.length >= 6 && lamps.length <= 16, `${name} reflects ${lamps.length} lanterns`);
+    for (const lamp of lamps) assert.ok(lamp.y > spa.deckY, "only lanterns on the decks are mirrored");
+  }
+  const frames = onsen.group.getObjectByName("onsen-lantern-frames"), cores = onsen.group.getObjectByName("onsen-lantern-warm-cores");
+  assert.equal(frames.count, cores.count * 8, "each lantern is a timber frame around a paper core");
+  let lights = 0;
+  onsen.group.traverse((object) => { if (object.isPointLight) lights++; });
+  assert.equal(lights, 2);
   onsen.dispose();
 });
 

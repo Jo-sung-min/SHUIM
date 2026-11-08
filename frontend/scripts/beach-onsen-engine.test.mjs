@@ -67,7 +67,7 @@ function fixture(skin = 0) {
 }
 function visitor(id, slot, pose, skin = 0) {
   // Deliberately conflicting x/z/moving checks that claims, not stale movement, anchor the actor.
-  return { pid: id, nick: id, skin, x: 0, z: 3, yaw: 1.1, moving: true, ...claim(slot, pose), x: 0, z: 3 };
+  return { pid: id, nick: id, skin, yaw: 1.1, moving: true, ...claim(slot, pose), ...(pose === "lying" ? {} : { x: 0, z: 3 }) };
 }
 
 test("onsen controls follow water, 2.2m reach and occupied slots without claiming a place", () => {
@@ -88,10 +88,10 @@ test("onsen controls follow water, 2.2m reach and occupied slots without claimin
   const count = changes.length; engine.updateOnsenState(); engine.updateOnsenState();
   assert.equal(changes.length, count, "stable frames do not rerender the controls");
   assert.equal(engine.fixedSeat, null); assert.equal(engine.skyRest, null);
-  Object.assign(engine.self, { x: 0, z: ONSEN_FLOATS[1].z - 2.199 });
-  assert.equal(engine.onsenState.canFloat, true);
-  engine.self.z -= 0.002;
-  assert.equal(engine.onsenState.canFloat, false, "outside reach cannot offer an action");
+  Object.assign(engine.self, { x: 0, z: 41.1 });
+  assert.equal(engine.onsenState.canFloat, true, "any free place in this bath will do");
+  engine.setPlayers([0, 1, 2].map((slot) => visitor(`float-${slot}`, ONSEN_FLOATS[slot], "lying")));
+  assert.equal(engine.onsenState.canFloat, false, "a full bath offers nothing");
 });
 
 test("confirmed onsen seats pin both genders to the stone ledge, preserve view and release on standing", async () => {
@@ -139,17 +139,18 @@ test("floating uses the assigned pool location and buoyancy for body, sky eyes, 
       close(local.lying.avatarY, expected); close(remote.lying.avatarY, expected);
       assert.equal(local.seated, null); assert.equal(remote.seated, null); assert.equal(remote.moving, false);
       close(remote.x, slot.x); close(remote.z, slot.z);
-      assert.ok(camera.position.z > 38 && camera.position.y > 20, "overhead view stays over the onsen, not the beach mats");
-      const head = new THREE.Vector3(slot.x, expected + 0.1, slot.z - 1.7);
+      assert.ok(camera.position.z > 38 && camera.position.y > 18, "the view stays over the onsen, not the beach mats");
+      const head = new THREE.Vector3(slot.x, expected + 0.9, slot.z + 0.7);
       camera.updateMatrixWorld(); const screen = head.project(camera);
       assert.ok(Math.abs(screen.x) < 0.95 && Math.abs(screen.y) < 0.95, "the whole floating body fits a narrow phone view");
     }
     engine.setView("first"); engine.updateSelf(1);
-    close(camera.position.x, slot.x); close(camera.position.z, slot.z - 1.42);
-    close(camera.position.y, onsenFloatingY(engine.time, slot.slot) + 0.16);
-    assert.equal(camera.layers.mask, 2, "floating first-person shows the sky layer");
+    const pose = engine.floatingPose(engine.skyRest);
+    close(camera.position.x, pose.x - Math.sin(pose.yaw)); close(camera.position.z, pose.z - Math.cos(pose.yaw));
+    close(camera.position.y, onsenFloatingY(engine.time, slot.slot) + 0.92);
+    assert.equal(camera.layers.mask, 1, "a floating visitor still sees the bath");
     assert.equal(engine.selfNode.avatar.root.visible, false);
-    assert.ok(camera.getWorldDirection(new THREE.Vector3()).y > 0.98);
+    assert.ok(Math.abs(camera.getWorldDirection(new THREE.Vector3()).y) < 0.2, "and looks across the water");
     engine.self.yaw = 0.8; engine.self.pitch = 1.43;
     engine.applyRest(claim(slot, "lying"));
     close(engine.self.yaw, 0.8); close(engine.self.pitch, 1.43);
@@ -160,6 +161,45 @@ test("floating uses the assigned pool location and buoyancy for body, sky eyes, 
     engine.applyRest(standing); engine.updateSelf(0);
     assert.equal(camera.layers.mask, 1); assert.equal(engine.onsenState.floating, false);
   }
+});
+
+test("a floating body is reclined, glides with the controls, coasts to a stop and stays in its bath", () => {
+  const { engine } = fixture(), slot = ONSEN_FLOATS[1];
+  engine.applyRest(claim(slot, "lying"));
+  assert.equal(engine.selfNode.avatar === undefined, false);
+  engine.setMove(0, 1);
+  const start = { x: engine.self.x, z: engine.self.z };
+  for (let frame = 0; frame < 30; frame++) { engine.time += 0.05; engine.updateSelf(0.05); }
+  assert.ok(Math.hypot(engine.self.x - start.x, engine.self.z - start.z) > 0.5, "the joystick moves the body");
+  assert.equal(engine.getSelf().moving, true);
+  assert.equal(engine.onsenState.floating, true);
+  const lying = engine.selfNode.avatar.states.at(-1).lying;
+  assert.ok(lying.incline > 0.5, "half reclined");
+  assert.ok(Number.isFinite(lying.roll), "with a gentle sway");
+  for (let frame = 0; frame < 900; frame++) { engine.time += 0.05; engine.updateSelf(0.05); }
+  assert.ok(Math.hypot(engine.self.x - slot.centerX, engine.self.z - slot.centerZ) <= 3.5 + 1e-9, "the drift stops at the edge of the bath");
+  engine.setMove(0, 0);
+  for (let frame = 0; frame < 120; frame++) { engine.time += 0.05; engine.updateSelf(0.05); }
+  assert.equal(engine.getSelf().moving, false, "and coasts to rest");
+  assert.equal(slot.x, ONSEN_FLOATS[1].x, "the shared table never moves");
+  engine.applyRest(standing);
+  const seat = fixture().engine;
+  seat.applyRest(claim(ONSEN_SEATS[0], "sitting"));
+  seat.setMove(0, 1);
+  assert.equal(seat.move.y, 0, "a seat still holds its visitor");
+});
+
+test("another visitor's float follows the position the server reports", () => {
+  const { engine } = fixture(), slot = ONSEN_FLOATS[1];
+  engine.setPlayers([visitor("friend", slot, "lying")]); engine.updatePlayers(1);
+  const node = engine.players.get("friend");
+  engine.setPlayers([{ ...visitor("friend", slot, "lying"), x: slot.x + 1.5, z: slot.z + 1, yaw: 2 }]);
+  node.motion = undefined; // The interpolation buffer runs on wall-clock time; this exercises the plain follow path.
+  for (let frame = 0; frame < 60; frame++) { engine.time += 0.1; engine.updatePlayers(0.1); }
+  close(node.cur.x, slot.x + 1.5, `x=${node.cur.x}`); close(node.cur.z, slot.z + 1, `z=${node.cur.z}`);
+  const state = node.avatar.states.at(-1);
+  assert.equal(state.moving, false, "floating never plays the walk cycle");
+  assert.ok(Math.hypot(state.lying.x - node.cur.x, state.lying.z - node.cur.z) < 0.7, "the body is drawn around that position");
 });
 
 test("remote onsen sit, float, stand and gender changes use the same authoritative poses", () => {

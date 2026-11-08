@@ -10,6 +10,11 @@ const MUTED_KEY = "sorow:fireworks-muted";
 const DEFAULT_FIELD_VOLUME = 50;
 const BOOM_URL = "/beach/fx/firework-boom-v1.mp3";
 const DISTANT_SURF = 0.12;
+/** Served by the app itself rather than the CDN, so it can be replaced without a media upload. */
+const ONSEN_WATER_URL = "/audio/onsen-water-v1.mp3";
+/** Mirrors ONSEN_BATHS in onsen-rest.ts, which would bring three.js-bound code into this audio module. */
+const ONSEN_WATER_CENTERS = [[0, 45], [-7.6, 55], [7.6, 55]] as const;
+const ONSEN_WATER_FULL = 6.5, ONSEN_WATER_REACH = 15;
 const UYUNI_MUSIC_KEY = "sorow:uyuni-background-volume";
 const DEFAULT_UYUNI_MUSIC_VOLUME = 25;
 
@@ -59,6 +64,7 @@ export class FireworkAudio {
   private readonly bambooDay: FieldRecording | null;
   private readonly indoorRain: FieldRecording | null;
   private readonly crackle: FieldRecording | null;
+  private readonly onsenWater: FieldRecording | null;
   private readonly uyuniMusic: FieldRecording | null;
   private musicPercent = DEFAULT_UYUNI_MUSIC_VOLUME;
   private roomMusicPlaying = false;
@@ -69,6 +75,8 @@ export class FireworkAudio {
   private indoorRainGain = 0;
   private fireGain = 0;
   private fireInRange = false;
+  private onsenGain = 0;
+  private onsenInRange = false;
   private unlocked = false;
   private sceneRunning: boolean;
   private volume = DEFAULT_FIELD_VOLUME;
@@ -87,6 +95,7 @@ export class FireworkAudio {
     this.bambooDay = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-wind-day-v1.mp3") : null;
     this.indoorRain = map === "garden" ? new FieldRecording("/beach/fx/garden-rain-indoor-v1.mp3") : null;
     this.crackle = map === "beach" ? new FieldRecording("/beach/fx/beach-campfire-crackle-v1.mp3") : null;
+    this.onsenWater = map === "beach" ? new FieldRecording(ONSEN_WATER_URL, 0.62) : null;
     this.uyuniMusic = map === "uyuni" ? new FieldRecording("/beach/fx/uyuni-calm-night-v1.mp3", 1) : null;
     try {
       this.muted = localStorage.getItem(MUTED_KEY) === "1";
@@ -101,6 +110,7 @@ export class FireworkAudio {
     this.bambooDay?.setVolume(0);
     this.indoorRain?.setVolume(0);
     this.crackle?.setVolume(0);
+    this.onsenWater?.setVolume(0);
     this.uyuniMusic?.setVolume(this.musicPercent / 100);
     // A spectator's ordinary tap or key press can also unlock audio on mobile browsers.
     window.addEventListener("pointerup", this.onGesture, true);
@@ -128,6 +138,7 @@ export class FireworkAudio {
       if (this.bambooDayGain > 0) this.bambooDay?.resume(this.context);
       if (this.indoorRainGain > 0) this.indoorRain?.resume(this.context);
       if (this.fireInRange) this.crackle?.resume(this.context);
+      if (this.onsenInRange) this.onsenWater?.resume(this.context);
     }
     if (playMusic) this.uyuniMusic?.resume(this.context);
   }
@@ -190,6 +201,19 @@ export class FireworkAudio {
     const wave = approachLevel(this.backgroundGain, waveTarget, blend);
     if (wave !== this.backgroundGain) { this.backgroundGain = wave; this.recording.setVolume(wave * scale); }
 
+    // The spring grows as a visitor nears any of the baths and fades out again toward the beach.
+    const spring = Math.min(...ONSEN_WATER_CENTERS.map(([x, z]) => Math.hypot(person.x - x, person.z - z)));
+    const nearSpring = Math.max(0, Math.min(1, (ONSEN_WATER_REACH - spring) / (ONSEN_WATER_REACH - ONSEN_WATER_FULL)));
+    const springTarget = Number.isFinite(spring) ? nearSpring * nearSpring * (3 - 2 * nearSpring) : 0;
+    const springLevel = approachLevel(this.onsenGain, springTarget, blend);
+    if (springLevel !== this.onsenGain) { this.onsenGain = springLevel; this.onsenWater?.setVolume(springLevel * scale); }
+    const springAudible = springTarget >= .025 || (this.onsenInRange && springLevel > .004);
+    if (this.onsenInRange !== springAudible) {
+      this.onsenInRange = springAudible;
+      if (!springAudible) this.onsenWater?.pause();
+      else if (this.unlocked && !this.muted && this.sceneRunning && !document.hidden) this.onsenWater?.resume(this.context);
+    }
+
     const burning = Number.isSafeInteger(logs) && logs > 0;
     const distance = burning ? Math.hypot(person.x - fire.x, person.z - fire.z) : Infinity;
     const t = Number.isFinite(distance) ? Math.max(0, Math.min(1, (8 - distance) / 6)) : 0;
@@ -232,8 +256,9 @@ export class FireworkAudio {
     this.sceneRunning = running;
     this.discardPast();
     if (!running) {
-      this.stopVoices(); this.recording?.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause();
+      this.stopVoices(); this.recording?.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.onsenWater?.pause(); this.uyuniMusic?.pause();
       this.fireInRange = false; this.fireGain = 0; this.crackle?.setVolume(0);
+      this.onsenInRange = false; this.onsenGain = 0; this.onsenWater?.setVolume(0);
     }
     else this.resumeAudio();
   }
@@ -257,7 +282,8 @@ export class FireworkAudio {
     this.bambooDay?.setVolume(scale * this.bambooDayGain);
     this.indoorRain?.setVolume(scale * this.indoorRainGain);
     this.crackle?.setVolume(scale * this.fireGain);
-    if (this.muted) { this.stopVoices(); this.recording.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); }
+    this.onsenWater?.setVolume(scale * this.onsenGain);
+    if (this.muted) { this.stopVoices(); this.recording.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.onsenWater?.pause(); }
     else {
       this.lastAudibleVolume = this.volume;
       for (const gain of this.voices.values()) gain.gain.value = .48 * scale;
@@ -273,7 +299,7 @@ export class FireworkAudio {
 
   private onVisibility = () => {
     this.discardPast();
-    if (document.hidden) { this.stopVoices(); this.recording?.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.uyuniMusic?.pause(); }
+    if (document.hidden) { this.stopVoices(); this.recording?.pause(); this.bambooDay?.pause(); this.indoorRain?.pause(); this.crackle?.pause(); this.onsenWater?.pause(); this.uyuniMusic?.pause(); }
     else this.resumeAudio();
   };
 
@@ -345,7 +371,7 @@ export class FireworkAudio {
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.abort.abort();
     this.stopVoices();
-    this.recording?.dispose(); this.bambooDay?.dispose(); this.indoorRain?.dispose(); this.crackle?.dispose(); this.uyuniMusic?.dispose();
+    this.recording?.dispose(); this.bambooDay?.dispose(); this.indoorRain?.dispose(); this.crackle?.dispose(); this.onsenWater?.dispose(); this.uyuniMusic?.dispose();
     this.cues.length = 0;
     this.boom = null;
     if (this.context) void this.context.close().catch(() => {});

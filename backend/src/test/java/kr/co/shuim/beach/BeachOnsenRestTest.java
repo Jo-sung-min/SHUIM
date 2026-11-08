@@ -46,11 +46,11 @@ class BeachOnsenRestTest {
                 var p = point(spot, slot);
                 var guest = visitor(spot + slot, p[0], p[1]);
                 var rest = room.rest(guest.ticket(), SEATS.equals(spot) ? "sit" : "lie", spot);
-                assertEquals(slot, rest.slot());
+                assertEquals(SEATS.equals(spot) ? slot : capacity - 1 - slot, rest.slot(), "a float takes the bath's first free place");
                 assertEquals(SEATS.equals(spot) ? "sitting" : "lying", rest.pose());
                 assertEquals(p[0], rest.x(), 1e-10); assertEquals(p[1], rest.z(), 1e-10);
                 double seatAngle = Math.toRadians(-30 + slot * 30);
-                assertEquals(SEATS.equals(spot) ? Math.atan2(Math.cos(seatAngle), Math.sin(seatAngle)) : 0, rest.yaw(), 1e-10);
+                assertEquals(SEATS.equals(spot) ? Math.atan2(Math.cos(seatAngle), Math.sin(seatAngle)) : .75, rest.yaw(), 1e-10);
                 assertEquals(rest, room.rest(guest.ticket(), SEATS.equals(spot) ? "sit" : "lie", spot));
             }
         }
@@ -69,29 +69,57 @@ class BeachOnsenRestTest {
         assertEquals(seatX, seat.x(), 1e-10); assertEquals(seatZ, seat.z(), 1e-10);
         var third = visitor("third", 10, 53.3);
         var floating = room.rest(third.ticket(), "lie", FLOATS);
-        assertEquals(8, floating.slot(), "the right upper bath's last floating place");
+        assertEquals(6, floating.slot(), "the right upper bath's first floating place");
         assertEquals(10, floating.x(), 1e-10); assertEquals(53.3, floating.z(), 1e-10);
         var stood = room.rest(third.ticket(), "stand", null);
-        assertTrue(Math.hypot(stood.x() - 7.6, stood.z() - 55) <= 2.7 + 1e-9, "standing up returns to the same bath's water");
+        assertTrue(Math.hypot(stood.x() - 7.6, stood.z() - 55) <= 3.5 + 1e-9, "standing up stays in the same bath's water");
     }
 
     @Test
-    void theNearestAvailablePlaceMustBeWithinTwoPointTwoMeters() {
-        var guest = visitor("boundary", 0, 41.1);
-        assertEquals(1, room.rest(guest.ticket(), "lie", FLOATS).slot());
-        var extra = visitor("extra", 0, 41.1);
+    void aFloatTakesTheFirstFreePlaceInTheBathTheVisitorIsIn() {
+        var first = visitor("first", 1, 47);
+        var rest = room.rest(first.ticket(), "lie", FLOATS);
+        assertEquals(0, rest.slot());
+        assertEquals(1, rest.x(), 1e-10); assertEquals(47, rest.z(), 1e-10); assertEquals(.75, rest.yaw(), 1e-10);
+        assertEquals(1, room.rest(visitor("second", -1, 44).ticket(), "lie", FLOATS).slot());
+        assertEquals(2, room.rest(visitor("third", 2, 44).ticket(), "lie", FLOATS).slot());
+        var extra = visitor("extra", 0, 45);
         assertEquals(409, assertThrows(ApiException.class, () -> room.rest(extra.ticket(), "lie", FLOATS)).status(),
-            "occupied nearby water does not teleport a guest to a distant empty slot");
+            "a full bath does not send a guest to another one");
+        assertEquals(6, room.rest(visitor("upper", 7.6, 55).ticket(), "lie", FLOATS).slot());
+        var dry = visitor("dry", 0, 39.5);
+        assertEquals(400, assertThrows(ApiException.class, () -> room.rest(dry.ticket(), "lie", FLOATS)).status());
+    }
+
+    @Test
+    void aFloatingVisitorDriftsInsideTheBathAndStandsUpWhereItStopped() {
+        var guest = visitor("drifter", 0, 43.3);
+        room.rest(guest.ticket(), "lie", FLOATS);
+        var moved = room.tick(guest.ticket(), 1.5, 46, -2, true, null, null).selfRest();
+        assertEquals(1.5, moved.x(), 1e-10); assertEquals(46, moved.z(), 1e-10); assertEquals(-2, moved.yaw(), 1e-10);
+        assertTrue(guest.moving());
+        var limited = room.tick(guest.ticket(), -20, 20, .4, true, null, null).selfRest();
+        assertEquals(FLOATS, limited.spotId());
+        assertEquals(3.5, Math.hypot(limited.x(), limited.z() - 45), 1e-9, "the drift stays inside the bath");
+        var stood = room.rest(guest.ticket(), "stand", null);
+        assertEquals("standing", stood.pose());
+        assertEquals(limited.x(), stood.x(), 1e-10); assertEquals(limited.z(), stood.z(), 1e-10); assertEquals(.4, stood.yaw(), 1e-10);
+    }
+
+    @Test
+    void theNearestAvailableSeatMustBeWithinTwoPointTwoMeters() {
+        var guest = visitor("boundary", 0, 45 + 3.55 - 2.199);
+        assertEquals(4, room.rest(guest.ticket(), "sit", SEATS).slot());
         room.rest(guest.ticket(), "stand", null);
-        room.tick(guest.ticket(), 0, 41.099, 0, false, null, null);
-        assertEquals(400, assertThrows(ApiException.class, () -> room.rest(guest.ticket(), "lie", FLOATS)).status());
+        room.tick(guest.ticket(), 0, 45 + 3.55 - 2.201, 0, false, null, null);
+        assertEquals(400, assertThrows(ApiException.class, () -> room.rest(guest.ticket(), "sit", SEATS)).status());
         room.tick(guest.ticket(), 0, 12, 0, false, null, null);
         assertEquals(400, assertThrows(ApiException.class, () -> room.rest(guest.ticket(), "sit", SEATS)).status());
     }
 
     @Test
-    void restingBlocksMovementAndStandingReturnsInsideThePoolAwayFromTheRimAndSeats() {
-        for (String spot : new String[]{SEATS, FLOATS}) {
+    void sittingBlocksMovementAndStandingReturnsInsideThePoolAwayFromTheRimAndSeats() {
+        for (String spot : new String[]{SEATS}) {
             var p = point(spot, 0);
             var guest = visitor(spot, p[0], p[1]);
             String action = SEATS.equals(spot) ? "sit" : "lie";
@@ -118,7 +146,8 @@ class BeachOnsenRestTest {
         var rest = room.rest(guest.ticket(), "lie", FLOATS);
         assertEquals(409, assertThrows(ApiException.class, () -> room.rest(guest.ticket(), "sit", SEATS)).status());
         assertEquals(409, assertThrows(ApiException.class, () -> room.rest(guest.ticket(), "lie", "starlight")).status());
-        assertEquals(rest, room.tick(guest.ticket(), 0, 12, 0, true, null, null).selfRest());
+        var after = room.tick(guest.ticket(), 0, 12, 0, true, null, null).selfRest();
+        assertEquals(rest.spotId(), after.spotId()); assertEquals(rest.slot(), after.slot());
     }
 
     @Test
@@ -143,10 +172,10 @@ class BeachOnsenRestTest {
         }
         for (var guest : guests) room.leave(guest.ticket());
         var replacement = visitor("replacement", 0, 43.3);
-        assertEquals(1, room.rest(replacement.ticket(), "lie", FLOATS).slot());
+        assertEquals(0, room.rest(replacement.ticket(), "lie", FLOATS).slot());
         clock.addAndGet(BeachRoom.IDLE_MS + 1);
         var fresh = visitor("fresh", 0, 43.3);
-        assertEquals(1, room.rest(fresh.ticket(), "lie", FLOATS).slot());
+        assertEquals(0, room.rest(fresh.ticket(), "lie", FLOATS).slot());
         assertEquals(410, assertThrows(ApiException.class, () -> room.rest(replacement.ticket(), "stand", null)).status());
     }
 
@@ -161,7 +190,7 @@ class BeachOnsenRestTest {
             service.tick(guest.ticket(), 0, 43.3, 0, false, null, null);
             mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"ticket\":\"" + guest.ticket() + "\",\"action\":\"lie\",\"spotId\":\"onsen-float\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.slot").value(1)).andExpect(jsonPath("$.pose").value("lying"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.slot").value(0)).andExpect(jsonPath("$.pose").value("lying"));
             assertTrue(service.tick(guest.ticket(), 0, 0, 0, false, null, null).players().isEmpty());
         }
         verifyNoInteractions(auth);

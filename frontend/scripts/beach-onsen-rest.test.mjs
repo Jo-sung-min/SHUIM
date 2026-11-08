@@ -28,6 +28,12 @@ test("every bath has nine bench seats and three floating places, distinct and in
   }
 });
 
+test("a claimed float reports where it has drifted to without changing the shared slot",()=>{
+  const place=ONSEN_FLOATS[1],claimed=claimedOnsenFloat({pose:'lying',spotId:'onsen-float',slot:1,x:1.5,z:46,yaw:2});
+  assert.equal(claimed.x,1.5);assert.equal(claimed.z,46);assert.equal(claimed.yaw,2);assert.equal(claimed.slot,1);assert.notEqual(claimed,place);
+  assert.equal(place.yaw,0);assert.ok(place.incline>0,'floating is half reclined');
+});
+
 test("only matching authoritative onsen poses and integer slots resolve",()=>{
   for(const [claim,places,pose,id] of [[claimedOnsenSeat,ONSEN_SEATS,'sitting','onsen-benches'],[claimedOnsenFloat,ONSEN_FLOATS,'lying','onsen-float']]){
     for(const place of places)assert.equal(claim({pose,spotId:id,slot:place.slot}),place);
@@ -68,7 +74,7 @@ test("floating gently bobs below the surface without accumulating drift or chang
   for(let time=0;time<60;time+=.13)for(const slot of ONSEN_FLOATS){
     const y=onsenFloatingY(time,slot.slot);
     assert.ok(Math.abs(y-slot.avatarY)<=ONSEN_FLOAT_BOB+1e-9&&y<HOT_SPRING.waterY+slot.avatarY-ONSEN_FLOAT_Y);
-    assert.ok(Math.abs(onsenFloatingY(time+.016,slot.slot)-y)<.0004);
+    assert.ok(Math.abs(onsenFloatingY(time+.016,slot.slot)-y)<.0007);
     near(onsenFloatingY(time+Math.PI*2/.8,slot.slot),y);
   }
   for(const time of [NaN,Infinity,-Infinity])assert.ok(Number.isFinite(onsenFloatingY(time,0)));

@@ -20,7 +20,7 @@ const BODY_SUPPORT_BONE = /^(Hips|Spine\d*|(?:Left|Right)(?:UpLeg|Leg|Foot|ToeBa
 
 export interface BeachAvatarState {
   x: number; z: number; yaw: number; moving: boolean; visible: boolean; y?: number;
-  lying?: { x: number; z: number; yaw: number; avatarY?: number; incline?: number } | null;
+  lying?: { x: number; z: number; yaw: number; avatarY?: number; incline?: number; roll?: number } | null;
   seated?: { x: number; z: number; yaw: number; avatarY: number } | null;
 }
 
@@ -498,7 +498,7 @@ export class BeachAvatar {
     const lyingSurfaceY = lying ? (lying.avatarY ?? MAT_SURFACE_Y) - ((lying.incline ?? 0) > 0 ? 0.2 : 0) : 0;
     if (lying) {
       this.root.position.set(lying.x, lyingSurfaceY + (this.lyingLifts.get(lying.incline ?? 0) ?? this.backDepth), lying.z);
-      this.root.rotation.set(-Math.PI / 2 + (lying.incline ?? 0), lying.yaw, 0, "YXZ");
+      this.root.rotation.set(-Math.PI / 2 + (lying.incline ?? 0), lying.yaw, lying.roll ?? 0, "YXZ");
     } else if (seated) {
       this.root.position.set(seated.x, seated.avatarY - this.restHipHeight, seated.z);
       this.root.rotation.set(0, seated.yaw + Math.PI, 0, "YXZ");

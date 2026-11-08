@@ -1359,7 +1359,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   };
   const hideHud = () => { setHudHidden(true); setCharacterPickerOpen(false); setPowderOpen(false); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); haptic(); window.requestAnimationFrame(() => restoreTriggerRef.current?.focus()); };
   const restoreHud = () => { setHudHidden(false); haptic(); window.requestAnimationFrame(() => actionsTriggerRef.current?.focus()); };
-  const viewLabel = lying ? view === "third" ? activeBed ? "바다 보기" : "하늘 보기" : activeBed || onsen.floating ? "함께 보기" : "모여 보기" : view === "third" ? "내 눈으로" : "캐릭터 보기";
+  const viewLabel = lying && !onsen.floating ? view === "third" ? activeBed ? "바다 보기" : "하늘 보기" : activeBed ? "함께 보기" : "모여 보기" : view === "third" ? "내 눈으로" : "캐릭터 보기";
   const benchPhase = restActionSpot === "fire-benches" ? skyPhase : null;
   const benchContextVisible = mapId === "beach" && (bench.near || bench.seated || Boolean(benchPhase));
   const onsenPhase = restActionSpot?.startsWith("onsen-") ? skyPhase : null;
@@ -1377,7 +1377,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const contextVisible = restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || Boolean(rest) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
   const joystickVisible = phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden)
-    && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && !lying
+    && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && (!lying || onsen.floating)
     && !bench.seated && !pavilion.seated && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing";
 
   // 상단 도구는 PC 도 모바일처럼 햄버거 메뉴 안의 줄로 그린다.

@@ -207,7 +207,7 @@ test("fireworks authorization, expired visits and cooldown errors never fabricat
   await assert.rejects(cooldown.launchBeachFireworks("admin", "retry"), error => error instanceof cooldown.BeachCooldown);
 });
 
-test("onsen claims accept only each bath's nine seats or three floating places at their real coordinates", async () => {
+test("onsen claims accept each bath's nine seats at their real coordinates and three floats anywhere in that bath", async () => {
   const centers = [[0, 45], [-7.6, 55], [7.6, 55]];
   for (const spotId of ["onsen-benches", "onsen-float"]) {
     const sitting = spotId === "onsen-benches";
@@ -219,7 +219,8 @@ test("onsen claims accept only each bath's nine seats or three floating places a
       const api = setup(async () => response(state));
       assert.equal((await api.setBeachRest("member", sitting ? "sit" : "lie", spotId)).slot, slot);
       assert.equal((await setup(async () => response({ selfRest: state })).tickBeach({ ticket: "member" })).selfRest.slot, slot);
-      for (const bad of [{ ...state, x: 20 }, { ...state, z: 12 }, { ...state, yaw: state.yaw + 1 },
+      if (!sitting) assert.equal((await setup(async () => response({ ...state, x: bathX + 3.4, z: bathZ, yaw: 2 })).setBeachRest("member", "lie", spotId)).yaw, 2, "a float may have drifted and turned");
+      for (const bad of [{ ...state, x: 20 }, { ...state, z: 12 }, ...(sitting ? [{ ...state, yaw: state.yaw + 1 }] : [{ ...state, x: bathX + 3.6, z: bathZ }]),
         { ...state, slot: perBath * centers.length }, { ...state, pose: sitting ? "lying" : "sitting" }]) {
         await assert.rejects(setup(async () => response(bad)).setBeachRest("member", sitting ? "sit" : "lie", spotId));
       }

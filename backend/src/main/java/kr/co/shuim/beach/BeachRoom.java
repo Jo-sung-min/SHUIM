@@ -73,6 +73,8 @@ public class BeachRoom {
     private static final int ONSEN_BENCHES_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3;
     public static final int ONSEN_BENCH_SLOTS = ONSEN_BATHS.length * ONSEN_BENCHES_PER_BATH, ONSEN_FLOAT_SLOTS = ONSEN_BATHS.length * ONSEN_FLOATS_PER_BATH;
     public static final double ONSEN_X = 0, ONSEN_Z = 45, ONSEN_REACH = 2.2, ONSEN_BENCH_RADIUS = 3.55;
+    /** Floating starts anywhere in the water and drifts within the bath; frontend lib/beach/onsen-rest.ts uses the same radius. */
+    public static final double ONSEN_FLOAT_RADIUS = 3.5, ONSEN_WATER_RADIUS = 4.25;
     /** The beach map reaches back to the upper baths behind and above the first. */
     public static final double ONSEN_MAX_Z = 63;
     /** Bamboo-trail pavilions: six edge seats each, mirrored by the frontend trail layout (lib/beach/bamboo-trail.ts). */
@@ -241,7 +243,33 @@ public class BeachRoom {
         return new BenchSeat(bath[0] + Math.cos(angle) * ONSEN_BENCH_RADIUS, bath[1] + Math.sin(angle) * ONSEN_BENCH_RADIUS, Math.atan2(Math.cos(angle), Math.sin(angle)));
     }
 
+    private static boolean floating(Presence p) {
+        return p.restSlot != null && ONSEN_FLOAT_SPOT.equals(p.restSpot);
+    }
+
+    /** A float is a place in a bath, not a mark on the map: the first free one in the water the visitor is in. */
+    private static int freeFloatSlot(Presence me, boolean[] used) {
+        for (int bath = 0; bath < ONSEN_BATHS.length; bath++) {
+            if (Math.hypot(me.x - ONSEN_BATHS[bath][0], me.z - ONSEN_BATHS[bath][1]) > ONSEN_WATER_RADIUS + 1e-9) continue;
+            for (int place = 0; place < ONSEN_FLOATS_PER_BATH; place++) {
+                int slot = bath * ONSEN_FLOATS_PER_BATH + place;
+                if (!used[slot]) return slot;
+            }
+            throw new ApiException(409, "이 탕에 떠 있을 자리가 모두 찼어요. 잠시 뒤 다시 해 주세요.");
+        }
+        throw ApiException.badRequest("온천 물 안에서 떠 있을 수 있어요.");
+    }
+
+    private static double[] insideFloatRadius(double x, double z, int slot) {
+        double[] bath = ONSEN_BATHS[slot / ONSEN_FLOATS_PER_BATH];
+        double dx = x - bath[0], dz = z - bath[1], distance = Math.hypot(dx, dz);
+        if (distance <= ONSEN_FLOAT_RADIUS) return new double[]{x, z};
+        double scale = ONSEN_FLOAT_RADIUS / distance;
+        return new double[]{bath[0] + dx * scale, bath[1] + dz * scale};
+    }
+
     private static int nearestOnsenSlot(Presence me, RestSpot spot, boolean[] used) {
+        if (ONSEN_FLOAT_SPOT.equals(spot.id())) return freeFloatSlot(me, used);
         boolean nearby = false;
         int closest = -1;
         double closestDistance = Double.POSITIVE_INFINITY;
@@ -790,9 +818,10 @@ public class BeachRoom {
         ResumeBookmark b = p.bookmark == null ? new ResumeBookmark(p.userId) : p.bookmark;
         b.currentTicket = p.ticket;
         b.skin = p.skin;
-        b.x = p.restSlot == null ? p.x : p.standingX;
-        b.z = p.restSlot == null ? p.z : p.standingZ;
-        b.yaw = p.restSlot == null ? p.yaw : p.standingYaw;
+        boolean held = p.restSlot != null && !floating(p);
+        b.x = held ? p.standingX : p.x;
+        b.z = held ? p.standingZ : p.z;
+        b.yaw = held ? p.standingYaw : p.yaw;
         b.savedAt = p.lastSeen;
         b.sequence = p.sequence;
         resumeTickets.put(p.ticket, b);
@@ -844,9 +873,11 @@ public class BeachRoom {
             if (me.suspended) throw new ApiException(409, "바닷가로 돌아온 뒤 다시 쉬어 주세요.");
             if ("stand".equals(action)) {
                 if (me.restSlot != null) {
-                    me.x = clamp(me.standingX, map.minX(), map.maxX(), REST_X);
-                    me.z = clamp(me.standingZ, map.minZ(), map.maxZ(), REST_Z + REST_REACH);
-                    me.yaw = me.standingYaw;
+                    if (!floating(me)) { // A floating visitor simply stands up wherever it drifted to.
+                        me.x = clamp(me.standingX, map.minX(), map.maxX(), REST_X);
+                        me.z = clamp(me.standingZ, map.minZ(), map.maxZ(), REST_Z + REST_REACH);
+                        me.yaw = me.standingYaw;
+                    }
                     me.restSlot = null;
                     me.restSpot = null;
                     me.updatedAt = Math.max(me.updatedAt + 1, now);
@@ -894,7 +925,11 @@ public class BeachRoom {
                 me.standingX = bath[0] + (me.x - bath[0]) * scale;
                 me.standingZ = bath[1] + (me.z - bath[1]) * scale;
             }
-            if (nearestSeat) {
+            if (ONSEN_FLOAT_SPOT.equals(spot.id())) {
+                double[] inside = insideFloatRadius(me.x, me.z, slot);
+                me.x = inside[0];
+                me.z = inside[1];
+            } else if (nearestSeat) {
                 BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : spot.pavilion() ? pavilionSeat(pavilionOf(spot), slot) : benchSeat(slot);
                 me.x = seat.x();
                 me.z = seat.z();
@@ -983,10 +1018,16 @@ public class BeachRoom {
     }
 
     private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
-        double nextX = p.restSlot == null ? clamp(x, map.minX(), map.maxX(), p.x) : p.x;
-        double nextZ = p.restSlot == null ? clamp(z, map.minZ(), map.maxZ(), p.z) : p.z;
-        double nextYaw = p.restSlot == null && Double.isFinite(yaw) ? yaw : p.yaw;
-        boolean nextMoving = p.restSlot == null && moving;
+        boolean free = p.restSlot == null || floating(p);
+        double nextX = free ? clamp(x, map.minX(), map.maxX(), p.x) : p.x;
+        double nextZ = free ? clamp(z, map.minZ(), map.maxZ(), p.z) : p.z;
+        if (floating(p)) {
+            double[] inside = insideFloatRadius(nextX, nextZ, p.restSlot);
+            nextX = inside[0];
+            nextZ = inside[1];
+        }
+        double nextYaw = free && Double.isFinite(yaw) ? yaw : p.yaw;
+        boolean nextMoving = free && moving;
         if (nextX != p.x || nextZ != p.z || nextYaw != p.yaw || nextMoving != p.moving || (skin != null && skin != p.skin))
             p.updatedAt = Math.max(p.updatedAt + 1, now);
         p.x = nextX;

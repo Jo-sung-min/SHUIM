@@ -279,6 +279,21 @@ function entryDeck(): THREE.BufferGeometry {
   return geometry;
 }
 
+const DECK_LANTERN = { lift: 0.42, size: { sx: 0.34, sy: 0.74, sz: 0.34 } } as const;
+const isDeckLantern = (lantern: Transform) => lantern.sy > 0.6;
+const lanternLamp = (lantern: Transform) => new THREE.Vector3(lantern.x, lantern.y, lantern.z);
+const lanternPool = (lantern: Transform): Transform => ({ x: lantern.x, y: lantern.y - DECK_LANTERN.lift + 0.02, z: lantern.z, sx: 3, sy: 3, sz: 1, tilt: -Math.PI / 2 });
+/** A slim timber frame: four posts, a cap and a foot, and two rails that read as lattice across the paper. */
+function andonFrame(lantern: Transform): Transform[] {
+  const { x, y, z, sx, sy, sz } = lantern, post = sx * 0.13, parts: Transform[] = [];
+  for (const dx of [-0.5, 0.5]) for (const dz of [-0.5, 0.5]) parts.push({ x: x + dx * sx, y, z: z + dz * sz, sx: post, sy: sy * 1.08, sz: post });
+  for (const [offset, scale, thickness] of [[0.56, 1.3, 0.07], [-0.54, 1.18, 0.05], [0.2, 1.05, 0.016], [-0.2, 1.05, 0.016]]) {
+    parts.push({ x, y: y + offset * sy, z, sx: sx * scale, sy: sy * thickness, sz: sz * scale });
+  }
+  return parts;
+}
+const andonCore = (lantern: Transform): Transform => ({ ...lantern, sx: lantern.sx * 0.94, sy: lantern.sy * 0.98, sz: lantern.sz * 0.94 });
+
 /** Sloped sides all the way round. The rim of an upper bath dips where it pours out. */
 function bowlGeometry(baths: readonly { x: number; z: number; lift?: number }[]): THREE.BufferGeometry {
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [], segments = 96;
@@ -458,7 +473,7 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
   poolStone.side = THREE.DoubleSide;
   const cliffFaces = cloneSurface(stone);
   cliffFaces.side = THREE.DoubleSide;
-  const brass = new THREE.MeshStandardMaterial({ color: 0xa9783f, metalness: 0.6, roughness: 0.43 });
+  const paperGlow = new THREE.MeshBasicMaterial({ color: 0xffdca8, toneMapped: false });
   const glow = new THREE.MeshBasicMaterial({ color: 0xffbc74, toneMapped: false });
   const shadow = new THREE.MeshStandardMaterial({ color: 0x272825, roughness: 1 });
   const clock = { value: 0 }, darkness = { value: 1 };
@@ -611,12 +626,17 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
     if (seaFacing(angle) || (x > 0.85 && Math.abs(z * 7.25) < 1.5) || rearOpen(angle)) continue;
     posts.push({ x: x * 7.28, y: HOT_SPRING.deckY + 0.85, z: 45 + z * 7.28, sx: 0.18, sy: 1.78, sz: 0.18, yaw: Math.PI / 2 - angle });
     for (const y of [HOT_SPRING.deckY + 0.25, HOT_SPRING.deckY + 1.16, HOT_SPRING.deckY + 1.68]) rails.push({ x: x * 7.25, y, z: 45 + z * 7.25, sx: 1.45, sy: 0.085, sz: 0.14, yaw: Math.PI / 2 - angle });
-    if (index % 4 === 1) lanterns.push({ x: x * 6.65, y: HOT_SPRING.deckY + 0.35, z: 45 + z * 6.65, sx: 0.22, sy: 0.48, sz: 0.22 });
+    if (index % 4 === 1) lanterns.push({ x: x * 6.65, y: HOT_SPRING.deckY + DECK_LANTERN.lift, z: 45 + z * 6.65, ...DECK_LANTERN.size });
   }
   for (let index = 0; index < 80; index++) {
     const angle = GAP_ANGLE / 2 + (TAU - GAP_ANGLE) * index / 79;
     const reach = shapedRim(angle) - 0.03, middle = (4.635 + reach) / 2;
     seams.push({ x: Math.cos(angle) * middle, y: HOT_SPRING.deckY + 0.003, z: 45 + Math.sin(angle) * middle, sx: 0.018, sy: 0.006, sz: reach - 4.635, yaw: Math.PI / 2 - angle });
+  }
+  // A low row along the open sea side: small enough to leave the view, and they are what the water reflects.
+  for (let index = 0; index < 7; index++) {
+    const angle = -Math.PI / 2 + (index - 3) * degrees(19);
+    lanterns.push({ x: Math.cos(angle) * 6.82, y: HOT_SPRING.deckY + DECK_LANTERN.lift, z: 45 + Math.sin(angle) * 6.82, ...DECK_LANTERN.size });
   }
   const rockGeometry = new THREE.IcosahedronGeometry(1, 1);
   instances("onsen-natural-rim-stones", rockGeometry, stone, rim);
@@ -631,32 +651,69 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
   instances("onsen-fence-rails", box, fenceWood, rails);
   instances("onsen-deck-board-seams", box, shadow, seams);
   instances("onsen-indirect-amber-strips", box, glow, strips);
-  instances("onsen-lantern-frames", box, brass, lanterns);
-  instances("onsen-lantern-warm-cores", box, glow, lanterns.map((t) => ({ ...t, sx: t.sx * 1.05, sy: t.sy * 0.68, sz: t.sz * 1.05 })));
+  instances("onsen-lantern-frames", box, fencePosts, lanterns.flatMap(andonFrame));
+  instances("onsen-lantern-warm-cores", box, paperGlow, lanterns.map(andonCore));
+  // Warm light pooling on the boards around each lantern. It costs no real-time lights.
+  const lanternPools = new THREE.ShaderMaterial({
+    uniforms: { uNight: darkness },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform float uNight; varying vec2 vUv;
+      void main() {
+        float fall = pow(max(0.0, 1.0 - length(vUv - 0.5) * 2.0), 2.2);
+        gl_FragColor = vec4(vec3(1.0, 0.62, 0.27) * fall * 0.42 * smoothstep(0.15, 0.75, uNight), 1.0);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const pool = new THREE.PlaneGeometry(1, 1);
+  instances("onsen-lantern-light-pools", pool, lanternPools, lanterns.filter(isDeckLantern).map(lanternPool)).renderOrder = 2;
 
-  const quietWater = (center: string) => new THREE.ShaderMaterial({
-    uniforms: { uTime: clock, uNight: darkness },
+  // Turquoise and even by day. At night it turns to dark glass that breaks each lantern into shivering streaks.
+  const quietWater = (center: string, lamps: readonly THREE.Vector3[]) => new THREE.ShaderMaterial({
+    uniforms: { uTime: clock, uNight: darkness, uLamps: { value: lamps } },
     vertexShader: `varying vec3 vWorld; void main() { vec4 world = modelMatrix * vec4(position, 1.0); vWorld = world.xyz; gl_Position = projectionMatrix * viewMatrix * world; }`,
     fragmentShader: `
-      uniform float uTime; uniform float uNight; varying vec3 vWorld;
+      #define LAMPS ${lamps.length}
+      uniform float uTime; uniform float uNight; uniform vec3 uLamps[LAMPS]; varying vec3 vWorld;
+      float hash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 q) {
+        vec2 i = floor(q), f = fract(q);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+      float surface(vec2 q) {
+        return noise(q * 2.6 + uTime * 0.21) + noise(q * 5.3 - uTime * 0.33) * 0.6 + noise(q * 11.0 + uTime * 0.47) * 0.32;
+      }
       void main() {
         vec2 p = vWorld.xz - ${center};
         float swell = sin(dot(p, vec2(0.83, 0.41)) * 1.7 + uTime * 0.31)
           + sin(dot(p, vec2(-0.37, 0.93)) * 2.3 - uTime * 0.23)
           + sin(dot(p, vec2(0.64, -0.77)) * 3.1 + uTime * 0.17);
-        vec3 water = mix(vec3(0.10, 0.44, 0.50), vec3(0.035, 0.13, 0.16), uNight * 0.85) * (1.0 + swell * 0.018);
-        water = mix(water, water * 1.12 + vec3(0.02, 0.03, 0.03), smoothstep(3.6, 4.3, length(p)) * 0.5);
-        gl_FragColor = vec4(water, 0.88);
+        vec3 day = vec3(0.10, 0.44, 0.50) * (1.0 + swell * 0.018);
+        day = mix(day, day * 1.12 + vec3(0.02, 0.03, 0.03), smoothstep(3.6, 4.3, length(p)) * 0.5);
+        float night = smoothstep(0.15, 0.75, uNight);
+        float height = surface(vWorld.xz);
+        vec3 normal = normalize(vec3((height - surface(vWorld.xz + vec2(0.05, 0.0))) * 0.75, 1.0, (height - surface(vWorld.xz + vec2(0.0, 0.05))) * 0.75));
+        vec3 view = normalize(vWorld - cameraPosition), mirrored = reflect(view, normal);
+        float grazing = pow(1.0 - max(0.0, dot(-view, normal)), 5.0);
+        vec3 dark = vec3(0.018, 0.05, 0.062) * (1.0 + swell * 0.03) + vec3(0.05, 0.075, 0.11) * grazing * 0.8;
+        float haze = noise(p * 0.55 + vec2(uTime * 0.05, -uTime * 0.04)) * 0.6 + noise(p * 1.3 - uTime * 0.07) * 0.4;
+        dark = mix(dark, vec3(0.17, 0.17, 0.165), smoothstep(0.35, 0.85, haze) * 0.28);
+        float shimmer = 0.0;
+        for (int i = 0; i < LAMPS; i++) shimmer += pow(max(0.0, dot(mirrored, normalize(uLamps[i] - vWorld))), 700.0);
+        vec3 water = mix(day, dark, night) + vec3(1.0, 0.74, 0.38) * smoothstep(0.08, 0.9, shimmer) * night;
+        gl_FragColor = vec4(water, mix(0.88, 0.95, night));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
-  const water = mesh("onsen-quiet-mineral-water", horizontalRing(0, 4.58, HOT_SPRING.waterY), quietWater("vec2(0.0, 45.0)"));
+  const water = mesh("onsen-quiet-mineral-water", horizontalRing(0, 4.58, HOT_SPRING.waterY), quietWater("vec2(0.0, 45.0)", lanterns.filter(isDeckLantern).map(lanternLamp)));
   water.renderOrder = 3;
 
   const steamMaterial = new THREE.ShaderMaterial({
-    uniforms: { uTime: clock },
+    uniforms: { uTime: clock, uNight: darkness },
     vertexShader: `
       uniform float uTime; attribute float steamPhase; varying vec2 vUv; varying float vLife;
       void main() {
@@ -668,11 +725,11 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
         gl_Position = projectionMatrix * center;
       }`,
     fragmentShader: `
-      uniform float uTime; varying vec2 vUv; varying float vLife;
+      uniform float uTime; uniform float uNight; varying vec2 vUv; varying float vLife;
       void main() {
         vec2 p = (vUv - 0.5) * 2.0; float edge = pow(max(0.0, 1.0 - dot(p, p)), 2.5);
         float wisps = 0.65 + 0.18 * sin(p.y * 10.0 + sin(p.x * 8.0 + uTime * 0.15) - uTime * 0.3);
-        gl_FragColor = vec4(0.82, 0.85, 0.80, edge * wisps * vLife * 0.10);
+        gl_FragColor = vec4(0.82, 0.85, 0.80, edge * wisps * vLife * mix(0.10, 0.18, uNight));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -717,7 +774,7 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
     }
     for (let index = 0; index < 32; index++) {
       const angle = index * TAU / 32;
-      if (index % 4 === 1 && apart(angle, front) >= degrees(36) && upperDeckReach(bath, angle) > 6.75) upperLanterns.push({ x: bath.x + Math.cos(angle) * 6.65, y: deck + 0.35, z: bath.z + Math.sin(angle) * 6.65, sx: 0.22, sy: 0.48, sz: 0.22 });
+      if (index % 4 === 1 && apart(angle, front) >= degrees(36) && upperDeckReach(bath, angle) > 6.75) upperLanterns.push({ x: bath.x + Math.cos(angle) * 6.65, y: deck + DECK_LANTERN.lift, z: bath.z + Math.sin(angle) * 6.65, ...DECK_LANTERN.size });
     }
     for (let index = 0; index < 80; index++) {
       const angle = index * TAU / 80;
@@ -763,12 +820,13 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
   instances("onsen-upper-stair-treads", backingBox, wetStone, stairTreads);
   instances("onsen-upper-stair-walls", backingBox, stone, stairWalls);
   instances("onsen-upper-terrace-rock", backingBox, stone, terrace);
-  instances("onsen-upper-lantern-frames", box, brass, upperLanterns);
-  instances("onsen-upper-lantern-cores", box, glow, upperLanterns.map((t) => ({ ...t, sx: t.sx * 1.05, sy: t.sy * 0.68, sz: t.sz * 1.05 })));
+  instances("onsen-upper-lantern-frames", box, fencePosts, upperLanterns.flatMap(andonFrame));
+  instances("onsen-upper-lantern-cores", box, paperGlow, upperLanterns.map(andonCore));
+  instances("onsen-upper-lantern-light-pools", pool, lanternPools, upperLanterns.filter(isDeckLantern).map(lanternPool), annex).renderOrder = 2;
   instances("onsen-upper-rim-stones", rockGeometry, stone, upperRim, annex);
   instances("onsen-upper-deck-board-seams", box, shadow, upperSeams, annex);
   instances("onsen-upper-amber-strips", box, glow, upperStrips, annex);
-  const upperWater = mesh("onsen-upper-quiet-water", horizontalRing(0, 4.58, HOT_SPRING.waterY + upperLift, 0, upper), quietWater(`vec2(vWorld.x < 0.0 ? ${upper[0].x.toFixed(1)} : ${upper[1].x.toFixed(1)}, ${upper[0].z.toFixed(1)})`), annex);
+  const upperWater = mesh("onsen-upper-quiet-water", horizontalRing(0, 4.58, HOT_SPRING.waterY + upperLift, 0, upper), quietWater(`vec2(vWorld.x < 0.0 ? ${upper[0].x.toFixed(1)} : ${upper[1].x.toFixed(1)}, ${upper[0].z.toFixed(1)})`, upperLanterns.filter(isDeckLantern).map(lanternLamp)), annex);
   upperWater.renderOrder = 3;
   mesh("onsen-waterfall-cliffs", cliffGeometry(), cliffFaces, annex);
   const cascadeWater = new THREE.ShaderMaterial({
@@ -807,6 +865,45 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
   upperSteam.frustumCulled = false;
   upperSteam.renderOrder = 4;
 
+  // Fireflies drift above the baths after dark: one draw call, moved entirely in the vertex shader.
+  const fireflyCount = 56, fireflySeeds = new Float32Array(fireflyCount), fireflyPlaces = new Float32Array(fireflyCount * 3);
+  const scatter = (index: number, salt: number) => { const value = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453; return value - Math.floor(value); };
+  for (let index = 0; index < fireflyCount; index++) {
+    const bath = HOT_SPRING_BATHS[index % HOT_SPRING_BATHS.length], angle = scatter(index, 1) * TAU, radius = 2.2 + scatter(index, 2) * 7.5;
+    fireflyPlaces.set([bath.x + Math.cos(angle) * radius, HOT_SPRING.deckY + bath.lift + 0.3 + scatter(index, 3) * 3, bath.z + Math.sin(angle) * radius], index * 3);
+    fireflySeeds[index] = scatter(index, 4);
+  }
+  const fireflyGeometry = new THREE.BufferGeometry();
+  fireflyGeometry.setAttribute("position", new THREE.BufferAttribute(fireflyPlaces, 3));
+  fireflyGeometry.setAttribute("fireflySeed", new THREE.BufferAttribute(fireflySeeds, 1));
+  const fireflies = new THREE.Points(fireflyGeometry, new THREE.ShaderMaterial({
+    uniforms: { uTime: clock, uNight: darkness },
+    vertexShader: `
+      uniform float uTime; uniform float uNight; attribute float fireflySeed; varying float vGlow;
+      void main() {
+        float t = uTime * 0.35 + fireflySeed * 43.0;
+        vec3 place = position + vec3(sin(t * 1.3 + fireflySeed * 9.0) * 0.9 + sin(t * 0.37) * 0.6, sin(t * 0.9 + fireflySeed * 3.0) * 0.35, cos(t * 1.1 + fireflySeed * 5.0) * 0.9 + cos(t * 0.29 + fireflySeed) * 0.6);
+        float blink = smoothstep(0.35, 0.9, sin(uTime * (0.9 + fireflySeed * 0.9) + fireflySeed * 61.0) * 0.5 + 0.5);
+        vGlow = blink * smoothstep(0.25, 0.75, uNight);
+        vec4 viewPlace = modelViewMatrix * vec4(place, 1.0);
+        gl_PointSize = clamp((32.0 + blink * 58.0) / max(0.5, -viewPlace.z), 1.5, 22.0);
+        gl_Position = projectionMatrix * viewPlace;
+      }`,
+    fragmentShader: `
+      varying float vGlow;
+      void main() {
+        float glow = pow(max(0.0, 1.0 - length(gl_PointCoord - 0.5) * 2.0), 2.4);
+        gl_FragColor = vec4(vec3(0.78, 1.0, 0.36) * glow * vGlow * 1.4, 1.0);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  fireflies.name = "onsen-fireflies";
+  fireflies.frustumCulled = false;
+  fireflies.renderOrder = 6;
+  fireflies.visible = false;
+  annex.add(fireflies);
+
   let disposed = false;
   return {
     group,
@@ -824,6 +921,7 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
     },
     applyDaylight(night: number) {
       darkness.value = clamp(Number.isFinite(night) ? night : 0, 0, 1);
+      fireflies.visible = darkness.value > 0.2;
       poolLight.intensity = 3.5 + darkness.value * 6;
       tunnelLight.intensity = 12;
     },
@@ -832,6 +930,10 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
       disposed = true;
       const geometries = new Set<THREE.BufferGeometry>(), ownedMaterials = new Set<THREE.Material>();
       group.traverse((object) => {
+        if (object instanceof THREE.Points) {
+          geometries.add(object.geometry);
+          ownedMaterials.add(object.material as THREE.Material);
+        }
         if (object instanceof THREE.Mesh) {
           geometries.add(object.geometry);
           for (const material of Array.isArray(object.material) ? object.material : [object.material]) ownedMaterials.add(material);

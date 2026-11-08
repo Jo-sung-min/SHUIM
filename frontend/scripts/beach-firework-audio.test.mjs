@@ -293,8 +293,23 @@ test("surf remains audible around the entire beach, attenuates smoothly inland a
   standAt(h, 7, 7, 0); const mats = waves.gain.gain.value; assert.ok(mats > inland && mats < .43);
   standAt(h, -12, -.7, 0); assert.equal(waves.gain.gain.value, .43);
   standAt(h, 0, 54.6, 0); assert.ok(waves.gain.gain.value > 0 && waves.gain.gain.value < mats);
-  assert.equal(waves.plays, 1); assert.equal(h.streams.length, 1); assert.equal(waves.paused, false);
+  assert.equal(waves.plays, 1); assert.equal(h.streams.filter(stream => stream.src.endsWith("/beach-shore-waves-v1.mp3")).length, 1); assert.equal(waves.paused, false);
   h.dispose(); assert.equal(waves.src, "");
+});
+
+test("spring water fades in near any bath, follows the field volume and stops away from the hill", async () => {
+  const h = harness({ map: "beach" }); h.unlock(); await settle();
+  standAt(h, 0, 12, 0);
+  assert.equal(h.streams.some(stream => stream.src.endsWith("/onsen-water-v1.mp3")), false, "nothing loads from the campfire");
+  standAt(h, 0, 45, 0); await settle();
+  const water = h.streams.find(stream => stream.src.endsWith("/onsen-water-v1.mp3"));
+  assert.ok(water, "the recording starts at the first bath");
+  const close = water.gain.gain.value; assert.ok(close > .5 && close <= .62, `full level ${close}`);
+  standAt(h, -7.6, 55, 0); assert.ok(Math.abs(water.gain.gain.value - close) < 1e-3, "every bath is equally loud");
+  standAt(h, 0, 34, 0); const hillside = water.gain.gain.value; assert.ok(hillside > 0 && hillside < close * .7, `fades with distance ${hillside}`);
+  standAt(h, 0, 45, 0); h.audio.setFieldVolume(80); assert.ok(Math.abs(water.gain.gain.value - close * 1.6) < 1e-3);
+  h.audio.setFieldVolume(50); standAt(h, 0, 12, 0); assert.equal(water.paused, true, "the stream stops once out of earshot");
+  h.dispose(); assert.equal(water.src, "");
 });
 
 test("fire needs confirmed logs and proximity; one log reaches the benches while waves keep their own gain", async () => {
