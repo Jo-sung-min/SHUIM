@@ -21,6 +21,8 @@ function elements(tree, type) {
   if (!React.isValidElement(tree)) return [];
   return [...(tree.type === type ? [tree] : []), ...React.Children.toArray(tree.props.children).flatMap(child => elements(child, type))];
 }
+/** Full rooms render as buttons; the rail's previous/next arrows are buttons too. */
+const placeButtons = tree => elements(tree, "button").filter(button => button.props["data-place"]);
 const occupancyLabels = tree => elements(tree,"strong").filter(element => typeof element.props.children === "number");
 
 function cardHarness(customCircles) {
@@ -28,6 +30,8 @@ function cardHarness(customCircles) {
   let cursor = 0, refresh;
   const hooks = {
     useId: () => "community-choice",
+    useRef(initial) { const slot = cursor++; return values[slot] ??= { current: initial }; },
+    useCallback(fn) { const slot = cursor++; return values[slot] ??= fn; },
     useState(initial) {
       const slot = cursor++;
       if (!(slot in values)) values[slot] = initial;
@@ -55,7 +59,7 @@ function cardHarness(customCircles) {
         const result = deferred(); requests.push({ communityId, mapId, ...result }); return result.promise;
       } };
       if (name.endsWith(".css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
-      return { IconCheck: "i", IconChevronR: "i", IconLock: "i", IconUsers: "i" };
+      return { IconCheck: "i", IconChevronL: "i", IconChevronR: "i", IconLock: "i", IconUsers: "i", rememberBeachReturn() {} };
     },
   };
   vm.runInNewContext(compile(cardSource), context);
@@ -87,8 +91,8 @@ test("a pinned private circle precedes the primary circle and respects its four-
   harness.requests[0].resolve({ communityId: "test", mapId: "beach", count: 4, capacity: 4 });
   await settle(); tree = harness.render();
   assert.equal(elements(tree, "a").length, 3, "only the full room loses its enter link");
-  assert.equal(elements(tree, "button")[0].props["data-place"], "beach");
-  assert.equal(elements(tree, "button")[0].props.disabled, true);
+  assert.equal(placeButtons(tree)[0].props["data-place"], "beach");
+  assert.equal(placeButtons(tree)[0].props.disabled, true);
   assert.equal(occupancyLabels(tree)[0].props.children, 4);
 });
 
@@ -107,7 +111,7 @@ test("all landscape cards enter directly and keep their live counts and effectiv
   harness.requests[0].resolve({ communityId: "circle / one", mapId: "beach", count: 20, capacity: 100 });
   harness.requests[1].resolve({ communityId: "circle / one", mapId: "uyuni", count: 9, capacity: 100 });
   await settle(); tree = harness.render();
-  assert.equal(elements(tree, "button")[0].props["data-place"], "beach", "legacy capacity 100 is capped at the current 20-person limit");
+  assert.equal(placeButtons(tree)[0].props["data-place"], "beach", "legacy capacity 100 is capped at the current 20-person limit");
   assert.equal(elements(tree, "a").length, 3);
   assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [20, 9]);
   assert.ok(elements(tree, "span").some(span => span.props["aria-label"] === "9명, 정원 20명"));
@@ -131,7 +135,7 @@ test("changing communities and refreshing discards late counts and restores unkn
   await settle(); tree = harness.render();
   assert.deepEqual(occupancyLabels(tree).map(label => label.props.children), [7], "failed counts become unknown and the old refresh cannot mark a room full");
   assert.equal(elements(tree, "a").length, 4);
-  assert.equal(elements(tree, "button").length, 0);
+  assert.equal(placeButtons(tree).length, 0);
 });
 
 const sceneSource = await read("../components/beach/BeachScene.tsx");
@@ -253,7 +257,7 @@ test("hotel bed and sofa context remain available in Uyuni without changing the 
   }
   const clicks = [], context = { exports: {}, require: () => jsxRuntime, mapId: "uyuni", rest: { shelterName: "노을 호텔", seated: false },
     lying: false, bench: { seated: false }, onsenResting: false, skyPhase: null, woodBusy: false, powderPhase: null,
-    styles: new Proxy({}, { get: (_, key) => String(key) }), IconSmile: "i",
+    styles: new Proxy({}, { get: (_, key) => String(key) }), IconSeat: "i", IconStand: "i",
     engineRef: { current: { select() {}, toggleRest: () => clicks.push("sit") } } };
   vm.runInNewContext(compile(`globalThis.tree = ${sofa.getText(sceneAst)};`), context);
   const button = elements(context.tree, "button")[0];

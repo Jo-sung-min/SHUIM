@@ -73,7 +73,7 @@ class BeachMapControllerTest {
         mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON).content("{\"communityId\":\"room\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.mapId").value("beach"))
             .andExpect(jsonPath("$.fireEnabled").value(true)).andExpect(jsonPath("$.fire.logs").value(3))
-            .andExpect(jsonPath("$.bounds.minZ").value(-1)).andExpect(jsonPath("$.bounds.maxZ").value(55))
+            .andExpect(jsonPath("$.bounds.minZ").value(-1)).andExpect(jsonPath("$.bounds.maxZ").value(63))
             .andExpect(jsonPath("$.count").value(1));
     }
 

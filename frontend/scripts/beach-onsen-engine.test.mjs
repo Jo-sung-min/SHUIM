@@ -82,7 +82,7 @@ test("onsen controls follow water, 2.2m reach and occupied slots without claimin
   assert.equal(engine.onsenState.canSit, true);
   const occupants = ONSEN_SEATS.map((s, i) => visitor(`seat-${i}`, s, "sitting"));
   engine.setPlayers([...occupants, visitor("duplicate", ONSEN_SEATS[0], "sitting"), visitor("wrong-pose", ONSEN_FLOATS[0], "sitting")]);
-  assert.deepEqual(plain(engine.onsenState.occupiedSeats), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(plain(engine.onsenState.occupiedSeats), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual(plain(engine.onsenState.occupiedFloats), []);
   assert.equal(engine.onsenState.canSit, false);
   const count = changes.length; engine.updateOnsenState(); engine.updateOnsenState();
@@ -107,9 +107,10 @@ test("confirmed onsen seats pin both genders to the stone ledge, preserve view a
     assert.equal(engine.getSelf().moving, false);
     assert.equal(engine.selfNode.avatar.kind, skin === 3 ? "female-onsen" : "male-onsen");
     const pose = engine.selfNode.avatar.states.at(-1);
-    close(pose.seated.avatarY, 17.12); assert.equal(pose.lying, null);
+    close(pose.seated.avatarY, seat.avatarY); assert.equal(pose.lying, null);
     assert.equal(engine.selfNode.shadow.visible, false); assert.ok(camera.position.y > 18);
-    close(engine.deckHeight(seat.x, seat.z), 17.12, "standing step and seated contact share the actual ledge top");
+    assert.ok(Math.hypot(camera.position.x - seat.centerX, camera.position.z - seat.centerZ) <= 5.4 + 1e-6, "the seated orbit stays over the bath, out of the rock behind the bench");
+    close(engine.deckHeight(seat.x, seat.z), seat.avatarY, "standing step and seated contact share the actual ledge top");
     engine.setView("first"); engine.self.pitch = 0.22; engine.self.yaw = 0.6;
     engine.applyRest(claim(seat, "sitting")); engine.updateSelf(0.1);
     close(engine.self.pitch, 0.22); close(engine.self.yaw, 0.6);
@@ -185,7 +186,7 @@ test("invalid onsen claims cannot move or displace a valid resting actor", () =>
   const { engine } = fixture();
   engine.applyRest(claim(ONSEN_SEATS[1], "sitting"));
   for (const invalid of [
-    { pose: "sitting", spotId: "onsen-benches", slot: 6 },
+    { pose: "sitting", spotId: "onsen-benches", slot: 27 },
     { pose: "lying", spotId: "onsen-float", slot: -1 },
     { pose: "lying", spotId: "onsen-float", slot: 0.5 },
     { pose: "sitting", spotId: "onsen-float", slot: 0 },

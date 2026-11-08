@@ -260,6 +260,7 @@ class BeachRestTest {
         var p = visitor("spa-guest");
         assertEquals(44, room.tick(p.ticket(), 0, 44, 0, true, null, null).selfRest().z());
         assertEquals(52.2, room.tick(p.ticket(), 0, 52.2, 0, true, null, null).selfRest().z());
-        assertEquals(55, room.tick(p.ticket(), 0, 60, 0, true, null, null).selfRest().z());
+        assertEquals(60, room.tick(p.ticket(), 0, 60, 0, true, null, null).selfRest().z(), "the stairs up to the upper baths");
+        assertEquals(63, room.tick(p.ticket(), 0, 150, 0, true, null, null).selfRest().z());
     }
 }

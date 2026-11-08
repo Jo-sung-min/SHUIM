@@ -311,9 +311,9 @@ export class Cove {
     const path = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-31, 30, -16), new THREE.Vector3(-32, 36, -1),
       new THREE.Vector3(-32, 44, 19), new THREE.Vector3(-29, 40, 35),
-      // The rear ridge meets the original high side walls; the bath opens toward the sea.
-      new THREE.Vector3(-15, 40, 58), new THREE.Vector3(0, 42, 62),
-      new THREE.Vector3(15, 40, 58), new THREE.Vector3(29, 44, 35),
+      // The rear ridge stands far enough back to hold the two upper baths, and tall enough to rise behind them from the sea.
+      new THREE.Vector3(-29, 46, 62), new THREE.Vector3(-22, 56, 88), new THREE.Vector3(0, 62, 98),
+      new THREE.Vector3(22, 56, 88), new THREE.Vector3(29, 46, 62), new THREE.Vector3(29, 44, 35),
       new THREE.Vector3(32, 42, 19), new THREE.Vector3(32, 35, -1),
       new THREE.Vector3(31, 30, -16),
     ], false, "catmullrom", 0.35);

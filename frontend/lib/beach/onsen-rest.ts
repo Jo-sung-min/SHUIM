@@ -2,12 +2,21 @@ import * as THREE from "three";
 
 // Keep these authoritative slots aligned with BeachRoom's onsen rest claims.
 export const ONSEN_REST_REACH = 2.2;
-export const ONSEN_SEAT_Y = 17.12;
-export const ONSEN_FLOAT_Y = 17.76;
+/** Every bath owns one run of slots, in this order. BeachRoom numbers its slots the same way. */
+export const ONSEN_BATHS = [
+  { x: 0, z: 45, lift: 0 }, // At the front, opening onto the sea.
+  { x: -7.6, z: 55, lift: 4 }, { x: 7.6, z: 55, lift: 4 }, // One travertine step up, close enough to pour into it.
+] as const;
+export const ONSEN_SEATS_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3;
+// Measured on the rigged avatar: the head starts 0.93 above the feet when standing and 0.63 above the seat when sitting,
+// so both leave the water just under the chin.
+export const ONSEN_SEAT_Y = 16.9;
+export const ONSEN_FLOAT_Y = 17.41;
 export const ONSEN_FLOAT_BOB = 0.025;
-const CENTER_Z = 45, FLOOR_Y = 16.85, SEAT_RADIUS = 3.55;
-const LEDGE_INNER = 3.2, LEDGE_OUTER = 3.9;
-const LEDGE_START = 8 * Math.PI / 180, LEDGE_END = 172 * Math.PI / 180;
+const FLOOR_Y = 16.6, SEAT_RADIUS = 3.55;
+// A bench around three sides of the bowl, open toward the sea, so it reads as a C from above.
+const LEDGE_INNER = 3.2, LEDGE_OUTER = 3.84;
+const LEDGE_START = -45 * Math.PI / 180, LEDGE_END = 225 * Math.PI / 180, LEDGE_SPAN = LEDGE_END - LEDGE_START;
 
 export interface OnsenRestSlot {
   id: string;
@@ -18,21 +27,29 @@ export interface OnsenRestSlot {
   yaw: number;
   avatarY: number;
   incline: number;
+  /** Stone floor under this place; the bath it belongs to may be raised. */
+  baseY: number;
+  /** Middle of the bath this place belongs to. */
+  centerX: number;
+  centerZ: number;
 }
 
-export const ONSEN_SEATS: readonly OnsenRestSlot[] = Array.from({ length: 6 }, (_, slot) => {
-  const angle = (15 + slot * 30) * Math.PI / 180;
+export const ONSEN_SEATS: readonly OnsenRestSlot[] = ONSEN_BATHS.flatMap((place, bath) => Array.from({ length: ONSEN_SEATS_PER_BATH }, (_, seat) => {
+  const angle = (-30 + seat * 30) * Math.PI / 180, slot = bath * ONSEN_SEATS_PER_BATH + seat;
   return {
-    id: `onsen-bench-${slot}`, spotId: "onsen-benches", slot,
-    x: Math.cos(angle) * SEAT_RADIUS, z: CENTER_Z + Math.sin(angle) * SEAT_RADIUS,
-    yaw: 0, avatarY: ONSEN_SEAT_Y, incline: 0,
+    id: `onsen-bench-${slot}`, spotId: "onsen-benches" as const, slot,
+    x: place.x + Math.cos(angle) * SEAT_RADIUS, z: place.z + Math.sin(angle) * SEAT_RADIUS,
+    yaw: Math.atan2(Math.cos(angle), Math.sin(angle)), avatarY: ONSEN_SEAT_Y + place.lift, incline: 0, baseY: FLOOR_Y + place.lift, centerX: place.x, centerZ: place.z, // Every seat faces the middle of the bath.
   };
-});
+}));
 
 /** Feet point toward the pool centre; the head points toward the open sea. */
-export const ONSEN_FLOATS: readonly OnsenRestSlot[] = [-2.4, 0, 2.4].map((x, slot) => ({
-  id: `onsen-float-${slot}`, spotId: "onsen-float", slot,
-  x, z: 43.3, yaw: 0, avatarY: ONSEN_FLOAT_Y, incline: 0,
+export const ONSEN_FLOATS: readonly OnsenRestSlot[] = ONSEN_BATHS.flatMap((place, bath) => [-2.4, 0, 2.4].map((x, spot) => {
+  const slot = bath * ONSEN_FLOATS_PER_BATH + spot;
+  return {
+    id: `onsen-float-${slot}`, spotId: "onsen-float" as const, slot,
+    x: place.x + x, z: place.z - 1.7, yaw: 0, avatarY: ONSEN_FLOAT_Y + place.lift, incline: 0, baseY: FLOOR_Y + place.lift, centerX: place.x, centerZ: place.z,
+  };
 }));
 
 type RestClaim = { pose?: string; spotId?: string | null; slot?: number | null };
@@ -49,24 +66,26 @@ export function claimedOnsenFloat(state: RestClaim): OnsenRestSlot | null {
   return validSlot(state, "lying", "onsen-float", ONSEN_FLOATS);
 }
 
-/** The shallow stone step stays walkable; the side entrance and the pool centre remain clear. */
+/** The bench stays walkable; the side open to the sea and the pool centre remain clear. */
 export function onsenLedgeHeight(x: number, z: number): number | null {
   if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
-  const radius = Math.hypot(x, z - CENTER_Z), angle = Math.atan2(z - CENTER_Z, x);
-  return radius >= LEDGE_INNER && radius <= LEDGE_OUTER && angle >= LEDGE_START && angle <= LEDGE_END
-    ? ONSEN_SEAT_Y : null;
+  for (const place of ONSEN_BATHS) {
+    const radius = Math.hypot(x - place.x, z - place.z), around = (Math.atan2(z - place.z, x - place.x) - LEDGE_START + Math.PI * 4) % (Math.PI * 2);
+    if (radius >= LEDGE_INNER && radius <= LEDGE_OUTER && around <= LEDGE_SPAN) return ONSEN_SEAT_Y + place.lift;
+  }
+  return null;
 }
 
 /** One slow breath of buoyancy, with stable individual phases and no cumulative drift. */
 export function onsenFloatingY(time: number, slot: number): number {
   const seconds = Number.isFinite(time) ? time : 0;
-  const phase = Number.isInteger(slot) && slot >= 0 && slot < ONSEN_FLOATS.length ? slot * 0.9 : 0;
-  return ONSEN_FLOAT_Y + Math.sin(seconds * 0.8 + phase) * ONSEN_FLOAT_BOB;
+  const valid = Number.isInteger(slot) && slot >= 0 && slot < ONSEN_FLOATS.length;
+  return (valid ? ONSEN_FLOATS[slot].avatarY : ONSEN_FLOAT_Y) + Math.sin(seconds * 0.8 + (valid ? slot * 0.9 : 0)) * ONSEN_FLOAT_BOB;
 }
 
-/** A closed wedge with a genuinely level top. Six instances join into a low half-ring. */
+/** A closed wedge with a genuinely level top. One per seat, joined into the C of the bench. */
 function ledgeSegment(inner: number, outer: number, bottom: number, top: number) {
-  const span = (LEDGE_END - LEDGE_START) / 6, segments = 8;
+  const span = LEDGE_SPAN / ONSEN_SEATS_PER_BATH, segments = 8;
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
   const point = (radius: number, angle: number, y: number): [number, number, number] => [
     Math.cos(angle) * radius, y, Math.sin(angle) * radius,
@@ -102,16 +121,19 @@ export function buildOnsenRest(scene: THREE.Scene, sourceStone?: THREE.MeshStand
     stone.customProgramCacheKey = sourceStone.customProgramCacheKey;
   }
   stone.roughness = 0.88;
-  const base = new THREE.InstancedMesh(ledgeSegment(3.23, 3.87, FLOOR_Y + 0.005, 17.015), stone, 6);
-  const top = new THREE.InstancedMesh(ledgeSegment(LEDGE_INNER, LEDGE_OUTER, 16.99, ONSEN_SEAT_Y), stone, 6);
+  const count = ONSEN_BATHS.length * ONSEN_SEATS_PER_BATH;
+  const base = new THREE.InstancedMesh(ledgeSegment(3.23, 3.81, FLOOR_Y + 0.005, ONSEN_SEAT_Y - 0.105), stone, count);
+  const top = new THREE.InstancedMesh(ledgeSegment(LEDGE_INNER, LEDGE_OUTER, ONSEN_SEAT_Y - 0.13, ONSEN_SEAT_Y), stone, count);
   base.name = "onsen-ledge-foundation"; top.name = "onsen-ledge-flat-seats";
   const transform = new THREE.Object3D(), tint = new THREE.Color();
   for (const mesh of [base, top]) {
-    for (let slot = 0; slot < 6; slot++) {
-      transform.position.set(0, 0, CENTER_Z);
-      transform.rotation.set(0, -(LEDGE_START + slot * (LEDGE_END - LEDGE_START) / 6), 0);
+    for (let slot = 0; slot < count; slot++) {
+      const seat = slot % ONSEN_SEATS_PER_BATH;
+      const place = ONSEN_BATHS[Math.floor(slot / ONSEN_SEATS_PER_BATH)];
+      transform.position.set(place.x, place.lift, place.z);
+      transform.rotation.set(0, -(LEDGE_START + seat * LEDGE_SPAN / ONSEN_SEATS_PER_BATH), 0);
       transform.updateMatrix(); mesh.setMatrixAt(slot, transform.matrix);
-      mesh.setColorAt(slot, tint.setScalar(0.94 + slot % 3 * 0.025));
+      mesh.setColorAt(slot, tint.setScalar(0.94 + seat % 3 * 0.025));
     }
     mesh.instanceMatrix.needsUpdate = true;
     mesh.castShadow = mesh.receiveShadow = false;

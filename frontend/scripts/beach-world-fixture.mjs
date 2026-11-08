@@ -11,6 +11,7 @@ const restSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/ons
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const restContext = { THREE };
 vm.runInNewContext(`${restSource}\nglobalThis.api = {
+  ONSEN_BATHS, ONSEN_SEATS_PER_BATH, ONSEN_FLOATS_PER_BATH,
   ONSEN_SEATS, ONSEN_FLOATS, ONSEN_REST_REACH, ONSEN_SEAT_Y, ONSEN_FLOAT_Y, ONSEN_FLOAT_BOB,
   claimedOnsenSeat, claimedOnsenFloat, onsenLedgeHeight, onsenFloatingY, buildOnsenRest
 };`, restContext);
@@ -19,8 +20,8 @@ const source = stripTypeScriptTypes(await readFile(new URL("../lib/beach/hot-spr
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const context = { THREE, ...restContext.api };
 vm.runInNewContext(`${source}\nglobalThis.api = {
-  HOT_SPRING, HOT_SPRING_PATH, HOT_SPRING_COLLIDERS,
-  hotSpringFloorHeight, hotSpringCeilingHeight, buildHotSpring
+  HOT_SPRING, HOT_SPRING_PATH, HOT_SPRING_COLLIDERS, HOT_SPRING_BATHS, HOT_SPRING_STAIRS, HOT_SPRING_CROSSING, HOT_SPRING_STAIR_SLOT, HOT_SPRING_UPPER_SHELL, HOT_SPRING_BACK,
+  hotSpringFloorHeight, hotSpringCeilingHeight, hotSpringBathIndex, hotSpringBathDistance, hotSpringInWater, hotSpringInlandBearing, hotSpringTerraceRim, buildHotSpring
 };`, context);
 const landscapeSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/hot-spring-landscape.ts", import.meta.url), "utf8"))
   .replace(/^import\s+[^\n]+\n/gm, "")

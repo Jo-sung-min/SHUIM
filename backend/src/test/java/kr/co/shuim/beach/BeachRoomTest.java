@@ -139,10 +139,10 @@ class BeachRoomTest {
         assertEquals(BeachRoom.MIN_Z, a.z());
         at(room, a, -100, 500);
         assertEquals(BeachRoom.MIN_X, a.x());
-        assertEquals(BeachRoom.MAX_Z, a.z());
+        assertEquals(BeachMap.BEACH.maxZ(), a.z());
         PlayerView v = at(room, b, 0, 10).players().get(0);
         assertEquals(BeachRoom.MIN_X, v.x());
-        assertEquals(BeachRoom.MAX_Z, v.z());
+        assertEquals(BeachMap.BEACH.maxZ(), v.z());
         // NaN 은 이전 값 유지
         room.tick(a.ticket(), Double.NaN, Double.NaN, Double.NaN, true, null, null);
         assertEquals(BeachRoom.MIN_X, a.x());

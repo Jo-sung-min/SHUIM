@@ -448,6 +448,10 @@ export async function addFirePowder(ticket: string, requestId: string, color: Po
   return state;
 }
 
+/** Mirrors lib/beach/onsen-rest.ts and BeachRoom. This file carries no runtime imports. */
+const ONSEN_BATH_CENTERS = [[0, 45], [-7.6, 55], [7.6, 55]] as const;
+const ONSEN_SEATS_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3;
+
 function validRestPresence(value: unknown): value is RestPresence {
   if (!value || typeof value !== "object") return false;
   const state = value as RestPresence;
@@ -455,12 +459,14 @@ function validRestPresence(value: unknown): value is RestPresence {
   if (state.pose === "standing") return state.spotId === null && state.slot === null;
   if (!Number.isInteger(state.slot) || state.slot! < 0) return false;
   if (state.spotId === "onsen-benches" || state.spotId === "onsen-float") {
-    const sitting = state.spotId === "onsen-benches";
-    if (state.pose !== (sitting ? "sitting" : "lying") || state.slot! >= (sitting ? 6 : 3)) return false;
-    const angle = (15 + state.slot! * 30) * Math.PI / 180;
-    const x = sitting ? Math.cos(angle) * 3.55 : (state.slot! - 1) * 2.4;
-    const z = sitting ? 45 + Math.sin(angle) * 3.55 : 43.3;
-    return Math.abs(state.x - x) <= 0.02 && Math.abs(state.z - z) <= 0.02 && Math.abs(state.yaw) < 1e-6;
+    const sitting = state.spotId === "onsen-benches", perBath = sitting ? ONSEN_SEATS_PER_BATH : ONSEN_FLOATS_PER_BATH;
+    if (state.pose !== (sitting ? "sitting" : "lying") || state.slot! >= perBath * ONSEN_BATH_CENTERS.length) return false;
+    const [bathX, bathZ] = ONSEN_BATH_CENTERS[Math.floor(state.slot! / perBath)], place = state.slot! % perBath;
+    const angle = (-30 + place * 30) * Math.PI / 180;
+    const x = sitting ? bathX + Math.cos(angle) * 3.55 : bathX + (place - 1) * 2.4;
+    const z = sitting ? bathZ + Math.sin(angle) * 3.55 : bathZ - 1.7;
+    const yaw = sitting ? Math.atan2(Math.cos(angle), Math.sin(angle)) : 0;
+    return Math.abs(state.x - x) <= 0.02 && Math.abs(state.z - z) <= 0.02 && Math.abs(Math.atan2(Math.sin(state.yaw - yaw), Math.cos(state.yaw - yaw))) < 1e-6;
   }
   if (state.pose === "sitting") {
     return (state.spotId === "fire-benches" && state.slot! < 12)

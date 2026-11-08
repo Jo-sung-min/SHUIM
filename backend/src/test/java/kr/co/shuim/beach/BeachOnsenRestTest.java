@@ -28,7 +28,7 @@ class BeachOnsenRestTest {
     private final AtomicLong clock = new AtomicLong(1_000_000);
     private final BeachRoom room = new BeachRoom(clock::get, false);
     private double[] point(String spot, int slot) {
-        double angle = Math.toRadians(15 + slot * 30);
+        double angle = Math.toRadians(-30 + slot * 30);
         return FLOATS.equals(spot) ? new double[]{(slot - 1) * 2.4, 43.3}
             : new double[]{Math.cos(angle) * 3.55, 45 + Math.sin(angle) * 3.55};
     }
@@ -39,9 +39,9 @@ class BeachOnsenRestTest {
     }
 
     @Test
-    void allSixSeatsAndThreeFloatingPlacesMatchTheClientAndRemainDistinct() {
+    void allNineSeatsAndThreeFloatingPlacesMatchTheClientAndRemainDistinct() {
         for (String spot : new String[]{SEATS, FLOATS}) {
-            int capacity = SEATS.equals(spot) ? 6 : 3;
+            int capacity = SEATS.equals(spot) ? 9 : 3;
             for (int slot = capacity - 1; slot >= 0; slot--) {
                 var p = point(spot, slot);
                 var guest = visitor(spot + slot, p[0], p[1]);
@@ -49,14 +49,30 @@ class BeachOnsenRestTest {
                 assertEquals(slot, rest.slot());
                 assertEquals(SEATS.equals(spot) ? "sitting" : "lying", rest.pose());
                 assertEquals(p[0], rest.x(), 1e-10); assertEquals(p[1], rest.z(), 1e-10);
-                assertEquals(0, rest.yaw());
+                double seatAngle = Math.toRadians(-30 + slot * 30);
+                assertEquals(SEATS.equals(spot) ? Math.atan2(Math.cos(seatAngle), Math.sin(seatAngle)) : 0, rest.yaw(), 1e-10);
                 assertEquals(rest, room.rest(guest.ticket(), SEATS.equals(spot) ? "sit" : "lie", spot));
             }
         }
         var watcher = visitor("watcher", 0, 45);
         var players = room.tick(watcher.ticket(), 0, 45, 0, false, null, null).players();
-        assertEquals(6, players.stream().filter(p -> SEATS.equals(p.spotId()) && "sitting".equals(p.pose())).count());
+        assertEquals(9, players.stream().filter(p -> SEATS.equals(p.spotId()) && "sitting".equals(p.pose())).count());
         assertEquals(3, players.stream().filter(p -> FLOATS.equals(p.spotId()) && "lying".equals(p.pose())).count());
+    }
+
+    @Test
+    void eachRearBathHasItsOwnRunOfSeatsAndFloatingPlaces() {
+        double seatX = -7.6 + Math.cos(Math.toRadians(-30)) * 3.55, seatZ = 55 + Math.sin(Math.toRadians(-30)) * 3.55;
+        var second = visitor("second", seatX, seatZ);
+        var seat = room.rest(second.ticket(), "sit", SEATS);
+        assertEquals(9, seat.slot(), "the left upper bath starts after the first bath's nine seats");
+        assertEquals(seatX, seat.x(), 1e-10); assertEquals(seatZ, seat.z(), 1e-10);
+        var third = visitor("third", 10, 53.3);
+        var floating = room.rest(third.ticket(), "lie", FLOATS);
+        assertEquals(8, floating.slot(), "the right upper bath's last floating place");
+        assertEquals(10, floating.x(), 1e-10); assertEquals(53.3, floating.z(), 1e-10);
+        var stood = room.rest(third.ticket(), "stand", null);
+        assertTrue(Math.hypot(stood.x() - 7.6, stood.z() - 55) <= 2.7 + 1e-9, "standing up returns to the same bath's water");
     }
 
     @Test

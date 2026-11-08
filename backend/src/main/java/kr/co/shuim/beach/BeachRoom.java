@@ -68,8 +68,13 @@ public class BeachRoom {
     public static final int BENCH_SLOTS = 12;
     public static final double BENCH_REACH = 2.25;
     public static final String ONSEN_BENCH_SPOT = "onsen-benches", ONSEN_FLOAT_SPOT = "onsen-float";
-    public static final int ONSEN_BENCH_SLOTS = 6, ONSEN_FLOAT_SLOTS = 3;
+    /** Every bath owns one run of slots, in this order; frontend lib/beach/onsen-rest.ts numbers them the same way. */
+    private static final double[][] ONSEN_BATHS = {{0, 45}, {-7.6, 55}, {7.6, 55}};
+    private static final int ONSEN_BENCHES_PER_BATH = 9, ONSEN_FLOATS_PER_BATH = 3;
+    public static final int ONSEN_BENCH_SLOTS = ONSEN_BATHS.length * ONSEN_BENCHES_PER_BATH, ONSEN_FLOAT_SLOTS = ONSEN_BATHS.length * ONSEN_FLOATS_PER_BATH;
     public static final double ONSEN_X = 0, ONSEN_Z = 45, ONSEN_REACH = 2.2, ONSEN_BENCH_RADIUS = 3.55;
+    /** The beach map reaches back to the upper baths behind and above the first. */
+    public static final double ONSEN_MAX_Z = 63;
     /** Bamboo-trail pavilions: six edge seats each, mirrored by the frontend trail layout (lib/beach/bamboo-trail.ts). */
     public static final int PAVILION_SLOTS = 6;
     public static final double PAVILION_REACH = 2.4;
@@ -224,10 +229,16 @@ public class BeachRoom {
             12 + Math.cos(angle) * 4 - Math.sin(angle) * offset, angle);
     }
 
+    private static double[] onsenBath(RestSpot spot, int slot) {
+        return ONSEN_BATHS[slot / (ONSEN_FLOAT_SPOT.equals(spot.id()) ? ONSEN_FLOATS_PER_BATH : ONSEN_BENCHES_PER_BATH)];
+    }
+
     private static BenchSeat onsenSlot(RestSpot spot, int slot) {
-        if (ONSEN_FLOAT_SPOT.equals(spot.id())) return new BenchSeat((slot - 1) * 2.4, 43.3, 0);
-        double angle = Math.toRadians(15 + slot * 30);
-        return new BenchSeat(Math.cos(angle) * ONSEN_BENCH_RADIUS, ONSEN_Z + Math.sin(angle) * ONSEN_BENCH_RADIUS, 0);
+        double[] bath = onsenBath(spot, slot);
+        if (ONSEN_FLOAT_SPOT.equals(spot.id())) return new BenchSeat(bath[0] + (slot % ONSEN_FLOATS_PER_BATH - 1) * 2.4, bath[1] - 1.7, 0);
+        // The bench runs around three sides of the bath and every seat faces its middle.
+        double angle = Math.toRadians(-30 + slot % ONSEN_BENCHES_PER_BATH * 30);
+        return new BenchSeat(bath[0] + Math.cos(angle) * ONSEN_BENCH_RADIUS, bath[1] + Math.sin(angle) * ONSEN_BENCH_RADIUS, Math.atan2(Math.cos(angle), Math.sin(angle)));
     }
 
     private static int nearestOnsenSlot(Presence me, RestSpot spot, boolean[] used) {
@@ -877,10 +888,11 @@ public class BeachRoom {
             me.standingYaw = me.yaw;
             if (spot.onsen()) {
                 // Keep the saved return point inside the water, clear of the rim and rear seat slabs.
-                double radius = Math.hypot(me.x - ONSEN_X, me.z - ONSEN_Z);
+                double[] bath = onsenBath(spot, slot);
+                double radius = Math.hypot(me.x - bath[0], me.z - bath[1]);
                 double scale = radius > 2.7 ? 2.7 / radius : 1;
-                me.standingX = ONSEN_X + (me.x - ONSEN_X) * scale;
-                me.standingZ = ONSEN_Z + (me.z - ONSEN_Z) * scale;
+                me.standingX = bath[0] + (me.x - bath[0]) * scale;
+                me.standingZ = bath[1] + (me.z - bath[1]) * scale;
             }
             if (nearestSeat) {
                 BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : spot.pavilion() ? pavilionSeat(pavilionOf(spot), slot) : benchSeat(slot);

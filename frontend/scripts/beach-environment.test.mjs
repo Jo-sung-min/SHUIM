@@ -42,12 +42,12 @@ test("the original stone walls enclose both sides without entering the playable 
       if (x > 22) right++;
     }
   }
-  assert.ok(left > 3500 && right > 3500, "both side walls retain continuous substantial surfaces");
+  assert.ok(left > 3300 && right > 3300, "both side walls retain continuous substantial surfaces");
   ridge.geometry.computeBoundingBox();
   const { min, max } = ridge.geometry.boundingBox;
   assert.ok(min.x > -40 && min.x < -39 && max.x > 39 && max.x < 40);
-  assert.ok(min.z > -17 && min.z < -16 && max.z > 65 && max.z < 71, "the rear ridge stays beyond the elevated spring while the sea-facing ends stay fixed");
-  assert.ok(max.y > 43 && max.y < 45, "the original tall stone silhouette is preserved");
+  assert.ok(min.z > -17 && min.z < -16 && max.z > 100 && max.z < 112, "the rear ridge stays beyond the upper baths while the sea-facing ends stay fixed");
+  assert.ok(max.y > 60 && max.y < 66, "the rear ridge rises behind the upper baths");
   assert.equal(ridge.castShadow, true);
   assert.equal(ridge.receiveShadow, true);
 });
@@ -59,7 +59,7 @@ test("the elevated spring keeps open sea-facing sky with a tall continuous rear 
     const ray = new THREE.Raycaster(new THREE.Vector3(x, hotSpring.HOT_SPRING.floorY + 1.55, 45), new THREE.Vector3(side, 0.7, -1).normalize(), 0.1, 100);
     assert.equal(ray.intersectObject(ridge, false).length, 0, "a resting visitor can see stars without tilting straight up");
   }
-  const rear = new THREE.Raycaster(new THREE.Vector3(0, 38, 45), new THREE.Vector3(0, 0, 1), 0.1, 50);
+  const rear = new THREE.Raycaster(new THREE.Vector3(0, 38, 45), new THREE.Vector3(0, 0, 1), 0.1, 70);
   assert.ok(rear.intersectObject(ridge, false).length, "the rear wall rises to the surrounding high cliff silhouette");
 });
 

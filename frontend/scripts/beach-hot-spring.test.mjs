@@ -12,7 +12,7 @@ async function loadModule(file, dependencies, names) {
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(", ")} };`, context);
   return context.api;
 }
-const { HOT_SPRING_PATH: path, HOT_SPRING: spa, HOT_SPRING_COLLIDERS: walls, hotSpringFloorHeight: floor, hotSpringCeilingHeight: ceiling, buildHotSpring } = await loadModule("../lib/beach/hot-spring.ts", { THREE }, ["HOT_SPRING_PATH", "HOT_SPRING", "HOT_SPRING_COLLIDERS", "hotSpringFloorHeight", "hotSpringCeilingHeight", "buildHotSpring"]);
+const { HOT_SPRING_PATH: path, HOT_SPRING: spa, HOT_SPRING_COLLIDERS: walls, hotSpringFloorHeight: floor, hotSpringCeilingHeight: ceiling, HOT_SPRING_BATHS: baths, HOT_SPRING_STAIRS: stairs, HOT_SPRING_BACK: rearLimit, hotSpringBathIndex: bathIndex, hotSpringBathDistance: bathDistance, hotSpringInWater: inWater, buildHotSpring } = await loadModule("../lib/beach/hot-spring.ts", { THREE, ONSEN_BATHS: [{ x: 0, z: 45, lift: 0 }, { x: -7.6, z: 55, lift: 4 }, { x: 7.6, z: 55, lift: 4 }] }, ["HOT_SPRING_PATH", "HOT_SPRING", "HOT_SPRING_COLLIDERS", "hotSpringFloorHeight", "hotSpringCeilingHeight", "HOT_SPRING_BATHS", "HOT_SPRING_STAIRS", "HOT_SPRING_BACK", "hotSpringBathIndex", "hotSpringBathDistance", "hotSpringInWater", "buildHotSpring"]);
 const { resolveWalls } = await loadModule("../lib/beach/navigation.ts", {}, ["resolveWalls"]);
 
 function assertClear(x, z, message) {
@@ -50,21 +50,27 @@ test("turning across each corner keeps the landing height level", () => {
   }
 });
 
-test("the east recess enters waist-deep water smoothly and the sea-facing rim stays low and solid", () => {
+test("the sloped bowl enters waist-deep water smoothly and the sea-facing rim stays low and solid", () => {
   let previous = spa.deckY;
   for (let index = 0; index <= 220; index++) {
     const x = 6 - index * 0.02, y = floor(x, 45);
     assertClear(x, 45, "recessed water access");
-    assert.ok(y <= previous + 1e-8 && previous - y < 0.025, "ramp never jumps between deck and pool floor");
+    assert.ok(y <= previous + 1e-8 && previous - y < 0.035, "the slope never jumps between deck and pool floor");
     previous = y;
   }
   assert.equal(floor(0, 45), spa.floorY);
   assert.equal(floor(5.7, 45), spa.deckY);
   assert.ok(spa.waterY - spa.floorY <= 1.05);
-  for (const angle of [-Math.PI / 2, Math.PI / 2, Math.PI]) {
-    const x = Math.cos(angle) * 4.8, z = 45 + Math.sin(angle) * 4.8;
-    const [nextX, nextZ] = resolveWalls(x, z, walls, 0.35);
-    assert.ok(Math.hypot(nextX - x, nextZ - z) > 0.1, "stone rim prevents walking straight through its raised edge");
+  for (const bath of baths) for (let degrees = 0; degrees < 360; degrees += 10) {
+    const dx = Math.cos(degrees * Math.PI / 180), dz = Math.sin(degrees * Math.PI / 180);
+    let previous = floor(bath.x + dx * 4.6, bath.z + dz * 4.6);
+    for (let radius = 4.6; radius >= 3.6; radius -= 0.05) {
+      const x = bath.x + dx * radius, z = bath.z + dz * radius, y = floor(x, z);
+      assert.ok(Math.abs(y - previous) <= 0.1, `the bowl slopes evenly at ${degrees} degrees`);
+      previous = y;
+      const [nextX, nextZ] = resolveWalls(x, z, walls, 0.35);
+      assert.ok(Math.hypot(nextX - x, nextZ - z) < 1e-6, `nothing blocks wading in at ${degrees} degrees`);
+    }
   }
   for (const side of [-1, 1]) {
     for (let step = 0; step <= 40; step++) assertClear(5.35, 45 + side * step * 0.05, "stairs also open onto both dry deck aisles");
@@ -76,13 +82,13 @@ test("the east recess enters waist-deep water smoothly and the sea-facing rim st
 });
 
 test("the high deck cannot be entered from the ground around the hillside", () => {
-  for (const [x, z] of [[-12, 34], [0, 34], [7.7, 44], [10, 46], [10, 50], [-10, 46], [0, 54]]) {
+  for (const [x, z] of [[-12, 34], [0, 34], [7.7, 44], [10, 46], [16, 50], [-10, 46], [0, 59.6], [0, 60], [-16, 60], [9, 62.8]]) {
     const [nextX, nextZ] = resolveWalls(x, z, walls, 0.35);
     assert.ok(Math.hypot(nextX - x, nextZ - z) > 0.01, `ground shortcut ${x},${z} is blocked`);
   }
   for (const [x, z] of [[0, 20], [13, 29], [-13, 29], [Number.NaN, 44], [0, Number.POSITIVE_INFINITY]]) assert.equal(floor(x, z), null);
   for (let z = 19; z <= 33.5; z += 0.1) assertClear(6.5, z, "the outside aisle reaches the concealed entrance without entering a house");
-  assert.ok(walls.length < 225, "static collision work stays bounded on mobile");
+  assert.ok(walls.length < 560, `static collision work stays bounded on mobile: ${walls.length}`);
 });
 
 test("actual tunnel meshes have continuous floors and ceilings without intersecting the walking body", () => {
@@ -217,12 +223,137 @@ test("the shrub-covered entrance is an unobstructed north-to-east turn with clos
   onsen.dispose();
 });
 
+test("two upper baths sit behind and above the first, side by side, and every step up has a floor", () => {
+  assert.deepEqual(baths.map((bath) => [bath.x, bath.z, bath.lift]), [[0, 45, 0], [-7.6, 55, 4], [7.6, 55, 4]]);
+  assert.equal(rearLimit, 63);
+  const key = (x, z) => `${Math.round(x * 4)},${Math.round(z * 4)}`, seen = new Set([key(6.3, 45)]);
+  const reached = [];
+  const directions = Array.from({ length: 8 }, (_, index) => [Math.cos(index * Math.PI / 4) * 0.25, Math.sin(index * Math.PI / 4) * 0.25]);
+  let frontier = [[6.3, 45]];
+  while (frontier.length) {
+    const next = [];
+    for (const [x, z] of frontier) {
+      reached.push([x, z]);
+      for (const [dx, dz] of directions) {
+        const [nx, nz] = resolveWalls(x + dx, z + dz, walls, 0.35);
+        if (nz < 35 || Math.hypot(nx - x, nz - z) < 0.06 || seen.has(key(nx, nz))) continue;
+        seen.add(key(nx, nz));
+        next.push([nx, nz]);
+      }
+    }
+    frontier = next;
+  }
+  for (const [x, z] of reached) assert.notEqual(floor(x, z), null, `walkable point ${x},${z} has a floor`);
+  assert.ok(Math.max(...reached.map(([, z]) => z)) < rearLimit, "the last bath closes the map");
+  for (const [index, bath] of baths.entries()) {
+    assert.ok(reached.some(([x, z]) => bathIndex(x, z) === index && Math.hypot(x - bath.x, z - bath.z) > 5.5), `bath ${index} deck is reached`);
+    assert.ok(reached.some(([x, z]) => bathIndex(x, z) === index && Math.hypot(x - bath.x, z - bath.z) < 2), `bath ${index} water is reached`);
+    assert.equal(floor(bath.x, bath.z), spa.floorY + bath.lift);
+    assert.equal(inWater(bath.x, bath.z), true);
+    assert.equal(inWater(bath.x + 6, bath.z), false, "the deck is dry");
+  }
+  for (const stair of stairs) {
+    assert.equal(floor(stair.x, stair.startZ), spa.deckY, "the stair starts level with the first deck");
+    assert.equal(floor(stair.x, stair.endZ), stair.topY, "and ends level with the upper deck");
+    let previous = spa.deckY;
+    for (let z = stair.startZ; z <= stair.endZ; z += 0.25) {
+      const y = floor(stair.x, z);
+      assert.ok(y >= previous && y - previous <= 0.25, `the climb is even at z=${z}`);
+      previous = y;
+      assert.equal(bathDistance(stair.x, z), 0, "a robe stays on between baths");
+      assert.equal(ceiling(stair.x, z), null, "the stairs are open to the sky");
+    }
+    assert.equal(floor(stair.x, stair.startZ - 0.5), spa.deckY);
+  }
+  assert.ok(bathDistance(0, 30) > 7.65);
+});
+
+test("the open sea side of the first deck leads onto a short rock ledge", () => {
+  const ledge = floor(0, 37);
+  assert.ok(ledge < spa.deckY && ledge > spa.deckY - 1, `ledge floor ${ledge}`);
+  assert.equal(floor(0, 35), null, "the ledge ends before the cliff face");
+  assert.equal(floor(0, 37.5) === null, false);
+  assert.equal(floor(-16, 50), null, "the land-side rim stays closed");
+  const [x, z] = resolveWalls(0, 36.7, walls, 0.35);
+  assert.ok(Math.hypot(x, z - 36.7) < 1e-6, "the ledge is walkable");
+});
+
+test("the entry floor is continuous and the dark wood photo is lifted to warm boards", () => {
+  const scene = new THREE.Scene();
+  const onsen = buildHotSpring(scene, { wood: new THREE.MeshStandardMaterial({ map: new THREE.Texture(), normalMap: new THREE.Texture() }) });
+  scene.updateMatrixWorld(true);
+  const deckColor = onsen.group.getObjectByName("onsen-open-sky-deck").material.color;
+  assert.ok(deckColor.r > 1 && deckColor.g > 1 && deckColor.b > 1, "a tint below 1 would multiply the dark photo to black");
+  const samples = [[5.5, 45], [5.4, 46], [5.4, 44.05], [6.8, 45.95], [6.8, 44.05], [6.3, 46.22], [4.75, 45.92]];
+  for (const bath of baths) for (const [x, z] of samples) {
+    if (bath.lift && x >= 5.95) continue;
+    const at = [x + bath.x, z - 45 + bath.z];
+    const ray = new THREE.Raycaster(new THREE.Vector3(at[0], spa.deckY + bath.lift + 1, at[1]), new THREE.Vector3(0, -1, 0));
+    const hit = ray.intersectObject(onsen.group, true).find((candidate) => !candidate.object.name.includes("steam"));
+    assert.ok(hit, `floor mesh above the hill at ${at}`);
+    assert.ok(hit.point.y > spa.deckY + bath.lift - 0.02, `${hit.object.name} at ${at} is y=${hit.point.y}`);
+  }
+  onsen.dispose();
+});
+
+test("walking surfaces of different stone never share a plane, so the entry cannot flicker", () => {
+  const scene = new THREE.Scene(), onsen = buildHotSpring(scene);
+  scene.updateMatrixWorld(true);
+  const solids = [];
+  onsen.group.traverse((object) => { if (object.isMesh && !object.material.transparent) solids.push(object); });
+  const ray = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0);
+  const surfaces = (x, z, y) => { ray.set(new THREE.Vector3(x, y + 0.3, z), down); ray.far = 0.5; return ray.intersectObjects(solids, false); };
+  for (const [x, z, y] of [[6.2, 45, spa.deckY], [6.5, 44.6, spa.deckY], [6.4, 45.5, spa.deckY]]) {
+    const hits = surfaces(x, z, y);
+    assert.equal(hits[0].object.name, "onsen-arrival-landing");
+    assert.equal(hits.filter((hit) => hit.object.name === "onsen-continuous-stone-stairs").length, 0, "the flight stops at the landing");
+  }
+  for (const point of path.slice(1, -1)) {
+    let overlaps = 0;
+    for (const [dx, dz] of [[0.11, 0.13], [-0.11, 0.13], [0.11, -0.13], [-0.11, -0.13]]) {
+      const hits = surfaces(point.x + dx, point.z + dz, point.y);
+      const flight = hits.find((hit) => hit.object.name === "onsen-continuous-stone-stairs");
+      if (!flight) continue;
+      overlaps++;
+      assert.equal(hits[0].object.name, "onsen-level-turn-landings");
+      assert.ok(hits[0].point.y - flight.point.y >= 0.008, `turn at ${point.x},${point.z} clears the flight below it`);
+    }
+    assert.ok(overlaps > 0, `turn at ${point.x},${point.z} was sampled`);
+  }
+  onsen.dispose();
+});
+
+test("each upper bath falls past a rock face into the first, and neither level leaks into the other", () => {
+  const scene = new THREE.Scene(), onsen = buildHotSpring(scene);
+  scene.updateMatrixWorld(true);
+  const cascade = onsen.group.getObjectByName("onsen-cascade-water"), terrace = onsen.group.getObjectByName("onsen-waterfall-cliffs");
+  assert.ok(cascade.material.isShaderMaterial && cascade.material.transparent);
+  const position = cascade.geometry.getAttribute("position");
+  let highest = -Infinity, lowest = Infinity;
+  for (let index = 0; index < position.count; index++) { highest = Math.max(highest, position.getY(index)); lowest = Math.min(lowest, position.getY(index)); }
+  assert.ok(highest > spa.waterY + 4 && highest < spa.deckY + 4.1, `the stream starts at the upper water, y=${highest}`);
+  assert.ok(lowest < spa.waterY + 0.02, `and ends on the first bath's water, y=${lowest}`);
+  for (const bath of baths.slice(1)) {
+    const gap = Math.hypot(bath.x, bath.z - 45) - 2 * spa.poolRadius;
+    assert.ok(gap > 2 && gap < 4.5, `the pools stand close together: ${gap}`);
+    const towardX = -bath.x / Math.hypot(bath.x, bath.z - 45), towardZ = (45 - bath.z) / Math.hypot(bath.x, bath.z - 45);
+    const lower = [towardX * -5.6, 45 + towardZ * -5.6], upper = [bath.x + towardX * 5.3, bath.z + towardZ * 5.3];
+    assert.equal(floor(...lower), spa.deckY, "the shelf at the foot of the curtain belongs to the first deck");
+    assert.ok(floor(...upper) > spa.deckY + 3.4, "the lip above it belongs to the upper bath");
+    assert.ok(Math.hypot(...resolveWalls((lower[0] + upper[0]) / 2, (lower[1] + upper[1]) / 2, walls, 0.35).map((value, index) => value - (index ? (lower[1] + upper[1]) / 2 : (lower[0] + upper[0]) / 2))) > 0.05, "the curtain cannot be walked through");
+    const ray = new THREE.Raycaster(new THREE.Vector3(towardX * -5.6, spa.deckY + 1.2, 45 + towardZ * -5.6), new THREE.Vector3(-towardX, 0, -towardZ), 0, 2);
+    assert.ok(ray.intersectObject(terrace).length, "seen from the first deck it is a real wall");
+  }
+  onsen.dispose();
+});
+
 test("the fence uses thin warm bamboo and three rails while leaving the sea opening unobstructed", () => {
   const scene = new THREE.Scene(), onsen = buildHotSpring(scene);
   const bamboo = onsen.group.getObjectByName("onsen-bamboo-screen");
   const posts = onsen.group.getObjectByName("onsen-fence-posts");
   const rails = onsen.group.getObjectByName("onsen-fence-rails");
-  assert.ok(bamboo.count >= 240 && bamboo.count <= 320, `bamboo rods=${bamboo.count}`);
+  assert.ok(bamboo.count >= 40 && bamboo.count <= 120, `bamboo rods=${bamboo.count}`);
   assert.equal(bamboo.geometry.parameters.radialSegments, 6);
   assert.equal(bamboo.geometry.parameters.openEnded, true);
   assert.ok(bamboo.instanceColor, "slight material variation distinguishes individual bamboo stalks");
@@ -258,21 +389,35 @@ test("the onsen keeps a modest draw budget, no shadow lights, and releases only 
   let mapDisposals = 0;
   sharedMap.addEventListener("dispose", () => mapDisposals++);
   const scene = new THREE.Scene(), onsen = buildHotSpring(scene, { stone, wood });
-  let lights = 0, meshes = 0, triangles = 0, disposedGeometry = 0, disposedMaterial = 0;
+  const annex = onsen.group.getObjectByName("onsen-upper-bath-details");
+  let lights = 0, meshes = 0, triangles = 0, rearMeshes = 0, rearTriangles = 0, disposedGeometry = 0, disposedMaterial = 0;
   const geometries = new Set(), materials = new Set();
   onsen.group.traverse((object) => {
     if (object.isPointLight) { lights++; assert.equal(object.castShadow, false); }
     if (!object.isMesh) return;
-    meshes++;
+    let rear = false;
+    object.traverseAncestors((parent) => { rear ||= parent === annex; });
     const positions = object.geometry.getAttribute("position");
     assert.ok(Array.from(positions.array).every(Number.isFinite), object.name);
-    triangles += (object.geometry.index?.count ?? positions.count) / 3 * (object.isInstancedMesh ? object.count : 1);
+    const drawn = (object.geometry.index?.count ?? positions.count) / 3 * (object.isInstancedMesh ? object.count : 1);
+    if (rear) { rearMeshes++; rearTriangles += drawn; } else { meshes++; triangles += drawn; }
     geometries.add(object.geometry);
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.add(material);
   });
   assert.equal(lights, 2);
   assert.ok(meshes <= 32, `draws=${meshes}`);
   assert.ok(triangles < 42000, `triangles=${triangles}`);
+  assert.ok(rearMeshes <= 12, `upper detail draws=${rearMeshes}`);
+  assert.ok(rearTriangles < 30000, `rear triangles=${rearTriangles}`);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.set(0, 2, 10); onsen.update(1, camera);
+  assert.equal(annex.visible, false, "close upper details cost nothing from the beach");
+  assert.equal(onsen.group.getObjectByName("onsen-upper-stair-walls").visible, true, "the stairs still read from the sea");
+  camera.position.set(0, 19.5, 48); onsen.update(2, camera);
+  assert.equal(annex.visible, true);
+  assert.equal(onsen.group.getObjectByName("onsen-pool-warm-light").position.z, 45);
+  camera.position.set(-7.6, 23.5, 54); onsen.update(3, camera);
+  assert.deepEqual(onsen.group.getObjectByName("onsen-pool-warm-light").position.toArray(), [-7.6, spa.deckY + 4 + 2.7, 55], "one light follows the visitor between baths");
   assert.equal(onsen.group.getObjectByName("onsen-soft-rising-steam").count, 12);
   onsen.applyDaylight(0); onsen.update(123); onsen.applyDaylight(1); onsen.update(Number.NaN);
   for (const geometry of geometries) geometry.addEventListener("dispose", () => disposedGeometry++);

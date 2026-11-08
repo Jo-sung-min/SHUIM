@@ -114,6 +114,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return jsxRuntime;
     if (name === "next/link") return { default: "a" };
+    if (name === "next/navigation") return { useRouter: () => ({ back() {}, replace() {}, push() {} }) };
     if (name.endsWith("/net")) return net;
     if (name.endsWith("/room-music")) return roomMusic;
     if (name.endsWith("/sparkler-timing")) return sparklerTiming;

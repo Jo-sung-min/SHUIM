@@ -207,18 +207,20 @@ test("fireworks authorization, expired visits and cooldown errors never fabricat
   await assert.rejects(cooldown.launchBeachFireworks("admin", "retry"), error => error instanceof cooldown.BeachCooldown);
 });
 
-test("onsen claims accept only the six shared seats or three floating places at their real coordinates", async () => {
+test("onsen claims accept only each bath's nine seats or three floating places at their real coordinates", async () => {
+  const centers = [[0, 45], [-7.6, 55], [7.6, 55]];
   for (const spotId of ["onsen-benches", "onsen-float"]) {
     const sitting = spotId === "onsen-benches";
-    for (let slot = 0; slot < (sitting ? 6 : 3); slot++) {
-      const angle = (15 + slot * 30) * Math.PI / 180;
-      const state = { spotId, slot, pose: sitting ? "sitting" : "lying", x: sitting ? Math.cos(angle) * 3.55 : (slot - 1) * 2.4,
-        z: sitting ? 45 + Math.sin(angle) * 3.55 : 43.3, yaw: 0 };
+    const perBath = sitting ? 9 : 3;
+    for (let slot = 0; slot < perBath * centers.length; slot++) {
+      const [bathX, bathZ] = centers[Math.floor(slot / perBath)], place = slot % perBath, angle = (-30 + place * 30) * Math.PI / 180;
+      const state = { spotId, slot, pose: sitting ? "sitting" : "lying", x: bathX + (sitting ? Math.cos(angle) * 3.55 : (place - 1) * 2.4),
+        z: bathZ + (sitting ? Math.sin(angle) * 3.55 : -1.7), yaw: sitting ? Math.atan2(Math.cos(angle), Math.sin(angle)) : 0 };
       const api = setup(async () => response(state));
       assert.equal((await api.setBeachRest("member", sitting ? "sit" : "lie", spotId)).slot, slot);
       assert.equal((await setup(async () => response({ selfRest: state })).tickBeach({ ticket: "member" })).selfRest.slot, slot);
-      for (const bad of [{ ...state, x: 20 }, { ...state, z: 12 }, { ...state, yaw: 1 },
-        { ...state, slot: sitting ? 6 : 3 }, { ...state, pose: sitting ? "lying" : "sitting" }]) {
+      for (const bad of [{ ...state, x: 20 }, { ...state, z: 12 }, { ...state, yaw: state.yaw + 1 },
+        { ...state, slot: perBath * centers.length }, { ...state, pose: sitting ? "lying" : "sitting" }]) {
         await assert.rejects(setup(async () => response(bad)).setBeachRest("member", sitting ? "sit" : "lie", spotId));
       }
     }

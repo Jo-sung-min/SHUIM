@@ -9,6 +9,7 @@ import { BeachEngine, webglSupported, type RestState, type StargazingState, type
 import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
 import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
+import { ONSEN_SEATS_PER_BATH } from "@/lib/beach/onsen-rest";
 import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
@@ -1519,7 +1520,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || !onsen.canSit}
               onClick={() => void toggleStargazing("onsen-benches")}>
               <span className={styles.contextIcon}><IconSeat /></span><span className={styles.contextCopy}><strong>{restActionSpot === "onsen-benches" && onsenPhase ? "준비 중…" : "앉아있기"}</strong></span>
-              <span className={styles.contextCount} aria-label={`온천 돌단 6석 중 ${onsen.occupiedSeats.length}석 사용 중`}>{onsen.occupiedSeats.length}/6</span>
+              <span className={styles.contextCount} aria-label={`온천 벤치 ${ONSEN_SEATS_PER_BATH}석 중 ${onsen.occupiedSeats.length}석 사용 중`}>{onsen.occupiedSeats.length}/{ONSEN_SEATS_PER_BATH}</span>
             </button>
             <button type="button" className={styles.contextButton} disabled={Boolean(skyPhase) || lost || !onsen.canFloat}
               onClick={() => void toggleStargazing("onsen-float")}>

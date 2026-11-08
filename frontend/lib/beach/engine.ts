@@ -13,8 +13,8 @@ import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } fr
 import { type Daylight, bambooDaylightAt, bambooSunsetAmount, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
-import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringFloorHeight, hotSpringCeilingHeight } from "./hot-spring";
-import { ONSEN_SEATS, ONSEN_FLOATS, ONSEN_REST_REACH, claimedOnsenSeat, claimedOnsenFloat, onsenLedgeHeight, onsenFloatingY } from "./onsen-rest";
+import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringBathDistance, hotSpringBathIndex, hotSpringFloorHeight, hotSpringCeilingHeight, hotSpringInWater } from "./hot-spring";
+import { ONSEN_SEATS, ONSEN_FLOATS, ONSEN_FLOATS_PER_BATH, ONSEN_REST_REACH, ONSEN_SEATS_PER_BATH, claimedOnsenSeat, claimedOnsenFloat, onsenLedgeHeight, onsenFloatingY } from "./onsen-rest";
 import { FIRE_BENCH_SEATS, FIRE_BENCH_REACH, claimedFireBenchSlot } from "./fire-benches";
 import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
@@ -705,7 +705,7 @@ export class BeachEngine {
     // the entire visit. The pool shares pending requests and enforces its cooldown.
     if (!basePool?.ready && basePool?.canLoad) void basePool.load();
     const robeKind = female ? "female-onsen" : "male-onsen";
-    const radius = Math.hypot(x - HOT_SPRING.x, z - HOT_SPRING.z);
+    const radius = hotSpringBathDistance(x, z);
     const wearingRobe = node.avatar?.kind === robeKind;
     const wantsRobe = this.mapId === "beach" && radius <= (wearingRobe ? 7.65 : 7.05)
       && (hotSpringFloorHeight(x, z) ?? -Infinity) >= HOT_SPRING.floorY - 0.01;
@@ -946,7 +946,10 @@ export class BeachEngine {
     if (this.restSeat) this.standUp();
     const bed = bedSlot(spotId, 1)!;
     const target = { x: bed.x, z: bed.z - 1.2 };
-    const path = findWalkingPath(this.self, target, this.obstacles, [...SHELTER_COLLIDERS, ...HOT_SPRING_COLLIDERS], this.bounds);
+    // Walls outside the search window cannot change this route, and the rear baths would slow every plan.
+    const front = Math.min(this.self.z, target.z) - 8, back = Math.max(this.self.z, target.z) + 8;
+    const nearby = HOT_SPRING_COLLIDERS.filter(wall => wall.maxZ >= front && wall.minZ <= back);
+    const path = findWalkingPath(this.self, target, this.obstacles, [...SHELTER_COLLIDERS, ...nearby], this.bounds);
     if (!path) return Promise.resolve("blocked");
     const arrival = this.walkTo(target, { x: bed.x, z: bed.z + 1 });
     if (this.auto) { this.auto.path = path; this.auto.cornerStop = 0.06; }
@@ -979,14 +982,17 @@ export class BeachEngine {
     if (this.onsenSeat) seats.add(this.onsenSeat.slot);
     const floating = this.skyRest?.spotId === "onsen-float";
     if (floating) floats.add(this.skyRest!.slot);
-    const inWater = Math.hypot(this.self.x - HOT_SPRING.x, this.self.z - HOT_SPRING.z) < HOT_SPRING.poolRadius
-      && (hotSpringFloorHeight(this.self.x, this.self.z) ?? Infinity) < HOT_SPRING.waterY;
+    const inWater = hotSpringInWater(this.self.x, this.self.z);
+    // The seat counters describe the bath the visitor is in, not all of them together.
+    const bath = hotSpringBathIndex(this.self.x, this.self.z);
+    const here = (slot: number, perBath: number) => bath < 0 || Math.floor(slot / perBath) === bath;
     const available = inWater && !this.skyRest && !this.fixedSeat;
     const nearby = (slot: { x: number; z: number }) => Math.hypot(this.self.x - slot.x, this.self.z - slot.z) <= ONSEN_REST_REACH;
     return { inWater, sitting: Boolean(this.onsenSeat), floating,
       canSit: Boolean(available && ONSEN_SEATS.some(slot => !seats.has(slot.slot) && nearby(slot))),
       canFloat: Boolean(available && ONSEN_FLOATS.some(slot => !floats.has(slot.slot) && nearby(slot))),
-      occupiedSeats: [...seats].sort((a, b) => a - b), occupiedFloats: [...floats].sort((a, b) => a - b) };
+      occupiedSeats: [...seats].filter(slot => here(slot, ONSEN_SEATS_PER_BATH)).sort((a, b) => a - b),
+      occupiedFloats: [...floats].filter(slot => here(slot, ONSEN_FLOATS_PER_BATH)).sort((a, b) => a - b) };
   }
 
   private updateOnsenState() {
@@ -2162,6 +2168,14 @@ export class BeachEngine {
     // Pavilion seats face outward, so the orbit sits inside the roof: stay below the rafters.
     const seatCeiling = this.bamboo ? bambooCeilingHeight(wanted.x, wanted.z) : this.garden ? gardenCeilingHeight(wanted.x, wanted.z) : null;
     if (seatCeiling !== null) wanted.y = Math.min(wanted.y, seatCeiling - 0.2);
+    // Onsen seats have their backs to the rock: the orbit stays over the bath instead of ending up inside the hillside.
+    if (this.onsenSeat) {
+      wanted.y += 0.55; // The bath is sunken: look down over its stone rim.
+      for (let k = 1; k >= 0.1 && Math.hypot(wanted.x - this.onsenSeat.centerX, wanted.z - this.onsenSeat.centerZ) > 5.4; k -= 0.05) {
+        wanted.x = this.self.x - direction.x * reach * k;
+        wanted.z = this.self.z - direction.z * reach * k;
+      }
+    }
     if (this.garden) for (let k = 1; k >= 0.25 && !this.cameraFree(wanted); k -= 0.15) {
       wanted.set(this.self.x - direction.x * reach * k, baseY + 2.5 - this.self.pitch * 1.4, this.self.z - direction.z * reach * k);
     }
@@ -2264,7 +2278,7 @@ export class BeachEngine {
     n.shadow.visible = shown;
     if (!shown) return;
     if (this.fixedSeat || this.restSeat) {
-      const baseY = this.onsenSeat ? HOT_SPRING.floorY : this.pavilionSeat ? this.pavilionSeat.baseY : this.restSeat ? this.deckHeight(this.restSeat.x, this.restSeat.z) : 0;
+      const baseY = this.onsenSeat ? this.onsenSeat.baseY : this.pavilionSeat ? this.pavilionSeat.baseY : this.restSeat ? this.deckHeight(this.restSeat.x, this.restSeat.z) : 0;
       const seat = this.fixedSeat ?? { ...this.restSeat!, avatarY: baseY + 0.52 }, cam = this.camera.position;
       n.sprite.position.set(seat.x, baseY, seat.z);
       n.sprite.rotation.set(0, Math.atan2(cam.x - seat.x, cam.z - seat.z), 0, "YXZ");
@@ -2395,7 +2409,7 @@ export class BeachEngine {
     for (const [pid, p] of this.players) {
       const resting = this.floatingPose(claimedRestSlot(p.data));
       const seated = claimedSeatSlot(p.data);
-      const onsenSeated = seated?.spotId === "onsen-benches";
+      const onsenSeat = claimedOnsenSeat(p.data), onsenSeated = Boolean(onsenSeat);
       const fixed = resting ?? seated;
       const far = Math.hypot(p.target.x - p.cur.x, p.target.z - p.cur.z);
       if (fixed) { p.cur.x = fixed.x; p.cur.z = fixed.z; p.cur.yaw = fixed.yaw; p.cur.moving = false; }
@@ -2415,14 +2429,14 @@ export class BeachEngine {
         this.setFrame(p, CHAR_VIEW.front, CHAR_ANIM.idle.from, p.data.skin);
       } else {
         p.sprite.rotation.set(0, Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z), 0, "YXZ");
-        if (seated) shapeSeatedAvatar(p.sprite, { yaw: seated.yaw, avatarY: seated.avatarY - (onsenSeated ? HOT_SPRING.floorY : pavilionSeat ? pavilionSeat.baseY : 0) });
+        if (seated) shapeSeatedAvatar(p.sprite, { yaw: seated.yaw, avatarY: seated.avatarY - (onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : 0) });
         this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
       }
       const dl = Math.hypot(p.cur.x - cam.x, p.cur.z - cam.z);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
       const hop = !fixed && p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
-      if (!resting) p.sprite.position.set(p.cur.x, onsenSeated ? HOT_SPRING.floorY : pavilionSeat ? pavilionSeat.baseY : deck + hop, p.cur.z);
+      if (!resting) p.sprite.position.set(p.cur.x, onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : deck + hop, p.cur.z);
       const avatar = this.syncAvatar(p, p.data.skin, p.cur.x, p.cur.z);
       p.sprite.visible = !avatar;
       this.pixelDepth?.update(p.sprite, p.data.skin, Boolean(resting) && p.sprite.visible);

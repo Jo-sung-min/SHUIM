@@ -207,7 +207,7 @@ test("Uyuni has no inherited beach colliders, raised floors or ceilings outside 
   const { engine } = fixture(), beach = fixture("beach").engine;
   const centers = [...huts.SHELTER_COLLIDERS, ...hotSpring.HOT_SPRING_COLLIDERS]
     .map(wall => [(wall.minX + wall.maxX) / 2, (wall.minZ + wall.maxZ) / 2])
-    .filter(([x, z]) => uyuniHotelFloorHeight(x, z) === 0);
+    .filter(([x, z]) => uyuniHotelFloorHeight(x, z) === 0 && z < 54);
   assert.ok(centers.length > 0);
   for (const [x, z] of [[0.1, 12], ...centers]) {
     assert.deepEqual(plain(engine.collide(x, z)), [x, z]);

@@ -77,7 +77,8 @@ test("shared cliff edges have no cracks beyond the two entrances and the buried 
     const bottom = a[1] < -0.199 && b[1] < -0.199;
     const entry = [a, b].every(([x, y, z]) => x >= 5.699 && x <= 7.301 && y <= 2.501 && z < 33);
     const exit = [a, b].every(([x, y, z]) => x > 6.8 && Math.abs(z - 45) < 1.001 && y >= 17.699 && y <= 20.651);
-    assert.ok(bottom || entry || exit, `unplanned open seam ${a.join(",")} → ${b.join(",")}`);
+    const stair = [a, b].every(([x, y, z]) => Math.abs(x) < 2.4 && z > 49.5 && y > 15.5);
+    assert.ok(bottom || entry || exit || stair, `unplanned open seam ${a.join(",")} → ${b.join(",")}`);
   }
   hillside.dispose();
 });
@@ -118,9 +119,26 @@ test("the covered hillside retains the open sky and the entire sea-facing bathin
   for (const [x, z] of [[0, 45], [-3, 44], [3, 46], [0, 41]]) {
     assert.equal(cast([x, eyeY, z], [0, 1, 0], 100).length, 0, "the pool is open to the night sky");
   }
-  for (const point of [[8.7, 45], [11.5, 42], [8.7, 51.5]]) {
+  for (const point of [[8.7, 45], [15, 40], [12, 45]]) {
     assert.ok(cast([point[0], 30, point[1]], [0, -1, 0], 15).length, "the terrain roof covers exposed tunnel structures");
   }
+  hillside.dispose();
+});
+
+test("the upper baths get lighter shells that face the sea and meet in the middle", () => {
+  const { hillside } = fixture();
+  const shells = hillside.group.children.filter((child) => child.name.startsWith("onsen-upper-cliff-shell"));
+  assert.equal(shells.length, 2);
+  for (const shell of shells) {
+    assert.ok(shell.geometry.index.count / 3 < 14000, `triangles=${shell.geometry.index.count / 3}`);
+    assert.equal(shell.castShadow, false);
+  }
+  const blocked = (mesh, origin, direction, far) => new THREE.Raycaster(new THREE.Vector3(...origin), new THREE.Vector3(...direction).normalize(), 0.001, far).intersectObject(mesh, false).length > 0;
+  const [left, right] = shells, eye = spa.deckY + 4 + 1.55;
+  assert.equal(blocked(left, [-7.6, eye, 55], [0, 0, -1], 14), false, "the left bath opens toward the sea");
+  assert.equal(blocked(right, [7.6, eye, 55], [0, 0, -1], 14), false, "the right bath opens toward the sea");
+  assert.equal(blocked(left, [-7.6, eye, 55], [0, 0, 1], 9), true, "the land side stays closed");
+  assert.equal(blocked(left, [-7.6, eye, 60], [1, 0, 0], 8), true, "rock separates the two baths behind the stair head");
   hillside.dispose();
 });
 
@@ -129,7 +147,7 @@ test("the single draw reuses the existing triplanar stone shader and releases on
   material.onBeforeCompile = (shader) => { shader.fragmentShader += "\n// existing world-scale rock"; };
   material.customProgramCacheKey = () => "existing-cove-rock";
   const { hillside, mesh, scene } = fixture(material);
-  assert.equal(hillside.group.children.length, 1);
+  assert.equal(hillside.group.children.length, 3, "the first hill plus one shell per upper bath");
   assert.ok(mesh.geometry.index.count / 3 < 35000, `triangles=${mesh.geometry.index.count / 3}`);
   assert.equal(mesh.material.map, map);
   assert.equal(mesh.material.onBeforeCompile, material.onBeforeCompile);
