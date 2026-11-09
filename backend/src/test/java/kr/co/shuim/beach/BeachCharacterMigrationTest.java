@@ -46,12 +46,12 @@ class BeachCharacterMigrationTest {
 
     @ParameterizedTest
     @CsvSource({
-        "beach, cat-gentleman, 0", "beach, cat-lady, 3",
-        "uyuni, cat-gentleman, 0", "uyuni, cat-lady, 3",
-        "bamboo, cat-gentleman, 0", "bamboo, cat-lady, 3",
-        "garden, cat-gentleman, 0", "garden, cat-lady, 3",
-        "cloudspa, cat-gentleman, 0", "cloudspa, cat-lady, 3",
-        "baikal, cat-gentleman, 0", "baikal, cat-lady, 3",
+        "beach, cat-gentleman, 0", "beach, cat-lady, 3", "beach, mongsil, 0",
+        "uyuni, cat-gentleman, 0", "uyuni, cat-lady, 3", "uyuni, mongsil, 0",
+        "bamboo, cat-gentleman, 0", "bamboo, cat-lady, 3", "bamboo, mongsil, 0",
+        "garden, cat-gentleman, 0", "garden, cat-lady, 3", "garden, mongsil, 0",
+        "cloudspa, cat-gentleman, 0", "cloudspa, cat-lady, 3", "cloudspa, mongsil, 0",
+        "baikal, cat-gentleman, 0", "baikal, cat-lady, 3", "baikal, mongsil, 0",
     })
     void removedChoicesBecomeOrdinaryCharactersOnEntryTicksAndResume(String map, String removed, int skin) throws Exception {
         mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
@@ -92,38 +92,13 @@ class BeachCharacterMigrationTest {
 
     @ParameterizedTest
     @EnumSource(BeachMap.class)
-    void mongsilKeepsSkinSixOnEntryChangesPeerSnapshotsAndBothResumePaths(BeachMap map) throws Exception {
-        mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"communityId\":\"room\",\"mapId\":\"" + map.id() + "\",\"character\":\"mongsil\"}"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.me.skin").value(6));
-        var actor = service.enter("room", "actor", "몽실", Set.of(), "mongsil", map.id());
-        var observer = service.enter("room", "observer", "친구", Set.of(), "male", map.id());
-        assertEquals(6, observedSkin(observer.ticket(), actor.pid()));
-        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"ticket\":\"" + actor.ticket() + "\",\"character\":\"female-3d\",\"sequence\":1}"))
-            .andExpect(status().isOk());
-        assertEquals(3, observedSkin(observer.ticket(), actor.pid()), "switching away preserves the existing female skin");
-        mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"ticket\":\"" + actor.ticket() + "\",\"character\":\"mongsil\",\"sequence\":2}"))
-            .andExpect(status().isOk());
-        assertEquals(6, observedSkin(observer.ticket(), actor.pid()));
-        for (String malformed : new String[]{"\"MONGSIL\"", "\"mong-sil\"", "6", "true"}) {
+    void unknownChoicesCannotReplaceTheCurrentAppearance(BeachMap map) throws Exception {
+        var actor = service.enter("room", "actor", "방문자", Set.of(), "female-3d", map.id());
+        for (String malformed : new String[]{"\"MONGSIL\"", "\"dog-girl\"", "6", "true"}) {
             mvc.perform(post("/api/beach/tick").contentType(MediaType.APPLICATION_JSON)
                     .content("{\"ticket\":\"" + actor.ticket() + "\",\"character\":" + malformed + "}"))
                 .andExpect(status().isBadRequest());
-            assertEquals(6, actor.skin(), "unknown choices cannot replace the current appearance");
+            assertEquals(3, actor.skin(), "unknown choices cannot replace the current appearance");
         }
-        service.tick(actor.ticket(), 1, 10, .5, true, null, null, null, false, 3L);
-        assertEquals(6, actor.skin(), "movement-only updates preserve Mongsil");
-        assertEquals(0, observer.skin(), "another visitor's appearance is independent");
-        service.suspend(actor.ticket(), 2, 10, .5, 4L);
-        var quick = service.enter("room", "actor", "몽실", Set.of(), null, map.id(), actor.ticket(), 5L);
-        assertSame(actor, quick.presence()); assertEquals(6, quick.presence().skin());
-        clock.addAndGet(BeachRoom.IDLE_MS + 1);
-        assertEquals(0, service.count("room", map.id()));
-        var expired = service.enter("room", "actor", "몽실", Set.of(), null, map.id(), actor.ticket(), 6L);
-        assertTrue(expired.resumed()); assertNotEquals(actor.ticket(), expired.presence().ticket());
-        assertEquals(6, expired.presence().skin()); assertEquals(2, expired.presence().x()); assertEquals(10, expired.presence().z());
-        if (map != BeachMap.BEACH) verifyNoInteractions(fire);
     }
 }

@@ -166,6 +166,13 @@ public class BeachService {
         return binding.room().bunker(ticket, userId, action, bunkerId, sequence);
     }
 
+    public BeachBoardGames.View board(String ticket, String userId, String action, String tableId, Integer cell, Long version) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().board(ticket, userId, action, tableId, cell, version);
+    }
+
     public int count(String communityId) {
         return count(communityId, null);
     }

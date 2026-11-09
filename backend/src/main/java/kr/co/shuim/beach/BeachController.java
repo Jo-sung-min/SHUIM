@@ -107,6 +107,12 @@ public class BeachController {
                               @JsonDeserialize(using = MomentTextDeserializer.class) String bunkerId) {
         public SuspendBody(String ticket, Double x, Double z, Double yaw, Long sequence) { this(ticket, x, z, yaw, sequence, null); }
     }
+    public record BoardBody(@JsonDeserialize(using = MomentTextDeserializer.class) String ticket,
+                            @JsonDeserialize(using = MomentTextDeserializer.class) String action,
+                            @JsonDeserialize(using = MomentTextDeserializer.class) String tableId,
+                            @JsonDeserialize(using = SequenceDeserializer.class) Long cell,
+                            @JsonDeserialize(using = SequenceDeserializer.class) Long version) {
+    }
     public record BunkerBody(@JsonDeserialize(using = MomentTextDeserializer.class) String ticket,
                              @JsonDeserialize(using = MomentTextDeserializer.class) String action,
                              @JsonDeserialize(using = MomentTextDeserializer.class) String bunkerId,
@@ -291,6 +297,18 @@ public class BeachController {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
         requirePrivateVisit(body.ticket(), req);
         return beach.rest(body.ticket(), body.action(), body.spotId());
+    }
+
+    /** POST /api/beach/board: sit at a lodge's game table, place a stone, leave, or start again. */
+    @PostMapping("/api/beach/board")
+    public BeachBoardGames.View board(@RequestBody(required = false) BoardBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 이용해 주세요."));
+        if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 이용해 주세요.");
+        if (body == null) throw ApiException.badRequest("게임 동작을 다시 확인해 주세요.");
+        BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
+        requireMember(visit.communityId(), me);
+        if (body.cell() != null && (body.cell() < 0 || body.cell() > 1024)) throw ApiException.badRequest("둘 자리를 다시 골라 주세요.");
+        return beach.board(body.ticket(), me.id(), body.action(), body.tableId(), body.cell() == null ? null : body.cell().intValue(), body.version());
     }
 
     @PostMapping("/api/beach/bunker")

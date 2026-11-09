@@ -651,7 +651,16 @@ public class BeachRoom {
                              @JsonInclude(JsonInclude.Include.NON_NULL) CareCapabilities careCapabilities, Lighting lighting,
                              List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence,
                              List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns, Music music,
-                             List<BeachGardenMoments.Event> gardenMoments, BeachGardenMoments.Cooldowns gardenMomentCooldowns) {
+                             List<BeachGardenMoments.Event> gardenMoments, BeachGardenMoments.Cooldowns gardenMomentCooldowns,
+                             @JsonInclude(JsonInclude.Include.NON_EMPTY) List<BeachBoardGames.View> boardGames) {
+        public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
+                          BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
+                          CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence,
+                          List<BeachUyuniMoments.Event> uyuniMoments, BeachUyuniMoments.Cooldowns uyuniMomentCooldowns, Music music,
+                          List<BeachGardenMoments.Event> gardenMoments, BeachGardenMoments.Cooldowns gardenMomentCooldowns) {
+            this(players, events, count, received, care, fire, serverTime, selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence,
+                uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns, List.of());
+        }
         public TickResult(List<PlayerView> players, List<CareEvent> events, int count, Received received, String care,
                           BeachFireService.FireView fire, long serverTime, RestPresence selfRest,
                           CareCapabilities careCapabilities, Lighting lighting, List<FireworkEvent> fireworks, long fireworksCooldownUntil, long sequence) {
@@ -680,10 +689,10 @@ public class BeachRoom {
             this(players, events, count, received, care, fire, serverTime, selfRest, null, AUTO_LIGHTING);
         }
         public TickResult withFire(BeachFireService.FireView value) {
-            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns);
+            return new TickResult(players, events, count, received, care, value, serverTime > 0 ? serverTime : value.serverTime(), selfRest, careCapabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns, boardGames);
         }
         public TickResult withCareCapabilities(CareCapabilities capabilities, boolean denied) {
-            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns);
+            return new TickResult(players, events, count, received, denied ? "forbidden" : care, fire, serverTime, selfRest, capabilities, lighting, fireworks, fireworksCooldownUntil, sequence, uyuniMoments, uyuniMomentCooldowns, music, gardenMoments, gardenMomentCooldowns, boardGames);
         }
     }
 
@@ -778,15 +787,15 @@ public class BeachRoom {
         if (character == null) return null;
         return switch (character) {
             // Old clients may still send a removed selection; migrate it to the ordinary model.
-            case "male", "cat-gentleman" -> 0;
+            case "male", "cat-gentleman", "mongsil" -> 0;
             case "female" -> 1;
             case "pixel-male" -> 2;
             case "female-3d", "cat-lady" -> 3;
-            case "mongsil" -> 6;
             default -> throw ApiException.badRequest("캐릭터를 다시 골라 주세요.");
         };
     }
 
+    private final BeachBoardGames boards = new BeachBoardGames();
     private final LongSupplier clock;
     private final BeachMap map;
     private final ConcurrentHashMap<String, Presence> byTicket = new ConcurrentHashMap<>();
@@ -1251,7 +1260,27 @@ public class BeachRoom {
         MusicState playback = musicSnapshot();
         return new TickResult(players, events, liveCount(now), new Received(me.receivedComfort.get(), me.receivedHug.get(), me.receivedWave.get()),
             care, null, playback.serverTime(), selfState, null, lighting, fireworks.events(), fireworks.cooldownUntil(), acceptedSequence,
-            moments.events(), moments.cooldowns(), playback.music(), pond.events(), pond.cooldowns());
+            moments.events(), moments.cooldowns(), playback.music(), pond.events(), pond.cooldowns(),
+            originBunker == null ? List.of() : boards.views(originBunker, now, boardPresent(now), p -> me.sees(p) && p.sees(me)));
+    }
+
+    /** A seat lasts only while its visitor is still in that lodge. */
+    private java.util.function.BiPredicate<Presence, String> boardPresent(long now) {
+        return (p, bunkerId) -> byTicket.get(p.ticket) == p && live(p, now) && bunkerId.equals(p.bunkerId);
+    }
+
+    BeachBoardGames.View board(String ticket, String userId, String action, String tableId, Integer cell, Long version) {
+        BeachBoardGames.Spot spot = BeachBoardGames.find(tableId);
+        if (map != BeachMap.UYUNI || spot == null) throw ApiException.badRequest("게임 자리를 다시 확인해 주세요.");
+        long now = clock.getAsLong();
+        maybeSweep(now);
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        if (!spot.bunkerId().equals(me.bunkerId)) throw ApiException.badRequest("그 쉼터 안에서 이용해 주세요.");
+        if ("join".equals(action) && Math.hypot(me.x - spot.x(), me.z - spot.z()) > BeachBoardGames.REACH)
+            throw ApiException.badRequest("게임 테이블 가까이에서 앉아 주세요.");
+        return boards.act(spot, me, action, cell, version, now, boardPresent(now), p -> me.sees(p) && p.sees(me));
     }
 
     private void updatePosition(Presence p, double x, double z, double yaw, boolean moving, Integer skin, long now) {
