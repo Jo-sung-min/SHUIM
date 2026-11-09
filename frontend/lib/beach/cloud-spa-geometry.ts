@@ -2,32 +2,70 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createShelterPillowGeometry } from "./shelter-textiles";
-import { CLOUD_SPA_ISLAND, CLOUD_SPA_CONNECTIONS, CLOUD_SPA_STAIR_BREAKS, CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_SEATS, cloudSpaFloorHeight, cloudSpaConnectionPosition, cloudSpaMountainHalfWidth, cloudSpaStairRouteX } from "./cloud-spa-layout";
-import { createCloudSpaCloudMaterial } from "./cloud-spa-materials";
+import { CLOUD_SPA_CHANNEL, CLOUD_SPA_CHANNELS, CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_SEATS, CLOUD_SPA_SPAWN, CLOUD_SPA_TERRACE,
+  cloudSpaChannelPoint, cloudSpaFloorHeight, cloudSpaGroundHeight, cloudSpaIslandRange, cloudSpaIslandSpan, cloudSpaWaterDepth } from "./cloud-spa-layout";
+import { type CloudSpaCottonUniforms, createCloudSpaCottonMaterial } from "./cloud-spa-materials";
 
-export function cloudSpaGroundGeometry(mobile: boolean): THREE.BufferGeometry {
-  const columns = mobile ? 160 : 240, rows = mobile ? 300 : 420, positions: number[] = [], uv: number[] = [], colors: number[] = [], indices: number[] = [];
-  const vertex = (x: number, y: number, z: number) => {
-    const shade = .92 + .035 * Math.sin(x * .83 + Math.sin(z * .47)) + .025 * Math.sin(z * 1.1 + Math.cos(x * .55));
-    positions.push(x, y, z); uv.push(x * .15, z * .15); colors.push(shade, shade + .017, Math.min(1, shade + .035));
-  };
-  const groundRows = Array.from({ length: rows + 1 }, (_, row) => ({ z: CLOUD_SPA_ISLAND.minZ + (CLOUD_SPA_ISLAND.maxZ - CLOUD_SPA_ISLAND.minZ) * row / rows, offset: 0 }));
-  for (const z of CLOUD_SPA_STAIR_BREAKS) groundRows.push({ z, offset: -.0001 }, { z, offset: .0001 });
-  groundRows.sort((a, b) => a.z - b.z || a.offset - b.offset);
-  for (const { z, offset } of groundRows) {
-    const half = cloudSpaMountainHalfWidth(z);
-    for (let column = 0; column <= columns; column++) {
-      const x = -half + column / columns * half * 2;
-      vertex(x, cloudSpaFloorHeight(x, z + offset), z);
+export interface CloudSpaOutlinePoint { x: number; y: number; z: number }
+export interface CloudSpaGround { geometry: THREE.BufferGeometry; outline: readonly CloudSpaOutlinePoint[] }
+
+/** Find the single height discontinuity inside a short probe interval. */
+function locateWall(a: number, b: number, z: number): number {
+  let ha = cloudSpaGroundHeight(a, z), hb = cloudSpaGroundHeight(b, z);
+  for (let i = 0; i < 14; i++) {
+    const mid = (a + b) / 2, hm = cloudSpaGroundHeight(mid, z);
+    if (Math.abs(hm - ha) > Math.abs(hb - hm)) { b = mid; hb = hm; } else { a = mid; ha = hm; }
+  }
+  return (a + b) / 2;
+}
+
+/** The walkable cloud top as one height field. Each row spans exactly the island, and every terrace wall gets a doubled vertex so it stands straight. */
+export function buildCloudSpaGround(mobile: boolean): CloudSpaGround {
+  const rows = mobile ? 300 : 470, spacing = mobile ? .6 : .42, probe = .15, range = cloudSpaIslandRange();
+  const positions: number[] = [], depths: number[] = [], indices: number[] = [], left: CloudSpaOutlinePoint[] = [], right: CloudSpaOutlinePoint[] = [];
+  const xOf = (index: number) => positions[index * 3];
+  let previous: number[] | null = null;
+  for (let r = 0; r <= rows; r++) {
+    const z = range.minZ + (range.maxZ - range.minZ) * r / rows, span = cloudSpaIslandSpan(z);
+    if (!span) continue;
+    const [x0, x1] = span, width = x1 - x0, columns = Math.max(2, Math.ceil(width / spacing));
+    const walls: number[] = [];
+    let a = x0, ha = cloudSpaGroundHeight(a, z);
+    for (let b = x0 + probe; b < x1 + probe; b += probe) {
+      const xb = Math.min(b, x1), hb = cloudSpaGroundHeight(xb, z);
+      if (Math.abs(hb - ha) > .2) walls.push(locateWall(a, xb, z));
+      a = xb; ha = hb;
+      if (xb >= x1) break;
     }
+    const xs: number[] = [];
+    for (let c = 0; c <= columns; c++) {
+      const x = x0 + width * c / columns;
+      if (!walls.some(w => Math.abs(w - x) < 2e-3)) xs.push(x);
+    }
+    for (const w of walls) xs.push(Math.max(x0, w - 5e-4), Math.min(x1, w + 5e-4));
+    xs.sort((p, q) => p - q);
+    const row: number[] = [];
+    for (const x of xs) {
+      const y = cloudSpaGroundHeight(x, z);
+      row.push(positions.length / 3); positions.push(x, y, z); depths.push(cloudSpaWaterDepth(x, z, y));
+    }
+    left.push({ x: x0, y: positions[row[0] * 3 + 1], z }); right.push({ x: x1, y: positions[row[row.length - 1] * 3 + 1], z });
+    if (previous) {
+      // Zip two rows of differing column counts, always advancing the vertex with the smaller x.
+      let i = 0, j = 0;
+      while (i < previous.length - 1 || j < row.length - 1) {
+        const advanceA = j >= row.length - 1 || (i < previous.length - 1 && xOf(previous[i + 1]) <= xOf(row[j + 1]));
+        if (advanceA) { indices.push(previous[i], row[j], previous[i + 1]); i++; }
+        else { indices.push(previous[i], row[j], row[j + 1]); j++; }
+      }
+    }
+    previous = row;
   }
-  for (let row = 0; row < groundRows.length - 1; row++) for (let column = 0; column < columns; column++) {
-    const a = row * (columns + 1) + column, b = a + 1, c = a + columns + 1;
-    indices.push(a, c, b, b, c, c + 1);
-  }
-  const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3)); geometry.setIndex(indices); geometry.computeVertexNormals();
-  geometry.name = "cloud-spa-unified-terraced-cloud-mountain"; return geometry;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("aDepth", new THREE.Float32BufferAttribute(depths, 1));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); geometry.name = "cloud-spa-terraced-cotton-top";
+  return { geometry, outline: [...left, ...right.reverse()] };
 }
 
 export function cloudSpaViewGap(angle: number): number {
@@ -40,16 +78,16 @@ export interface CloudSpaScenery {
   applyNight(amount: number): void; dispose(): void;
 }
 
-/** The cloud silhouettes are real rounded volumes; photo wisps soften their outermost edges in the world. */
-export function buildCloudSpaScenery(parent: THREE.Object3D, textures: { wood: THREE.Texture; cotton: THREE.Texture; surface: THREE.Texture }, mobile: boolean): CloudSpaScenery {
+/** Cotton shell beneath the terraces, rill tread slabs, lanterns, seats and the storm-cloud resort. */
+export function buildCloudSpaScenery(parent: THREE.Object3D, textures: { wood: THREE.Texture; cotton: THREE.Texture; surface: THREE.Texture }, mobile: boolean,
+  outline: readonly CloudSpaOutlinePoint[], cotton: CloudSpaCottonUniforms): CloudSpaScenery {
   const root = new THREE.Group(); root.name = "cloud-spa-scenery"; parent.add(root);
   const owned: THREE.BufferGeometry[] = [], materials: THREE.Material[] = [], lanterns: THREE.Vector3[] = [];
   const standard = (name: string, color: number, options: THREE.MeshStandardMaterialParameters = {}) => {
     const material = new THREE.MeshStandardMaterial({ color, roughness: .92, ...options, fog: false }); material.name = name; materials.push(material); return material;
   };
-  const cloud = createCloudSpaCloudMaterial("cloud", textures.surface); cloud.name = "cloud-spa-moonlit-cloud"; materials.push(cloud);
-  const storm = createCloudSpaCloudMaterial("storm", textures.surface); storm.name = "cloud-spa-single-storm-resort"; materials.push(storm);
-  const marble = standard("cloud-spa-ivory-stone", 0xd5d9dc, { roughness: .65 });
+  const cloud = createCloudSpaCottonMaterial("cloud", textures.surface, cotton); materials.push(cloud);
+  const marble = standard("cloud-spa-travertine", 0xe8ebe7, { roughness: .6 });
   const ivory = standard("cloud-spa-linen", 0xe9e3d8, { map: textures.cotton, bumpMap: textures.cotton, bumpScale: .003 });
   const wood = standard("cloud-spa-oak", 0xc1a37d, { map: textures.wood });
   const brass = standard("cloud-spa-brass", 0xc0a16c, { roughness: .4, metalness: .55 });
@@ -102,58 +140,48 @@ export function buildCloudSpaScenery(parent: THREE.Object3D, textures: { wood: T
       place(brass, cylinder, x, cy - .72, z, .55, .06, .55);
     }
   };
-  // One continuous tapered mountain body joins every terrace; no separate floating discs remain.
-  const shell = new THREE.BufferGeometry(), shellPositions: number[] = [], shellUvs: number[] = [], shellIndices: number[] = [], shellSides = mobile ? 120 : 176, shellLayers = 10;
-  for (let layer = 0; layer <= shellLayers; layer++) for (let i = 0; i <= shellSides; i++) {
-    const a = i / shellSides * Math.PI * 2, z = Math.max(CLOUD_SPA_ISLAND.minZ, CLOUD_SPA_ISLAND.z + Math.cos(a) * CLOUD_SPA_ISLAND.rz), half = cloudSpaMountainHalfWidth(z);
-    const x = Math.sign(Math.sin(a)) * half, t = layer / shellLayers, scale = 1 - t * .4, top = cloudSpaFloorHeight(x, z), y = top + (-27 - top) * t;
-    shellPositions.push(x * scale, y, CLOUD_SPA_ISLAND.z + (z - CLOUD_SPA_ISLAND.z) * scale); shellUvs.push(i / shellSides, t);
-    if (layer < shellLayers && i < shellSides) { const p = layer * (shellSides + 1) + i, q = p + shellSides + 1; shellIndices.push(p, q, p + 1, p + 1, q, q + 1); }
+  // One tapered cotton body hangs beneath the whole scalloped outline, meeting the terrace top exactly along its edge.
+  const shell = new THREE.BufferGeometry(), shellPositions: number[] = [], shellUvs: number[] = [], shellIndices: number[] = [], shellLayers = 10;
+  const ring = outline.length, centreZ = (cloudSpaIslandRange().minZ + cloudSpaIslandRange().maxZ) / 2;
+  for (let layer = 0; layer <= shellLayers; layer++) for (let i = 0; i < ring; i++) {
+    const point = outline[i], t = layer / shellLayers, scale = 1 - t * .4;
+    shellPositions.push(point.x * scale, point.y + (-27 - point.y) * t, centreZ + (point.z - centreZ) * scale); shellUvs.push(i / ring, t);
+    if (layer < shellLayers) { const p = layer * ring + i, pNext = layer * ring + (i + 1) % ring, q = p + ring, qNext = pNext + ring; shellIndices.push(p, q, pNext, pNext, q, qNext); }
   }
   shell.setAttribute("position", new THREE.Float32BufferAttribute(shellPositions, 3)); shell.setAttribute("uv", new THREE.Float32BufferAttribute(shellUvs, 2)); shell.setIndex(shellIndices); shell.computeVertexNormals();
   batches.set(cloud, [shell]);
-  // Close the narrow city-facing lip directly beneath the final pool; its skirt curves inward so the view over it remains open.
+  // Beneath the lowest pool the city-facing lip curls inward so the view over its edge stays open.
+  const lowest = CLOUD_SPA_POOLS[CLOUD_SPA_POOLS.length - 1], lipRadius = lowest.radius + CLOUD_SPA_TERRACE.lip + .01;
   const lip = new THREE.BufferGeometry(), lipPositions: number[] = [], lipUvs: number[] = [], lipIndices: number[] = [], lipSides = mobile ? 60 : 96;
-  for (let ring = 0; ring <= 6; ring++) for (let i = 0; i <= lipSides; i++) {
-    const angle = Math.PI * .66 + i / lipSides * Math.PI * .68, t = ring / 6, radius = 23.81 - t * 3.2;
-    lipPositions.push(Math.sin(angle) * radius, 2.79 - t * 9.7, -66 + Math.cos(angle) * radius); lipUvs.push(i / lipSides, t);
-    if (ring < 6 && i < lipSides) { const a = ring * (lipSides + 1) + i, c = a + lipSides + 1; lipIndices.push(a, c, a + 1, a + 1, c, c + 1); }
+  for (let ringIndex = 0; ringIndex <= 6; ringIndex++) for (let i = 0; i <= lipSides; i++) {
+    const angle = Math.PI * .66 + i / lipSides * Math.PI * .68, t = ringIndex / 6, radius = lipRadius - t * 3.2;
+    lipPositions.push(lowest.x + Math.sin(angle) * radius, lowest.deckY - .01 - t * 9.7, lowest.z + Math.cos(angle) * radius); lipUvs.push(i / lipSides, t);
+    if (ringIndex < 6 && i < lipSides) { const a = ringIndex * (lipSides + 1) + i, c = a + lipSides + 1; lipIndices.push(a, c, a + 1, a + 1, c, c + 1); }
   }
   lip.setAttribute("position", new THREE.Float32BufferAttribute(lipPositions, 3)); lip.setAttribute("uv", new THREE.Float32BufferAttribute(lipUvs, 2)); lip.setIndex(lipIndices); lip.computeVertexNormals();
   batches.get(cloud)!.push(lip);
-  for (let i = 0; i < (mobile ? 64 : 96); i++) {
-    const a = i / (mobile ? 64 : 96) * Math.PI * 2, z = Math.max(CLOUD_SPA_ISLAND.minZ, 17 + Math.cos(a) * 107), x = Math.sign(Math.sin(a)) * cloudSpaMountainHalfWidth(z), p = .5 + .5 * Math.sin(i * 2.39);
-    const city = z < -75, top = cloudSpaFloorHeight(x, z);
-    place(cloud, sphere, x * .97, top - (city ? 8.3 : 3.3), 17 + (z - 17) * .98, 3.2 + p * 2.2, city ? 2.1 : 3.8 + p, 3.3 + (1 - p) * 2.5);
-    if (!city && i % 2 === 0) place(cloud, sphere, x * .86, -11 + p * 2, 17 + (z - 17) * .86, 5 + p * 3, 6.5, 6 + (1 - p) * 3);
-  }
   for (const [poolIndex, pool] of CLOUD_SPA_POOLS.entries()) {
-    const count = mobile ? 24 : 38;
-    for (let i = 0; i < count; i++) {
-      const a = i / count * Math.PI * 2, p = .5 + .5 * Math.sin(i * 2.38 + pool.x), radius = pool.radius + .35;
-      const city = poolIndex === 4 && Math.cos(a) < -.15, y = pool.deckY - (city ? .88 : .35) + p * .08;
-      place(cloud, sphere, pool.x + Math.sin(a) * radius, y, pool.z + Math.cos(a) * radius, 1.05 + p * .5, city ? .28 : .38 + p * .2, 1.1 + p * .5);
-    }
+    // Lanterns stand only on this pool's own shelf, never in a neighbouring basin, a rill, or the newcomer's first view.
     for (let i = 0; i < 8; i++) {
-      const a = i / 8 * Math.PI * 2 + .22;
-      const radius = pool.radius + (poolIndex === 4 && Math.cos(a) < -.15 ? .35 : 2), x = pool.x + Math.sin(a) * radius, z = pool.z + Math.cos(a) * radius;
-      themedLantern(poolIndex, x, cloudSpaFloorHeight(x, z), z, a);
+      const a = i * Math.PI / 4, radius = pool.radius + 2, x = pool.x + Math.sin(a) * radius, z = pool.z + Math.cos(a) * radius, y = cloudSpaFloorHeight(x, z);
+      if (Math.abs(y - pool.deckY) < .02 && Math.hypot(x - CLOUD_SPA_SPAWN.x, z - CLOUD_SPA_SPAWN.z) > 4) themedLantern(poolIndex, x, y, z, a);
     }
     for (const seat of CLOUD_SPA_SEATS.filter(seat => seat.spotId === pool.spotId)) {
       place(marble, soft, seat.x, seat.avatarY - .25, seat.z, 1.65, .5, 1.1, 0, seat.yaw);
     }
   }
-  for (const link of CLOUD_SPA_CONNECTIONS) {
-    const p = cloudSpaConnectionPosition(link, link.ax, link.az), start = link.ar, end = p.length - link.br;
-    for (let i = 0; i < 5; i++) for (const side of [-1, 1]) {
-      const along = start + (end - start) * i / 4, x = link.ax + p.ux * along - p.uz * side * 4.15, z = link.az + p.uz * along + p.ux * side * 4.15;
-      const y = cloudSpaFloorHeight(x, z);
-      if (i % 2 === 0) lantern(x, y, z, .85);
+  // Rill treads are real slabs resting on the hidden ramp, so the steps stay crisp whatever the terrain grid does.
+  const { halfWidth, steps, rise, run, sill } = CLOUD_SPA_CHANNEL;
+  for (const channel of CLOUD_SPA_CHANNELS) {
+    const yaw = Math.atan2(channel.ux, channel.uz), top = channel.upper.deckY - sill;
+    for (let k = 0; k < steps; k++) {
+      const [x, z] = cloudSpaChannelPoint(channel, channel.lipEnd + (k + .5) * run, 0);
+      place(marble, box, x, top - rise * (k + 1) - .3, z, halfWidth * 2 - .1, .6, run + .02, 0, yaw);
     }
-  }
-  for (const z of CLOUD_SPA_STAIR_BREAKS) for (const side of [-1, 1]) {
-    const x = side * cloudSpaStairRouteX(z), y = cloudSpaFloorHeight(x, z + .001);
-    place(marble, soft, x, y + .015, z + .035, 7.8, .025, .11);
+    for (const side of [-1, 1]) {
+      const [x, z] = cloudSpaChannelPoint(channel, channel.upper.radius - .5, side * (halfWidth + .7));
+      lantern(x, cloudSpaFloorHeight(x, z), z, .85);
+    }
   }
   for (const z of [90.6, 96, 113]) for (const side of [-1, 1]) lantern(side * 20.5, CLOUD_SPA_RESORT.floorY, z, 1.2);
 
@@ -193,17 +221,7 @@ export function buildCloudSpaScenery(parent: THREE.Object3D, textures: { wood: T
   place(wood, soft, 0, fy + 1.1, 110.8, 13, 2.2, 1.5);
   place(brass, box, 0, fy + 2.23, 110.8, 13.2, .06, 1.7);
   for (const x of [-5, 0, 5]) lantern(x, fy + 2.27, 110.8, 1.4);
-  // Layers overlap above the architectural ceiling only, so no cloud solid enters a seated visitor's face.
-  for (let i = 0; i < 30; i++) {
-    const a = i * 2.399, radius = Math.sqrt((i + .5) / 30), x = Math.sin(a) * 18 * radius, z = 101 + Math.cos(a) * 13 * radius;
-    const p = .5 + .5 * Math.sin(i * 4.71), sy = 2.8 + p * 2.8, crown = (1 - radius) * 5;
-    place(storm, sphere, x, hall.ceilingY + sy + .55 + crown, z, 3.2 + p * 2.7, sy, 3.6 + (1 - p) * 2.4);
-  }
-  for (const side of [-1, 1]) for (let i = 0; i < 8; i++) {
-    const p = .5 + .5 * Math.sin(i * 3.14 + side), sx = 1.3 + p * 1.1;
-    place(storm, sphere, side * (19.4 + sx), fy + 3.6 + i % 3 * 2, 89.5 + i * 3.4, sx, 3.1 + p, 2 + p * 1.2);
-  }
-  for (let i = 0; i < 9; i++) place(storm, sphere, -17 + i * 4.25, fy + 5.4 + Math.sin(i) * 1.4, 116.6, 2.8, 4.6, 2.6);
+  // The storm cloud around the hall is drawn as photographic billboards (see CloudSpaWorld), so nothing solid stands here.
   for (const x of [-14, -7, 0, 7, 14]) {
     place(brass, cylinder, x, fy + 8.75, 99.8, .035, 3.1, .035);
     place(amber, sphere, x, fy + 6.95, 99.8, .7, .4, .7);
@@ -217,6 +235,7 @@ export function buildCloudSpaScenery(parent: THREE.Object3D, textures: { wood: T
     for (const piece of new Set([...pieces, ...normalized])) piece.dispose();
     owned.push(geometry); const mesh = new THREE.Mesh(geometry, material); mesh.name = material.name; root.add(mesh);
     if (material === glass) mesh.renderOrder = 4;
+    if (material === cloud) mesh.renderOrder = 1;
   }
   for (const geometry of [sphere, box, soft, cylinder, pillow, plane, arch, crescent, star]) geometry.dispose();
   let disposed = false;

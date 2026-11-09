@@ -90,8 +90,9 @@ const cloudSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/cl
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const cloudContext = {};
 vm.runInNewContext(`${cloudSource}\nglobalThis.api = {
-  CLOUD_SPA_BOUNDS, CLOUD_SPA_SPAWN, CLOUD_SPA_GROUND_Y, CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_PLACES,
-  CLOUD_SPA_SEATS, CLOUD_SPA_SEAT_REACH, CLOUD_SPA_WALLS, cloudSpaFloorHeight, cloudSpaCeilingHeight, cloudSpaStairRouteX,
+  CLOUD_SPA_BOUNDS, CLOUD_SPA_SPAWN, CLOUD_SPA_APRON, CLOUD_SPA_TERRACE, CLOUD_SPA_CHANNEL, CLOUD_SPA_CHANNELS, CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_PLACES,
+  CLOUD_SPA_SEATS, CLOUD_SPA_SEAT_REACH, CLOUD_SPA_WALLS, cloudSpaFloorHeight, cloudSpaGroundHeight, cloudSpaCeilingHeight, cloudSpaChannelPoint, cloudSpaChannelAt,
+  cloudSpaInsideIsland, cloudSpaIslandSpan, cloudSpaIslandRange, cloudSpaEdgeAhead,
   resolveCloudSpaWalk, cloudSpaForSpot, cloudSpaSeat, claimedCloudSpaSeat, nearbyCloudSpaPlace
 };`, cloudContext);
 export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...assets };

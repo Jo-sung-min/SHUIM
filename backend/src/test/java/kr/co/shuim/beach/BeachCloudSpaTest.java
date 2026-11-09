@@ -37,7 +37,8 @@ class BeachCloudSpaTest {
     private final TestFireworkTickets tickets = new TestFireworkTickets();
     private final BeachController controller = new BeachController(auth, blocks, service, circles, tickets);
     private final MockHttpServletRequest request = new MockHttpServletRequest();
-    private static final double[][] POOLS = {{0,70,17}, {-24,38,16}, {20,6,17}, {-18,-26,16}, {0,-66,20}};
+    private static final double[][] POOLS = {{0,66,17}, {-18,34.8,16}, {0,3.6,17}, {18,-27.6,16}, {0,-60.5,20}};
+    private static final int[][] OUTWARD = {{1,2,4,5}, {4,5}, {1,2,4,5}, {1,2}, {2,3,4}};
     private BeachRoom.Presence visitor(String id, double x, double z) {
         var p = room.enter(id, id, Set.of());
         room.tick(p.ticket(), x, z, .75, false, null, null, null, false, 1L);
@@ -47,7 +48,7 @@ class BeachCloudSpaTest {
         if (place == 5) return new BeachRoom.BenchSeat(slot < 3 ? -10.5 : 10.5, 104 + (slot % 3 - 1) * 2,
             slot < 3 ? -Math.PI / 2 : Math.PI / 2);
         double[] pool = POOLS[place]; double angle = slot * Math.PI / 3;
-        double yaw = angle + (place == 4 && slot >= 2 && slot <= 4 ? Math.PI : 0);
+        double yaw = angle + (java.util.Arrays.stream(OUTWARD[place]).anyMatch(s -> s == slot) ? Math.PI : 0);
         return new BeachRoom.BenchSeat(pool[0] + Math.sin(angle) * pool[2], pool[1] + Math.cos(angle) * pool[2],
             Math.atan2(Math.sin(yaw), Math.cos(yaw)));
     }
@@ -142,11 +143,11 @@ class BeachCloudSpaTest {
     @Test void eachMapKeepsItsOwnTwentyVisitorsAndRemoteSeats() {
         var p = service.enter("room", "same", "same", Set.of(), null, "cloudspa");
         var garden = service.enter("room", "same", "same", Set.of(), null, "garden");
-        service.tick(p.ticket(), 0, 87, 0, false, null, null); service.rest(p.ticket(), "sit", "cloud-pool-1");
+        service.tick(p.ticket(), 0, 83, 0, false, null, null); service.rest(p.ticket(), "sit", "cloud-pool-1");
         var observer = service.enter("room", "observer", "observer", Set.of(), null, "cloudspa");
-        var seen = service.tick(observer.ticket(), 1, 86, 0, false, null, null).players();
+        var seen = service.tick(observer.ticket(), 1, 82, 0, false, null, null).players();
         assertEquals(1, seen.size()); assertEquals(p.pid(), seen.get(0).pid()); assertEquals("cloud-pool-1", seen.get(0).spotId());
-        assertTrue(service.tick(garden.ticket(), 1, 86, 0, false, null, null).players().isEmpty());
+        assertTrue(service.tick(garden.ticket(), 1, 82, 0, false, null, null).players().isEmpty());
         for (int i = 2; i < 20; i++) service.enter("room", "visitor" + i, "visitor", Set.of(), null, "cloudspa");
         assertEquals(20, service.count("room", "cloudspa")); assertEquals(1, service.count("room", "garden"));
         assertEquals(409, assertThrows(ApiException.class, () -> service.enter("room", "overflow", "o", Set.of(), null, "cloudspa")).status());
@@ -217,7 +218,7 @@ class BeachCloudSpaTest {
             "invite", "private", "", "", "operator", 0, 0, 1, 0, false, true, true, 4));
         var entered = controller.enter(new BeachController.EnterBody("room", null, "cloudspa"), request, new MockHttpServletResponse());
         assertEquals(4, entered.get("capacity")); String ticket = (String) entered.get("ticket");
-        service.tick(ticket, 0, 87, 0, false, null, null);
+        service.tick(ticket, 0, 83, 0, false, null, null);
         var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();
         String body = "{\"ticket\":\"" + ticket + "\",\"action\":\"sit\",\"spotId\":\"cloud-pool-1\"}";
         actor("other", "user"); mvc.perform(post("/api/beach/rest").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());

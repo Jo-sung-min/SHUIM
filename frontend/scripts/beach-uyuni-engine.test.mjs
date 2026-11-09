@@ -280,16 +280,24 @@ test("cloud rest claims stay isolated from other maps and only count matching se
   assert.equal(engine.getBedState(),null);assert.equal(engine.nearbySeat(),null);
 });
 
-test("both cloud stairways descend and climb every terrace without a rejected step",()=>{
-  for(const side of [-1,1]) for(const direction of [-1,1]){
-    const {engine}=cloudFixture(), start=direction===-1?70:-66, end=direction===-1?-66:70;
-    Object.assign(engine.self,{x:side*hotSpring.cloudSpaStairRouteX(start),z:start});
-    for(let z=start+direction*.05;direction*(end-z)>=0;z+=direction*.05){
-      const x=side*hotSpring.cloudSpaStairRouteX(z), old=engine.deckHeight(engine.self.x,engine.self.z);
+test("every rill descends and climbs between its two pools without a rejected step, while terrace walls stop a walker",()=>{
+  for(const channel of hotSpring.CLOUD_SPA_CHANNELS) for(const direction of [1,-1]){
+    const {engine}=cloudFixture(), start=direction===1?0:channel.length, end=direction===1?channel.length:0;
+    const [sx,sz]=hotSpring.cloudSpaChannelPoint(channel,start,0); Object.assign(engine.self,{x:sx,z:sz});
+    for(let along=start+direction*.05;direction*(end-along)>=0;along+=direction*.05){
+      const [x,z]=hotSpring.cloudSpaChannelPoint(channel,along,0), old=engine.deckHeight(engine.self.x,engine.self.z);
       const next=engine.collide(x,z,true);
-      close(next[0],x);close(next[1],z);assert.ok(Math.abs(engine.deckHeight(...next)-old)<.26);
+      close(next[0],x);close(next[1],z);assert.ok(Math.abs(engine.deckHeight(...next)-old)<.26,channel.id+" along="+along);
       engine.self.x=next[0];engine.self.z=next[1];
     }
+    close(engine.deckHeight(engine.self.x,engine.self.z),(direction===1?channel.lower:channel.upper).floorY);
+  }
+  for(const channel of hotSpring.CLOUD_SPA_CHANNELS){
+    // Beside the rill the upper lip drops straight into the lower basin: walking off it is refused and the walker slides along the lip instead.
+    const {engine}=cloudFixture(), [lx,lz]=hotSpring.cloudSpaChannelPoint(channel,Math.sqrt((channel.upper.radius+.6)**2-36),6);
+    Object.assign(engine.self,{x:lx,z:lz}); close(engine.deckHeight(lx,lz),channel.upper.deckY);
+    const [tx,tz]=hotSpring.cloudSpaChannelPoint(channel,Math.sqrt((channel.upper.radius+1.6)**2-36),6), next=engine.collide(tx,tz,true);
+    assert.ok(Math.abs(engine.deckHeight(...next)-channel.upper.deckY)<.3,channel.id+" stays on the lip");
   }
 });
 

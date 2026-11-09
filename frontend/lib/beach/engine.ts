@@ -32,7 +32,7 @@ import { BAMBOO_SKY_FRAGMENT } from "./bamboo-shader";
 import { GardenWorld } from "./garden";
 import { CloudSpaWorld } from "./cloud-spa";
 import { CLOUD_SPA_SKY_FRAGMENT } from "./cloud-spa-sky";
-import { CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_SEATS, CLOUD_SPA_SEAT_REACH, CLOUD_SPA_WALLS, cloudSpaFloorHeight, cloudSpaCeilingHeight, resolveCloudSpaWalk, nearbyCloudSpaPlace, cloudSpaForSpot, claimedCloudSpaSeat } from "./cloud-spa-layout";
+import { CLOUD_SPA_POOLS, CLOUD_SPA_RESORT, CLOUD_SPA_SEATS, CLOUD_SPA_SEAT_REACH, CLOUD_SPA_WALLS, cloudSpaFloorHeight, cloudSpaCeilingHeight, cloudSpaEdgeAhead, resolveCloudSpaWalk, nearbyCloudSpaPlace, cloudSpaForSpot, claimedCloudSpaSeat } from "./cloud-spa-layout";
 import { GARDEN_SKY_FRAGMENT } from "./garden-shader";
 import { BOAT_DECK_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, PIER_Y, claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, insideHall, nearbyGardenPavilion, pierEnd, resolveGardenWalk, type BoatStop } from "./garden-layout";
 import type { BoatRideState, RemoteRider } from "./garden-boat";
@@ -2375,9 +2375,12 @@ export class BeachEngine {
     const reach = this.activeBunkerId ? 3.1 : FOLLOW_DISTANCE_SEATED;
     const baseY = this.cloudSpa && this.pavilionSeat ? this.pavilionSeat.baseY : (this.fixedSeat?.avatarY ?? 0.52) - 0.52;
     const pond = this.pavilionSeat?.spotId.startsWith("pond-bench-") === true;
-    const cityVista = this.cloudSpa && this.pavilionSeat?.spotId === "cloud-pool-5" && direction.z < -.25;
+    // Any pool seat that faces the nearby cloud edge looks down over it at the valley, not just the lowest pool.
+    const cityVista = Boolean(this.cloudSpa && this.pavilionSeat && this.pavilionSeat.spotId !== "cloud-lounge"
+      && cloudSpaEdgeAhead(this.self.x, this.self.z, direction.x, direction.z, 30) <= 30);
     // Look over the bench onto the water so a seated head cannot hide a coin or duck on a phone.
-    const eyeY = baseY + (cityVista ? 6.8 : pond ? 4.2 : this.cloudSpa && this.pavilionSeat?.spotId === "cloud-lounge" ? 3.8 : 2.5) - this.self.pitch * 1.4;
+    // Over a cloud edge the orbit climbs high enough that the valley shows past the shelf, not just a sliver of it.
+    const eyeY = baseY + (cityVista ? 10 : pond ? 4.2 : this.cloudSpa && this.pavilionSeat?.spotId === "cloud-lounge" ? 3.8 : 2.5) - this.self.pitch * 1.4;
     const wanted = new THREE.Vector3(this.self.x - direction.x * reach,
       eyeY, this.self.z - direction.z * reach);
     // Pavilion seats face outward, so the orbit sits inside the roof: stay below the rafters.
@@ -2400,7 +2403,7 @@ export class BeachEngine {
     if (this.cloudSpa && (!this.cameraFree(this.followCam) || !this.cloudSpaCameraSightClear(this.followCam, baseY + 1.25))) this.followCam.copy(wanted);
     this.camera.position.copy(this.followCam);
     const ahead = cityVista ? 13 : pond ? 4.5 : 1.4;
-    this.camera.lookAt(this.self.x + direction.x * ahead, baseY + (cityVista ? -3 : pond ? .7 : 1.0), this.self.z + direction.z * ahead);
+    this.camera.lookAt(this.self.x + direction.x * ahead, baseY + (cityVista ? -8 : pond ? .7 : 1.0), this.self.z + direction.z * ahead);
   }
 
   /** Follow the standing character, shortening the orbit near shelter walls. */

@@ -97,15 +97,13 @@ public class BeachRoom {
     private static final double[][] CLOUD_LOUNGE_SEAT_LOCAL = {
         {-10.5, 2, 1, 0}, {-10.5, 0, 1, 0}, {-10.5, -2, 1, 0},
         {10.5, 2, -1, 0}, {10.5, 0, -1, 0}, {10.5, -2, -1, 0}};
-    /** Matches cloud-spa-layout.ts: six submerged places facing the pool centre. */
-    private static double[][] cloudPoolSeats(double radius) {
-        return cloudPoolSeats(radius, false);
-    }
-    private static double[][] cloudPoolSeats(double radius, boolean cityView) {
+    /** Matches cloud-spa-layout.ts: six submerged places; those on the cloud-edge side face outward over the valley, the rest face the centre. */
+    private static double[][] cloudPoolSeats(double radius, int... outwardSlots) {
         double[][] seats = new double[6][4];
         for (int slot = 0; slot < seats.length; slot++) {
             double angle = slot * Math.PI / 3;
-            double facing = cityView && slot >= 2 && slot <= 4 ? -1 : 1;
+            final int current = slot;
+            double facing = java.util.Arrays.stream(outwardSlots).anyMatch(outward -> outward == current) ? -1 : 1;
             seats[slot] = new double[]{Math.sin(angle) * radius, -Math.cos(angle) * radius, -Math.sin(angle) * facing, Math.cos(angle) * facing};
         }
         return seats;
@@ -134,11 +132,12 @@ public class BeachRoom {
         pondBench("pond-bench-e", 39.92414302, 34),
         pondBench("pond-bench-nw", -30.53993522, 53.43450423),
         pondBench("pond-bench-ne", 27.90771696, 51.75945625),
-        new Pavilion("cloud-pool-1", 0, 70, 0, -1, cloudPoolSeats(17), BeachMap.CLOUDSPA),
-        new Pavilion("cloud-pool-2", -24, 38, 0, -1, cloudPoolSeats(16), BeachMap.CLOUDSPA),
-        new Pavilion("cloud-pool-3", 20, 6, 0, -1, cloudPoolSeats(17), BeachMap.CLOUDSPA),
-        new Pavilion("cloud-pool-4", -18, -26, 0, -1, cloudPoolSeats(16), BeachMap.CLOUDSPA),
-        new Pavilion("cloud-pool-5", 0, -66, 0, -1, cloudPoolSeats(20, true), BeachMap.CLOUDSPA),
+        // Pamukkale terraces: five pools stacked three metres apart, zigzagging down towards the city.
+        new Pavilion("cloud-pool-1", 0, 66, 0, -1, cloudPoolSeats(17, 1, 2, 4, 5), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-2", -18, 34.8, 0, -1, cloudPoolSeats(16, 4, 5), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-3", 0, 3.6, 0, -1, cloudPoolSeats(17, 1, 2, 4, 5), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-4", 18, -27.6, 0, -1, cloudPoolSeats(16, 1, 2), BeachMap.CLOUDSPA),
+        new Pavilion("cloud-pool-5", 0, -60.5, 0, -1, cloudPoolSeats(20, 2, 3, 4), BeachMap.CLOUDSPA),
         new Pavilion("cloud-lounge", 0, 104, 0, -1, CLOUD_LOUNGE_SEAT_LOCAL, BeachMap.CLOUDSPA));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }

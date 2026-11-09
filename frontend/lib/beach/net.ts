@@ -80,8 +80,11 @@ function matchesPondSeat(spotId: string, slot: number, x: number, z: number, yaw
 
 // Mirrors cloud-spa-layout.ts without importing renderer/layout dependencies into the network client.
 const CLOUD_SPA_POOLS: Readonly<Record<string, readonly [number, number, number]>> = {
-  "cloud-pool-1": [0, 70, 17], "cloud-pool-2": [-24, 38, 16],
-  "cloud-pool-3": [20, 6, 17], "cloud-pool-4": [-18, -26, 16], "cloud-pool-5": [0, -66, 20],
+  "cloud-pool-1": [0, 66, 17], "cloud-pool-2": [-18, 34.8, 16],
+  "cloud-pool-3": [0, 3.6, 17], "cloud-pool-4": [18, -27.6, 16], "cloud-pool-5": [0, -60.5, 20],
+};
+const CLOUD_SPA_OUTWARD_SLOTS: Readonly<Record<string, readonly number[]>> = {
+  "cloud-pool-1": [1, 2, 4, 5], "cloud-pool-2": [4, 5], "cloud-pool-3": [1, 2, 4, 5], "cloud-pool-4": [1, 2], "cloud-pool-5": [2, 3, 4],
 };
 function isCloudSpaSpot(spotId: unknown): boolean {
   return typeof spotId === "string" && spotId.startsWith("cloud-");
@@ -93,8 +96,8 @@ function matchesCloudSpaSeat(state: RestPresence): boolean {
   const angle = slot * Math.PI / 3, side = slot < 3 ? -1 : 1;
   const x = pool ? pool[0] + Math.sin(angle) * pool[2] : side * 10.5;
   const z = pool ? pool[1] + Math.cos(angle) * pool[2] : 104 + (slot % 3 - 1) * 2;
-  const cityView = state.spotId === "cloud-pool-5" && slot >= 2 && slot <= 4;
-  const yaw = pool ? angle + (cityView ? Math.PI : 0) : side * Math.PI / 2, delta = state.yaw - yaw;
+  const outward = (CLOUD_SPA_OUTWARD_SLOTS[state.spotId ?? ""] ?? []).includes(slot);
+  const yaw = pool ? angle + (outward ? Math.PI : 0) : side * Math.PI / 2, delta = state.yaw - yaw;
   return Math.abs(state.x - x) <= .02 && Math.abs(state.z - z) <= .02
     && Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))) <= .02;
 }
