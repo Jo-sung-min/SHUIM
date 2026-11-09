@@ -85,6 +85,35 @@ export function baikalSnowCover(x: number, z: number): number {
   return Math.min(1, Math.max(0, baikalTerraceHeight(x, z) / .08, baikalShoreHeight(x) / .2));
 }
 
+/**
+ * Every warm source in a room, in room-local (first cabin) metres. Order matters: the stove is index 0, and low-end devices stop partway down the list.
+ * Power is in the same units as a three.js point light's candela.
+ */
+export interface BaikalCozyLight { x: number; y: number; z: number; power: number; r: number; g: number; b: number; spot: boolean }
+const cozy = (x: number, y: number, z: number, power: number, color: readonly [number, number, number], spot = false): BaikalCozyLight => ({ x, y, z, power, r: color[0], g: color[1], b: color[2], spot });
+const FIRELIGHT = [1, .5, .2] as const, TUNGSTEN = [1, .8, .58] as const, CANDLE = [1, .62, .3] as const;
+const trackHeight = (x: number) => baikalRoofHeight(x) - .22 - .5;
+export const BAIKAL_COZY_LIGHTS: readonly BaikalCozyLight[] = [
+  cozy(-23.4, 1.2, -.3, 15, FIRELIGHT),
+  cozy(-20.05, 1.05, 6, .8, CANDLE),
+  cozy(-19.4, 2.05, 13.3, 3.2, TUNGSTEN),
+  cozy(-24.45, 1.75, 3.95, 2.4, TUNGSTEN),
+  cozy(-24.45, 1.75, 8.15, 2.4, TUNGSTEN),
+  cozy(-19.2, trackHeight(-19.2), 2.3, 26, TUNGSTEN, true),
+  cozy(-19.2, trackHeight(-19.2), 6.2, 26, TUNGSTEN, true),
+  cozy(-19.2, trackHeight(-19.2), 10.1, 26, TUNGSTEN, true),
+  cozy(-24.8, trackHeight(-24.8), 2.3, 17, TUNGSTEN, true),
+  cozy(-24.8, trackHeight(-24.8), 6.2, 17, TUNGSTEN, true),
+  cozy(-24.8, trackHeight(-24.8), 10.1, 17, TUNGSTEN, true),
+  cozy(-29.35, 2.75, 3.5, 3, TUNGSTEN),
+  cozy(-29.35, 2.75, 10.5, 3, TUNGSTEN),
+  cozy(-20.4, 3.15, 6, 3.6, TUNGSTEN),
+];
+
+/** The world rectangle of the wind-drift map, and the room rectangle of the baked contact shadow. */
+export const BAIKAL_SNOW_DRIFT_BOX = { minX: -140, minZ: -260, width: 280, depth: 350 } as const;
+export const BAIKAL_ROOM_OCCLUSION_BOX = { minX: -31, maxX: -13, minZ: -3, maxZ: 15 } as const;
+
 /* ---------------- ice hummocks ---------------- */
 export interface IceBlock { x: number; z: number; size: number; height: number; yaw: number; tilt: number; variant: number; seed: number; solid: boolean }
 function hummockRandom(seed: number) {
@@ -212,6 +241,7 @@ const FIRST_CABIN_WALLS: readonly ShelterCollider[] = [
 const FIRST_CABIN_FURNITURE: readonly ShelterCollider[] = [
   rect(-23.4, -1.1, 1.1, 1.1), rect(-23.1, 6.05, 1.0, 6.4), rect(-20.4, 6, 2.2, .9), rect(-22, 11.45, 4.4, 1.3),
   rect(-18.6, 12.2, 1.0, 1.0), rect(-29.3, 7, .8, 6), rect(-14.6, 9.4, .55, 2.4), rect(-25.4, -1.2, 1.2, .9),
+  rect(-24.45, 6.05, .5, 5.4),
 ];
 const translateCollider = (wall: ShelterCollider, cabin: BaikalCabinSite): ShelterCollider => ({
   minX: wall.minX + cabin.offsetX, maxX: wall.maxX + cabin.offsetX, minZ: wall.minZ + cabin.offsetZ, maxZ: wall.maxZ + cabin.offsetZ,
@@ -227,6 +257,12 @@ export const BAIKAL_TREES: readonly { x: number; z: number; height: number; seed
     const x = -44 - random() * 20, z = -34 + random() * 76;
     if (Math.abs(z - 6) < 9 && x > -50) continue;
     trees.push({ x, z, height: 7 + random() * 5, seed: random() });
+  }
+  // Further along and up the bank the stand thickens into forest behind each stop, so the cabins sit against dark trees.
+  for (let i = 0; i < 70; i++) {
+    const x = -46 - random() * 66, z = -210 + random() * 270;
+    if (BAIKAL_CABINS.some(c => Math.hypot(x - c.x, z - c.z) < 26)) continue;
+    trees.push({ x, z, height: 6 + random() * 8, seed: random() });
   }
   return trees;
 })();

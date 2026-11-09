@@ -527,7 +527,7 @@ export class BeachEngine {
         texture.anisotropy = Math.min(this.mobile ? 4 : 8, this.renderer.capabilities.getMaxAnisotropy());
       }
       this.baikalTextures = [wood, cotton, snow, ice];
-      this.baikal = new BaikalWorld(this.scene, this.skyMat.uniforms, { wood, cotton, snow, ice }, this.mobile);
+      this.baikal = new BaikalWorld(this.scene, this.skyMat.uniforms, { wood, cotton, snow, ice }, this.mobile, this.renderer);
       this.cove = this.baikal;
       this.eyeHeight = baikalFloorHeight(this.self.x, this.self.z) + EYE;
       // Arrive in the storm as it is now rather than watching it build from a clear sky.
@@ -593,6 +593,7 @@ export class BeachEngine {
       if (this.disposed) return;
       this.buildProps();
       this.applyDaylight(this.daylight);
+      this.baikal?.prepareRoomLight([this.sky]);
       this.updateSelfAvatar(0);
       this.updatePlayers(0);
       await this.fire?.whenReady();
@@ -619,7 +620,7 @@ export class BeachEngine {
     if (this.disposed || this.renderer.getContext().isContextLost()) {
       throw new Error("화면이 다시 준비되면 사진을 찍어 주세요.");
     }
-    return captureScenePhoto(this.renderer, this.scene, this.camera);
+    return captureScenePhoto({ domElement: this.renderer.domElement, render: () => this.drawScene() }, this.scene, this.camera);
   }
 
   /* ---------------- 만들기 ---------------- */
@@ -2172,7 +2173,13 @@ export class BeachEngine {
       this.fireworkAudio?.updateGardenSound(insideHall(this.self.x, this.self.z), this.rainNow, dt);
       this.garden.renderReflection(this.renderer, this.camera);
     }
-    this.renderer.render(this.scene, this.camera);
+    this.drawScene();
+  }
+
+  /** Baikal prints through its own post stage; every other map goes straight to the canvas. */
+  private drawScene() {
+    if (this.baikal) this.baikal.render(this.renderer, this.camera);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   private updateSelf(dt: number) {

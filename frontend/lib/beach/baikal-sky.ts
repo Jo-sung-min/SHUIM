@@ -11,6 +11,27 @@ uniform float uAurora;
  * and a ring of snowy ridges drawn by direction only (no geometry), so the ice reflects them for free.
  */
 export const BAIKAL_SKY_FUNCTIONS = `${UYUNI_SKY_FUNCTIONS}
+// Villages strung along the far shore: warm dots on the dark hills, gathered in clusters, some close enough to bloom into soft discs.
+vec3 baikalShoreLights(vec3 d, float ridge, float night, float storm) {
+  if (night < 0.02 || d.y < 0.0005 || d.y > ridge) return vec3(0.0);
+  float azimuth = atan(d.x, d.z);
+  float village = smoothstep(0.42, 0.74, beachSkyNoise(vec2(azimuth * 3.4, 3.7)) * 0.7 + beachSkyNoise(vec2(azimuth * 11.0, 8.4)) * 0.3);
+  if (village <= 0.0) return vec3(0.0);
+  vec3 lights = vec3(0.0);
+  for (int layer = 0; layer < 3; layer++) {
+    float f = float(layer), scale = 150.0 + f * 95.0, radius = 0.09 + 0.1 * (2.0 - f) * 0.5;
+    vec2 q = vec2(azimuth * scale, d.y * scale * 2.0 + f * 7.1);
+    vec2 cell = floor(q), own = fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3))) + f) * 43758.5453);
+    if (own.x > 0.34 + 0.2 * village) continue;
+    float dist = length(q - cell - 0.25 - own * 0.5) / radius;
+    float disc = 1.0 - smoothstep(0.55, 1.0, dist);
+    float twinkle = 0.82 + 0.18 * sin(uTime * (1.1 + own.y * 2.0) + own.x * 40.0);
+    vec3 tint = mix(vec3(1.0, 0.58, 0.2), vec3(1.0, 0.8, 0.5), own.y);
+    lights += tint * disc * twinkle * (0.5 + f * 0.25);
+  }
+  return lights * village * night * (1.0 - storm * 0.72) * smoothstep(0.0005, 0.004, d.y);
+}
+
 vec3 baikalRidges(vec3 d, vec3 sky, float night, float storm) {
   if (d.y < -0.003 || d.y > 0.1) return sky;
   float azimuth = atan(d.x, d.z);
@@ -20,7 +41,7 @@ vec3 baikalRidges(vec3 d, vec3 sky, float night, float storm) {
   float fine = beachSkyNoise(ring * 19.0 + 8.2);
   // A far range all around, higher behind the cabin (west) and lower over the open lake (east).
   float west = smoothstep(0.4, -0.6, d.x);
-  float far = 0.012 + broad * 0.034 * (0.6 + 0.7 * west) + detail * 0.010;
+  float far = 0.016 + broad * 0.044 * (0.86 + 0.44 * west) + detail * 0.012;
   float near = (0.004 + detail * 0.016 + fine * 0.005) * smoothstep(0.1, -0.5, d.x);
   float aa = max(fwidth(d.y), 0.0006);
   float farMask = 1.0 - smoothstep(far - aa, far + aa, d.y);
@@ -35,6 +56,7 @@ vec3 baikalRidges(vec3 d, vec3 sky, float night, float storm) {
   float visibility = (1.0 - storm * 0.88) * (1.0 - smoothstep(0.03, 0.1, d.y) * 0.0);
   vec3 color = mix(sky, mix(farDay, farNight, night), farMask * visibility * 0.92);
   color = mix(color, mix(nearDay, nearNight, night), nearMask * (1.0 - storm * 0.7) * 0.95);
+  color += baikalShoreLights(d, far, night, storm) * farMask;
   return color;
 }
 

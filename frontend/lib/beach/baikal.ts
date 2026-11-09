@@ -1,17 +1,24 @@
 import * as THREE from "three";
 import type { Daylight } from "./daylight";
 import type { PavilionSeat } from "./bamboo-trail";
-import { BAIKAL_CABINS, BAIKAL_SEATS, insideBaikalCabin } from "./baikal-layout";
+import { BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_SEATS, insideBaikalCabin } from "./baikal-layout";
 import { type BaikalUniforms, createBaikalFlameMaterial, createBaikalIceMaterial, createBaikalUniforms } from "./baikal-materials";
 import { type BaikalTextures, buildBaikalCabin, buildBaikalHummocks, buildBaikalShore } from "./baikal-geometry";
 import { BaikalSnow } from "./baikal-snow";
+import { BaikalVapor } from "./baikal-vapor";
+import { type BaikalBake, bakeBaikalRoomOcclusion, bakeBaikalTextures } from "./baikal-bake";
+import { BaikalPost } from "./baikal-post";
 
 export interface BaikalWalker { x: number; z: number; moving?: boolean }
+const OCCLUSION_LAYER = 5;
+const PROBE_LAYER = 6;
 
 /** A small wood stove: instanced flame tongues behind its glass, an ember bed, and one breathing, flickering light. */
 class StoveFire {
   readonly flames: THREE.InstancedMesh;
   readonly light = new THREE.PointLight(0xff9a3c, 0, 11, 2);
+  /** The flicker of this fire this frame: shared with every surface the cozy lighting patch touches. */
+  glow = 1;
   private readonly material: THREE.ShaderMaterial;
   private readonly embers: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
 
@@ -26,7 +33,7 @@ class StoveFire {
     for (let i = 0; i < seeds.length; i++) {
       const a = i * 2.399963, outer = i > 2;
       transform.position.set(hearth.x + Math.sin(a) * (outer ? .14 : .05), hearth.y - .02 + (i % 3) * .005, hearth.z - .08 + Math.cos(a) * (outer ? .06 : .03));
-      transform.scale.set(outer ? .14 + (i % 3) * .03 : .22, outer ? .22 + (i % 4) * .05 : .38, 1);
+      transform.scale.set(outer ? .18 + (i % 3) * .04 : .3, outer ? .3 + (i % 4) * .06 : .46, 1);
       transform.updateMatrix(); this.flames.setMatrixAt(i, transform.matrix);
     }
     this.flames.name = "baikal-stove-flames"; this.flames.frustumCulled = false; this.flames.renderOrder = 6; parent.add(this.flames);
@@ -38,7 +45,8 @@ class StoveFire {
     // Slow breathing plus a quick, small flicker: the room pulses, it never strobes.
     const breath = 1 + Math.sin(time * .65) * .04 + Math.sin(time * 1.7 + .6) * .02;
     const flicker = 1 + (Math.sin(time * 9.3) * Math.sin(time * 5.1 + 1.3) + Math.sin(time * 13.7)) * .035;
-    this.light.intensity = (34 + night * 36) * breath * flicker;
+    this.glow = breath * flicker;
+    this.light.intensity = (10 + night * 12) * this.glow;
     this.light.position.y = .95 + Math.sin(time * 2.3) * .03;
     this.material.uniforms.uPower.value = .85 + Math.sin(time * 2.1) * .08 + Math.sin(time * 5.7) * .05;
     this.embers.material.opacity = .7 + Math.sin(time * .9) * .1;
@@ -59,6 +67,7 @@ export class BaikalWorld {
   private readonly shore: ReturnType<typeof buildBaikalShore>;
   private readonly cabin: ReturnType<typeof buildBaikalCabin>;
   private readonly snow: BaikalSnow;
+  private readonly vapor: BaikalVapor;
   private readonly fires: StoveFire[];
   private journeyStage = 0;
   private reveal = 0;
@@ -77,14 +86,40 @@ export class BaikalWorld {
   private lampAmount = 1;
   private lastTime = 0;
   private disposed = false;
+  private readonly baked: BaikalBake | null = null;
+  private readonly post: BaikalPost | null = null;
+  private readonly candleFlames: THREE.InstancedMesh | null = null;
+  private readonly candleMaterial: THREE.ShaderMaterial | null = null;
+  private lowQuality = false;
+  private interior = 0;
+  private roomCube: THREE.WebGLCubeRenderTarget | null = null;
+  private cleanCube: THREE.WebGLCubeRenderTarget | null = null;
+  private cleanCamera: THREE.CubeCamera | null = null;
+  private cleanScene: THREE.Scene | null = null;
+  private cleanMesh: THREE.Mesh<THREE.BoxGeometry, THREE.ShaderMaterial> | null = null;
+  private cleanMaterial: THREE.ShaderMaterial | null = null;
+  private cubeCamera: THREE.CubeCamera | null = null;
+  private pmrem: THREE.PMREMGenerator | null = null;
+  private environment: THREE.WebGLCubeRenderTarget | null = null;
+  private occlusion: THREE.WebGLRenderTarget | null = null;
+  private probedNight = -1;
+  private readonly renderer: THREE.WebGLRenderer | null;
 
-  constructor(private readonly scene: THREE.Scene, skyUniforms: Record<string, THREE.IUniform>, textures: BaikalTextures, mobile = false) {
+  constructor(private readonly scene: THREE.Scene, skyUniforms: Record<string, THREE.IUniform>, textures: BaikalTextures, private readonly mobile = false, renderer: THREE.WebGLRenderer | null = null) {
+    this.renderer = renderer;
     this.root.name = "baikal"; scene.add(this.root);
     this.shared = createBaikalUniforms(skyUniforms);
     this.shared.uSnowPhoto.value = textures.snow ?? null; this.shared.uHasSnowPhoto.value = textures.snow ? 1 : 0;
     this.shared.uIcePhoto.value = textures.ice ?? null; this.shared.uHasIcePhoto.value = textures.ice ? 1 : 0;
     this.time = this.shared.uTime;
     this.shared.uLayers.value = mobile ? 2 : 3;
+    if (renderer) {
+      this.baked = bakeBaikalTextures(renderer, mobile);
+      this.shared.uIceVolume.value = this.baked.iceVolume; this.shared.uHasIceVolume.value = this.baked.iceVolume ? 1 : 0;
+      this.shared.uSnowDrift.value = this.baked.snowDrift; this.shared.uHasSnowDrift.value = this.baked.snowDrift ? 1 : 0;
+      this.shared.uFrost.value = this.baked.frost; this.shared.uHasFrost.value = 1;
+      this.post = new BaikalPost(renderer, mobile);
+    }
     this.hemi.name = "baikal-sky-fill"; this.sun.name = "baikal-winter-sun"; this.sun.position.set(40, 30, -20); this.sun.castShadow = false;
     this.root.add(this.hemi, this.sun);
     // One recentred sheet of ice; the pattern lives in world space so walking never slides it.
@@ -93,8 +128,21 @@ export class BaikalWorld {
     this.ice = new THREE.Mesh(iceGeometry, createBaikalIceMaterial(this.shared)); this.ice.name = "baikal-frozen-lake"; this.ice.frustumCulled = false; this.root.add(this.ice);
     this.shore = buildBaikalShore(this.root, this.shared, textures, mobile);
     this.hummocks = buildBaikalHummocks(this.root, this.shared, mobile);
-    this.cabin = buildBaikalCabin(this.root, textures, this.shared, mobile);
+    this.cabin = buildBaikalCabin(this.root, textures, this.shared, mobile, this.baked);
     this.fires = this.cabin.hearths.map(hearth => new StoveFire(this.root, hearth, this.time));
+    // A small real flame on every candle and lantern.
+    {
+      this.candleMaterial = createBaikalFlameMaterial(this.time);
+      const quad = new THREE.PlaneGeometry(1, 1, 1, 6); quad.translate(0, .5, 0);
+      const spots = this.cabin.flameSpots, seeds = new Float32Array(spots.length);
+      for (let i = 0; i < seeds.length; i++) seeds[i] = (i * .618) % 1;
+      quad.setAttribute("aSeed", new THREE.InstancedBufferAttribute(seeds, 1));
+      this.candleFlames = new THREE.InstancedMesh(quad, this.candleMaterial, spots.length);
+      const transform = new THREE.Object3D();
+      spots.forEach((spot, i) => { transform.position.set(spot.x, spot.y - .045, spot.z); transform.scale.set(.05, .1, 1); transform.updateMatrix(); this.candleFlames!.setMatrixAt(i, transform.matrix); });
+      this.candleFlames.instanceMatrix.needsUpdate = true; this.candleFlames.name = "baikal-candle-flames"; this.candleFlames.frustumCulled = false; this.candleFlames.renderOrder = 6;
+      this.root.add(this.candleFlames);
+    }
     // Reuse three real lights for the nearest room; far windows use merged emissive geometry.
     for (const source of this.cabin.cabinLights.slice(0, 3)) {
       const light = new THREE.PointLight(source.color, 0, 9, 2); light.position.copy(source.position); light.castShadow = false; light.name = "baikal-pendant-light";
@@ -112,6 +160,7 @@ export class BaikalWorld {
     this.village = new THREE.Points(villageGeometry, new THREE.PointsMaterial({ color: 0xffc27a, size: 2.6, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, toneMapped: false, fog: false }));
     this.village.name = "baikal-far-village-lights"; this.village.frustumCulled = false; this.root.add(this.village);
     this.snow = new BaikalSnow(this.root, this.shared, mobile);
+    this.vapor = new BaikalVapor(this.root, this.shared, this.cabin.chimneys, this.cabin.mugs, mobile);
   }
 
   applyDaylight(d: Daylight) {
@@ -133,8 +182,70 @@ export class BaikalWorld {
     this.shared.uLamp.value = this.lampAmount;
     (this.shared.uCabinLight.value as THREE.Vector4).w = THREE.MathUtils.smoothstep(night, .35, .95);
     for (const light of this.shared.uCabinLights.value) light.w = this.shared.uCabinLight.value.w;
-    for (const lamp of this.lamps) lamp.intensity = 14 + 40 * this.lampAmount;
+    // The cozy patch lights the room; these three stay soft and only give avatars and metal their highlights.
+    for (const lamp of this.lamps) lamp.intensity = 5 + 11 * this.lampAmount;
     this.applyFog(d);
+    this.refreshRoomLight();
+  }
+
+  /**
+   * Once everything has loaded: bake where furniture meets the floor and photograph the finished room for its own reflections.
+   * Later captures only happen when dusk or dawn has moved the light outside enough to matter.
+   */
+  prepareRoomLight(probeExtras: readonly THREE.Object3D[] = []) {
+    const renderer = this.renderer;
+    if (this.disposed || !renderer || this.occlusion) return;
+    for (const object of this.cabin.occluders) object.layers.enable(OCCLUSION_LAYER);
+    this.occlusion = bakeBaikalRoomOcclusion(renderer, this.scene, BAIKAL_CABIN.floorY, OCCLUSION_LAYER);
+    for (const object of this.cabin.occluders) object.layers.disable(OCCLUSION_LAYER);
+    this.shared.uRoomOcc.value = this.occlusion.texture; this.shared.uHasRoomOcc.value = 1;
+    const cubeOptions = { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter };
+    this.roomCube = new THREE.WebGLCubeRenderTarget(this.mobile ? 128 : 256, cubeOptions);
+    this.cleanCube = new THREE.WebGLCubeRenderTarget(this.mobile ? 128 : 256, cubeOptions);
+    this.cubeCamera = new THREE.CubeCamera(.3, 450, this.roomCube);
+    this.cubeCamera.position.set(-23, 2.4, 6);
+    for (const face of this.cubeCamera.children) face.layers.set(PROBE_LAYER);
+    for (const object of [...this.cabin.occluders, ...this.cabin.probeVisible, ...probeExtras, this.ice, this.fires[0].flames]) object.layers.enable(PROBE_LAYER);
+    this.cleanCamera = new THREE.CubeCamera(.1, 10, this.cleanCube);
+    this.cleanScene = new THREE.Scene();
+    this.cleanMaterial = new THREE.ShaderMaterial({ uniforms: { tSource: { value: this.roomCube.texture } }, side: THREE.BackSide, depthTest: false, depthWrite: false, toneMapped: false,
+      vertexShader: "varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform samplerCube tSource; varying vec3 vDir; void main() { vec4 c = textureCube(tSource, vDir); bool bad = !(c.r >= 0.0) || !(c.g >= 0.0) || !(c.b >= 0.0) || c.r > 1e4 || c.g > 1e4 || c.b > 1e4; gl_FragColor = vec4(bad ? vec3(0.0) : min(c.rgb, vec3(32.0)), 1.0); }" });
+    this.cleanMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), this.cleanMaterial); this.cleanMesh.frustumCulled = false; this.cleanScene.add(this.cleanMesh);
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+    // The first pass sees an unreflective room; the second gets one bounce of itself.
+    this.captureRoom(); this.captureRoom();
+  }
+
+  private refreshRoomLight() {
+    if (!this.renderer || !this.pmrem) return;
+    if (Math.abs(this.night - this.probedNight) > (this.mobile ? .34 : .12)) this.captureRoom();
+  }
+
+  private captureRoom() {
+    const renderer = this.renderer, cube = this.cubeCamera, pmrem = this.pmrem, room = this.roomCube, clean = this.cleanCube, cleaner = this.cleanCamera;
+    if (!renderer || !cube || !pmrem || !room || !clean || !cleaner || !this.cleanScene) return;
+    this.probedNight = this.night;
+    // Halos are billboards for one viewer, and the glass would be sampling the very cube being drawn.
+    const hide = [this.snow.flakes, this.snow.sheets, ...this.cabin.captureHidden], visibility = hide.map(object => object.visible);
+    hide.forEach(object => { object.visible = false; });
+    const previous = renderer.getRenderTarget();
+    cube.update(renderer, this.scene);
+    hide.forEach((object, i) => { object.visible = visibility[i]; });
+    // One bad pixel from any shader would spread through the whole prefiltered chain, so the capture is sanitised before it is blurred.
+    cleaner.update(renderer, this.cleanScene);
+    this.environment = pmrem.fromCubemap(clean.texture, this.environment);
+    renderer.setRenderTarget(previous);
+    this.shared.uRoomCube.value = clean.texture; this.shared.uHasRoomCube.value = 1;
+    this.cabin.setEnvironment(this.environment.texture);
+  }
+
+  /** Draws the frame through the print stage, or directly when the device is on the low tier. */
+  render(renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
+    if (this.post && !this.lowQuality) {
+      this.post.interior = this.interior; this.post.night = this.night; this.post.time = this.time.value;
+      this.post.render(this.scene, camera);
+    } else renderer.render(this.scene, camera);
   }
 
   /** Fog distances follow the storm and open up indoors so the room stays crisp while the window goes white. */
@@ -191,6 +302,10 @@ export class BaikalWorld {
       });
     }
     this.fires.forEach((fire, index) => { fire.update(time, this.night); fire.light.visible = index === closest; });
+    this.shared.uFireGlow.value = this.fires[closest].glow;
+    const indoors = insideBaikalCabin(at.x, at.z) ? 1 : 0;
+    this.interior += (indoors - this.interior) * (1 - Math.exp(-dt * 2.5));
+    this.cabin.fur.visible = nearest < 3600;
     this.village.material.opacity = this.night * (1 - this.shared.uStorm.value) * .9;
     if (this.daylight) {
       this.applyFog(this.daylight, insideBaikalCabin(at.x, at.z));
@@ -213,6 +328,7 @@ export class BaikalWorld {
 
   setQuality(low: boolean) {
     if (this.disposed) return;
+    this.lowQuality = low;
     this.shared.uLayers.value = low ? 2 : 3;
     this.snow.setQuality(low); this.hummocks.setQuality(low);
     this.lamps[2].visible = !low;
@@ -223,7 +339,10 @@ export class BaikalWorld {
 
   dispose() {
     if (this.disposed) return; this.disposed = true;
-    this.snow.dispose(); for (const fire of this.fires) fire.dispose(); this.cabin.dispose(); this.hummocks.dispose(); this.shore.dispose();
+    this.snow.dispose(); this.vapor.dispose(); for (const fire of this.fires) fire.dispose(); this.cabin.dispose(); this.hummocks.dispose(); this.shore.dispose();
+    if (this.candleFlames) { this.candleFlames.geometry.dispose(); this.candleFlames.dispose(); } this.candleMaterial?.dispose();
+    this.post?.dispose(); this.baked?.dispose(); this.occlusion?.dispose(); this.roomCube?.dispose(); this.cleanCube?.dispose(); this.environment?.dispose(); this.pmrem?.dispose();
+    this.cleanMesh?.geometry.dispose(); this.cleanMaterial?.dispose();
     this.village.geometry.dispose(); this.village.material.dispose();
     this.ice.geometry.dispose(); this.ice.material.dispose();
     for (const lamp of this.lamps) lamp.dispose(); this.seatLight.dispose(); this.sun.dispose(); this.hemi.dispose();

@@ -18,21 +18,22 @@ async function load(file, dependencies, names) {
   return context.api;
 }
 const layout = await load("../lib/beach/baikal-layout.ts", {}, [
-  "BAIKAL_BOUNDS", "BAIKAL_SPAWN", "BAIKAL_SEAT_REACH", "BAIKAL_TERRACE", "BAIKAL_TERRACES", "BAIKAL_SHORE", "BAIKAL_CABIN", "BAIKAL_CABINS", "BAIKAL_JOURNEY_ROUTE", "BAIKAL_WIND", "BAIKAL_BLOCKS", "BAIKAL_CLUSTERS",
+  "BAIKAL_BOUNDS", "BAIKAL_SPAWN", "BAIKAL_SEAT_REACH", "BAIKAL_TERRACE", "BAIKAL_TERRACES", "BAIKAL_SHORE", "BAIKAL_CABIN", "BAIKAL_CABINS", "BAIKAL_JOURNEY_ROUTE", "BAIKAL_WIND", "BAIKAL_BLOCKS", "BAIKAL_CLUSTERS", "BAIKAL_COZY_LIGHTS", "BAIKAL_SNOW_DRIFT_BOX", "BAIKAL_ROOM_OCCLUSION_BOX",
   "BAIKAL_PLACES", "BAIKAL_SEATS", "BAIKAL_WALLS", "BAIKAL_FURNITURE", "BAIKAL_TREES", "BAIKAL_BLOCK_COLLIDERS", "BAIKAL_COLLIDERS", "STORM_PERIOD_MS",
   "baikalRoofHeight", "baikalRoofAt", "baikalCabinAt", "baikalCabinArrivalAt", "insideBaikalCabin", "underBaikalRoof", "baikalCeilingHeight", "baikalShoreHeight", "baikalTerraceHeight", "baikalFloorHeight", "baikalSnowCover",
   "baikalStormAt", "baikalForSpot", "baikalSeat", "claimedBaikalSeat", "nearbyBaikalPlace", "resolveBaikalWalk",
 ]);
 const trail = await load("../lib/beach/bamboo-trail.ts", {}, ["seededRandom"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["findWalkingPath", "resolveWalls"]);
-const textiles = await load("../lib/beach/shelter-textiles.ts", {}, ["createShelterPillowGeometry"]);
 const glow = await load("../lib/beach/bamboo-shader.ts", { UYUNI_SKY_FUNCTIONS: "", UYUNI_SKY_UNIFORMS: "" }, ["BAMBOO_GLOW_VERT", "BAMBOO_GLOW_FRAG"]);
 const skyStubs = { BAIKAL_SKY_FUNCTIONS: "", BAIKAL_SKY_UNIFORMS: "", UYUNI_SKY_FUNCTIONS: "", UYUNI_SKY_UNIFORMS: "" };
 const materials = await load("../lib/beach/baikal-materials.ts", { ...layout, ...skyStubs },
   ["createBaikalUniforms", "createBaikalIceMaterial", "createBaikalHummockMaterial", "createBaikalGlassMaterial", "createBaikalSnowMaterial", "createBaikalDriftMaterial", "createBaikalFlameMaterial"]);
-const geometry = await load("../lib/beach/baikal-geometry.ts", { ...layout, ...materials, ...textiles, ...glow }, ["buildBaikalHummocks", "buildBaikalShore", "buildBaikalCabin"]);
+const cozy = await load("../lib/beach/baikal-cozy.ts", { ...layout }, ["applyCozyLighting", "createBaikalFurMaterial", "cushionGeometry", "curtainGeometry", "drapeGeometry", "furPatchGeometry", "logGeometry", "poufGeometry", "softBoxGeometry"]);
+const geometry = await load("../lib/beach/baikal-geometry.ts", { ...layout, ...materials, ...cozy, ...glow }, ["buildBaikalHummocks", "buildBaikalShore", "buildBaikalCabin"]);
 const snow = await load("../lib/beach/baikal-snow.ts", { ...layout, ...materials, ...trail }, ["BaikalSnow"]);
-const { BaikalWorld } = await load("../lib/beach/baikal.ts", { ...layout, ...materials, ...geometry, ...snow }, ["BaikalWorld"]);
+const vapor = await load("../lib/beach/baikal-vapor.ts", {}, ["BaikalVapor"]);
+const { BaikalWorld } = await load("../lib/beach/baikal.ts", { ...layout, ...materials, ...geometry, ...snow, ...vapor }, ["BaikalWorld"]);
 const daylight = await load("../lib/beach/daylight.ts", { process: { env: { NODE_ENV: "test" } }, URLSearchParams }, ["baikalDaylightAt", "rainOverride"]);
 const close = (a, b, tolerance = 1e-6) => assert.ok(Math.abs(a - b) < tolerance, `${a} ≈ ${b}`);
 const inRect = (rect, x, z) => x > rect.minX && x < rect.maxX && z > rect.minZ && z < rect.maxZ;
@@ -298,4 +299,72 @@ test("light pooling follows the nearest cabin and all three shader roof masks ma
   const mobileVisible = []; scene.traverse(o => { if (o.isPointLight && o.visible && o.name !== "baikal-seat-light") mobileVisible.push(o); });
   assert.equal(mobileVisible.length, 3, "mobile uses two pooled pendants and one stove");
   world.dispose();
+});
+
+test("upholstery is smooth and closed, with baked shade in its seams", () => {
+  const box = cozy.softBoxGeometry(1.2, .3, .9, { radius: .1, crown: .05, bulge: .02, wrinkle: .006, sag: .03, seed: 2.3, seg: 10 });
+  const position = box.getAttribute("position"), normal = box.getAttribute("normal"), color = box.getAttribute("color");
+  for (let i = 0; i < position.count; i++) {
+    const n = new THREE.Vector3().fromBufferAttribute(normal, i), p = new THREE.Vector3().fromBufferAttribute(position, i);
+    close(n.length(), 1, 1e-3);
+    assert.ok(n.dot(p) > 0, "normals point out of the cushion, including over the rounded seams");
+    assert.ok(color.getX(i) > 0 && color.getX(i) <= 1, "baked shade stays a multiplier");
+    assert.ok(Math.abs(p.x) <= .64 && Math.abs(p.y) <= .22 && Math.abs(p.z) <= .49, "the ballooning stays close to the nominal size");
+  }
+  box.computeBoundingBox(); assert.ok(box.boundingBox.max.y > .15 + .02, "the top panel crowns above the frame");
+  // Every edge of a scatter cushion borders at least two triangles: no holes along the seam, even at the pinched corners.
+  const pillow = cozy.cushionGeometry(.5, .5, .2, 1.3, 12), index = pillow.index.array, edges = new Map();
+  for (let i = 0; i < index.length; i += 3) for (const [a, b] of [[index[i], index[i + 1]], [index[i + 1], index[i + 2]], [index[i + 2], index[i]]]) {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`; edges.set(key, (edges.get(key) ?? 0) + 1);
+  }
+  assert.ok([...edges.values()].every(count => count >= 2));
+});
+
+test("every cozy light sits inside the room, the stove leads the list and spots hang from the ceiling", () => {
+  const lights = layout.BAIKAL_COZY_LIGHTS;
+  assert.ok(lights.length >= 8 && lights.length <= 16, "bounded per-pixel loop");
+  assert.equal(lights[0].x, -23.4, "the stove is index 0, which the shader flickers");
+  for (const l of lights) {
+    assert.ok(l.x > c.minX && l.x < c.maxX && l.z > c.minZ && l.z < c.maxZ, "inside the first room's walls");
+    assert.ok(l.power > 0 && l.r > 0 && l.g > 0 && l.b > 0);
+    if (l.spot) assert.ok(l.y < layout.baikalRoofHeight(l.x) - .22 && l.y > c.floorY + 3, "a ceiling spot hangs just under the boards");
+  }
+  const uniforms = materials.createBaikalUniforms({ uTime: { value: 0 } });
+  assert.equal(uniforms.uCozyPos.value.length, lights.length); assert.equal(uniforms.uRoomOrigins.value.length, layout.BAIKAL_CABINS.length);
+  close(uniforms.uCozyPos.value[0].w, lights[0].power);
+});
+
+test("the furnished room is one instanced model tinted per stop, with flames, steam and fur", () => {
+  const scene = new THREE.Scene(), sky = { uTime: { value: 0 }, uStars: { value: 1 } };
+  const world = new BaikalWorld(scene, sky, { wood: new THREE.Texture(), cotton: new THREE.Texture() }, false);
+  for (const name of ["baikal-floor", "baikal-boucle", "baikal-throws", "baikal-rug", "baikal-slate", "baikal-ceramic"]) {
+    const mesh = scene.getObjectByName(name);
+    assert.ok(mesh?.isInstancedMesh, `${name} is instanced`); assert.equal(mesh.count, layout.BAIKAL_CABINS.length);
+  }
+  const boucle = scene.getObjectByName("baikal-boucle"), first = new THREE.Color(), third = new THREE.Color();
+  boucle.getColorAt(0, first); boucle.getColorAt(2, third); assert.notEqual(first.getHex(), third.getHex(), "each stop has its own palette");
+  assert.ok(scene.getObjectByName("baikal-candle-flames").count >= 12);
+  assert.ok(scene.getObjectByName("baikal-sheepskin").geometry.instanceCount > 8, "fur is drawn in shells");
+  const camera = new THREE.PerspectiveCamera(), fur = scene.getObjectByName("baikal-sheepskin");
+  world.update(1, camera, { x: -22, z: 6 }, null); assert.equal(fur.visible, true);
+  world.update(2, camera, { x: 40, z: 40 }, null); assert.equal(fur.visible, false, "fur is only drawn up close");
+  const vapor = scene.getObjectByName("baikal-chimney-smoke");
+  assert.ok(vapor.geometry.instanceCount > 50); assert.equal(vapor.material.uniforms.uTime, world.shared.uTime);
+  world.dispose(); assert.equal(scene.children.length, 0);
+});
+
+test("without a live renderer there is no bake and no print stage: the world draws straight through", () => {
+  const scene = new THREE.Scene(), world = new BaikalWorld(scene, { uTime: { value: 0 }, uStars: { value: 0 } }, { wood: new THREE.Texture(), cotton: new THREE.Texture() }, false);
+  assert.equal(world.shared.uHasIceVolume.value, 0); assert.equal(world.shared.uHasRoomCube.value, 0);
+  let draws = 0; const camera = new THREE.PerspectiveCamera();
+  world.render({ render(target, view) { assert.equal(target, scene); assert.equal(view, camera); draws++; } }, camera);
+  assert.equal(draws, 1);
+  world.prepareRoomLight(); assert.equal(world.shared.uHasRoomOcc.value, 0, "nothing is baked for an absent renderer");
+  world.dispose();
+});
+
+test("the sky lights the far shore only at night and thins them in a storm", async () => {
+  const source = await readFile(new URL("../lib/beach/baikal-sky.ts", import.meta.url), "utf8");
+  assert.match(source, /baikalShoreLights\(d, far, night, storm\)/);
+  assert.match(source, /night < 0\.02/); assert.match(source, /1\.0 - storm \* 0\.72/);
 });
