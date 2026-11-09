@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Daylight } from "./daylight";
 import type { PavilionSeat } from "./bamboo-trail";
-import { BAIKAL_CABIN, BAIKAL_SEATS, insideBaikalCabin } from "./baikal-layout";
+import { BAIKAL_CABINS, BAIKAL_SEATS, insideBaikalCabin } from "./baikal-layout";
 import { type BaikalUniforms, createBaikalFlameMaterial, createBaikalIceMaterial, createBaikalUniforms } from "./baikal-materials";
 import { type BaikalTextures, buildBaikalCabin, buildBaikalHummocks, buildBaikalShore } from "./baikal-geometry";
 import { BaikalSnow } from "./baikal-snow";
@@ -50,7 +50,7 @@ class StoveFire {
   }
 }
 
-/** The frozen lake, its turquoise hummocks, the storm, and the one warm room on the shore. */
+/** A frozen-lake journey through three warm rooms to a quiet aurora viewpoint. */
 export class BaikalWorld {
   readonly root = new THREE.Group();
   readonly ice: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
@@ -59,7 +59,11 @@ export class BaikalWorld {
   private readonly shore: ReturnType<typeof buildBaikalShore>;
   private readonly cabin: ReturnType<typeof buildBaikalCabin>;
   private readonly snow: BaikalSnow;
-  private readonly fire: StoveFire;
+  private readonly fires: StoveFire[];
+  private journeyStage = 0;
+  private reveal = 0;
+  private activeCabin = -1;
+  private daylight: Daylight | null = null;
   private readonly village: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   private readonly hemi = new THREE.HemisphereLight(0xcfdcf0, 0x9aa7b8, 1.1);
   private readonly sun = new THREE.DirectionalLight(0xfff1dc, 1);
@@ -74,9 +78,11 @@ export class BaikalWorld {
   private lastTime = 0;
   private disposed = false;
 
-  constructor(scene: THREE.Scene, skyUniforms: Record<string, THREE.IUniform>, textures: BaikalTextures, mobile = false) {
+  constructor(private readonly scene: THREE.Scene, skyUniforms: Record<string, THREE.IUniform>, textures: BaikalTextures, mobile = false) {
     this.root.name = "baikal"; scene.add(this.root);
     this.shared = createBaikalUniforms(skyUniforms);
+    this.shared.uSnowPhoto.value = textures.snow ?? null; this.shared.uHasSnowPhoto.value = textures.snow ? 1 : 0;
+    this.shared.uIcePhoto.value = textures.ice ?? null; this.shared.uHasIcePhoto.value = textures.ice ? 1 : 0;
     this.time = this.shared.uTime;
     this.shared.uLayers.value = mobile ? 2 : 3;
     this.hemi.name = "baikal-sky-fill"; this.sun.name = "baikal-winter-sun"; this.sun.position.set(40, 30, -20); this.sun.castShadow = false;
@@ -88,9 +94,10 @@ export class BaikalWorld {
     this.shore = buildBaikalShore(this.root, this.shared, textures, mobile);
     this.hummocks = buildBaikalHummocks(this.root, this.shared, mobile);
     this.cabin = buildBaikalCabin(this.root, textures, this.shared, mobile);
-    this.fire = new StoveFire(this.root, this.cabin.hearth, this.time);
-    for (const [x, y, z] of [[-21.5, 3.3, 4.5], [-22.2, 3.4, 10], [-26.2, 2.9, 6]]) {
-      const light = new THREE.PointLight(0xffc27a, 0, 9, 2); light.position.set(x, y, z); light.castShadow = false; light.name = "baikal-pendant-light";
+    this.fires = this.cabin.hearths.map(hearth => new StoveFire(this.root, hearth, this.time));
+    // Reuse three real lights for the nearest room; far windows use merged emissive geometry.
+    for (const source of this.cabin.cabinLights.slice(0, 3)) {
+      const light = new THREE.PointLight(source.color, 0, 9, 2); light.position.copy(source.position); light.castShadow = false; light.name = "baikal-pendant-light";
       this.lamps.push(light); this.root.add(light);
     }
     if (mobile) this.lamps[2].visible = false;
@@ -109,6 +116,7 @@ export class BaikalWorld {
 
   applyDaylight(d: Daylight) {
     if (this.disposed) return;
+    this.daylight = d;
     const night = THREE.MathUtils.clamp(d.stars, 0, 1); this.night = night;
     const sunUp = d.sun[1] > .02, direction = sunUp ? d.sun : d.moon;
     this.hemi.color.setRGB(...d.skyHorizon, THREE.SRGBColorSpace).lerp(new THREE.Color(0x8fa6cf), night * .6);
@@ -124,13 +132,15 @@ export class BaikalWorld {
     this.cabin.applyNight(this.lampAmount);
     this.shared.uLamp.value = this.lampAmount;
     (this.shared.uCabinLight.value as THREE.Vector4).w = THREE.MathUtils.smoothstep(night, .35, .95);
+    for (const light of this.shared.uCabinLights.value) light.w = this.shared.uCabinLight.value.w;
     for (const lamp of this.lamps) lamp.intensity = 14 + 40 * this.lampAmount;
     this.applyFog(d);
   }
 
   /** Fog distances follow the storm and open up indoors so the room stays crisp while the window goes white. */
   applyFog(d: Daylight, inside = false) {
-    const near = d.fogNear * (1 - this.storm * .8), far = d.fogFar * (1 - this.storm * .75) * (inside ? 2.2 : 1);
+    const storm = this.shared.uStorm.value;
+    const near = d.fogNear * (1 - storm * .8), far = d.fogFar * (1 - storm * .75) * (inside ? 2.2 : 1);
     this.shared.uFogNear.value = near; this.shared.uFogFar.value = far;
   }
   get fogNear() { return this.shared.uFogNear.value; }
@@ -139,9 +149,15 @@ export class BaikalWorld {
   setStorm(amount: number) {
     if (this.disposed) return;
     this.storm = Number.isFinite(amount) ? THREE.MathUtils.clamp(amount, 0, 1) : 1;
-    this.shared.uStorm.value = this.storm;
+    this.shared.uStorm.value = this.storm * (1 - this.reveal * .94);
   }
   get stormAmount() { return this.storm; }
+
+  /** A personal view reward, never a weather/time mutation sent to other visitors. */
+  setJourney(stage: number) {
+    if (this.disposed) return;
+    this.journeyStage = Number.isInteger(stage) && stage >= 0 && stage <= 3 ? stage : 0;
+  }
 
   /** A warm reading light follows the seat the server confirmed, never the walking position. */
   setSeat(seat: { spotId: string; slot: number } | null | undefined) {
@@ -155,9 +171,33 @@ export class BaikalWorld {
     const at = self ?? camera.position;
     this.shared.uWalker.value.set(at.x, at.z);
     this.ice.position.set(camera.position.x, 0, camera.position.z);
-    this.snow.update(time, this.storm);
-    this.fire.update(time, this.night);
-    this.village.material.opacity = this.night * (1 - this.storm) * .9;
+    const final = BAIKAL_CABINS[2];
+    const distance = Math.hypot(at.x - final.x, at.z - final.z);
+    const reward = this.journeyStage === 3 ? 1 - THREE.MathUtils.smoothstep(distance, 20, 62) : 0;
+    this.reveal += (reward - this.reveal) * (1 - Math.exp(-dt * .65));
+    this.shared.uAurora.value = this.reveal;
+    this.shared.uStorm.value = this.storm * (1 - this.reveal * .94);
+    this.snow.update(time, this.shared.uStorm.value);
+    let closest = 0, nearest = Infinity;
+    for (let i = 0; i < BAIKAL_CABINS.length; i++) {
+      const c = BAIKAL_CABINS[i], d = (at.x - c.x) ** 2 + (at.z - c.z) ** 2;
+      if (d < nearest) { nearest = d; closest = i; }
+    }
+    if (closest !== this.activeCabin) {
+      this.activeCabin = closest;
+      this.lamps.forEach((lamp, index) => {
+        const source = this.cabin.cabinLights[closest * 3 + index];
+        lamp.position.copy(source.position); lamp.color.setHex(source.color);
+      });
+    }
+    this.fires.forEach((fire, index) => { fire.update(time, this.night); fire.light.visible = index === closest; });
+    this.village.material.opacity = this.night * (1 - this.shared.uStorm.value) * .9;
+    if (this.daylight) {
+      this.applyFog(this.daylight, insideBaikalCabin(at.x, at.z));
+      if (this.scene.fog instanceof THREE.Fog) {
+        this.scene.fog.near = this.fogNear; this.scene.fog.far = this.fogFar;
+      }
+    }
     if (seat !== undefined) this.setSeat(seat);
     const target = this.seatTarget;
     const wanted = target ? 1 : 0;
@@ -183,11 +223,11 @@ export class BaikalWorld {
 
   dispose() {
     if (this.disposed) return; this.disposed = true;
-    this.snow.dispose(); this.fire.dispose(); this.cabin.dispose(); this.hummocks.dispose(); this.shore.dispose();
+    this.snow.dispose(); for (const fire of this.fires) fire.dispose(); this.cabin.dispose(); this.hummocks.dispose(); this.shore.dispose();
     this.village.geometry.dispose(); this.village.material.dispose();
     this.ice.geometry.dispose(); this.ice.material.dispose();
     for (const lamp of this.lamps) lamp.dispose(); this.seatLight.dispose(); this.sun.dispose(); this.hemi.dispose();
     this.root.removeFromParent(); this.root.clear();
-    void BAIKAL_CABIN;
+
   }
 }

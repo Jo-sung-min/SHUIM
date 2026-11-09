@@ -514,8 +514,15 @@ export class BeachEngine {
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
       const cotton = this.loadEnvironmentTexture("/beach/real/white-cotton-v1.webp", true);
       wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
-      this.baikalTextures = [wood, cotton];
-      this.baikal = new BaikalWorld(this.scene, this.skyMat.uniforms, { wood, cotton }, this.mobile);
+      // Baikal artwork is bundled in Git until its separate AWS upload is requested.
+      const snow = this.loadEnvironmentTexture(this.mobile ? "/baikal/art/snow-natural-mobile-v1.webp" : "/baikal/art/snow-natural-v1.webp");
+      const ice = this.loadEnvironmentTexture(this.mobile ? "/baikal/art/lake-ice-mobile-v1.webp" : "/baikal/art/lake-ice-v1.webp");
+      for (const texture of [snow, ice]) {
+        texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+        texture.anisotropy = Math.min(this.mobile ? 4 : 8, this.renderer.capabilities.getMaxAnisotropy());
+      }
+      this.baikalTextures = [wood, cotton, snow, ice];
+      this.baikal = new BaikalWorld(this.scene, this.skyMat.uniforms, { wood, cotton, snow, ice }, this.mobile);
       this.cove = this.baikal;
       this.eyeHeight = baikalFloorHeight(this.self.x, this.self.z) + EYE;
       // Arrive in the storm as it is now rather than watching it build from a clear sky.
@@ -629,7 +636,7 @@ export class BeachEngine {
         uCloudColor: { value: new THREE.Vector3() }, uCloudAmount: { value: 0.45 },
         uHorizonFog: { value: new THREE.Vector3(0.5, 0.6, 0.4) },
         uBambooSunset: { value: 0 },
-        uStorm: { value: 0 },
+        uStorm: { value: 0 }, uAurora: { value: 0 },
       },
       vertexShader: SKY_VERT,
       fragmentShader: this.mapId === "baikal" ? BAIKAL_SKY_FRAGMENT : this.mapId === "cloudspa" ? CLOUD_SPA_SKY_FRAGMENT : this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : this.mapId === "bamboo" ? BAMBOO_SKY_FRAGMENT : this.mapId === "garden" ? GARDEN_SKY_FRAGMENT : SKY_FRAGMENT,
@@ -1493,6 +1500,9 @@ export class BeachEngine {
     this.cancelAuto("cancelled");
     this.self.moving = false;
   }
+
+  /** Personal exploration reward; the shared room clock and weather remain authoritative. */
+  setBaikalJourney(stage: number) { this.baikal?.setJourney(stage); }
 
   /* ---------------- 시간대 ---------------- */
   setHourOverride(h: number | null) {

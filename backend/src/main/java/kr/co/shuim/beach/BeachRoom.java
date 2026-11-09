@@ -150,7 +150,18 @@ public class BeachRoom {
         new Pavilion("baikal-side", -22, 11, 0, -1, BAIKAL_SIDE_SEAT_LOCAL, BeachMap.BAIKAL),
         new Pavilion("baikal-hearth", -23.4, 1.4, 0, -1, BAIKAL_HEARTH_SEAT_LOCAL, BeachMap.BAIKAL),
         new Pavilion("baikal-chair", -18.6, 12.2, 1, 0, BAIKAL_CHAIR_SEAT_LOCAL, BeachMap.BAIKAL),
-        new Pavilion("baikal-porch", -14.6, 9.4, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL));
+        new Pavilion("baikal-porch", -14.6, 9.4, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL),
+        // The midway refuge and far aurora cabin share the first cabin's arrangement, with independent seats.
+        new Pavilion("baikal-refuge-sofa", 12, -71.95, 1, 0, BAIKAL_SOFA_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-refuge-side", 13, -67, 0, -1, BAIKAL_SIDE_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-refuge-hearth", 11.6, -76.6, 0, -1, BAIKAL_HEARTH_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-refuge-chair", 16.4, -65.8, 1, 0, BAIKAL_CHAIR_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-refuge-porch", 20.4, -68.6, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-aurora-sofa", 65, -194.95, 1, 0, BAIKAL_SOFA_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-aurora-side", 66, -190, 0, -1, BAIKAL_SIDE_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-aurora-hearth", 64.6, -199.6, 0, -1, BAIKAL_HEARTH_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-aurora-chair", 69.4, -188.8, 1, 0, BAIKAL_CHAIR_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-aurora-porch", 73.4, -191.6, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }

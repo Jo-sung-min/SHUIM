@@ -138,3 +138,19 @@ test("actual Three.js loading entry points request CDN textures and models with 
   assert.deepEqual(new Set(requests), new Set(expected.map(path => CDN + path)));
   lanterns.dispose(); fireworks.dispose(); campfire.dispose();
 });
+
+test("unuploaded Baikal photo textures stay bundled locally even with a CDN override", async () => {
+  let mobileBytes = 0;
+  for (const name of ["snow-natural", "lake-ice"]) {
+    for (const suffix of ["", "-mobile"]) {
+      const path = `/baikal/art/${name}${suffix}-v1.webp`;
+      for (const base of [undefined, CDN, "https://media.example.com/static"])
+        assert.equal(assetsFor(base).assetUrl(path), path);
+      const bytes = await readFile(new URL(`../public${path}`, import.meta.url));
+      assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+      assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+      if (suffix) mobileBytes += bytes.length;
+    }
+  }
+  assert.ok(mobileBytes < 400_000, "the two mobile textures stay within a 400 KB transfer budget");
+});

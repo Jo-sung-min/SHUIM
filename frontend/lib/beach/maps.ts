@@ -38,8 +38,8 @@ export const MAPS = {
   },
   baikal: {
     id: "baikal", name: "바이칼", path: "/baikal",
-    eyebrow: "눈보라 속 따뜻한 산장",
-    description: "끝없는 얼음 호수와 청록 얼음 덩어리, 눈보라 치는 밤 벽난로가 타는 통창 산장에서 함께 쉬어요.",
+    eyebrow: "세 번의 온기, 끝에서 만나는 오로라",
+    description: "눈과 푸른 얼음 호수를 건너 세 산장을 찾아가요. 멀리 닿은 마지막 산장에서는 밤하늘의 오로라가 펼쳐져요.",
     welcome: "눈보라를 지나 산장의 불빛으로 들어와요.",
     loading: "바이칼로 가는 중", loadingDetail: "눈보라 너머 산장의 불빛으로",
   },

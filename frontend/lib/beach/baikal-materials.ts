@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { BAIKAL_SKY_FUNCTIONS, BAIKAL_SKY_UNIFORMS } from "./baikal-sky";
-import { BAIKAL_CABIN, baikalRoofHeight } from "./baikal-layout";
+import { BAIKAL_CABIN, BAIKAL_CABINS, baikalRoofHeight } from "./baikal-layout";
 
 /**
  * Everything cold shares one uniform set: the sky palette (reflections), the storm, fog, and the warm light spilling
@@ -24,12 +24,21 @@ export interface BaikalUniforms {
   uRoof: THREE.IUniform<THREE.Vector4>;
   uRoofLine: THREE.IUniform<THREE.Vector2>;
   uLamp: THREE.IUniform<number>;
+  uAurora: THREE.IUniform<number>;
+  uRoofs: THREE.IUniform<THREE.Vector4[]>;
+  uRoofLines: THREE.IUniform<THREE.Vector2[]>;
+  uCabinLights: THREE.IUniform<THREE.Vector4[]>;
+  uSnowPhoto: THREE.IUniform<THREE.Texture | null>;
+  uIcePhoto: THREE.IUniform<THREE.Texture | null>;
+  uHasSnowPhoto: THREE.IUniform<number>;
+  uHasIcePhoto: THREE.IUniform<number>;
 }
 export function createBaikalUniforms(skyUniforms: Record<string, THREE.IUniform>): BaikalUniforms {
   const c = BAIKAL_CABIN, slope = (baikalRoofHeight(c.maxX) - baikalRoofHeight(c.minX)) / (c.maxX - c.minX);
   const storm = skyUniforms.uStorm ?? (skyUniforms.uStorm = { value: 0 });
+  const aurora = skyUniforms.uAurora ?? (skyUniforms.uAurora = { value: 0 });
   return {
-    ...skyUniforms, uStorm: storm,
+    ...skyUniforms, uStorm: storm, uAurora: aurora,
     uTime: skyUniforms.uTime ?? { value: 0 },
     uFogColor: { value: new THREE.Vector3(.8, .86, .92) }, uFogNear: { value: 60 }, uFogFar: { value: 320 },
     uCabinLight: { value: new THREE.Vector4(c.maxX, (c.minZ + c.maxZ) / 2, (c.maxZ - c.minZ) / 2, 0) },
@@ -38,15 +47,25 @@ export function createBaikalUniforms(skyUniforms: Record<string, THREE.IUniform>
     uRoof: { value: new THREE.Vector4(c.minX - .4, c.eaveMaxX + .6, c.minZ - c.sideEave, c.maxZ + c.sideEave) },
     uRoofLine: { value: new THREE.Vector2(baikalRoofHeight(0), slope) },
     uLamp: { value: 1 },
+    uRoofs: { value: BAIKAL_CABINS.map(c => new THREE.Vector4(c.minX - .4, c.eaveMaxX + .6, c.minZ - c.sideEave, c.maxZ + c.sideEave)) },
+    uRoofLines: { value: BAIKAL_CABINS.map(c => new THREE.Vector2(baikalRoofHeight(0, c), slope)) },
+    uCabinLights: { value: BAIKAL_CABINS.map(c => new THREE.Vector4(c.maxX, c.z, (c.maxZ - c.minZ) / 2, 0)) },
+    uSnowPhoto: { value: null }, uIcePhoto: { value: null }, uHasSnowPhoto: { value: 0 }, uHasIcePhoto: { value: 0 },
   };
 }
 
 const COMMON = `
+uniform vec4 uCabinLights[3];
 float cabinWarmth(vec2 p, vec4 light) {
   float ahead = p.x - light.x;
   float spread = light.z + max(ahead, 0.0) * 0.45;
   float across = abs(p.y - light.y) / max(spread, 0.1);
   return smoothstep(0.0, 1.0, ahead / 2.0) * (1.0 - smoothstep(0.0, 28.0, ahead)) * exp(-across * across * 2.2) * light.w;
+}
+float cabinGlow(vec2 p) {
+  float glow = 0.0;
+  for (int i = 0; i < 3; i++) glow = max(glow, cabinWarmth(p, uCabinLights[i]));
+  return glow;
 }
 vec2 iceHash2(vec2 p) {
   p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
@@ -71,6 +90,30 @@ float frostNoise(vec2 p) {
 }
 `;
 
+/** Four overlapping photographic patches avoid mirrored diamonds and visible image seams. */
+const ICE_PHOTO_FUNCTIONS = `
+vec3 icePhotoPatch(vec2 local, vec2 cell) {
+  vec2 seed = iceHash2(cell + 71.3);
+  float turn = floor(seed.x * 4.0);
+  if (turn < 1.0) local = local;
+  else if (turn < 2.0) local = vec2(-local.y, local.x);
+  else if (turn < 3.0) local = -local;
+  else local = vec2(local.y, -local.x);
+  // Every lookup stays inside the photograph; no repeated or mirrored edge is ever sampled.
+  vec2 uv = 0.5 + local * 0.34 + (iceHash2(cell + 93.7) - 0.5) * 0.24;
+  return texture2D(uIcePhoto, uv).rgb;
+}
+vec3 lakeIcePhoto(vec2 world) {
+  vec2 p = world / 9.0, cell = floor(p), f = fract(p);
+  vec2 blend = f * f * (3.0 - 2.0 * f);
+  vec3 a = icePhotoPatch(f, cell);
+  vec3 b = icePhotoPatch(f - vec2(1.0, 0.0), cell + vec2(1.0, 0.0));
+  vec3 c = icePhotoPatch(f - vec2(0.0, 1.0), cell + vec2(0.0, 1.0));
+  vec3 d = icePhotoPatch(f - vec2(1.0), cell + vec2(1.0));
+  return pow(mix(mix(a, b, blend.x), mix(c, d, blend.x), blend.y), vec3(1.0 / 2.2));
+}
+`;
+
 /* ---------------- the frozen lake, snow mounds and the shore ---------------- */
 const ICE_VERT = `
 attribute float aLift;
@@ -86,7 +129,7 @@ void main() {
   vLift = aLift;
   #endif
   vec4 world = m * vec4(position, 1.0);
-  vWorld = world.xyz; vNormal = normalize(mat3(m) * normal);
+  vWorld = world.xyz; vNormal = normalize(mat3(m) * (normal / vec3(dot(m[0].xyz, m[0].xyz), dot(m[1].xyz, m[1].xyz), dot(m[2].xyz, m[2].xyz))));
   gl_Position = projectionMatrix * viewMatrix * world;
 }`;
 const ICE_FRAG = `
@@ -98,11 +141,16 @@ uniform vec4 uCabinLight;
 uniform float uLayers;
 uniform vec2 uWalker;
 uniform float uSnowShift;
+uniform sampler2D uSnowPhoto;
+uniform sampler2D uIcePhoto;
+uniform float uHasSnowPhoto;
+uniform float uHasIcePhoto;
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vLift;
 ${BAIKAL_SKY_FUNCTIONS}
 ${COMMON}
+${ICE_PHOTO_FUNCTIONS}
 void main() {
   vec3 toCam = cameraPosition - vWorld;
   float dist = max(length(toCam), 0.001);
@@ -114,11 +162,21 @@ void main() {
   // Snow lies in drifts streaked along the wind; the mound, the bank and the deck are always covered.
   float n1 = beachSkyNoise(p * 0.045), n2 = beachSkyNoise(p * 0.11 + 7.0);
   float streak = beachSkyNoise(vec2(p.x * 0.09 + p.y * 0.02, p.y * 0.6 + p.x * 0.15));
-  float snow = smoothstep(0.40, 0.60, n1 * 0.6 + n2 * 0.25 + streak * 0.15 + uSnowShift);
+  float snow = smoothstep(0.47, 0.68, n1 * 0.6 + n2 * 0.25 + streak * 0.15 + uSnowShift);
   snow = max(snow, vLift);
   // Gentle undulation gives the mirror its rough, frozen look.
   vec2 slope = (vec2(beachSkyNoise(p * 1.7), beachSkyNoise(p * 1.7 + 3.1)) - 0.5) * 0.05
     + (vec2(beachSkyNoise(p * 0.3), beachSkyNoise(p * 0.3 + 9.0)) - 0.5) * 0.03;
+  vec3 snowPhoto = vec3(0.94);
+  if (uHasSnowPhoto > 0.5 && snow > 0.01) {
+    // Photographic grains remain stable in world space; mipmaps remove distant shimmer.
+    vec2 uv = p * 0.24;
+    snowPhoto = pow(texture2D(uSnowPhoto, uv).rgb, vec3(1.0 / 2.2));
+    float h = dot(snowPhoto, vec3(0.3333));
+    float hx = pow(texture2D(uSnowPhoto, uv + vec2(0.002, 0.0)).r, 1.0 / 2.2);
+    float hz = pow(texture2D(uSnowPhoto, uv + vec2(0.0, 0.002)).r, 1.0 / 2.2);
+    slope += vec2(h - hx, h - hz) * 2.0 * snow * (1.0 - smoothstep(12.0, 45.0, dist));
+  }
   vec3 n = normalize(gn + vec3(-slope.x, 0.0, -slope.y));
   float facing = clamp(dot(v, n), 0.0, 1.0);
   float fresnel = pow(1.0 - facing, 4.0);
@@ -126,18 +184,25 @@ void main() {
   vec3 skyRef = baikalSky(normalize(refl));
   // Cracks in parallax layers: each deeper sheet is shifted along the view ray, so the web of fractures reads as depth.
   vec2 vp = v.xz / max(v.y, 0.12);
-  float c0 = iceCracks((p - vp * 0.12) * 0.55, 0.06);
-  float c1 = iceCracks((p - vp * 0.42) * 0.8 + 17.0, 0.075) * 0.6;
-  vec3 crackColor = vec3(0.62, 0.88, 0.92) * c0 + vec3(0.45, 0.78, 0.85) * c1 * (1.0 - c0 * 0.6);
-  if (uLayers > 2.5) {
-    float c2 = iceCracks((p - vp * 0.9) * 1.05 + 41.0, 0.09) * 0.35;
-    crackColor += vec3(0.35, 0.65, 0.75) * c2 * (1.0 - (c0 + c1) * 0.6);
+  vec3 crackColor = vec3(0.0), photoIce = vec3(0.0);
+  if (uHasIcePhoto > 0.5) {
+    // Long, feathered fracture sheets from the photo. A subtle second depth moves under the surface.
+    photoIce = lakeIcePhoto(p - vp * 0.16);
+    if (uLayers > 2.5) {
+      vec3 deeper = lakeIcePhoto((p - vp * 0.68) * 0.72 + vec2(13.7, 8.1));
+      photoIce += vec3(0.16, 0.26, 0.30) * smoothstep(0.32, 0.74, deeper.g) * 0.18;
+    }
+  } else {
+    float c0 = iceCracks((p - vp * 0.12) * 0.55, 0.06);
+    float c1 = iceCracks((p - vp * 0.42) * 0.8 + 17.0, 0.075) * 0.6;
+    crackColor = vec3(0.62, 0.88, 0.92) * c0 + vec3(0.45, 0.78, 0.85) * c1 * (1.0 - c0 * 0.6);
   }
   float bubbles = beachSkyNoise((p - vp * 0.3) * 3.5) * beachSkyNoise((p - vp * 0.5) * 7.0 + 2.0);
   float sunUp = clamp(uSun.y * 3.0, 0.0, 1.0);
   vec3 body = mix(vec3(0.02, 0.055, 0.09), vec3(0.03, 0.10, 0.14), sunUp);
   vec3 ice = body + vec3(0.05, 0.19, 0.23) * pow(bubbles, 2.0) * (0.3 + 0.5 * sunUp) + crackColor * (0.35 + 0.12 * sunUp);
   ice += vec3(0.03, 0.14, 0.17) * (0.25 + 0.6 * sunUp) * (1.0 - fresnel) * 0.6;
+  if (uHasIcePhoto > 0.5) ice = photoIce * (0.48 + 0.52 * sunUp) + vec3(0.005, 0.018, 0.025);
   // By day the sheet shows its depth; the bright sky only takes over at grazing angles.
   float mirror = clamp(mix(0.22, 0.1, sunUp) + fresnel * mix(0.78, 0.88, sunUp), 0.0, 1.0);
   vec3 iceColor = mix(ice, skyRef, mirror);
@@ -148,12 +213,12 @@ void main() {
   vec3 skyAmb = mix(uSkyHorizon, uSkyTop, 0.45) * (1.0 - storm * 0.15) + vec3(0.1) * storm * (1.0 - night);
   float wrap = dot(n, sunDir) * 0.5 + 0.5;
   float sastrugi = beachSkyNoise(vec2(p.x * 0.35 + p.y * 0.08, p.y * 2.2 + p.x * 0.5));
-  vec3 snowBase = vec3(0.93, 0.95, 0.98) * (0.88 + 0.12 * sastrugi);
-  vec3 snowColor = snowBase * (skyAmb * 0.95 + sunCol * sunStrength * (0.22 + 0.5 * wrap));
+  vec3 snowBase = mix(vec3(0.93, 0.95, 0.98), snowPhoto, uHasSnowPhoto) * (0.88 + 0.12 * sastrugi);
+  vec3 snowColor = snowBase * (skyAmb * 0.72 + sunCol * sunStrength * (0.16 + 0.40 * wrap));
   float glint = pow(beachSkyHash(floor(p * 48.0)), 60.0) * sunStrength * (1.0 - night) * (1.0 - smoothstep(6.0, 40.0, dist));
-  snowColor += vec3(glint * 0.4);
+  snowColor += vec3(glint * 0.14);
   vec3 color = mix(iceColor, snowColor, snow);
-  color += vec3(1.0, 0.62, 0.3) * cabinWarmth(p, uCabinLight) * (0.55 + 0.45 * snow);
+  color += vec3(1.0, 0.62, 0.3) * cabinGlow(p) * (0.55 + 0.45 * snow);
   color = mix(color, uFogColor, smoothstep(uFogNear, uFogFar, dist));
   gl_FragColor = vec4(color, 1.0);
 }`;
@@ -181,11 +246,15 @@ void main() {
   m = m * instanceMatrix;
   #endif
   vec4 world = m * vec4(position, 1.0);
-  vWorld = world.xyz; vNormal = normalize(mat3(m) * normal); vLocal = position; vThick = aThick; vInst = aInst;
+  vWorld = world.xyz; vNormal = normalize(mat3(m) * (normal / vec3(dot(m[0].xyz, m[0].xyz), dot(m[1].xyz, m[1].xyz), dot(m[2].xyz, m[2].xyz)))); vLocal = position; vThick = aThick; vInst = aInst;
   gl_Position = projectionMatrix * viewMatrix * world;
 }`;
 const HUMMOCK_FRAG = `
 ${BAIKAL_SKY_UNIFORMS}
+uniform sampler2D uIcePhoto;
+uniform sampler2D uSnowPhoto;
+uniform float uHasIcePhoto;
+uniform float uHasSnowPhoto;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -224,17 +293,29 @@ void main() {
   float facet = skyNoise3D(vLocal * 2.6 + vInst.x * 5.0) * 0.5 + skyNoise3D(vLocal * 5.3 - vInst.x * 3.0) * 0.5;
   vec3 color = mix(deep, bright, clamp(0.15 + veins * 0.45 + vThick * 0.25 + (facet - 0.5) * 0.5, 0.0, 1.0));
   color *= (0.5 + 0.5 * wrap * lightStrength) * (0.55 + 0.6 * clamp(ambient, 0.0, 1.0)) * (0.75 + 0.5 * facet);
-  color += bright * trans * lightStrength * 1.2;
-  color += rim * fresnel * 0.5 * (0.4 + 0.6 * lightStrength);
-  color += vec3(0.6, 0.9, 0.9) * bubbles * 0.35 * (0.5 + 0.5 * lightStrength);
+  if (uHasIcePhoto > 0.5) {
+    // Project the same real fracture sheets onto all faces instead of blurry procedural bubbles.
+    vec3 weight = pow(abs(n), vec3(4.0)); weight /= max(dot(weight, vec3(1.0)), 0.001);
+    vec3 wp = (vWorld + v * 0.14) * 0.17;
+    vec3 photo = texture2D(uIcePhoto, wp.yz).rgb * weight.x
+      + texture2D(uIcePhoto, wp.xz).rgb * weight.y
+      + texture2D(uIcePhoto, wp.xy).rgb * weight.z;
+    photo = pow(photo, vec3(1.0 / 2.2));
+    color = photo * (0.5 + wrap * lightStrength * 0.5) + deep * 0.10;
+  }
+  color += bright * trans * lightStrength * 0.36;
+  color += rim * fresnel * 0.24 * (0.4 + 0.6 * lightStrength);
+  color += vec3(0.6, 0.9, 0.9) * bubbles * 0.08 * (0.5 + 0.5 * lightStrength);
   vec3 refl = reflect(-v, n); refl.y = abs(refl.y) + 0.02;
   color = mix(color, baikalSky(normalize(refl)), fresnel * 0.5);
   // At night the ice keeps a faint inner glow, and the hummocks near the cabin catch its warmth.
   color += deep * 0.45 * night;
-  float cap = smoothstep(0.45, 0.8, n.y) * vInst.y;
-  vec3 snow = vec3(0.92, 0.94, 0.97) * (ambient * 0.9 + lightCol * lightStrength * (0.3 + 0.5 * wrap));
+  float cap = smoothstep(0.55, 0.92, n.y) * vInst.y;
+  cap *= 0.70 + 0.30 * frostNoise(vWorld.xz * 2.4);
+  vec3 snowGrain = uHasSnowPhoto > 0.5 ? pow(texture2D(uSnowPhoto, vWorld.xz * 0.24).rgb, vec3(1.0 / 2.2)) : vec3(0.92, 0.94, 0.97);
+  vec3 snow = snowGrain * (ambient * 0.66 + lightCol * lightStrength * (0.18 + 0.34 * wrap));
   color = mix(color, snow, cap);
-  color += vec3(1.0, 0.62, 0.3) * cabinWarmth(vWorld.xz, uCabinLight) * 0.8;
+  color += vec3(1.0, 0.62, 0.3) * cabinGlow(vWorld.xz) * 0.8;
   color = mix(color, uFogColor, smoothstep(uFogNear, uFogFar, dist));
   gl_FragColor = vec4(color, 1.0);
 }`;
@@ -279,7 +360,7 @@ void main() {
   vec2 e = min(vUv, 1.0 - vUv) * vPane;
   float edge = min(e.x, e.y), corner = length(e);
   // Small panes (the stove door) stay clear; only the big wall glazing frosts over.
-  float reach = (0.07 + 0.15 * storm + 0.08 * night) * step(0.8, vPane.y);
+  float reach = (0.025 + 0.09 * storm + 0.025 * night) * step(0.8, vPane.y);
   float grain = frostNoise(metres * 6.0 + vPane * 3.0) * 0.6 + frostNoise(metres * 17.0 + 9.0) * 0.4;
   float frost = 1.0 - smoothstep(0.0, reach, edge + (grain - 0.5) * 0.14);
   frost = max(frost, (1.0 - smoothstep(0.0, reach * 1.8, corner + (grain - 0.5) * 0.2)) * 0.8);
@@ -326,6 +407,9 @@ uniform vec2 uWind;
 uniform vec2 uDrift;
 uniform vec4 uRoof;
 uniform vec2 uRoofLine;
+uniform vec4 uRoofs[3];
+uniform vec2 uRoofLines[3];
+uniform vec4 uCabinLights[3];
 uniform vec4 uCabinLight;
 varying float vAlpha;
 varying vec2 vUv;
@@ -343,8 +427,12 @@ void main() {
   float top = cameraPosition.y + column * 0.55;
   float y = top - mod(uTime * fallSpeed + aFlake.z * column * 3.0, column);
   // Nothing falls under the roof or the porch eave, and nothing below the ice.
-  float roofY = uRoofLine.x + uRoofLine.y * site.x;
-  float underRoof = step(uRoof.x, site.x) * step(site.x, uRoof.y) * step(uRoof.z, site.y) * step(site.y, uRoof.w) * step(y, roofY);
+  float underRoof = 0.0;
+  for (int i = 0; i < 3; i++) {
+    vec4 roof = uRoofs[i];
+    float roofY = uRoofLines[i].x + uRoofLines[i].y * site.x;
+    underRoof = max(underRoof, step(roof.x, site.x) * step(site.x, roof.y) * step(roof.z, site.y) * step(site.y, roof.w) * step(y, roofY));
+  }
   float aboveGround = step(-0.15, y);
   vec3 origin = vec3(site.x, y, site.y);
   // The quad stretches along its own velocity in view space: nearby flakes streak, distant ones stay dots.
@@ -359,10 +447,14 @@ void main() {
   vc.xy += perp * position.x * size + dir * position.y * size * stretch;
   float distanceToCamera = length(offset), edge = max(abs(offset.x), abs(offset.y)) / (span * 0.5);
   vAlpha = (1.0 - smoothstep(0.7, 1.0, edge)) * smoothstep(0.3, 1.2, distanceToCamera) * (1.0 - underRoof) * aboveGround * mix(1.0, 0.7, aFlake.w);
-  float ahead = site.x - uCabinLight.x;
-  float spread = uCabinLight.z + max(ahead, 0.0) * 0.45;
-  float across = abs(site.y - uCabinLight.y) / max(spread, 0.1);
-  vWarm = smoothstep(0.0, 1.0, ahead / 2.0) * (1.0 - smoothstep(0.0, 22.0, ahead)) * exp(-across * across * 2.2) * uCabinLight.w * step(y, 7.5);
+  vWarm = 0.0;
+  for (int i = 0; i < 3; i++) {
+    vec4 light = uCabinLights[i];
+    float ahead = site.x - light.x;
+    float spread = light.z + max(ahead, 0.0) * 0.45;
+    float across = abs(site.y - light.y) / max(spread, 0.1);
+    vWarm = max(vWarm, smoothstep(0.0, 1.0, ahead / 2.0) * (1.0 - smoothstep(0.0, 22.0, ahead)) * exp(-across * across * 2.2) * light.w * step(y, 7.5));
+  }
   gl_Position = projectionMatrix * vc;
 }`;
 const SNOW_FRAG = `
@@ -374,7 +466,7 @@ varying float vWarm;
 void main() {
   vec2 p = vUv * 2.0 - 1.0;
   float r = length(p);
-  float a = (1.0 - smoothstep(0.35, 1.0, r)) * vAlpha * (0.45 + 0.55 * clamp(uStorm, 0.0, 1.0));
+  float a = (1.0 - smoothstep(0.35, 1.0, r)) * vAlpha * (0.12 + 0.88 * clamp(uStorm, 0.0, 1.0));
   if (a < 0.01) discard;
   float night = smoothstep(0.25, 0.95, uStars);
   vec3 flake = mix(vec3(0.96, 0.97, 1.0), vec3(0.62, 0.70, 0.85), night);
@@ -399,6 +491,7 @@ uniform float uTime;
 uniform vec2 uDrift;
 uniform float uSpan;
 uniform vec4 uRoof;
+uniform vec4 uRoofs[3];
 varying vec2 vUv;
 varying float vFade;
 varying vec2 vSeed;
@@ -408,7 +501,11 @@ void main() {
   vec2 offset = mod(base - cameraPosition.xz + uSpan * 0.5, uSpan) - uSpan * 0.5;
   vec3 pos = vec3(cameraPosition.x + offset.x, aSheet.y + sin(uTime * 0.8 + aSeed.y * 20.0) * 0.15, cameraPosition.z + offset.y);
   float d = length(offset);
-  float indoors = step(uRoof.x, pos.x) * step(pos.x, uRoof.y) * step(uRoof.z, pos.z) * step(pos.z, uRoof.w);
+  float indoors = 0.0;
+  for (int i = 0; i < 3; i++) {
+    vec4 roof = uRoofs[i];
+    indoors = max(indoors, step(roof.x, pos.x) * step(pos.x, roof.y) * step(roof.z, pos.z) * step(pos.z, roof.w));
+  }
   vFade = smoothstep(3.0, 9.0, d) * (1.0 - smoothstep(0.65, 1.0, max(abs(offset.x), abs(offset.y)) / (uSpan * 0.5))) * (1.0 - indoors);
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);

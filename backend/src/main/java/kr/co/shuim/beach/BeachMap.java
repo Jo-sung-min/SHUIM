@@ -16,7 +16,7 @@ public enum BeachMap {
             case BAMBOO -> -4;
             case GARDEN -> -30;
             case CLOUDSPA -> -98;
-            case BAIKAL -> -140;
+            case BAIKAL -> -240;
             default -> BeachRoom.MIN_Z;
         };
     }

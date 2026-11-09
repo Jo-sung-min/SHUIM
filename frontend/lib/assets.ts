@@ -1,4 +1,4 @@
-/** Public media keeps its existing path on the CDN. API and user uploads never pass through this mapping. */
+/** Published media keeps its CDN path. Baikal art is Git-bundled and stays local until its AWS upload is requested. API and user uploads never pass through this mapping. */
 function assetBase(value: string): string {
   if (!value.trim()) return "";
   try {

@@ -24,6 +24,7 @@ import FireworkTicketSheet from "@/components/FireworkTicketSheet";
 import UyuniMomentControls from "./UyuniMomentControls";
 import UyuniBunkerControls, { type BunkerAction } from "./UyuniBunkerControls";
 import GardenPondControls from "./GardenPondControls";
+import BaikalJourney from "./BaikalJourney";
 import BambooFestivalControls from "./BambooFestivalControls";
 import BambooBulletin from "./BambooBulletin";
 import type { BambooNote } from "@/lib/beach/bamboo-notes";
@@ -1543,7 +1544,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const baikalSeat = mapId === "baikal", cloudPool = pavilion.kind === "pool", cloudLounge = pavilion.kind === "lounge" && !baikalSeat;
   const seatNoun = cloudPool ? "온천" : pavilion.kind === "lounge" ? "소파" : pavilion.kind === "hearth" ? "방석" : pavilion.kind === "deck" ? "전망대" : pavilion.kind === "bench" ? "벤치" : pavilion.kind === "hall" ? "자리" : "정자";
   // The cabin's seats each look at something different: the glass wall, the stove, or the storm from under the eave.
-  const baikalView = pavilion.spotId === "baikal-side" || pavilion.kind === "hearth" ? "fire" : pavilion.kind === "bench" ? "porch" : "window";
+  const baikalView = pavilion.spotId?.endsWith("-side") || pavilion.kind === "hearth" ? "fire" : pavilion.kind === "bench" ? "porch" : "window";
   const pavilionTitle = pavilionPhase === "standing" ? cloudPool ? "온천에서 나오는 중…" : "일어나는 중" : pavilion.seated ? cloudPool ? "온천에서 나오기" : cloudLounge || baikalSeat ? `${seatNoun}에서 일어나기` : "일어나기" : pavilionPhase === "joining" ? "준비 중…" : !pavilion.available ? "자리 없음" : cloudPool ? "온천에 몸 담그기" : cloudLounge ? "소파에 앉기" : baikalSeat ? pavilion.kind === "hearth" ? "난롯가에 앉기" : `${seatNoun}에 앉기` : "앉기";
   const pavilionDetail = pavilion.seated
     ? (cloudPool ? `${pavilion.name} · 따뜻한 물에 몸을 맡기는 중` : cloudLounge ? "먹구름 리조트의 포근한 소파에서 쉬는 중"
@@ -1640,6 +1641,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <h1>{community.name} {map.name}</h1>
         <p>{map.welcome}</p>
       </div>}
+
+      {mapId === "baikal" && phase === "ready" && engineRef.current && meRef.current && <BaikalJourney
+        key={communityId + ":" + meRef.current.id} engine={engineRef.current} userId={meRef.current.id} communityId={communityId}
+        hidden={hudHidden || intro !== "hidden" || menuOpen || Boolean(photo)} paused={lost} night={nightControls} />}
 
       {joystickVisible && <Joystick onMove={(x, y) => engineRef.current?.setMove(x, y)} />}
 

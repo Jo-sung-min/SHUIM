@@ -4,10 +4,10 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import { createShelterPillowGeometry } from "./shelter-textiles";
 import { BAMBOO_GLOW_FRAG, BAMBOO_GLOW_VERT } from "./bamboo-shader";
-import { BAIKAL_BLOCKS, BAIKAL_CABIN, BAIKAL_SHORE, BAIKAL_TERRACE, BAIKAL_TREES, baikalFloorHeight, baikalRoofHeight, baikalSnowCover } from "./baikal-layout";
+import { BAIKAL_BLOCKS, BAIKAL_BOUNDS, BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_JOURNEY_ROUTE, BAIKAL_SHORE, BAIKAL_TERRACES, BAIKAL_TREES, baikalFloorHeight, baikalRoofHeight, baikalSnowCover, baikalShoreHeight, baikalTerraceHeight } from "./baikal-layout";
 import { type BaikalUniforms, createBaikalGlassMaterial, createBaikalHummockMaterial, createBaikalIceMaterial } from "./baikal-materials";
 
-export interface BaikalTextures { wood: THREE.Texture; cotton: THREE.Texture }
+export interface BaikalTextures { wood: THREE.Texture; cotton: THREE.Texture; snow?: THREE.Texture; ice?: THREE.Texture }
 
 /** A box whose texture repeats per metre instead of stretching one tile over a whole wall. */
 function texturedBox(width: number, height: number, depth: number, density = .5): THREE.BufferGeometry {
@@ -95,7 +95,8 @@ function heightfield(minX: number, maxX: number, minZ: number, maxZ: number, cel
   const positions: number[] = [], lifts: number[] = [], indices: number[] = [];
   for (let r = 0; r <= rows; r++) for (let c = 0; c <= columns; c++) {
     const x = minX + (maxX - minX) * c / columns, z = minZ + (maxZ - minZ) * r / rows;
-    positions.push(x, baikalFloorHeight(x, z) + .012, z); lifts.push(baikalSnowCover(x, z));
+    // The snow bank continues beneath the timber deck, never over its finished floor.
+    positions.push(x, Math.max(baikalTerraceHeight(x, z), baikalShoreHeight(x)) + .012, z); lifts.push(baikalSnowCover(x, z));
   }
   for (let r = 0; r < rows; r++) for (let c = 0; c < columns; c++) {
     const a = r * (columns + 1) + c, b = a + 1, d = a + columns + 1, e = d + 1;
@@ -112,11 +113,14 @@ export interface BaikalShore { root: THREE.Group; dispose(): void }
 export function buildBaikalShore(parent: THREE.Object3D, shared: BaikalUniforms, textures: BaikalTextures, mobile: boolean): BaikalShore {
   const root = new THREE.Group(); root.name = "baikal-shore"; parent.add(root);
   const material = createBaikalIceMaterial(shared, true);
-  const bank = heightfield(-126, BAIKAL_SHORE.startX + 3, -146, 76, mobile ? 3 : 2); bank.name = "baikal-shore-bank";
-  const mound = heightfield(BAIKAL_TERRACE.x - BAIKAL_TERRACE.radius - 6, BAIKAL_TERRACE.x + BAIKAL_TERRACE.radius + 6,
-    BAIKAL_TERRACE.z - BAIKAL_TERRACE.radius - 6, BAIKAL_TERRACE.z + BAIKAL_TERRACE.radius + 6, mobile ? .9 : .6); mound.name = "baikal-cabin-mound";
-  const bankMesh = new THREE.Mesh(bank, material), moundMesh = new THREE.Mesh(mound, material);
-  bankMesh.name = "baikal-shore-bank"; moundMesh.name = "baikal-cabin-mound"; root.add(bankMesh, moundMesh);
+  const bank = heightfield(-126, BAIKAL_SHORE.startX + 3, BAIKAL_BOUNDS.minZ - 6, 76, mobile ? 3 : 2); bank.name = "baikal-shore-bank";
+  const bankMesh = new THREE.Mesh(bank, material); bankMesh.name = "baikal-shore-bank"; root.add(bankMesh);
+  const mounds = BAIKAL_TERRACES.map((terrace, i) => {
+    const geometry = heightfield(terrace.x - terrace.radius - 6, terrace.x + terrace.radius + 6,
+      terrace.z - terrace.radius - 6, terrace.z + terrace.radius + 6, mobile ? .9 : .6);
+    const mesh = new THREE.Mesh(geometry, material); mesh.name = i === 0 ? "baikal-cabin-mound" : `baikal-${BAIKAL_CABINS[i].id}-mound`;
+    root.add(mesh); return geometry;
+  });
   // Larches: a trunk and three tiers of boughs in one geometry, snow caps in the ice shader so they match the ground.
   const trunk = new THREE.CylinderGeometry(.12, .22, 1, 7); trunk.translate(0, .5, 0);
   const tiers = [0.28, 0.52, 0.76].map((level, index) => { const cone = new THREE.ConeGeometry(1 - index * .26, .42, 9); cone.translate(0, level + .21, 0); return cone; });
@@ -136,7 +140,7 @@ export function buildBaikalShore(parent: THREE.Object3D, shared: BaikalUniforms,
   let disposed = false;
   return { root, dispose() {
     if (disposed) return; disposed = true;
-    root.removeFromParent(); root.clear(); bank.dispose(); mound.dispose(); larch.dispose(); caps.dispose(); trees.dispose(); snowCaps.dispose(); material.dispose(); bark.dispose();
+    root.removeFromParent(); root.clear(); bank.dispose(); mounds.forEach(mound => mound.dispose()); larch.dispose(); caps.dispose(); trees.dispose(); snowCaps.dispose(); material.dispose(); bark.dispose();
   } };
 }
 
@@ -148,32 +152,39 @@ export interface BaikalCabin {
   candles: readonly THREE.Vector3[];
   /** Where the stove's flames rise from, and where its glow is drawn. */
   hearth: THREE.Vector3;
+  hearths: readonly THREE.Vector3[];
+  cabinLights: readonly { position: THREE.Vector3; color: number }[];
   applyNight(amount: number): void;
   dispose(): void;
 }
-/** A mono-pitch timber cabin: one glass wall towards the lake, a stove against the south wall, cream sofas around a low table. */
+/** Three mono-pitch cabins share geometry batches and timber/metal materials, with a quiet palette and furnishings for each stop. */
 export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTextures, shared: BaikalUniforms, mobile: boolean): BaikalCabin {
   const root = new THREE.Group(); root.name = "baikal-cabin"; parent.add(root);
   const c = BAIKAL_CABIN, fy = c.floorY, owned: THREE.BufferGeometry[] = [], materials: THREE.Material[] = [];
   const lamps: THREE.Vector3[] = [], candles: THREE.Vector3[] = [];
+  const hearths: THREE.Vector3[] = [], cabinLights: { position: THREE.Vector3; color: number }[] = [];
   const standard = (name: string, color: number, options: THREE.MeshStandardMaterialParameters = {}) => {
     const material = new THREE.MeshStandardMaterial({ color, roughness: .9, ...options }); material.name = name; materials.push(material); return material;
   };
   const oak = standard("baikal-oak", 0xcaa87c, { map: textures.wood, roughness: .72 });
   const walnut = standard("baikal-walnut", 0x5b4231, { map: textures.wood, roughness: .8 });
   const plaster = standard("baikal-plaster", 0xe2d3bf, { bumpMap: textures.cotton, bumpScale: .002 });
-  const cream = standard("baikal-boucle", 0xf1e9db, { map: textures.cotton, bumpMap: textures.cotton, bumpScale: .004 });
-  const ochre = standard("baikal-throws", 0xd49a5c, { map: textures.cotton, bumpMap: textures.cotton, bumpScale: .003 });
-  const rug = standard("baikal-rug", 0xe3d6bf, { map: textures.cotton, roughness: 1 });
+  const creams = [0xf1e9db, 0xe8dec9, 0xdfe7eb].map((color, i) => standard(i ? `baikal-${BAIKAL_CABINS[i].id}-boucle` : "baikal-boucle", color, { map: textures.cotton, bumpMap: textures.cotton, bumpScale: .004 }));
+  const throws = [0xd49a5c, 0xb77e63, 0x849bab].map((color, i) => standard(i ? `baikal-${BAIKAL_CABINS[i].id}-throws` : "baikal-throws", color, { map: textures.cotton, bumpMap: textures.cotton, bumpScale: .003 }));
+  const rugs = [0xe3d6bf, 0xbec4b1, 0xaabac7].map((color, i) => standard(i ? `baikal-${BAIKAL_CABINS[i].id}-rug` : "baikal-rug", color, { map: textures.cotton, roughness: 1 }));
   const iron = standard("baikal-iron", 0x1b1a1a, { roughness: .55, metalness: .45 });
   const bronze = standard("baikal-bronze-frame", 0x3a3330, { roughness: .5, metalness: .35 });
   const slate = standard("baikal-slate", 0x474b51, { roughness: .85 });
   const darkGlass = standard("baikal-table-glass", 0x0d1012, { roughness: .18, metalness: .55 });
   const wax = standard("baikal-candle-wax", 0xfff1dc, { emissive: 0xffc98a, emissiveIntensity: .35, roughness: .6 });
-  const amber = standard("baikal-lamp-glass", 0xffe2b0, { emissive: 0xffb45c, emissiveIntensity: 1.2, roughness: .5 });
+  const ambers = [0xffb45c, 0xffc792, 0xffdbbb].map((color, i) => standard(i ? `baikal-${BAIKAL_CABINS[i].id}-lamp-glass` : "baikal-lamp-glass", 0xffefdc, { emissive: color, emissiveIntensity: 1.2, roughness: .5 }));
   const linen = standard("baikal-lamp-shade", 0xfff0dc, { emissive: 0xffc98a, emissiveIntensity: .8, roughness: .95 });
   const snow = standard("baikal-roof-snow", 0xf4f7fb, { roughness: 1 });
   const glass = createBaikalGlassMaterial(shared); materials.push(glass);
+  const sage = standard("baikal-refuge-ceramic", 0x859d86, { roughness: .45 });
+  const brass = standard("baikal-observatory-brass", 0xbca274, { roughness: .36, metalness: .65 });
+  let offsetX = 0, offsetZ = 0;
+  const point = (x: number, y: number, z: number) => new THREE.Vector3(x + offsetX, y, z + offsetZ);
 
   const batches = new Map<THREE.Material, THREE.BufferGeometry[]>();
   const box = new THREE.BoxGeometry(1, 1, 1), soft = new RoundedBoxGeometry(1, 1, 1, 2, .1), cylinder = new THREE.CylinderGeometry(1, 1, 1, 14);
@@ -181,11 +192,15 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   const pillow = createShelterPillowGeometry(); pillow.deleteAttribute("color");
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), euler = new THREE.Euler();
   const place = (material: THREE.Material, geometry: THREE.BufferGeometry, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) => {
-    const piece = geometry.clone(); matrix.compose(new THREE.Vector3(x, y, z), quaternion.setFromEuler(euler.set(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
+    const piece = geometry.clone(); matrix.compose(point(x, y, z), quaternion.setFromEuler(euler.set(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
     piece.applyMatrix4(matrix);
     if (!batches.has(material)) batches.set(material, []); batches.get(material)!.push(piece);
   };
   const keep = (geometry: THREE.BufferGeometry) => { owned.push(geometry); return geometry; };
+  const panes: THREE.BufferGeometry[] = [];
+  for (const [cabinIndex, site] of BAIKAL_CABINS.entries()) {
+  offsetX = site.offsetX; offsetZ = site.offsetZ;
+  const cream = creams[cabinIndex], ochre = throws[cabinIndex], rug = rugs[cabinIndex], amber = ambers[cabinIndex];
 
   // Deck, walls and roof. The side walls are trapezoids following the single roof slope.
   const width = c.maxZ - c.minZ, centreZ = (c.minZ + c.maxZ) / 2, depth = c.porchMaxX - c.minX;
@@ -207,12 +222,11 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   for (const dx of [-.6, 2.4, 5.4, 8.4, 11.4]) place(oak, box, c.minX + dx + .9, baikalRoofHeight(c.minX + dx + .9) - .22, centreZ, .12, .14, width - .5);
 
   // The glass wall: a stub pane south of the door, a transom over the door, six tall bays, dark mullions, a stone sill.
-  const panes: THREE.BufferGeometry[] = [];
   /** A pane facing +x spans z0..z1; a pane facing +z spans x0..x1 at the given z (the stove window). */
   const paneAt = (centre: THREE.Vector3, w: number, h: number, facing: "x" | "z") => {
     const geometry = new THREE.PlaneGeometry(Math.max(.1, w - .06), Math.max(.1, h - .06));
     if (facing === "x") geometry.rotateY(Math.PI / 2);
-    geometry.translate(centre.x, centre.y, centre.z);
+    geometry.translate(centre.x + offsetX, centre.y, centre.z + offsetZ);
     const sizes = new Float32Array(geometry.getAttribute("position").count * 2);
     for (let i = 0; i < sizes.length; i += 2) { sizes[i] = w; sizes[i + 1] = h; }
     geometry.setAttribute("aPane", new THREE.BufferAttribute(sizes, 2)); panes.push(geometry);
@@ -242,7 +256,7 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   place(oak, box, -14.95, fy + .72, 9.4, .06, .46, 2.4);
   for (const z of [c.minZ - .6, c.maxZ + .6]) {
     place(walnut, box, c.porchMaxX + 1.4, fy - .3 + .6, z, .1, 1.2, .1);
-    place(amber, sphere, c.porchMaxX + 1.4, fy + .95, z, .14, .18, .14); lamps.push(new THREE.Vector3(c.porchMaxX + 1.4, fy + .95, z));
+    place(amber, sphere, c.porchMaxX + 1.4, fy + .95, z, .14, .18, .14); lamps.push(point(c.porchMaxX + 1.4, fy + .95, z));
   }
 
   // Inside: rug, the long sofa facing the glass, the side sofa facing the stove, the armchair, cushions by the fire.
@@ -269,10 +283,10 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   place(darkGlass, box, -20.4, fy + .35, 6, 2.2, .04, .9);
   for (const [dx, dz] of [[-1.05, -.4], [1.05, -.4], [-1.05, .4], [1.05, .4]]) place(iron, box, -20.4 + dx, fy + .17, 6 + dz, .05, .33, .05);
   place(walnut, box, -20.75, fy + .38, 6.1, .5, .02, .36);
-  for (const dz of [-.22, 0, .22]) { place(wax, cylinder, -20.05, fy + .43, 6 + dz, .035, .12, .035); candles.push(new THREE.Vector3(-20.05, fy + .52, 6 + dz)); }
+  for (const dz of [-.22, 0, .22]) { place(wax, cylinder, -20.05, fy + .43, 6 + dz, .035, .12, .035); candles.push(point(-20.05, fy + .52, 6 + dz)); }
   place(walnut, box, -20.9, fy + .4, 5.6, .25, .03, .18); place(ochre, box, -20.9, fy + .43, 5.6, .22, .03, .16);
   // The stove on its slate hearth, a chimney through the roof, firewood beside it.
-  const hearth = new THREE.Vector3(-23.4, fy + .3, -.78);
+  const hearth = point(-23.4, fy + .3, -.78); hearths.push(hearth);
   place(slate, box, -23.4, fy + .03, -1.0, 1.7, .06, 1.1);
   for (const [dx, dz] of [[-.28, -.28], [.28, -.28], [-.28, .28], [.28, .28]]) place(iron, box, -23.4 + dx, fy + .12, -1.1 + dz, .06, .12, .06);
   place(iron, box, -23.4, fy + .18 + .52, -1.1, .72, 1.04, .72);
@@ -289,19 +303,68 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   place(slate, cylinder, -29.3, fy + 1.1, 8.6, .13, .4, .13); place(slate, sphere, -29.3, fy + 1.32, 8.6, .16, .1, .16);
   for (const z of [3.5, 10.5]) {
     place(iron, box, -29.7, fy + 2.3, z, .14, .05, .24);
-    place(amber, cylinder, -29.55, fy + 2.2, z, .14, .22, .14); lamps.push(new THREE.Vector3(-29.4, fy + 2.2, z));
+    place(amber, cylinder, -29.55, fy + 2.2, z, .14, .22, .14); lamps.push(point(-29.4, fy + 2.2, z));
   }
   // Pendants on cords from the roof and one floor lamp by the armchair.
   for (const [x, z] of [[-21, 1.5], [-21, 4.5], [-21, 7.5], [-21, 10.5], [-26, 6]]) {
     const roofY = baikalRoofHeight(x) - .24, canY = roofY - .55;
     place(iron, cylinder, x, (roofY + canY) / 2, z, .012, roofY - canY, .012);
     place(iron, cylinder, x, canY - .08, z, .08, .16, .08);
-    place(amber, disc, x, canY - .165, z, .06, .06, .06, -Math.PI / 2); lamps.push(new THREE.Vector3(x, canY - .2, z));
+    place(amber, disc, x, canY - .165, z, .06, .06, .06, -Math.PI / 2); lamps.push(point(x, canY - .2, z));
   }
   place(iron, cylinder, -19.4, fy + .7, 13.3, .02, 1.4, .02); place(iron, cylinder, -19.4, fy + .02, 13.3, .16, .03, .16);
-  place(linen, cylinder, -19.4, fy + 1.5, 13.3, .22, .3, .22); lamps.push(new THREE.Vector3(-19.4, fy + 1.45, 13.3));
+  place(linen, cylinder, -19.4, fy + 1.5, 13.3, .22, .3, .22); lamps.push(point(-19.4, fy + 1.45, 13.3));
+  const lightColor = [0xffc27a, 0xffd2a0, 0xffdfbf][cabinIndex];
+  for (const [x, y, z] of [[-21.5, 3.3, 4.5], [-22.2, 3.4, 10], [-26.2, 2.9, 6]]) cabinLights.push({ position: point(x, y, z), color: lightColor });
 
-  const glassGeometry = mergeGeometries(panes.map(p => p.index ? p.toNonIndexed() : p), false)!; panes.forEach(p => p.dispose()); owned.push(glassGeometry);
+  if (site.id === "refuge") {
+    // A tea stop: rounded ceramic teapot and cups, stacked books and a leafy vase on the sideboard.
+    place(walnut, soft, -20.6, fy + .4, 5.85, .7, .045, .45);
+    place(sage, sphere, -20.6, fy + .54, 5.85, .14, .12, .14);
+    place(sage, sphere, -20.6, fy + .68, 5.85, .045, .025, .045);
+    place(sage, cylinder, -20.42, fy + .57, 5.85, .04, .2, .04, 0, 0, -.9);
+    for (const z of [5.62, 6.04]) place(sage, cylinder, -20.85, fy + .48, z, .055, .11, .055);
+    place(sage, sphere, -29.3, fy + 1.06, 5.6, .19, .22, .19);
+    for (const [i, z] of [5.4, 5.6, 5.8].entries()) {
+      place(sage, cylinder, -29.3, fy + 1.42, z, .012, .64, .012, .14 * (i - 1));
+      place(sage, sphere, -29.3 + (i - 1) * .14, fy + 1.7, z, .15, .07, .28, .2, i * .7);
+    }
+  } else if (site.id === "aurora") {
+    // Compact brass telescope aimed through the eastern glazing; the visitor's long sofa view stays clear.
+    for (let leg = 0; leg < 3; leg++) {
+      const a = leg * Math.PI * 2 / 3;
+      const start = new THREE.Vector3(-18.3 + Math.cos(a) * .42, fy + .03, 9.6 + Math.sin(a) * .42);
+      const end = new THREE.Vector3(-18.3, fy + 1.2, 9.6), direction = end.clone().sub(start), middle = start.clone().add(end).multiplyScalar(.5);
+      const legGeometry = keep(new THREE.CylinderGeometry(.022, .035, direction.length(), 8));
+      legGeometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()));
+      place(brass, legGeometry, middle.x, middle.y, middle.z);
+    }
+    place(brass, sphere, -18.3, fy + 1.23, 9.6, .13, .13, .13);
+    place(brass, cylinder, -18.22, fy + 1.46, 9.6, .12, 1.02, .12, 0, 0, -.94);
+    place(darkGlass, cylinder, -17.79, fy + 1.77, 9.6, .108, .025, .108, 0, 0, -.94);
+    // A small framed star chart sits beside the books, without another image or a floating screen.
+    place(walnut, soft, -29.25, fy + 1.38, 3.7, .08, .7, .9, 0, 0, -.13);
+    place(darkGlass, box, -29.2, fy + 1.38, 3.7, .018, .58, .78);
+    for (const [dy, dz] of [[.2, -.25], [.05, -.1], [.14, .08], [-.12, .18], [-.2, .28]]) place(amber, sphere, -29.183, fy + 1.38 + dy, 3.7 + dz, .013, .018, .018);
+  }
+  }
+  offsetX = offsetZ = 0;
+  // Low warm guide posts stand outside the protected corridor; the lake remains open and freely walkable.
+  for (let segment = 1; segment < BAIKAL_JOURNEY_ROUTE.length; segment++) {
+    const a = BAIKAL_JOURNEY_ROUTE[segment - 1], b = BAIKAL_JOURNEY_ROUTE[segment], dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+    const count = Math.max(1, Math.floor(length / 13));
+    for (let i = 1; i <= count; i++) {
+      const t = i / (count + 1), x = a[0] + dx * t - dz / length * 3.4, z = a[1] + dz * t + dx / length * 3.4, y = baikalFloorHeight(x, z);
+      place(walnut, cylinder, x, y + .32, z, .045, .64, .045);
+      place(bronze, cylinder, x, y + .69, z, .13, .1, .13);
+      place(ambers[0], sphere, x, y + .64, z, .11, .1, .11);
+      lamps.push(point(x, y + .66, z));
+    }
+  }
+
+  const normalizedPanes = panes.map(p => p.index ? p.toNonIndexed() : p);
+  const glassGeometry = mergeGeometries(normalizedPanes, false)!;
+  new Set([...panes, ...normalizedPanes]).forEach(p => p.dispose()); owned.push(glassGeometry);
   const glassMesh = new THREE.Mesh(glassGeometry, glass); glassMesh.name = "baikal-glass-wall"; glassMesh.renderOrder = 6; root.add(glassMesh);
   for (const [material, pieces] of batches) {
     const normalized = pieces.map(piece => piece.index ? piece.toNonIndexed() : piece), geometry = mergeGeometries(normalized, false)!;
@@ -311,8 +374,8 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   for (const geometry of [box, soft, cylinder, disc, sphere, pillow]) geometry.dispose();
 
   // Soft halos around every lamp and candle, and a broad warm glow in front of the stove.
-  const glowCount = lamps.length + candles.length + 1, glowData = new Float32Array(glowCount * 4), glowSeeds = new Float32Array(glowCount * 2);
-  [...lamps.map(l => [l, .9] as const), ...candles.map(l => [l, .3] as const), [hearth, 1.8] as const].forEach(([point, size], index) => {
+  const glowCount = lamps.length + candles.length + hearths.length, glowData = new Float32Array(glowCount * 4), glowSeeds = new Float32Array(glowCount * 2);
+  [...lamps.map(l => [l, .9] as const), ...candles.map(l => [l, .3] as const), ...hearths.map(l => [l, 1.8] as const)].forEach(([point, size], index) => {
     glowData.set([point.x, point.y, point.z, size], index * 4); glowSeeds.set([index * .173 % 1, index * .377 % 1], index * 2);
   });
   const glowGeometry = new THREE.InstancedBufferGeometry(), quad = new THREE.PlaneGeometry(1, 1);
@@ -325,11 +388,11 @@ export function buildBaikalCabin(parent: THREE.Object3D, textures: BaikalTexture
   const glows = new THREE.Mesh(glowGeometry, glowMaterial); glows.name = "baikal-lamp-glow"; glows.frustumCulled = false; glows.renderOrder = 7; root.add(glows);
   void mobile;
   let disposed = false;
-  return { root, lamps, candles, hearth,
+  return { root, lamps, candles, hearth: hearths[0], hearths, cabinLights,
     applyNight(amount) {
       if (disposed) return;
       const value = THREE.MathUtils.clamp(amount, 0, 1);
-      amber.emissiveIntensity = .5 + value * 1.1; linen.emissiveIntensity = .35 + value * .7; wax.emissiveIntensity = .2 + value * .4;
+      ambers.forEach(amber => { amber.emissiveIntensity = .5 + value * 1.1; }); linen.emissiveIntensity = .35 + value * .7; wax.emissiveIntensity = .2 + value * .4;
       glowMaterial.uniforms.uNight.value = .35 + value * .65;
     },
     dispose() { if (disposed) return; disposed = true; root.removeFromParent(); root.clear(); owned.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); },

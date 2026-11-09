@@ -3,6 +3,7 @@ import { UYUNI_SKY_FUNCTIONS, UYUNI_SKY_UNIFORMS } from "./uyuni-shader";
 /** The shared sky palette plus the storm strength; the ice, the hummocks and the sky dome all read the same set. */
 export const BAIKAL_SKY_UNIFORMS = `${UYUNI_SKY_UNIFORMS}
 uniform float uStorm;
+uniform float uAurora;
 `;
 
 /**
@@ -37,6 +38,35 @@ vec3 baikalRidges(vec3 d, vec3 sky, float night, float storm) {
   return color;
 }
 
+// Three angular curtains, evaluated in the same sky function for both sky and ice.
+// No dome image stretching, raymarch pass or extra translucent full-screen layers.
+vec3 baikalAurora(vec3 d) {
+  if (uAurora < 0.001 || d.y < 0.035 || d.y > 0.72 || d.x < 0.03) return vec3(0.0);
+  float angle = atan(d.z, d.x);
+  float elevation = asin(clamp(d.y, 0.0, 1.0));
+  float east = 1.0 - smoothstep(0.65, 1.45, abs(angle));
+  vec3 light = vec3(0.0);
+  for (int i = 0; i < 3; i++) {
+    float layer = float(i), t = uTime * 0.055;
+    float wave = sin(angle * 3.6 + t + layer * 1.9) * 0.043
+      + sin(angle * 7.2 - t * 0.6 + layer) * 0.017;
+    float base = 0.115 + layer * 0.062 + wave;
+    float height = elevation - base;
+    float bottom = smoothstep(-0.012, 0.022, height);
+    float tail = exp(-max(height, 0.0) * (9.5 - layer));
+    float folds = 0.58 + 0.24 * sin(angle * 28.0 + sin(angle * 6.0 + t) * 2.0 - t * 1.4 + layer * 4.0)
+      + 0.18 * sin(angle * 67.0 + t * 0.7 + layer * 7.0);
+    float rays = 0.78 + 0.22 * sin(angle * 157.0 + sin(angle * 9.0 + t) * 3.0);
+    float breath = 0.88 + 0.12 * sin(t * 0.8 + angle * 3.0 + layer);
+    float body = bottom * tail * max(folds, 0.08) * rays * breath;
+    vec3 green = vec3(0.08, 0.85, 0.57), violet = vec3(0.45, 0.18, 0.65);
+    vec3 color = mix(green, violet, smoothstep(0.07, 0.30, height) * 0.8);
+    color += vec3(0.10, 0.23, 0.15) * exp(-abs(height) * 95.0);
+    light += color * body * (0.63 - layer * 0.12);
+  }
+  return light * east * uAurora;
+}
+
 vec3 baikalSky(vec3 direction) {
   vec3 d = normalize(direction);
   float up = max(d.y, 0.0);
@@ -69,6 +99,7 @@ vec3 baikalSky(vec3 direction) {
   vec3 veil = mix(veilDay, veilNight, night);
   float veilAmount = storm * (0.65 + 0.35 * (1.0 - smoothstep(0.0, 0.55, up)));
   sky = mix(sky, veil, veilAmount);
+  sky += baikalAurora(d) * night * (1.0 - storm * 0.9);
   sky = uyuniHorizonAir(sky, d, night);
   return baikalRidges(d, sky, night, storm);
 }

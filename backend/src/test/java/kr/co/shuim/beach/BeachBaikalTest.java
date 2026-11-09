@@ -11,6 +11,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,14 +34,21 @@ class BeachBaikalTest {
     private final TestFireworkTickets tickets = new TestFireworkTickets();
     private final BeachController controller = new BeachController(auth, blocks, service, circles, tickets);
     private final MockHttpServletRequest request = new MockHttpServletRequest();
-    private static final String[] SPOTS = {"baikal-sofa", "baikal-side", "baikal-hearth", "baikal-chair", "baikal-porch"};
+    private static final String[] CABIN_PREFIXES = {"baikal-", "baikal-refuge-", "baikal-aurora-"};
+    private static final double[][] CABIN_OFFSETS = {{0, 0}, {35, -78}, {88, -201}};
+    private static final String[] SPOTS = Arrays.stream(CABIN_PREFIXES)
+        .flatMap(prefix -> Arrays.stream(new String[]{"sofa", "side", "hearth", "chair", "porch"}).map(piece -> prefix + piece)).toArray(String[]::new);
     /** The client's cabin furniture, as world {x, z, yaw} per seat in slot order: long sofa and armchair face +X, side sofa and hearth stools face -Z, porch bench faces +X. */
-    private static final double[][][] WORLD = {
+    private static final double[][][] FIRST_CABIN = {
         {{-23, 3.8, -Math.PI / 2}, {-23, 5.3, -Math.PI / 2}, {-23, 6.8, -Math.PI / 2}, {-23, 8.3, -Math.PI / 2}},
         {{-23.6, 11, 0}, {-22, 11, 0}, {-20.4, 11, 0}},
         {{-24.6, 1.4, 0}, {-22.2, 1.4, 0}},
         {{-18.6, 12.2, -Math.PI / 2}},
         {{-14.6, 8.6, -Math.PI / 2}, {-14.6, 10.2, -Math.PI / 2}}};
+    private static final double[][][] WORLD = Arrays.stream(CABIN_OFFSETS)
+        .flatMap(offset -> Arrays.stream(FIRST_CABIN).map(piece -> Arrays.stream(piece)
+            .map(seat -> new double[]{seat[0] + offset[0], seat[1] + offset[1], seat[2]}).toArray(double[][]::new)))
+        .toArray(double[][][]::new);
     private BeachRoom.Presence visitor(String id, double x, double z) {
         var p = room.enter(id, id, Set.of());
         room.tick(p.ticket(), x, z, .75, false, null, null, null, false, 1L);
@@ -66,22 +74,22 @@ class BeachBaikalTest {
         assertEquals(BeachMap.BAIKAL, BeachMap.from("baikal"));
         assertTrue(BeachMap.BAIKAL.hasPavilions());
         assertFalse(BeachMap.BAIKAL.hasStarlight()); assertFalse(BeachMap.BAIKAL.hasBeds()); assertFalse(BeachMap.BAIKAL.hasBeachFacilities());
-        assertEquals(-140, BeachMap.BAIKAL.minZ()); assertEquals(70, BeachMap.BAIKAL.maxZ());
+        assertEquals(-240, BeachMap.BAIKAL.minZ()); assertEquals(70, BeachMap.BAIKAL.maxZ());
         assertEquals(-120, BeachMap.BAIKAL.minX()); assertEquals(120, BeachMap.BAIKAL.maxX());
         var p = room.enter("new", "new", Set.of());
         assertTrue(p.x() >= -1.5 && p.x() < 1.5); assertTrue(p.z() >= 39.5 && p.z() < 40.5);
         assertEquals(0.17, p.yaw());
         room.tick(p.ticket(), 1000, -1000, .2, true, null, null);
-        assertEquals(120, p.x()); assertEquals(-140, p.z());
+        assertEquals(120, p.x()); assertEquals(-240, p.z());
         room.tick(p.ticket(), -1000, 1000, .2, true, null, null);
         assertEquals(-120, p.x()); assertEquals(70, p.z());
         room.tick(p.ticket(), Double.NaN, Double.POSITIVE_INFINITY, .2, true, null, null);
         assertEquals(-120, p.x()); assertEquals(70, p.z());
     }
 
-    @Test void allTwelveSeatsMatchTheClientAndEachPieceOfFurnitureHasItsOwnCapacity() {
+    @Test void allThirtySixSeatsMatchTheClientAndEachPieceOfFurnitureHasItsOwnCapacity() {
         var cabin = BeachRoom.PAVILIONS.stream().filter(p -> p.map() == BeachMap.BAIKAL).toList();
-        assertEquals(5, cabin.size()); assertEquals(12, cabin.stream().mapToInt(p -> p.seats().length).sum());
+        assertEquals(15, cabin.size()); assertEquals(36, cabin.stream().mapToInt(p -> p.seats().length).sum());
         for (int place = 0; place < SPOTS.length; place++) {
             String spotId = SPOTS[place]; var pavilion = pavilion(spotId); var occupants = new ArrayList<BeachRoom.Presence>();
             assertEquals(WORLD[place].length, pavilion.seats().length, spotId);
@@ -140,19 +148,54 @@ class BeachBaikalTest {
     }
 
     @Test void backgroundResumePreservesSeatingThenExpiryReleasesTheSeatAndRestoresTheApproach() {
-        var p = visitor("returning", -22.7, 4); var seated = room.rest(p.ticket(), "sit", "baikal-sofa");
-        assertEquals(0, seated.slot());
-        room.suspend(p.ticket(), 40, -60, 0, 2L);
-        clock.addAndGet(5_000);
-        var quick = room.enter("returning", "returning", Set.of(), null, p.ticket(), 3L);
-        assertSame(p, quick.presence()); assertEquals(seated, BeachRoom.RestPresence.of(p));
+        for (int cabin = 0; cabin < CABIN_PREFIXES.length; cabin++) {
+            String id = "returning-" + cabin, spotId = CABIN_PREFIXES[cabin] + "sofa";
+            double x = -22.7 + CABIN_OFFSETS[cabin][0], z = 4 + CABIN_OFFSETS[cabin][1];
+            var p = visitor(id, x, z); var seated = room.rest(p.ticket(), "sit", spotId);
+            assertEquals(0, seated.slot());
+            room.suspend(p.ticket(), 40, -60, 0, 2L);
+            clock.addAndGet(5_000);
+            var quick = room.enter(id, id, Set.of(), null, p.ticket(), 3L);
+            assertSame(p, quick.presence()); assertEquals(seated, BeachRoom.RestPresence.of(p));
+            clock.addAndGet(BeachRoom.IDLE_MS + 1); room.sweep();
+            var restored = room.enter(id, id, Set.of(), null, p.ticket(), 4L);
+            assertTrue(restored.resumed()); assertNotEquals(p.ticket(), restored.presence().ticket());
+            var state = BeachRoom.RestPresence.of(restored.presence());
+            assertEquals("standing", state.pose()); assertNull(state.bunkerId());
+            assertEquals(x, state.x()); assertEquals(z, state.z()); assertEquals(.75, state.yaw());
+            assertEquals(seated.slot(), room.rest(restored.presence().ticket(), "sit", spotId).slot());
+            room.leave(restored.presence().ticket());
+        }
+    }
+
+    @Test void theDistantCabinsRequireTheirOwnNearbyApproachAndCannotStealAnotherCabinsSeat() {
+        var visitors = new ArrayList<BeachRoom.Presence>();
+        for (int cabin = 0; cabin < CABIN_PREFIXES.length; cabin++) {
+            double[] chair = WORLD[cabin * 5 + 3][0]; String spotId = CABIN_PREFIXES[cabin] + "chair";
+            var p = visitor("chair-" + cabin, chair[0] + 2.501, chair[1]);
+            assertEquals(400, assertThrows(ApiException.class, () -> room.rest(p.ticket(), "sit", spotId)).status());
+            room.tick(p.ticket(), chair[0] + 2.5, chair[1], .75, false, null, null, null, false, 2L);
+            var state = room.rest(p.ticket(), "sit", spotId);
+            assertEquals(0, state.slot()); assertEquals(chair[0], state.x(), 1e-9); assertEquals(chair[1], state.z(), 1e-9);
+            visitors.add(p);
+        }
+        assertEquals(3, room.count());
+        var observer = visitors.get(0);
+        var others = room.tick(observer.ticket(), observer.x(), observer.z(), observer.yaw(), false, null, null).players();
+        assertEquals(Set.of("baikal-refuge-chair", "baikal-aurora-chair"), others.stream().map(BeachRoom.PlayerView::spotId).collect(java.util.stream.Collectors.toSet()));
+        room.rest(observer.ticket(), "stand", null);
+        for (String spotId : List.of("baikal-refuge-chair", "baikal-aurora-chair"))
+            assertEquals(400, assertThrows(ApiException.class, () -> room.rest(observer.ticket(), "sit", spotId)).status());
+    }
+
+    @Test void aWalkPastTheOldLakeBoundarySurvivesExpiryWithoutReturningToTheFirstHouse() {
+        var p = visitor("walker", 73, -213);
+        assertEquals(-213, p.z());
+        room.suspend(p.ticket(), 74, -220, .3, 2L);
         clock.addAndGet(BeachRoom.IDLE_MS + 1); room.sweep();
-        var restored = room.enter("returning", "returning", Set.of(), null, p.ticket(), 4L);
-        assertTrue(restored.resumed()); assertNotEquals(p.ticket(), restored.presence().ticket());
-        var state = BeachRoom.RestPresence.of(restored.presence());
-        assertEquals("standing", state.pose()); assertNull(state.bunkerId());
-        assertEquals(-22.7, state.x()); assertEquals(4, state.z()); assertEquals(.75, state.yaw());
-        assertEquals(seated.slot(), room.rest(restored.presence().ticket(), "sit", "baikal-sofa").slot());
+        var resumed = room.enter("walker", "walker", Set.of(), null, p.ticket(), 3L);
+        assertTrue(resumed.resumed()); assertEquals(74, resumed.presence().x()); assertEquals(-220, resumed.presence().z());
+        assertEquals(.3, resumed.presence().yaw());
     }
 
     @Test void eachMapKeepsItsOwnTwentyVisitorsAndRemoteSeats() {
@@ -196,7 +239,7 @@ class BeachBaikalTest {
         @SuppressWarnings("unchecked") Map<String, Object> spawn = (Map<String, Object>) entered.get("spawn");
         assertEquals(0.17, spawn.get("yaw"));
         double z = (Double) spawn.get("z"); assertTrue(z >= 39.5 && z < 40.5);
-        assertEquals(Map.of("minX", -120.0, "maxX", 120.0, "minZ", -140.0, "maxZ", 70.0), entered.get("bounds"));
+        assertEquals(Map.of("minX", -120.0, "maxX", 120.0, "minZ", -240.0, "maxZ", 70.0), entered.get("bounds"));
         when(circles.member("room", "member")).thenReturn(Optional.empty());
         assertEquals(403, assertThrows(ApiException.class, () -> controller.enter(new BeachController.EnterBody("room", null, "baikal"), request, new MockHttpServletResponse())).status());
     }

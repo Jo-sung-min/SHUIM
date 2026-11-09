@@ -109,6 +109,16 @@ const BAIKAL_PLACES: Readonly<Record<string, readonly [number, number, number, n
   "baikal-hearth": [-23.4, 1.4, 0, -1, [-1.2, 1.2]],
   "baikal-chair": [-18.6, 12.2, 1, 0, [0]],
   "baikal-porch": [-14.6, 9.4, 1, 0, [-.8, .8]],
+  "baikal-refuge-sofa": [12, -71.95, 1, 0, [-2.25, -.75, .75, 2.25]],
+  "baikal-refuge-side": [13, -67, 0, -1, [-1.6, 0, 1.6]],
+  "baikal-refuge-hearth": [11.6, -76.6, 0, -1, [-1.2, 1.2]],
+  "baikal-refuge-chair": [16.4, -65.8, 1, 0, [0]],
+  "baikal-refuge-porch": [20.4, -68.6, 1, 0, [-.8, .8]],
+  "baikal-aurora-sofa": [65, -194.95, 1, 0, [-2.25, -.75, .75, 2.25]],
+  "baikal-aurora-side": [66, -190, 0, -1, [-1.6, 0, 1.6]],
+  "baikal-aurora-hearth": [64.6, -199.6, 0, -1, [-1.2, 1.2]],
+  "baikal-aurora-chair": [69.4, -188.8, 1, 0, [0]],
+  "baikal-aurora-porch": [73.4, -191.6, 1, 0, [-.8, .8]],
 };
 function isBaikalSpot(spotId: unknown): boolean {
   return typeof spotId === "string" && spotId.startsWith("baikal-");
@@ -553,7 +563,7 @@ export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promis
     if (!validBunkerLayer(player.bunkerId) || ((player.bunkerId != null || player.spotId === "bunker-dawn-sofa" || player.spotId === "bunker-dusk-sofa")
       && !validRestPresence({ ...player, pose: player.pose ?? "standing", spotId: player.spotId ?? null, slot: player.slot ?? null })))
       throw new Error("함께 머무는 층을 확인하지 못했어요.");
-    if (isCloudSpaSpot(player.spotId)
+    if ((isCloudSpaSpot(player.spotId) || isBaikalSpot(player.spotId))
       && !validRestPresence({ ...player, pose: player.pose ?? "standing", spotId: player.spotId ?? null, slot: player.slot ?? null }))
       throw new Error("함께 쉬는 자리를 확인하지 못했어요.");
     if (player.festival) player.festival = readFestival(player.festival);
