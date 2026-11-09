@@ -183,7 +183,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" | "bamboo" | "garden" } → map-scoped ticket, capabilities and state.
+     * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" | "bamboo" | "garden" | "cloudspa" | "baikal" } → map-scoped ticket, capabilities and state.
      * 이 소로우의 승인된 멤버만 들어갈 수 있다. 정원 초과는 409.
      */
     @PostMapping("/api/beach/enter")

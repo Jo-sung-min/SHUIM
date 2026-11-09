@@ -108,6 +108,12 @@ public class BeachRoom {
         }
         return seats;
     }
+    /** Baikal lakeside cabin: the long sofa seats four in a row, the side sofa three, the hearth stools two, one armchair and a two-seat porch bench; everyone faces along the piece's own axis. */
+    private static final double[][] BAIKAL_SOFA_SEAT_LOCAL = {{-2.25, 0, 0, 1}, {-0.75, 0, 0, 1}, {0.75, 0, 0, 1}, {2.25, 0, 0, 1}};
+    private static final double[][] BAIKAL_SIDE_SEAT_LOCAL = {{-1.6, 0, 0, 1}, {0, 0, 0, 1}, {1.6, 0, 0, 1}};
+    private static final double[][] BAIKAL_HEARTH_SEAT_LOCAL = {{-1.2, 0, 0, 1}, {1.2, 0, 0, 1}};
+    private static final double[][] BAIKAL_CHAIR_SEAT_LOCAL = {{0, 0, 0, 1}};
+    private static final double[][] BAIKAL_PORCH_SEAT_LOCAL = {{-.8, 0, 0, 1}, {.8, 0, 0, 1}};
     /** Centre and the unit axis the steps (pavilion) or the view (deck, hall) face. Right-hand axis is (-fz, fx). Each pavilion belongs to one map. */
     record Pavilion(String spot, double x, double z, double fx, double fz, double[][] seats, BeachMap map) {}
     private static Pavilion pondBench(String spot, double x, double z) {
@@ -138,7 +144,13 @@ public class BeachRoom {
         new Pavilion("cloud-pool-3", 0, 3.6, 0, -1, cloudPoolSeats(17, 1, 2, 4, 5), BeachMap.CLOUDSPA),
         new Pavilion("cloud-pool-4", 18, -27.6, 0, -1, cloudPoolSeats(16, 1, 2), BeachMap.CLOUDSPA),
         new Pavilion("cloud-pool-5", 0, -60.5, 0, -1, cloudPoolSeats(20, 2, 3, 4), BeachMap.CLOUDSPA),
-        new Pavilion("cloud-lounge", 0, 104, 0, -1, CLOUD_LOUNGE_SEAT_LOCAL, BeachMap.CLOUDSPA));
+        new Pavilion("cloud-lounge", 0, 104, 0, -1, CLOUD_LOUNGE_SEAT_LOCAL, BeachMap.CLOUDSPA),
+        // Baikal cabin: the sofas and the armchair look east across the room, the side sofa and hearth stools face the fire (-Z), the porch bench faces the lake.
+        new Pavilion("baikal-sofa", -23, 6.05, 1, 0, BAIKAL_SOFA_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-side", -22, 11, 0, -1, BAIKAL_SIDE_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-hearth", -23.4, 1.4, 0, -1, BAIKAL_HEARTH_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-chair", -18.6, 12.2, 1, 0, BAIKAL_CHAIR_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("baikal-porch", -14.6, 9.4, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
@@ -195,6 +207,11 @@ public class BeachRoom {
         return new BenchSeat(x, z, Math.atan2(0.0 - fx, 0.0 - fz));
     }
 
+    /** Cloud-spa pool edges and the Baikal cabin furniture are bench-style seats: reached from a little farther than a pavilion floor edge. */
+    private static boolean benchStyle(Pavilion pavilion) {
+        return pavilion.map() == BeachMap.CLOUDSPA || pavilion.map() == BeachMap.BAIKAL;
+    }
+
     private static int nearestPavilionSlot(Presence me, RestSpot spot, boolean[] used) {
         Pavilion pavilion = pavilionOf(spot);
         boolean nearby = false;
@@ -203,11 +220,11 @@ public class BeachRoom {
         for (int slot = 0; slot < spot.capacity(); slot++) {
             BenchSeat seat = pavilionSeat(pavilion, slot);
             double distance = Math.hypot(me.x - seat.x(), me.z - seat.z());
-            if (distance > (pavilion.map() == BeachMap.CLOUDSPA ? 2.5 : PAVILION_REACH) + 1e-9) continue;
+            if (distance > (benchStyle(pavilion) ? 2.5 : PAVILION_REACH) + 1e-9) continue;
             nearby = true;
             if (!used[slot] && distance < closestDistance) { closest = slot; closestDistance = distance; }
         }
-        boolean hall = isHallSpot(spot.id()) || isPondBenchSpot(spot.id()) || pavilion.map() == BeachMap.CLOUDSPA;
+        boolean hall = isHallSpot(spot.id()) || isPondBenchSpot(spot.id()) || benchStyle(pavilion);
         if (!nearby) throw ApiException.badRequest(hall ? "벤치 가까이에서 앉아 주세요." : "정자 마루 끝 가까이에서 앉아 주세요.");
         if (closest < 0) throw new ApiException(409, hall ? "가까운 자리가 모두 차 있어요. 벤치의 다른 자리로 다가가 주세요." : "가까운 자리가 모두 차 있어요. 마루의 다른 쪽으로 다가가 주세요.");
         return closest;
@@ -815,6 +832,15 @@ public class BeachRoom {
         return enter(userId, nick, excluded, null);
     }
 
+    /** Newcomers face the fire; the cloud spa looks straight down its terraces and at Baikal they turn slightly left towards the cabin. */
+    private static double spawnYaw(BeachMap map, double x, double z) {
+        return switch (map) {
+            case CLOUDSPA -> 0;
+            case BAIKAL -> 0.17;
+            default -> Math.atan2(x, z - BeachFireService.FIRE_Z);
+        };
+    }
+
     public synchronized Presence enter(String userId, String nick, Set<String> excluded, String character) {
         return enter(userId, nick, excluded, character, null, null).presence();
     }
@@ -858,7 +884,7 @@ public class BeachRoom {
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick,
             selectedSkin == null ? bookmark == null ? skinOf(userId) : bookmark.skin : selectedSkin, 0,
             excluded == null ? Set.of() : Set.copyOf(excluded), x, z,
-            bookmark == null ? (map == BeachMap.CLOUDSPA ? 0 : Math.atan2(x, z - BeachFireService.FIRE_Z)) : bookmark.yaw, now);
+            bookmark == null ? spawnYaw(map, x, z) : bookmark.yaw, now);
         if (bookmark != null) {
             p.bunkerId = bookmark.bunkerId;
             p.surfaceX = bookmark.surfaceX; p.surfaceZ = bookmark.surfaceZ; p.surfaceYaw = bookmark.surfaceYaw;
