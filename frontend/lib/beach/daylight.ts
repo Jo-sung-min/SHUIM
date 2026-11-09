@@ -267,6 +267,23 @@ export function cloudSpaDaylightAt(hourIn: number): Daylight {
   };
 }
 
+/**
+ * 바이칼: 눈보라가 머금은 백청색 안개(낮)와 슬레이트빛 안개(밤), 차고 낮은 겨울 해. near/far 는 잠잠할 때의 값이고,
+ * 눈보라 세기에 따른 축소와 산장 안에서의 완화는 엔진·월드가 곱한다.
+ */
+export function baikalDaylightAt(hourIn: number): Daylight {
+  const base = uyuniDaylightAt(hourIn);
+  const night = Math.max(0, Math.min(1, base.stars)), day = 1 - night;
+  const fog = mixRgb(mixRgb([0.80, 0.86, 0.92], [0.07, 0.10, 0.16], night), [0.04, 0.06, 0.10], base.deepNight * 0.5);
+  return {
+    ...base, fog, fogNear: 60, fogFar: 320, cloudAmount: 0.7,
+    skyTop: mixRgb(base.skyTop, [0.18, 0.36, 0.62], 0.35 * day),
+    skyHorizon: mixRgb(base.skyHorizon, [0.78, 0.85, 0.92], 0.3 * day),
+    sunColor: mixRgb(base.sunColor, [1, 0.93, 0.82], 0.4 * day),
+    tint: mixRgb(base.tint, [0.88, 0.92, 1], 0.18 * day),
+  };
+}
+
 /** 지금 시각 (분까지, 0~24) */
 export function currentHour(now = new Date()): number {
   return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
@@ -281,10 +298,11 @@ export function hourOverride(search: string): number | null {
   return Number.isFinite(n) ? ((n % 24) + 24) % 24 : null;
 }
 
-/** 개발 환경에서만 ?rain=1 (0~1) 로 봄물 정원의 비를 고정해 볼 수 있다 */
+/** 개발 환경에서만 ?rain=1 (0~1) 로 봄물 정원의 비를, ?storm=1 로 바이칼의 눈보라를 고정해 볼 수 있다 */
 export function rainOverride(search: string): number | null {
   if (process.env.NODE_ENV === "production") return null;
-  const v = new URLSearchParams(search).get("rain");
+  const params = new URLSearchParams(search);
+  const v = params.get("rain") ?? params.get("storm");
   if (v === null || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;

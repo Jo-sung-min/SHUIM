@@ -411,12 +411,12 @@ test("bamboo is a private fullscreen route that reuses the scene with its own ma
   assert.match(route, /<BeachScene[^>]+communityId=\{communityId\}[^>]+mapId="bamboo"/);
   assert.match(layout, /robots:\s*\{ index: false, follow: false \}/);
   assert.match(tabbar, /path === "\/bamboo"/);
-  assert.match(scene, /\(mapId === "bamboo" \|\| mapId === "garden" \|\| mapId === "cloudspa"\) && \(pavilion\.near \|\| pavilion\.seated/, "the shared seat button appears in the forest, garden and cloud spa");
+  assert.match(scene, /\(mapId === "bamboo" \|\| mapId === "garden" \|\| mapId === "cloudspa" \|\| mapId === "baikal"\) && \(pavilion\.near \|\| pavilion\.seated/, "the shared seat button appears in the forest, garden, cloud spa and Baikal cabin");
   const seatNoun = scene.match(/const seatNoun = ([^;]+);/)?.[1];
   assert.ok(seatNoun, "seating contexts expose their own place name");
-  for (const [kind, label] of [["deck", "전망대"], ["hall", "자리"], ["bench", "벤치"], ["pavilion", "정자"], ["pool", "온천"], ["lounge", "소파"]]) {
+  for (const [kind, label] of [["deck", "전망대"], ["hall", "자리"], ["bench", "벤치"], ["pavilion", "정자"], ["pool", "온천"], ["lounge", "소파"], ["hearth", "방석"]]) {
     assert.equal(vm.runInNewContext(seatNoun, { pavilion: { kind }, cloudPool: kind === "pool", cloudLounge: kind === "lounge" }), label, `${kind} keeps its own seating wording`);
   }
-  assert.match(net, /pavilionEnabled: \(mapId === "bamboo" \|\| mapId === "garden" \|\| mapId === "cloudspa"\)/);
+  assert.match(net, /pavilionEnabled: \(mapId === "bamboo" \|\| mapId === "garden" \|\| mapId === "cloudspa" \|\| mapId === "baikal"\)/);
   assert.match(net, /"pavilion-wind", "pavilion-moon", "pavilion-pine", "pavilion-step", "pavilion-summit"/, "pavilion claims are validated like the other seats");
 });

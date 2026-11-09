@@ -1,4 +1,4 @@
-export type MapId = "beach" | "uyuni" | "bamboo" | "garden" | "cloudspa";
+export type MapId = "beach" | "uyuni" | "bamboo" | "garden" | "cloudspa" | "baikal";
 
 export const MAPS = {
   beach: {
@@ -35,6 +35,13 @@ export const MAPS = {
     description: "구름산을 따라 이어지는 다섯 온천과 포근한 리조트. 발아래 도시의 야경을 바라봐요.",
     welcome: "구름 위 따뜻한 물에 몸을 맡겨요.",
     loading: "구름미그린 온천으로 가는 중", loadingDetail: "도시의 불빛을 품은 구름 위로",
+  },
+  baikal: {
+    id: "baikal", name: "바이칼", path: "/baikal",
+    eyebrow: "눈보라 속 따뜻한 산장",
+    description: "끝없는 얼음 호수와 청록 얼음 덩어리, 눈보라 치는 밤 벽난로가 타는 통창 산장에서 함께 쉬어요.",
+    welcome: "눈보라를 지나 산장의 불빛으로 들어와요.",
+    loading: "바이칼로 가는 중", loadingDetail: "눈보라 너머 산장의 불빛으로",
   },
 } as const;
 

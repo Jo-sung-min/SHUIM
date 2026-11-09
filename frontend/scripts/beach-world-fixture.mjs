@@ -95,4 +95,14 @@ vm.runInNewContext(`${cloudSource}\nglobalThis.api = {
   cloudSpaInsideIsland, cloudSpaIslandSpan, cloudSpaIslandRange, cloudSpaEdgeAhead,
   resolveCloudSpaWalk, cloudSpaForSpot, cloudSpaSeat, claimedCloudSpaSeat, nearbyCloudSpaPlace
 };`, cloudContext);
-export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...assets };
+const baikalSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/baikal-layout.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const baikalContext = {};
+vm.runInNewContext(`${baikalSource}\nglobalThis.api = {
+  BAIKAL_BOUNDS, BAIKAL_SPAWN, BAIKAL_SEAT_REACH, BAIKAL_TERRACE, BAIKAL_SHORE, BAIKAL_CABIN, BAIKAL_WIND, BAIKAL_BLOCKS, BAIKAL_CLUSTERS, BAIKAL_PLACES, BAIKAL_SEATS,
+  BAIKAL_WALLS, BAIKAL_FURNITURE, BAIKAL_TREES, BAIKAL_BLOCK_COLLIDERS, BAIKAL_COLLIDERS, STORM_PERIOD_MS,
+  baikalRoofHeight, insideBaikalCabin, underBaikalRoof, baikalCeilingHeight, baikalShoreHeight, baikalTerraceHeight, baikalFloorHeight, baikalSnowCover,
+  baikalStormAt, baikalForSpot, baikalSeat, claimedBaikalSeat, nearbyBaikalPlace, resolveBaikalWalk
+};`, baikalContext);
+export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };

@@ -59,6 +59,17 @@
   --beach-pad-active:rgba(47,60,88,.8);
 }
 .root[data-map="cloudspa"][data-night="true"] { --beach-glass:rgba(22,31,53,.24); }
+.root[data-map="baikal"] {
+  --beach-glass:rgba(36,52,72,.26);
+  --beach-ink:#f7f5f1;
+  --beach-muted:#d8e1ea;
+  --beach-edge:#e8eef657;
+  --beach-shadow:inset 0 1px 0 #ffffff1f,0 5px 20px #10203228;
+  --beach-label-shadow:0 1px 3px #0d1a28a6;
+  --beach-pad-glass:rgba(36,52,72,.58);
+  --beach-pad-active:rgba(58,76,98,.8);
+}
+.root[data-map="baikal"][data-night="true"] { --beach-glass:rgba(24,34,50,.26); }
 .canvas { display:block; width:100%; height:100%; touch-action:none; outline:none; }
 .bunkerTransition { position:absolute; inset:0; z-index:12; display:grid; place-items:center; background:#10171dee; color:#f5ead8; opacity:0; pointer-events:none; transition:opacity .24s ease; }
 .bunkerTransition[data-active="true"] { opacity:1; pointer-events:auto; }
@@ -106,6 +117,9 @@
 .root[data-map="cloudspa"] .center { background:radial-gradient(ellipse at 20% 76%,#b1c7df88,transparent 42%),radial-gradient(ellipse at 85% 63%,#99aecb66,transparent 44%),linear-gradient(180deg,#101b35 0%,#344766 62%,#788fa9 100%); }
 .root[data-map="cloudspa"] .fireworksPanel, .root[data-map="cloudspa"] .roomClockPanel { background:rgba(27,37,62,.94); }
 .root[data-map="cloudspa"] :is(.exitButton:hover,.contextButton:hover,.roomClockTrigger[aria-expanded="true"],.fireworksTrigger[aria-expanded="true"],.fireworksTrigger:hover:not(:disabled)) { background:rgba(47,60,88,.88); }
+.root[data-map="baikal"] .center { background:radial-gradient(ellipse at 28% 78%,#ffb46a55,transparent 36%),radial-gradient(ellipse at 70% 60%,#9fc3d666,transparent 46%),linear-gradient(180deg,#1b2d44 0%,#4d6a86 58%,#b9cad8 100%); }
+.root[data-map="baikal"] .fireworksPanel, .root[data-map="baikal"] .roomClockPanel { background:rgba(30,42,60,.94); }
+.root[data-map="baikal"] :is(.exitButton:hover,.contextButton:hover,.roomClockTrigger[aria-expanded="true"],.fireworksTrigger[aria-expanded="true"],.fireworksTrigger:hover:not(:disabled)) { background:rgba(58,76,98,.88); }
 @media(max-width:360px) { .fireworksTrigger { min-width:92px; padding-inline:10px; } }
 .roomClock { position:relative; }
 .roomClockTrigger { min-height:44px; cursor:pointer; transition:transform .13s,background .16s; }
@@ -251,7 +265,7 @@
 /* Reserve the left thumb area for both rows, including when nearby actions appear. */
 @media(pointer:coarse) {
   .root { --beach-mobile-glass:rgba(250,247,239,.18); }
-  .root[data-map="uyuni"], .root[data-map="bamboo"], .root[data-map="garden"] { --beach-mobile-glass:rgba(250,247,239,.18); }
+  .root[data-map="uyuni"], .root[data-map="bamboo"], .root[data-map="garden"], .root[data-map="baikal"] { --beach-mobile-glass:rgba(250,247,239,.18); }
   .root[data-night="true"] { --beach-mobile-glass:rgba(25,37,31,.24); }
   .glass, .dock, .fireContext > button, .contextButton, .restoreHud, .dockNotice {
     background:var(--beach-mobile-glass); border-color:#f8f4e638; box-shadow:0 2px 10px #1c251b0d;

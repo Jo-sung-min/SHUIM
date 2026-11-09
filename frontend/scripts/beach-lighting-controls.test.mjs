@@ -30,7 +30,7 @@ function render(extra = {}) {
 }
 
 test("only the garden adds a rainy-night choice without changing the four existing time choices", () => {
-  for (const mapId of [undefined, "beach", "uyuni", "bamboo", "cloudspa"]) {
+  for (const mapId of [undefined, "beach", "uyuni", "bamboo", "cloudspa", "baikal"]) {
     const h = render({ mapId });
     assert.equal(h.choices.length, 4);
     h.choices.forEach(node => node.props.onClick());

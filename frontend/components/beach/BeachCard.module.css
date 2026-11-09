@@ -36,3 +36,4 @@
 
 .placeCard[data-place="cloudspa"] { background:linear-gradient(145deg,#8b9eb7,#172b48); }
 .placeCard[data-place="cloudspa"] .photo { object-position:center 65%; }
+.placeCard[data-place="baikal"] { background:linear-gradient(145deg,#7fa6bf 0%,#2a4a68 55%,#1a2a3e 100%); }
