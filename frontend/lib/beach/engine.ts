@@ -49,6 +49,7 @@ import { FireworkAudio } from "./firework-audio";
 import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-avatar";
+import { PaperAvatarModels } from "./paper-avatar";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
@@ -318,12 +319,15 @@ const PLACEMENT: { prop: PropName; x: number; z: number; scale: number; decal?: 
 ];
 const FIRE = CAMPFIRE;
 
+type EngineAvatarKind = AvatarKind | "mongsil";
+type EngineAvatar = Pick<BeachAvatar, "root" | "update" | "playGesture" | "getSparklerGrip" | "poseSparkler" | "dispose"> & { readonly kind: EngineAvatarKind };
+
 interface AvatarNode {
   sprite: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   mat: THREE.MeshBasicMaterial;
   tex: THREE.Texture;
   shadow: THREE.Mesh;
-  avatar: BeachAvatar | null;
+  avatar: EngineAvatar | null;
 }
 
 interface PlayerNode extends AvatarNode {
@@ -425,6 +429,7 @@ export class BeachEngine {
   private remoteClock = new RemoteSnapshotClock();
   private avatarModels: BeachAvatarModels | null = null;
   private femaleAvatarModels: BeachAvatarModels | null = null;
+  private paperAvatarModels: PaperAvatarModels | null = null;
   private onsenAvatarModels: BeachAvatarModels | null = null;
   private onsenAvatarRequested = false;
   private onsenAvatarReady = false;
@@ -579,6 +584,7 @@ export class BeachEngine {
     }
     this.avatarModels = new BeachAvatarModels();
     this.femaleAvatarModels = new BeachAvatarModels("female");
+    this.paperAvatarModels = new PaperAvatarModels(this.camera);
     this.onsenAvatarModels = new BeachAvatarModels("male-onsen");
     this.femaleOnsenAvatarModels = new BeachAvatarModels("female-onsen");
     // Only the selected everyday model is part of entry. Other visitors/models
@@ -756,12 +762,14 @@ export class BeachEngine {
     return { sprite, mat, tex, shadow, avatar: null, animT: 0 };
   }
 
-  private avatarKind(skin: number): AvatarKind {
+  private avatarKind(skin: number): EngineAvatarKind {
+    if (skin === 6) return "mongsil";
     // Retired IDs in cached room snapshots retain their ordinary gender.
     return skin === 1 || skin === 3 || skin === 5 ? "female" : "male";
   }
 
-  private baseAvatarPool(kind: AvatarKind) {
+  private baseAvatarPool(kind: EngineAvatarKind) {
+    if (kind === "mongsil") return this.paperAvatarModels;
     return kind === "female" ? this.femaleAvatarModels : this.avatarModels;
   }
 
@@ -774,6 +782,15 @@ export class BeachEngine {
     // A transient first download failure must not leave a pixel fallback for
     // the entire visit. The pool shares pending requests and enforces its cooldown.
     if (!basePool?.ready && basePool?.canLoad) void basePool.load();
+    // The paper character keeps its own silhouette in every map, including baths.
+    if (baseKind === "mongsil") {
+      if (node.avatar?.kind === "mongsil") return node.avatar;
+      const next = basePool?.create() ?? null;
+      node.avatar?.dispose();
+      node.avatar = next;
+      if (next) this.scene.add(next.root);
+      return node.avatar;
+    }
     const robeKind = female ? "female-onsen" : "male-onsen";
     const radius = hotSpringBathDistance(x, z);
     const wearingRobe = node.avatar?.kind === robeKind;
@@ -859,7 +876,7 @@ export class BeachEngine {
 
   /** Stable IDs select either model or either atlas row without rejoining the room. */
   setSkin(skin: number) {
-    if (this.disposed || !Number.isInteger(skin) || skin < 0 || skin > 5) return;
+    if (this.disposed || !Number.isInteger(skin) || skin < 0 || skin > 6) return;
     this.skin = skin === 4 ? 0 : skin === 5 ? 3 : skin;
   }
 
@@ -1874,7 +1891,7 @@ export class BeachEngine {
 
   private setFrameOn(tex: THREE.Texture, view: number, frame: number, skin: number) {
     const col = view + frame;
-    const row = ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
+    const row = skin === 6 ? 0 : ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
     tex.offset.set(col / CHAR_ATLAS.cols, 1 - (row + 1) / CHAR_ATLAS.rows);
   }
 
@@ -2896,6 +2913,8 @@ export class BeachEngine {
     this.avatarModels = null;
     this.femaleAvatarModels?.dispose();
     this.femaleAvatarModels = null;
+    this.paperAvatarModels?.dispose();
+    this.paperAvatarModels = null;
     this.onsenAvatarModels?.dispose();
     this.onsenAvatarModels = null;
     this.femaleOnsenAvatarModels?.dispose();

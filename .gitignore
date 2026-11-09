@@ -49,6 +49,7 @@ yarn-error.log*
 *.iml
 .DS_Store
 Thumbs.db
+/.tmp-character-reference/
 
 # claude desktop local launch config
 .claude/
@@ -57,3 +58,4 @@ Thumbs.db
 !frontend/public/garden/art/*.webp
 !frontend/public/cloudspa/art/*.webp
 !frontend/public/baikal/art/*.webp
+!frontend/public/characters/mongsil/*.webp

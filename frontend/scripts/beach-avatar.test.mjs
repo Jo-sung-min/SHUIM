@@ -336,7 +336,8 @@ test("current and legacy selections switch between 3D genders while keeping the 
   engine.setSkin(3); assert.equal(engine.skin, 3);
   engine.setSkin(4); assert.equal(engine.skin, 0, "a retired male selection restores the ordinary male");
   engine.setSkin(5); assert.equal(engine.skin, 3, "a retired female selection restores the ordinary female");
-  engine.setSkin(6); assert.equal(engine.skin, 3, "unknown IDs cannot silently select another character");
+  engine.setSkin(6); assert.equal(engine.skin, 6, "the original paper character keeps its own stable ID");
+  engine.setSkin(7); assert.equal(engine.skin, 6, "unknown IDs cannot silently select another character");
   engine.removePlayer(node);
 });
 
@@ -353,6 +354,95 @@ test("retired remote selections use ordinary male and female models on every map
     }
     engine.removePlayer(node);
   }
+});
+
+test("mongsil has its own pool on every map and never requests a bathrobe", () => {
+  for (const mapId of ["beach", "uyuni", "bamboo", "garden", "cloudspa", "baikal"]) {
+    const { engine } = fixture(); engine.mapId = mapId;
+    const paper = modelPool("mongsil"); engine.paperAvatarModels = { ...paper.pool, ready: true };
+    const forbidden = { canLoad: true, load() { throw new Error("paper characters must not request a GLB robe"); }, create() { throw new Error("paper characters must not switch to a GLB"); } };
+    engine.avatarModels = engine.femaleAvatarModels = engine.onsenAvatarModels = engine.femaleOnsenAvatarModels = forbidden;
+    engine.setSkin(6); assert.equal(engine.skin, 6);
+    assert.equal(engine.baseAvatarPool(engine.avatarKind(6)), engine.paperAvatarModels);
+    const local = { avatar: null }, remote = { avatar: null };
+    for (const p of [{ x: 0, z: 45 }, { x: 0, z: 70 }, { x: -24, z: 38 }]) {
+      assert.equal(engine.syncAvatar(local, 6, p.x, p.z).kind, "mongsil");
+      assert.equal(engine.syncAvatar(remote, 6, p.x, p.z).kind, "mongsil");
+    }
+    assert.notEqual(local.avatar, remote.avatar);
+    assert.equal(paper.instances.length, 2, "stable actors share artwork without recreating each frame");
+  }
+});
+
+test("a paper download shares retries across visitors and leaves a valid row-zero sprite while pending", async () => {
+  const { engine, node } = fixture();
+  let ready = false, pending = false, cooling = true, loads = 0, finish;
+  const paper = modelPool("mongsil");
+  engine.paperAvatarModels = {
+    get ready() { return ready; }, get canLoad() { return !ready && !pending && !cooling; },
+    load() { loads++; pending = true; return new Promise(resolve => { finish = () => { ready = true; pending = false; resolve(); }; }); },
+    create() { return ready ? paper.pool.create() : null; },
+  };
+  engine.setPlayers([{ ...node.data, skin: 6 }]); engine.updatePlayers(.1);
+  assert.equal(node.sprite.visible, true); assert.equal(node.avatar, null);
+  assert.equal(node.tex.offset.y, 1 - 1 / CHAR_ATLAS.rows);
+  assert.equal(loads, 0, "the failed loader's cooldown is respected");
+  cooling = false; const local = { avatar: null };
+  for (let i = 0; i < 4; i++) { engine.updatePlayers(.1); engine.syncAvatar(local, 6, 0, 0); }
+  assert.equal(loads, 1);
+  finish(); await Promise.resolve(); engine.updatePlayers(.1); engine.syncAvatar(local, 6, 0, 0);
+  assert.equal(node.avatar.kind, "mongsil"); assert.equal(node.sprite.visible, false);
+  assert.notEqual(local.avatar, node.avatar); assert.equal(loads, 1);
+});
+
+test("switching between GLB and paper retains remote identity and releases only the replaced actor", () => {
+  const { engine, node, scene, camera, selected } = fixture();
+  const male = modelPool("male"), paper = modelPool("mongsil");
+  engine.avatarModels = male.pool; engine.paperAvatarModels = paper.pool;
+  engine.updatePlayers(.1); const first = node.avatar;
+  engine.setPlayers([{ ...node.data, skin: 6 }]); engine.updatePlayers(.1); scene.updateMatrixWorld(true);
+  const cutout = node.avatar;
+  assert.equal(cutout.kind, "mongsil"); assert.equal(first.disposed, 1);
+  assert.equal(engine.players.get(node.data.pid), node); assert.equal(node.shadow.visible, true);
+  const point = cutout.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+  engine.tapAt((point.x + 1) / 2 * 800, (1 - point.y) / 2 * 600);
+  assert.equal(selected.at(-1), node.data, "the actual paper mesh remains selectable");
+  engine.setPlayers([{ ...node.data, skin: 0 }]); engine.updatePlayers(.1);
+  assert.equal(cutout.disposed, 1); assert.equal(cutout.root.parent, null);
+  assert.equal(node.avatar.kind, "male"); assert.notEqual(node.avatar, first);
+  const replacement = node.avatar; engine.removePlayer(node); assert.equal(replacement.disposed, 1); assert.equal(node.avatar, null);
+});
+
+test("paper actors receive local seated, lying and bunker transition heights and hide near an indoor camera", () => {
+  const { engine, camera } = fixture(); const paper = modelPool("mongsil"); engine.paperAvatarModels = paper.pool;
+  Object.assign(engine, { skin: 6, view: "third", skyRest: null, benchSeat: null, restSeat: null,
+    self: { x: 2, z: 4, yaw: .4, moving: true }, deckHeight: () => -8.6, activeBunkerId: "dawn", bunkerClimbOffset: 3.4 });
+  engine.selfNode = engine.createSelfAvatar(); engine.updateSelfAvatar(.1);
+  const actor = engine.selfNode.avatar;
+  assert.ok(Math.abs(actor.states.at(-1).y + 5.2) < 1e-9, "the ladder animation offset reaches the cutout");
+  assert.equal(actor.root.visible, true); assert.equal(engine.selfNode.sprite.visible, false);
+  camera.position.set(2.1, -6, 4.1); engine.updateSelfAvatar(.1);
+  assert.equal(actor.root.visible, false); assert.equal(engine.selfNode.shadow.visible, false);
+  camera.position.set(2, -4, 0); engine.view = "first"; engine.updateSelfAvatar(.1);
+  assert.equal(actor.root.visible, false);
+  engine.view = "third"; engine.bunkerClimbOffset = 0;
+  engine.restSeat = { x: 2, z: 4, yaw: .4, shelterId: "dawn" }; engine.updateSelfAvatar(.1);
+  assert.ok(Math.abs(actor.states.at(-1).seated.avatarY + 8.08) < 1e-9);
+  engine.restSeat = null; engine.activeBunkerId = null;
+  const lying = stargazing.claimedStargazingSlot({ pose: "lying", spotId: "starlight", slot: 2 });
+  engine.skyRest = lying; engine.self.moving = false; engine.updateSelfAvatar(.1);
+  assert.equal(actor.states.at(-1).lying, lying); assert.equal(engine.selfNode.shadow.visible, false);
+});
+
+test("remote paper characters receive canonical bed and bench poses instead of stale walking coordinates", () => {
+  const { engine, node } = fixture(); engine.paperAvatarModels = modelPool("mongsil").pool;
+  engine.setPlayers([{ ...node.data, skin: 6, pose: "lying", spotId: "hut-wave", slot: 0, moving: true }]); engine.updatePlayers(.1);
+  const actor = node.avatar;
+  assert.equal(actor.kind, "mongsil"); assert.equal(actor.states.at(-1).moving, false);
+  assert.equal(actor.states.at(-1).lying.avatarY, .82); assert.equal(node.shadow.visible, false);
+  engine.setPlayers([{ ...node.data, pose: "sitting", spotId: "fire-benches", slot: 4 }]); engine.updatePlayers(.1);
+  assert.equal(node.avatar, actor); assert.equal(actor.states.at(-1).seated, benches.FIRE_BENCH_SEATS[4]);
+  assert.equal(actor.states.at(-1).moving, false); assert.equal(actor.states.at(-1).lying, null);
 });
 
 test("the local 3D avatar hides in first person and receives the authoritative rest poses", () => {

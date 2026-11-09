@@ -147,6 +147,8 @@
 .topTool:disabled, .dockButton:disabled { opacity:.42; cursor:default; transform:none; }
 .topTool:focus-visible, .dockButton:focus-visible, .exitButton:focus-visible, .hideHud:focus-visible, .restoreHud:focus-visible { outline:3px solid #7e9b86; outline-offset:2px; }
 .characterChoices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.characterChoices:has(> :nth-child(3)) { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.characterChoices:has(> :nth-child(3)) .characterModel { width:100%; max-width:72px; }
 .characterChoice { position:relative; display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0; padding:6px 4px 11px; border:1px solid #ffffff40; border-radius:16px; background:#ffffff0f; color:var(--beach-ink); font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,border-color .15s,transform .12s; }
 .characterChoice[aria-pressed="true"] { border-color:#a2bf9d; background:#b4d3b02b; box-shadow:inset 0 0 0 1px #a2bf9d; }
 .characterChoice:hover { background:#ffffff24; }

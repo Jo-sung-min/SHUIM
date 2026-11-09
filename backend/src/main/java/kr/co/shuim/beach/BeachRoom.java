@@ -782,6 +782,7 @@ public class BeachRoom {
             case "female" -> 1;
             case "pixel-male" -> 2;
             case "female-3d", "cat-lady" -> 3;
+            case "mongsil" -> 6;
             default -> throw ApiException.badRequest("캐릭터를 다시 골라 주세요.");
         };
     }

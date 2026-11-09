@@ -24,6 +24,7 @@ export default function TabBar() {
   // 경로가 바뀔 때마다 읽지 않은 알림 수 갱신 (알림 전용 API: 커뮤니티 전체를 받지 않는다)
   useEffect(() => {
     let alive = true;
+    if (path === "/character-preview") return;
     if (["/auth", "/info", "/privacy", "/terms", "/account-deletion"].some((route) => path === route || path.startsWith(`${route}/`))) return;
     Promise.all([fetchNotifications(loadNotifSeen()).then((r) => r.unread).catch(() => 0), unreadMessages()])
       .then(([a, b]) => alive && setUnread(a + b))
@@ -34,7 +35,7 @@ export default function TabBar() {
   }, [path]);
 
   // 글쓰기·외침 글 화면은 아래에 자기 입력창(올리기·댓글)이 있어 탭바를 숨긴다. 바닷가는 전체 화면이라 숨긴다
-  if (path === "/write" || path === "/beach" || path === "/uyuni" || path === "/bamboo" || path === "/garden" || path === "/cloudspa" || path === "/baikal" || /^\/shout\/[^/]+$/.test(path) || /^\/c\/[^/]+\/(submit|admin)$/.test(path)) return null;
+  if (path === "/character-preview" || path === "/write" || path === "/beach" || path === "/uyuni" || path === "/bamboo" || path === "/garden" || path === "/cloudspa" || path === "/baikal" || /^\/shout\/[^/]+$/.test(path) || /^\/c\/[^/]+\/(submit|admin)$/.test(path)) return null;
 
   return (
     <nav className="tabbar" aria-label="메인 메뉴">

@@ -6,8 +6,9 @@ export const SERVICE_TIMEOUT_MS = 7_000;
 
 const PUBLIC_PATHS = ["/info", "/privacy", "/terms", "/account-deletion"];
 
-/** Service information and account deletion instructions must remain readable during an outage. */
+/** Public information and the local-only character viewer work without a database. */
 export function isServicePublicPath(pathname: string): boolean {
+  if (pathname === "/character-preview" || pathname === "/character-preview/") return true;
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
