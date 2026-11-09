@@ -43,6 +43,17 @@ export const BUNKER_SEATS: readonly PavilionSeat[] = UYUNI_BUNKERS.flatMap(bunke
   baseY: BUNKER_FLOOR_Y, avatarY: BUNKER_FLOOR_Y + BUNKER_SEAT_HEIGHT, incline: 0,
 })));
 
+export type BunkerGameKind = "omok" | "othello";
+export const BUNKER_GAME_REACH = 2.4;
+export const BUNKER_GAMES_LOCAL: readonly { game: BunkerGameKind; name: string; x: number; z: number }[] = [
+  { game: "omok", name: "오목", x: -3.6, z: 5.5 }, { game: "othello", name: "오셀로", x: 3.6, z: 5.5 },
+];
+export interface BunkerGameTable { id: string; bunkerId: UyuniBunkerId; game: BunkerGameKind; name: string; x: number; z: number }
+/** Fireside game tables. Mirrored by BeachBoardGames.SPOTS on the server. */
+export const BUNKER_GAME_TABLES: readonly BunkerGameTable[] = UYUNI_BUNKERS.flatMap(bunker => BUNKER_GAMES_LOCAL.map(table => ({
+  id: `bunker-${bunker.id}-${table.game}`, bunkerId: bunker.id, game: table.game, name: table.name, x: bunker.x + table.x, z: bunker.z + table.z,
+})));
+
 export type BunkerColliderKind = "wall" | "sofa" | "table" | "shelf" | "plant" | "ladder";
 export interface BunkerCollider extends ShelterCollider { bunkerId: UyuniBunkerId; kind: BunkerColliderKind }
 export const BUNKER_COLLIDERS: readonly BunkerCollider[] = UYUNI_BUNKERS.flatMap(bunker => {
@@ -58,6 +69,9 @@ export const BUNKER_COLLIDERS: readonly BunkerCollider[] = UYUNI_BUNKERS.flatMap
     rect("plant", -8.1, 6.5, .65, .65), rect("plant", 8.1, 6.5, .65, .65),
     rect("table", -5.3, -3.85, .51, .51), rect("table", 5.3, 3.85, .51, .51),
     rect("ladder", 0, -6.85, .62, .6),
+    rect("sofa", -9.32, 0, .55, 5.8), rect("sofa", 9.32, 0, .55, 5.8),
+    ...BUNKER_GAMES_LOCAL.flatMap(table => [rect("table", table.x, table.z, .7, .7), rect("plant", table.x - 1.15, table.z, .42, .42), rect("plant", table.x + 1.15, table.z, .42, .42)]),
+    rect("plant", -8.1, -6.2, .3, .3), rect("plant", 8.1, -6.2, .3, .3),
   ];
 });
 
@@ -84,6 +98,9 @@ export function nearbyBunkerLadder(id: string | null | undefined, x: number, z: 
 export function nearbyBunkerSofa(id: string | null | undefined, x: number, z: number): UyuniBunker | null {
   const bunker = bunkerById(id);
   return bunker && BUNKER_SEATS.some(seat => seat.spotId === bunker.spotId && Math.hypot(x - seat.x, z - seat.z) <= BUNKER_SEAT_REACH) ? bunker : null;
+}
+export function nearbyBunkerGame(id: string | null | undefined, x: number, z: number): BunkerGameTable | null {
+  return BUNKER_GAME_TABLES.find(table => table.bunkerId === id && Math.hypot(x - table.x, z - table.z) <= BUNKER_GAME_REACH) ?? null;
 }
 export function bunkerColliders(id: string | null | undefined): readonly BunkerCollider[] {
   return BUNKER_COLLIDERS.filter(collider => collider.bunkerId === id);

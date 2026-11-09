@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import type { Daylight } from "./daylight";
 import type { PavilionSeat } from "./bamboo-trail";
-import { BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_SEATS, insideBaikalCabin } from "./baikal-layout";
+import { BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_COZY_PER_ROOM, BAIKAL_ROOM_SPILL, BAIKAL_SEATS, insideBaikalCabin } from "./baikal-layout";
 import { type BaikalUniforms, createBaikalFlameMaterial, createBaikalIceMaterial, createBaikalUniforms } from "./baikal-materials";
+import { applyCozyLighting, seatBlanketGeometry } from "./baikal-cozy";
 import { type BaikalTextures, buildBaikalCabin, buildBaikalHummocks, buildBaikalShore } from "./baikal-geometry";
 import { BaikalSnow } from "./baikal-snow";
 import { BaikalVapor } from "./baikal-vapor";
@@ -13,19 +14,64 @@ export interface BaikalWalker { x: number; z: number; moving?: boolean }
 const OCCLUSION_LAYER = 5;
 const PROBE_LAYER = 6;
 
+/** A plush blanket settles over everyone who sits down, and slips off again when they stand. */
+class SeatBlankets {
+  private readonly mesh: THREE.InstancedMesh;
+  private readonly material: THREE.MeshStandardMaterial;
+  private readonly amounts = new Float32Array(BAIKAL_SEATS.length);
+  private readonly dummy = new THREE.Object3D();
+
+  constructor(parent: THREE.Object3D, shared: BaikalUniforms, knit: THREE.Texture | null, mobile: boolean) {
+    const geometry = seatBlanketGeometry(mobile ? 20 : 34, mobile ? 24 : 40);
+    this.material = applyCozyLighting(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, vertexColors: true, side: THREE.DoubleSide, normalMap: knit, normalScale: new THREE.Vector2(.8, .8) }), shared, knit ? { fabric: true, cavity: .55, count: mobile ? 8 : BAIKAL_COZY_PER_ROOM } : { fabric: true, count: mobile ? 8 : BAIKAL_COZY_PER_ROOM });
+    this.material.name = "baikal-seat-blanket";
+    this.mesh = new THREE.InstancedMesh(geometry, this.material, BAIKAL_SEATS.length);
+    this.mesh.name = "baikal-seat-blankets"; this.mesh.frustumCulled = false;
+    const colors = [0xf0e2cc, 0xd9b48a, 0xe8cfc0, 0xc9d0bb, 0xefe7d8], tint = new THREE.Color();
+    BAIKAL_SEATS.forEach((_, index) => {
+      this.mesh.setMatrixAt(index, this.dummy.matrix.makeScale(0, 0, 0));
+      this.mesh.setColorAt(index, tint.setHex(colors[index % colors.length]));
+    });
+    this.mesh.instanceMatrix.needsUpdate = true; if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    parent.add(this.mesh);
+  }
+
+  /** Each frame only touches a seat whose blanket is still arriving or leaving. */
+  update(seated: readonly PavilionSeat[], dt: number) {
+    let changed = false;
+    BAIKAL_SEATS.forEach((seat, index) => {
+      const wanted = seated.some(other => other.spotId === seat.spotId && other.slot === seat.slot) ? 1 : 0, current = this.amounts[index];
+      if (current === wanted) return;
+      let next = current + (wanted - current) * (1 - Math.exp(-dt * 7));
+      if (Math.abs(wanted - next) < .004) next = wanted;
+      this.amounts[index] = next; changed = true;
+      const eased = next * next * (3 - 2 * next);
+      this.dummy.position.set(seat.x, seat.avatarY + (1 - eased) * .3, seat.z);
+      this.dummy.rotation.set(0, seat.yaw + Math.PI, 0, "YXZ");
+      this.dummy.scale.setScalar(next === 0 ? 0 : Math.max(.001, eased));
+      this.dummy.updateMatrix(); this.mesh.setMatrixAt(index, this.dummy.matrix);
+    });
+    if (changed) this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  dispose() { this.mesh.removeFromParent(); this.mesh.geometry.dispose(); this.mesh.dispose(); this.material.dispose(); }
+}
+
 /** A small wood stove: instanced flame tongues behind its glass, an ember bed, and one breathing, flickering light. */
 class StoveFire {
   readonly flames: THREE.InstancedMesh;
   readonly light = new THREE.PointLight(0xff9a3c, 0, 11, 2);
   /** The flicker of this fire this frame: shared with every surface the cozy lighting patch touches. */
   glow = 1;
+  private readonly power: number;
   private readonly material: THREE.ShaderMaterial;
   private readonly embers: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
 
-  constructor(parent: THREE.Object3D, hearth: THREE.Vector3, time: THREE.IUniform<number>) {
+  constructor(parent: THREE.Object3D, hearth: THREE.Vector3, time: THREE.IUniform<number>, burning = true) {
+    this.power = burning ? 1 : .22;
     this.material = createBaikalFlameMaterial(time);
     const geometry = new THREE.PlaneGeometry(1, 1, 1, 6); geometry.translate(0, .5, 0);
-    const seeds = new Float32Array(7);
+    const seeds = new Float32Array(burning ? 7 : 0);
     for (let i = 0; i < seeds.length; i++) seeds[i] = i / seeds.length;
     geometry.setAttribute("aSeed", new THREE.InstancedBufferAttribute(seeds, 1));
     this.flames = new THREE.InstancedMesh(geometry, this.material, seeds.length);
@@ -38,7 +84,7 @@ class StoveFire {
     }
     this.flames.name = "baikal-stove-flames"; this.flames.frustumCulled = false; this.flames.renderOrder = 6; parent.add(this.flames);
     this.embers = new THREE.Mesh(new THREE.CircleGeometry(.2, 16), new THREE.MeshBasicMaterial({ color: 0xff6a1e, transparent: true, opacity: .85, toneMapped: false, depthWrite: false }));
-    this.embers.name = "baikal-stove-embers"; this.embers.rotation.x = -Math.PI / 2; this.embers.position.set(hearth.x, hearth.y - .03, hearth.z - .1); parent.add(this.embers);
+    this.embers.visible = burning; this.embers.name = "baikal-stove-embers"; this.embers.rotation.x = -Math.PI / 2; this.embers.position.set(hearth.x, hearth.y - .03, hearth.z - .1); parent.add(this.embers);
     this.light.name = "baikal-stove-light"; this.light.castShadow = false; this.light.position.set(hearth.x, hearth.y + .35, hearth.z + .6); parent.add(this.light);
   }
   update(time: number, night: number) {
@@ -46,7 +92,7 @@ class StoveFire {
     const breath = 1 + Math.sin(time * .65) * .04 + Math.sin(time * 1.7 + .6) * .02;
     const flicker = 1 + (Math.sin(time * 9.3) * Math.sin(time * 5.1 + 1.3) + Math.sin(time * 13.7)) * .035;
     this.glow = breath * flicker;
-    this.light.intensity = (10 + night * 12) * this.glow;
+    this.light.intensity = (10 + night * 12) * this.glow * this.power;
     this.light.position.y = .95 + Math.sin(time * 2.3) * .03;
     this.material.uniforms.uPower.value = .85 + Math.sin(time * 2.1) * .08 + Math.sin(time * 5.7) * .05;
     this.embers.material.opacity = .7 + Math.sin(time * .9) * .1;
@@ -73,14 +119,11 @@ export class BaikalWorld {
   private reveal = 0;
   private activeCabin = -1;
   private daylight: Daylight | null = null;
-  private readonly village: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   private readonly hemi = new THREE.HemisphereLight(0xcfdcf0, 0x9aa7b8, 1.1);
   private readonly sun = new THREE.DirectionalLight(0xfff1dc, 1);
   private readonly lamps: THREE.PointLight[] = [];
-  private readonly seatLight = new THREE.PointLight(0xffc98a, 0, 3.2, 2);
   private readonly time: THREE.IUniform<number>;
-  private seatTarget: PavilionSeat | null = null;
-  private seatAmount = 0;
+  private readonly seatBlankets: SeatBlankets;
   private storm = 1;
   private night = 0;
   private lampAmount = 1;
@@ -129,12 +172,13 @@ export class BaikalWorld {
     this.shore = buildBaikalShore(this.root, this.shared, textures, mobile);
     this.hummocks = buildBaikalHummocks(this.root, this.shared, mobile);
     this.cabin = buildBaikalCabin(this.root, textures, this.shared, mobile, this.baked);
-    this.fires = this.cabin.hearths.map(hearth => new StoveFire(this.root, hearth, this.time));
-    // A small real flame on every candle and lantern.
+    this.fires = this.cabin.hearths.map((hearth, index) => new StoveFire(this.root, hearth, this.time, this.cabin.hearthFlames[index]));
+    this.seatBlankets = new SeatBlankets(this.root, this.shared, this.baked?.knit ?? null, mobile);
+    // A small real flame on every candle.
     {
       this.candleMaterial = createBaikalFlameMaterial(this.time);
       const quad = new THREE.PlaneGeometry(1, 1, 1, 6); quad.translate(0, .5, 0);
-      const spots = this.cabin.flameSpots, seeds = new Float32Array(spots.length);
+      const spots = this.cabin.candles, seeds = new Float32Array(spots.length);
       for (let i = 0; i < seeds.length; i++) seeds[i] = (i * .618) % 1;
       quad.setAttribute("aSeed", new THREE.InstancedBufferAttribute(seeds, 1));
       this.candleFlames = new THREE.InstancedMesh(quad, this.candleMaterial, spots.length);
@@ -149,18 +193,8 @@ export class BaikalWorld {
       this.lamps.push(light); this.root.add(light);
     }
     if (mobile) this.lamps[2].visible = false;
-    this.seatLight.name = "baikal-seat-light"; this.seatLight.castShadow = false; this.root.add(this.seatLight);
-    // Far across the lake a few village lights show on clear nights.
-    const villagePositions = new Float32Array(30 * 3);
-    for (let i = 0; i < 30; i++) {
-      const a = -.9 + (i / 30) * 1.1 + Math.sin(i * 7.3) * .03, r = 430 + Math.sin(i * 3.1) * 40;
-      villagePositions.set([Math.sin(a) * r, 1.5 + (i % 3) * .8, -Math.cos(a) * r], i * 3);
-    }
-    const villageGeometry = new THREE.BufferGeometry(); villageGeometry.setAttribute("position", new THREE.BufferAttribute(villagePositions, 3));
-    this.village = new THREE.Points(villageGeometry, new THREE.PointsMaterial({ color: 0xffc27a, size: 2.6, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, toneMapped: false, fog: false }));
-    this.village.name = "baikal-far-village-lights"; this.village.frustumCulled = false; this.root.add(this.village);
     this.snow = new BaikalSnow(this.root, this.shared, mobile);
-    this.vapor = new BaikalVapor(this.root, this.shared, this.cabin.chimneys, this.cabin.mugs, mobile);
+    this.vapor = new BaikalVapor(this.root, this.shared, this.cabin.chimneys, mobile);
   }
 
   applyDaylight(d: Daylight) {
@@ -181,11 +215,16 @@ export class BaikalWorld {
     this.cabin.applyNight(this.lampAmount);
     this.shared.uLamp.value = this.lampAmount;
     (this.shared.uCabinLight.value as THREE.Vector4).w = THREE.MathUtils.smoothstep(night, .35, .95);
-    for (const light of this.shared.uCabinLights.value) light.w = this.shared.uCabinLight.value.w;
+    this.shared.uCabinLights.value.forEach((light, index) => { light.w = this.shared.uCabinLight.value.w * BAIKAL_ROOM_SPILL[index]; });
     // The cozy patch lights the room; these three stay soft and only give avatars and metal their highlights.
-    for (const lamp of this.lamps) lamp.intensity = 5 + 11 * this.lampAmount;
+    this.applyLampLevels();
     this.applyFog(d);
     this.refreshRoomLight();
+  }
+
+  private applyLampLevels() {
+    const gain = this.cabin.cabinLights[Math.max(0, this.activeCabin) * 3].gain;
+    for (const lamp of this.lamps) lamp.intensity = (5 + 11 * this.lampAmount) * gain;
   }
 
   /**
@@ -205,7 +244,7 @@ export class BaikalWorld {
     this.cubeCamera = new THREE.CubeCamera(.3, 450, this.roomCube);
     this.cubeCamera.position.set(-23, 2.4, 6);
     for (const face of this.cubeCamera.children) face.layers.set(PROBE_LAYER);
-    for (const object of [...this.cabin.occluders, ...this.cabin.probeVisible, ...probeExtras, this.ice, this.fires[0].flames]) object.layers.enable(PROBE_LAYER);
+    for (const object of [...this.cabin.occluders, ...probeExtras, this.ice, this.fires[0].flames]) object.layers.enable(PROBE_LAYER);
     this.cleanCamera = new THREE.CubeCamera(.1, 10, this.cleanCube);
     this.cleanScene = new THREE.Scene();
     this.cleanMaterial = new THREE.ShaderMaterial({ uniforms: { tSource: { value: this.roomCube.texture } }, side: THREE.BackSide, depthTest: false, depthWrite: false, toneMapped: false,
@@ -227,7 +266,7 @@ export class BaikalWorld {
     if (!renderer || !cube || !pmrem || !room || !clean || !cleaner || !this.cleanScene) return;
     this.probedNight = this.night;
     // Halos are billboards for one viewer, and the glass would be sampling the very cube being drawn.
-    const hide = [this.snow.flakes, this.snow.sheets, ...this.cabin.captureHidden], visibility = hide.map(object => object.visible);
+    const hide = [this.snow.flakes, ...this.cabin.captureHidden], visibility = hide.map(object => object.visible);
     hide.forEach(object => { object.visible = false; });
     const previous = renderer.getRenderTarget();
     cube.update(renderer, this.scene);
@@ -251,7 +290,7 @@ export class BaikalWorld {
   /** Fog distances follow the storm and open up indoors so the room stays crisp while the window goes white. */
   applyFog(d: Daylight, inside = false) {
     const storm = this.shared.uStorm.value;
-    const near = d.fogNear * (1 - storm * .8), far = d.fogFar * (1 - storm * .75) * (inside ? 2.2 : 1);
+    const near = d.fogNear * (1 - storm * .35), far = d.fogFar * (1 - storm * .4) * (inside ? 2.2 : 1);
     this.shared.uFogNear.value = near; this.shared.uFogFar.value = far;
   }
   get fogNear() { return this.shared.uFogNear.value; }
@@ -270,12 +309,7 @@ export class BaikalWorld {
     this.journeyStage = Number.isInteger(stage) && stage >= 0 && stage <= 3 ? stage : 0;
   }
 
-  /** A warm reading light follows the seat the server confirmed, never the walking position. */
-  setSeat(seat: { spotId: string; slot: number } | null | undefined) {
-    this.seatTarget = seat ? BAIKAL_SEATS.find(candidate => candidate.spotId === seat.spotId && candidate.slot === seat.slot) ?? null : null;
-  }
-
-  update(time: number, camera: THREE.Camera, self?: BaikalWalker, seat?: PavilionSeat | null) {
+  update(time: number, camera: THREE.Camera, self?: BaikalWalker, seated: readonly PavilionSeat[] = []) {
     if (this.disposed || !Number.isFinite(time)) return;
     const dt = time < this.lastTime ? 0 : Math.min(.1, time - this.lastTime); this.lastTime = time;
     this.time.value = time;
@@ -288,7 +322,6 @@ export class BaikalWorld {
     this.reveal += (reward - this.reveal) * (1 - Math.exp(-dt * .65));
     this.shared.uAurora.value = this.reveal;
     this.shared.uStorm.value = this.storm * (1 - this.reveal * .94);
-    this.snow.update(time, this.shared.uStorm.value);
     let closest = 0, nearest = Infinity;
     for (let i = 0; i < BAIKAL_CABINS.length; i++) {
       const c = BAIKAL_CABINS[i], d = (at.x - c.x) ** 2 + (at.z - c.z) ** 2;
@@ -300,28 +333,19 @@ export class BaikalWorld {
         const source = this.cabin.cabinLights[closest * 3 + index];
         lamp.position.copy(source.position); lamp.color.setHex(source.color);
       });
+      this.applyLampLevels();
     }
     this.fires.forEach((fire, index) => { fire.update(time, this.night); fire.light.visible = index === closest; });
     this.shared.uFireGlow.value = this.fires[closest].glow;
     const indoors = insideBaikalCabin(at.x, at.z) ? 1 : 0;
     this.interior += (indoors - this.interior) * (1 - Math.exp(-dt * 2.5));
-    this.cabin.fur.visible = nearest < 3600;
-    this.village.material.opacity = this.night * (1 - this.shared.uStorm.value) * .9;
+    this.seatBlankets.update(seated, dt);
     if (this.daylight) {
       this.applyFog(this.daylight, insideBaikalCabin(at.x, at.z));
       if (this.scene.fog instanceof THREE.Fog) {
         this.scene.fog.near = this.fogNear; this.scene.fog.far = this.fogFar;
       }
     }
-    if (seat !== undefined) this.setSeat(seat);
-    const target = this.seatTarget;
-    const wanted = target ? 1 : 0;
-    this.seatAmount += (wanted - this.seatAmount) * (1 - Math.exp(-dt * 5));
-    if (target) {
-      const facing = { x: -Math.sin(target.yaw), z: -Math.cos(target.yaw) };
-      this.seatLight.position.set(target.x - facing.x * .5, target.avatarY + 1.0, target.z - facing.z * .5);
-    }
-    this.seatLight.intensity = this.seatAmount * (9 + this.night * 7);
   }
 
   isInside(x: number, z: number) { return insideBaikalCabin(x, z); }
@@ -343,9 +367,9 @@ export class BaikalWorld {
     if (this.candleFlames) { this.candleFlames.geometry.dispose(); this.candleFlames.dispose(); } this.candleMaterial?.dispose();
     this.post?.dispose(); this.baked?.dispose(); this.occlusion?.dispose(); this.roomCube?.dispose(); this.cleanCube?.dispose(); this.environment?.dispose(); this.pmrem?.dispose();
     this.cleanMesh?.geometry.dispose(); this.cleanMaterial?.dispose();
-    this.village.geometry.dispose(); this.village.material.dispose();
+    this.seatBlankets.dispose();
     this.ice.geometry.dispose(); this.ice.material.dispose();
-    for (const lamp of this.lamps) lamp.dispose(); this.seatLight.dispose(); this.sun.dispose(); this.hemi.dispose();
+    for (const lamp of this.lamps) lamp.dispose(); this.sun.dispose(); this.hemi.dispose();
     this.root.removeFromParent(); this.root.clear();
 
   }

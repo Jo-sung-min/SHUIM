@@ -13,11 +13,9 @@ const response = (body, status = 200) => new Response(JSON.stringify(body), { st
 const healthy = () => response({ configured: true, ok: true });
 const signal = () => new AbortController().signal;
 
-test("informational routes and the standalone character viewer bypass the connection gate", () => {
+test("informational routes bypass the connection gate", () => {
   for (const path of ["/info", "/info/", "/privacy", "/terms", "/account-deletion"]) assert.equal(isServicePublicPath(path), true);
   for (const path of ["/", "/auth", "/me", "/info-other", "/privacy-settings", "/shout"]) assert.equal(isServicePublicPath(path), false);
-  for (const path of ["/character-preview", "/character-preview/"]) assert.equal(isServicePublicPath(path), true);
-  for (const path of ["/character-preview-other", "/character-preview/private"]) assert.equal(isServicePublicPath(path), false);
 });
 
 test("health requires explicit server and database readiness", () => {

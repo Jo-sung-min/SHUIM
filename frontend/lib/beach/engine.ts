@@ -20,7 +20,8 @@ import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
-import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
+import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
+import type { BoardGame } from "./net";
 import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
 import { BambooWorld } from "./bamboo";
@@ -49,7 +50,6 @@ import { FireworkAudio } from "./firework-audio";
 import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-avatar";
-import { PaperAvatarModels } from "./paper-avatar";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
@@ -83,7 +83,7 @@ function mapSupportsSpot(mapId: MapId, spotId: string | null | undefined): boole
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean; bunkerId?: UyuniBunkerId | null }
-export interface BunkerState { bunkerId: UyuniBunkerId | null; nearId: UyuniBunkerId | null; name: string; inside: boolean; ladderNear: boolean; sofaNear: boolean; seated: boolean; spotId: string | null; occupied: number; capacity: number; available: boolean }
+export interface BunkerState { bunkerId: UyuniBunkerId | null; nearId: UyuniBunkerId | null; name: string; inside: boolean; ladderNear: boolean; sofaNear: boolean; seated: boolean; spotId: string | null; gameNearId: string | null; occupied: number; capacity: number; available: boolean }
 export interface RestState { shelterName: string; seated: boolean }
 export interface BenchState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean }
 export interface OnsenState { inWater: boolean; canSit: boolean; canFloat: boolean; sitting: boolean; floating: boolean; occupiedSeats: number[]; occupiedFloats: number[] }
@@ -319,15 +319,12 @@ const PLACEMENT: { prop: PropName; x: number; z: number; scale: number; decal?: 
 ];
 const FIRE = CAMPFIRE;
 
-type EngineAvatarKind = AvatarKind | "mongsil";
-type EngineAvatar = Pick<BeachAvatar, "root" | "update" | "playGesture" | "getSparklerGrip" | "poseSparkler" | "dispose"> & { readonly kind: EngineAvatarKind };
-
 interface AvatarNode {
   sprite: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   mat: THREE.MeshBasicMaterial;
   tex: THREE.Texture;
   shadow: THREE.Mesh;
-  avatar: EngineAvatar | null;
+  avatar: BeachAvatar | null;
 }
 
 interface PlayerNode extends AvatarNode {
@@ -387,6 +384,7 @@ export class BeachEngine {
   private baikal: BaikalWorld | null = null;
   private baikalTextures: THREE.Texture[] = [];
   private baikalInside = false;
+  private readonly baikalSeated: PavilionSeat[] = [];
   private rainOverride: number | null = null;
   private serverClockOffset: number | null = null;
   private rainNow = 0;
@@ -429,7 +427,6 @@ export class BeachEngine {
   private remoteClock = new RemoteSnapshotClock();
   private avatarModels: BeachAvatarModels | null = null;
   private femaleAvatarModels: BeachAvatarModels | null = null;
-  private paperAvatarModels: PaperAvatarModels | null = null;
   private onsenAvatarModels: BeachAvatarModels | null = null;
   private onsenAvatarRequested = false;
   private onsenAvatarReady = false;
@@ -555,7 +552,7 @@ export class BeachEngine {
       const cotton = this.loadEnvironmentTexture("/beach/real/white-cotton-v1.webp", true);
       wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
       this.uyuniTextures = [sand, wood, cotton];
-      this.uyuni = new UyuniWorld(this.scene, this.skyMat.uniforms, sand, { wood, cotton });
+      this.uyuni = new UyuniWorld(this.scene, this.skyMat.uniforms, sand, { wood, cotton }, { renderer: this.renderer, mobile: this.mobile });
       this.cove = this.uyuni;
     } else if (this.mapId === "bamboo") {
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
@@ -583,7 +580,6 @@ export class BeachEngine {
     }
     this.avatarModels = new BeachAvatarModels();
     this.femaleAvatarModels = new BeachAvatarModels("female");
-    this.paperAvatarModels = new PaperAvatarModels(this.camera);
     this.onsenAvatarModels = new BeachAvatarModels("male-onsen");
     this.femaleOnsenAvatarModels = new BeachAvatarModels("female-onsen");
     // Only the selected everyday model is part of entry. Other visitors/models
@@ -762,14 +758,12 @@ export class BeachEngine {
     return { sprite, mat, tex, shadow, avatar: null, animT: 0 };
   }
 
-  private avatarKind(skin: number): EngineAvatarKind {
-    if (skin === 6) return "mongsil";
+  private avatarKind(skin: number): AvatarKind {
     // Retired IDs in cached room snapshots retain their ordinary gender.
     return skin === 1 || skin === 3 || skin === 5 ? "female" : "male";
   }
 
-  private baseAvatarPool(kind: EngineAvatarKind) {
-    if (kind === "mongsil") return this.paperAvatarModels;
+  private baseAvatarPool(kind: AvatarKind) {
     return kind === "female" ? this.femaleAvatarModels : this.avatarModels;
   }
 
@@ -782,15 +776,6 @@ export class BeachEngine {
     // A transient first download failure must not leave a pixel fallback for
     // the entire visit. The pool shares pending requests and enforces its cooldown.
     if (!basePool?.ready && basePool?.canLoad) void basePool.load();
-    // The paper character keeps its own silhouette in every map, including baths.
-    if (baseKind === "mongsil") {
-      if (node.avatar?.kind === "mongsil") return node.avatar;
-      const next = basePool?.create() ?? null;
-      node.avatar?.dispose();
-      node.avatar = next;
-      if (next) this.scene.add(next.root);
-      return node.avatar;
-    }
     const robeKind = female ? "female-onsen" : "male-onsen";
     const radius = hotSpringBathDistance(x, z);
     const wearingRobe = node.avatar?.kind === robeKind;
@@ -877,7 +862,7 @@ export class BeachEngine {
   /** Stable IDs select either model or either atlas row without rejoining the room. */
   setSkin(skin: number) {
     if (this.disposed || !Number.isInteger(skin) || skin < 0 || skin > 6) return;
-    this.skin = skin === 4 ? 0 : skin === 5 ? 3 : skin;
+    this.skin = skin === 4 || skin === 6 ? 0 : skin === 5 ? 3 : skin;
   }
 
   private buildProps() {
@@ -929,6 +914,7 @@ export class BeachEngine {
   get uyuniMusicVolume() { return this.fireworkAudio?.uyuniMusicVolume ?? 25; }
   setUyuniMusicVolume(percent: number) { this.fireworkAudio?.setUyuniMusicVolume(percent); }
   setRoomMusicPlaying(playing: boolean) { this.fireworkAudio?.setRoomMusicPlaying(playing); }
+  setBoardGames(games: readonly BoardGame[]) { this.uyuni?.setBoardGames(games); }
 
   setOwnFestival(state: BambooFestivalState | undefined, serverTime: number, ownPid?: string) {
     if (!this.bamboo || this.disposed) return;
@@ -1091,7 +1077,8 @@ export class BeachEngine {
     return { bunkerId: room?.id ?? null, nearId: nearby?.id ?? null, name: room?.name ?? nearby?.name ?? "",
       inside: Boolean(room), ladderNear: Boolean(room && !seated && nearbyBunkerLadder(room.id, this.self.x, this.self.z)),
       sofaNear: Boolean(room && (seated || nearbyBunkerSofa(room.id, this.self.x, this.self.z))), seated,
-      spotId: room?.spotId ?? null, occupied: used.size, capacity: BUNKER_SEAT_CAPACITY,
+      spotId: room?.spotId ?? null, gameNearId: room && !seated ? nearbyBunkerGame(room.id, this.self.x, this.self.z)?.id ?? null : null,
+      occupied: used.size, capacity: BUNKER_SEAT_CAPACITY,
       available: Boolean(room && !seated && BUNKER_SEATS.some(seat => seat.spotId === room.spotId && !used.has(seat.slot)
         && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= BUNKER_SEAT_REACH)) };
   }
@@ -1660,7 +1647,7 @@ export class BeachEngine {
     if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     const bunker = this.bunkerState;
-    if (this.uyuni && ((k === "e" && (bunker.nearId || bunker.ladderNear || bunker.sofaNear || bunker.seated)) || (k === "Escape" && bunker.seated))) {
+    if (this.uyuni && ((k === "e" && (bunker.nearId || bunker.ladderNear || bunker.sofaNear || bunker.seated || bunker.gameNearId)) || (k === "Escape" && bunker.seated))) {
       this.keys.delete(k);
       if (e.type === "keydown" && !e.repeat) this.handlers.onBunkerAction?.();
       e.preventDefault(); return;
@@ -1891,7 +1878,7 @@ export class BeachEngine {
 
   private setFrameOn(tex: THREE.Texture, view: number, frame: number, skin: number) {
     const col = view + frame;
-    const row = skin === 6 ? 0 : ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
+    const row = ((skin % CHAR_ATLAS.rows) + CHAR_ATLAS.rows) % CHAR_ATLAS.rows;
     tex.offset.set(col / CHAR_ATLAS.cols, 1 - (row + 1) / CHAR_ATLAS.rows);
   }
 
@@ -2856,7 +2843,11 @@ export class BeachEngine {
       (this.lastStarView ??= new THREE.Quaternion()).copy(orientation);
     }
     if (this.baikal) {
-      this.baikal.update(this.time, this.camera, this.self, this.pavilionSeat);
+      const seated = this.baikalSeated;
+      seated.length = 0;
+      if (this.pavilionSeat) seated.push(this.pavilionSeat);
+      for (const player of this.players.values()) { const seat = claimedBaikalSeat(player.data); if (seat) seated.push(seat); }
+      this.baikal.update(this.time, this.camera, this.self, seated);
     } else if (this.cloudSpa) {
       this.cloudSpa.update(this.time, this.camera, this.self, this.pavilionSeat);
     } else if (this.uyuni) {
@@ -2919,8 +2910,6 @@ export class BeachEngine {
     this.avatarModels = null;
     this.femaleAvatarModels?.dispose();
     this.femaleAvatarModels = null;
-    this.paperAvatarModels?.dispose();
-    this.paperAvatarModels = null;
     this.onsenAvatarModels?.dispose();
     this.onsenAvatarModels = null;
     this.femaleOnsenAvatarModels?.dispose();

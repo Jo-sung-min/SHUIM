@@ -411,6 +411,30 @@
       "contentType": "image/png"
     },
     {
+      "key": "characters/dog-girl/model-v1.glb",
+      "bytes": 1243576,
+      "sha256": "459c23dd79c7a2ec8db1e190f05e8fb5713460fe30bbaf7f39b14ac97d1f3220",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "characters/dog-girl/preview-v1.webp",
+      "bytes": 19134,
+      "sha256": "332a72348da272a84a2bc25b7ac2b3101ef008616cdb7c3614feda8f01b7eb07",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "characters/female-toon/model-v1.glb",
+      "bytes": 2300308,
+      "sha256": "e896efde62572aca770b2ad20d979578e5b7b8d7c67ca20885e61130d9a9bca0",
+      "contentType": "model/gltf-binary"
+    },
+    {
+      "key": "characters/female-toon/preview-v1.webp",
+      "bytes": 22434,
+      "sha256": "9e7fd9e061e022ed543b167a1ff4846f6b10a8c97af888b70f1fd7abb871b0d5",
+      "contentType": "image/webp"
+    },
+    {
       "key": "cloudspa/art/city-ne-v2.webp",
       "bytes": 1039634,
       "sha256": "f23e02e839427ad369e6b3da6507895eb98bb46f8343cf645ffbe7bf411354a5",

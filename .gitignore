@@ -57,4 +57,3 @@ Thumbs.db
 # Generated map artwork is kept in Git at the user's request.
 !frontend/public/garden/art/*.webp
 !frontend/public/cloudspa/art/*.webp
-!frontend/public/characters/mongsil/*.webp

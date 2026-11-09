@@ -79,4 +79,8 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 
 실행용 WebP 4개(1254px/모바일 768px)를 S3 `baikal/art/`에 올리고 CDN에서 SHA256·형식·CORS를 검증했습니다. 앱은 `/baikal/art/` 경로를 CDN에서 읽고, manifest에 4개를 기록했습니다. 해당 WebP는 Git 추적에서 빼고 `.gitignore` 예외도 지웠습니다. 생성 원본 PNG는 `output/imagegen/baikal/`에, 생성 프롬프트는 `output/imagegen/baikal-assets.md`에 있습니다.
 
-`scripts/sync-public-assets.py --apply`는 `frontend/public`의 로컬 파일을 모두 대상으로 삼습니다. `characters/mongsil/*.webp`와 `audio/onsen-water-v1.mp3`는 앱이 직접 제공하는 파일이라 manifest에 없고 CDN에도 올리지 않았으므로, 전체 실행 시 함께 올라가지 않게 주의합니다.
+`scripts/sync-public-assets.py --apply`는 `frontend/public`의 로컬 파일을 모두 대상으로 삼습니다. `audio/onsen-water-v1.mp3`는 앱이 직접 제공하는 파일이라 manifest에 없고 CDN에도 올리지 않았으므로, 전체 실행 시 함께 올라가지 않게 주의합니다.
+
+### 앱에서 쓰지 않는 캐릭터 파일 (2026-11-09)
+
+`characters/dog-girl/`과 `characters/female-toon/`의 모델·미리보기는 S3에 올렸지만, 강아지소녀를 지우고 여자 캐릭터를 원래 모델로 되돌리면서 앱에서 쓰지 않습니다. 원격 파일은 지우지 않으므로 CDN과 manifest에 남아 있습니다.

@@ -57,7 +57,7 @@ vm.runInNewContext(`${bunkerSource}\nglobalThis.api = {
   UYUNI_BUNKERS, BUNKER_FLOOR_Y, BUNKER_CEILING_Y, BUNKER_PLAYER_INSET,
   BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, BUNKER_INTERACTION_REACH, BUNKER_COLLIDERS,
   bunkerById, bunkerForSpot, bunkerSeat, bunkerColliders, claimedBunkerSeat,
-  nearbyBunkerEntry, nearbyBunkerLadder, nearbyBunkerSofa
+  nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa
 };`, bunkerContext);
 const motionSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/remote-motion.ts", import.meta.url), "utf8"))
   .replace(/\bexport\s+(?=class\b)/g, "");

@@ -9,12 +9,23 @@ const source = stripTypeScriptTypes(typed).replace(/\bexport\s+(?=(?:async\s+)?f
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 function setup(fetch) {
   const context = { fetch, Error, AbortSignal };
-  vm.runInNewContext(`${source}\nglobalThis.api = { enterBeach, fetchBeachCount, tickBeach, suspendBeach, setBeachRest, setBeachLighting, launchBeachFireworks, readFireworkEvent, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { readBoardGame, playBoardGame, enterBeach, fetchBeachCount, tickBeach, suspendBeach, setBeachRest, setBeachLighting, launchBeachFireworks, readFireworkEvent, addFirewood, addFirePowder, BeachGone, BeachUnavailable, BeachCooldown };`, context);
   return context.api;
 }
 
 const fireworksEvent = { id: "c5b26760-2e99-4c83-94d6-5a25794c2f17", seed: 9157, startedAt: 1_000_000, durationMs: 12_000 };
 const fireworksState = { fireworks: [fireworksEvent], serverTime: 1_001_000, fireworksCooldownUntil: 1_015_000 };
+
+test("a board between games arrives without its empty fields and still opens", async () => {
+  // Exactly what the server sends for an empty table: its JSON settings drop every null field.
+  const sent = { id: "bunker-dawn-othello", game: "othello", size: 8, cells: `${".".repeat(27)}WB${".".repeat(6)}BW${".".repeat(27)}`, legal: [], blackCount: 2, whiteCount: 2, turnMsLeft: 0, version: 0 };
+  const api = setup(async () => response({ players: [], events: [], count: 1, received: { comfort: 0, hug: 0 }, fire: {}, boardGames: [sent, { ...sent, id: "broken", size: 9 }] }));
+  const board = api.readBoardGame(sent);
+  for (const field of ["black", "white", "turn", "result", "reason", "lastCell", "passed"]) assert.equal(board[field], null, field);
+  for (const bad of [{ ...sent, size: 9 }, { ...sent, cells: "x" }, { ...sent, game: "go" }, { ...sent, turn: "red" }, { ...sent, lastCell: 64 }, { ...sent, black: { pid: 1, nick: "a" } }, { ...sent, version: -.5 }, null]) assert.equal(api.readBoardGame(bad), null);
+  const ticked = await api.tickBeach({ ticket: "t", sequence: 1, x: 0, z: 0, yaw: 0, moving: false });
+  assert.deepEqual(Array.from(ticked.boardGames, item => item.id), ["bunker-dawn-othello"], "a malformed board is dropped, a sparse one is kept");
+});
 
 test("resume entry carries scoped ticket and ordering fence and accepts the server rest state", async () => {
   let sent;

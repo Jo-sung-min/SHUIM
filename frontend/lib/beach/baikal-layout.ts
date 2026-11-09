@@ -63,7 +63,9 @@ export function baikalRoofAt(x: number, z: number): number | null {
 }
 export function baikalCeilingHeight(x: number, z: number): number | null {
   const roof = baikalRoofAt(x, z);
-  return roof === null ? null : roof - .22;
+  if (roof === null) return null;
+  const room = baikalCabinAt(x, z);
+  return room?.id === "refuge" ? Math.min(roof - .22, room.floorY + BAIKAL_REFUGE_CEILING) : roof - .22;
 }
 export function baikalShoreHeight(x: number): number {
   if (!(x < BAIKAL_SHORE.startX)) return 0;
@@ -86,29 +88,39 @@ export function baikalSnowCover(x: number, z: number): number {
 }
 
 /**
- * Every warm source in a room, in room-local (first cabin) metres. Order matters: the stove is index 0, and low-end devices stop partway down the list.
- * Power is in the same units as a three.js point light's candela.
+ * Every warm source in each room, in room-local (first cabin) metres. Order matters: index 0 of a room flickers with the fire,
+ * and low-end devices stop partway down the list. Power is in the same units as a three.js point light's candela.
  */
 export interface BaikalCozyLight { x: number; y: number; z: number; power: number; r: number; g: number; b: number; spot: boolean }
 const cozy = (x: number, y: number, z: number, power: number, color: readonly [number, number, number], spot = false): BaikalCozyLight => ({ x, y, z, power, r: color[0], g: color[1], b: color[2], spot });
-const FIRELIGHT = [1, .5, .2] as const, TUNGSTEN = [1, .8, .58] as const, CANDLE = [1, .62, .3] as const;
+const FIRELIGHT = [1, .5, .2] as const, TUNGSTEN = [1, .8, .58] as const, BEDSIDE = [1, .72, .46] as const, CANDLE = [1, .58, .26] as const;
 const trackHeight = (x: number) => baikalRoofHeight(x) - .22 - .5;
-export const BAIKAL_COZY_LIGHTS: readonly BaikalCozyLight[] = [
-  cozy(-23.4, 1.2, -.3, 15, FIRELIGHT),
-  cozy(-20.05, 1.05, 6, .8, CANDLE),
-  cozy(-19.4, 2.05, 13.3, 3.2, TUNGSTEN),
-  cozy(-24.45, 1.75, 3.95, 2.4, TUNGSTEN),
-  cozy(-24.45, 1.75, 8.15, 2.4, TUNGSTEN),
-  cozy(-19.2, trackHeight(-19.2), 2.3, 26, TUNGSTEN, true),
-  cozy(-19.2, trackHeight(-19.2), 6.2, 26, TUNGSTEN, true),
-  cozy(-19.2, trackHeight(-19.2), 10.1, 26, TUNGSTEN, true),
-  cozy(-24.8, trackHeight(-24.8), 2.3, 17, TUNGSTEN, true),
-  cozy(-24.8, trackHeight(-24.8), 6.2, 17, TUNGSTEN, true),
-  cozy(-24.8, trackHeight(-24.8), 10.1, 17, TUNGSTEN, true),
-  cozy(-29.35, 2.75, 3.5, 3, TUNGSTEN),
-  cozy(-29.35, 2.75, 10.5, 3, TUNGSTEN),
-  cozy(-20.4, 3.15, 6, 3.6, TUNGSTEN),
+/** Height of the snug flat ceiling over the bed house, above its floor. */
+export const BAIKAL_REFUGE_CEILING = 3;
+/** Candle clusters of the dark house: x, z, height of what they stand on, number of candles. The first is the big bank where the others keep a stove. */
+export const BAIKAL_CANDLE_GROUPS: readonly (readonly [number, number, number, number])[] = [
+  [-23.4, -1.2, 0, 11], [-21.2, 3.2, 0, 6], [-21.2, 9, 0, 6], [-29.35, 6.1, .42, 8], [-16.7, 4.5, 0, 5], [-16.7, 8.2, 0, 5],
+  [-29.35, 2.2, .42, 5], [-29.35, 10, .42, 5], [-26.6, -1.1, 0, 4], [-17.1, 13, 0, 4], [-26, 12.9, 0, 4],
 ];
+export const BAIKAL_COZY_PER_ROOM = 14;
+export const BAIKAL_COZY_ROOMS: readonly (readonly BaikalCozyLight[])[] = [
+  [
+    cozy(-23.4, 1.2, -.3, 15, FIRELIGHT), cozy(-19.4, 2.05, 13.3, 3.2, TUNGSTEN), cozy(-20.4, 3.15, 6, 3.6, TUNGSTEN),
+    cozy(-19.2, trackHeight(-19.2), 2.3, 26, TUNGSTEN, true), cozy(-19.2, trackHeight(-19.2), 6.2, 26, TUNGSTEN, true), cozy(-19.2, trackHeight(-19.2), 10.1, 26, TUNGSTEN, true),
+    cozy(-24.8, trackHeight(-24.8), 6.2, 17, TUNGSTEN, true), cozy(-24.8, trackHeight(-24.8), 2.3, 17, TUNGSTEN, true), cozy(-24.8, trackHeight(-24.8), 10.1, 17, TUNGSTEN, true),
+    cozy(-29.35, 2.75, 3.5, 3, TUNGSTEN), cozy(-29.35, 2.75, 10.5, 3, TUNGSTEN),
+  ],
+  [
+    cozy(-23.4, 1.2, -.3, 9, FIRELIGHT), cozy(-24.6, 1.75, 2.45, 2.6, BEDSIDE), cozy(-24.6, 1.75, 9.65, 2.6, BEDSIDE),
+    cozy(-23.6, 2.15, 13.4, 2.4, BEDSIDE), cozy(-20.4, 2.15, 13.4, 2.4, BEDSIDE), cozy(-29.1, 1.7, 3.5, 2.4, BEDSIDE), cozy(-29.1, 1.7, 7.1, 2.4, BEDSIDE),
+    cozy(-29.1, 1.7, 10.65, 2.4, BEDSIDE), cozy(-21.5, 3.2, 6, 2.2, BEDSIDE),
+  ],
+  BAIKAL_CANDLE_GROUPS.map(([x, z, lift, count]) => cozy(x, .6 + lift + .42, z, 1.5 + count * .46, CANDLE)),
+];
+/** How much of the captured room light each house keeps: the candle house is lit by its flames and little else. */
+export const BAIKAL_ROOM_AMBIENT: readonly number[] = [1, .62, .2];
+/** How strongly each house's windows glow out over the snow. */
+export const BAIKAL_ROOM_SPILL: readonly number[] = [1, .5, .26];
 
 /** The world rectangle of the wind-drift map, and the room rectangle of the baked contact shadow. */
 export const BAIKAL_SNOW_DRIFT_BOX = { minX: -140, minZ: -260, width: 280, depth: 350 } as const;
@@ -202,8 +214,12 @@ const FIRST_CABIN_PLACES: readonly BaikalPlace[] = [
   { id: "chair", spotId: "baikal-chair", name: "창가 안락의자", kind: "lounge", x: -18.6, z: 12.2, fx: 1, fz: 0, seatY: BAIKAL_CABIN.floorY + .52, local: [[0, 0]] },
   { id: "porch", spotId: "baikal-porch", name: "처마 밑 벤치", kind: "bench", x: -14.6, z: 9.4, fx: 1, fz: 0, seatY: BAIKAL_CABIN.floorY + .5, local: [[-.8, 0], [.8, 0]] },
 ];
+const PLACE_NAMES: Partial<Record<BaikalCabinId, Record<string, string>>> = {
+  refuge: { sofa: "커다란 침대", side: "안쪽 침대", hearth: "난롯가 방석", chair: "창가 작은 침대", porch: "처마 밑 벤치" },
+  aurora: { sofa: "이불 둥지", side: "안쪽 이불 둥지", hearth: "촛불 곁 방석", chair: "창가 이불 자리", porch: "처마 밑 벤치" },
+};
 export const BAIKAL_PLACES: readonly BaikalPlace[] = BAIKAL_CABINS.flatMap(cabin => FIRST_CABIN_PLACES.map(place => cabin.id === "warm" ? place : ({
-  ...place, id: `${cabin.id}-${place.id}`, spotId: `baikal-${cabin.id}-${place.id}`, name: `${cabin.name} · ${place.name}`,
+  ...place, id: `${cabin.id}-${place.id}`, spotId: `baikal-${cabin.id}-${place.id}`, name: `${cabin.name} · ${PLACE_NAMES[cabin.id]?.[place.id] ?? place.name}`,
   x: place.x + cabin.offsetX, z: place.z + cabin.offsetZ,
 })));
 export const BAIKAL_SEATS: readonly PavilionSeat[] = BAIKAL_PLACES.flatMap(place => place.local.map(([lx, lz], slot) => {
@@ -238,17 +254,21 @@ const FIRST_CABIN_WALLS: readonly ShelterCollider[] = [
   rect(-16, (BAIKAL_CABIN.doorMaxZ + BAIKAL_CABIN.maxZ) / 2, .3, BAIKAL_CABIN.maxZ - BAIKAL_CABIN.doorMaxZ),
   rect(-16, (BAIKAL_CABIN.minZ + BAIKAL_CABIN.doorMinZ) / 2, .3, BAIKAL_CABIN.doorMinZ - BAIKAL_CABIN.minZ),
 ];
-const FIRST_CABIN_FURNITURE: readonly ShelterCollider[] = [
-  rect(-23.4, -1.1, 1.1, 1.1), rect(-23.1, 6.05, 1.0, 6.4), rect(-20.4, 6, 2.2, .9), rect(-22, 11.45, 4.4, 1.3),
-  rect(-18.6, 12.2, 1.0, 1.0), rect(-29.3, 7, .8, 6), rect(-14.6, 9.4, .55, 2.4), rect(-25.4, -1.2, 1.2, .9),
-  rect(-24.45, 6.05, .5, 5.4),
-];
+/** Each house is furnished differently, so each has its own solid pieces. Seats stay where the server expects them. */
+const STOVE = rect(-23.4, -1.1, 1.1, 1.1), LOG_RACK = rect(-25.4, -1.2, 1.2, .9), PORCH_BENCH = rect(-14.6, 9.4, .55, 2.4);
+const LONG_BED = rect(-23.8, 6.05, 2.6, 6.4), NORTH_BED = rect(-22, 12.08, 4.8, 3.05), WINDOW_BED = rect(-18.72, 12.3, 1.35, 1.8);
+const CABIN_FURNITURE: Record<BaikalCabinId, readonly ShelterCollider[]> = {
+  warm: [STOVE, LOG_RACK, PORCH_BENCH, rect(-23.1, 6.05, 1.0, 6.4), rect(-22, 11.45, 4.4, 1.3), rect(-18.6, 12.2, 1.0, 1.0)],
+  refuge: [STOVE, PORCH_BENCH, LONG_BED, NORTH_BED, WINDOW_BED, rect(-24.6, 2.45, .5, .5), rect(-24.6, 9.65, .5, .5),
+    ...[1.7, 5.3, 8.9, 12.4].map(z => rect(-28.45, z, 2.6, 2.6)), rect(-18.8, 4.4, 3.2, 2.9), rect(-18.8, 7.6, 3.2, 2.9)],
+  aurora: [PORCH_BENCH, LONG_BED, NORTH_BED, WINDOW_BED, rect(-29.35, 6.2, .5, 10.4), rect(-21.2, 3.2, .5, .5), rect(-21.2, 9, .5, .5), rect(-23.4, -1.2, .9, .7)],
+};
 const translateCollider = (wall: ShelterCollider, cabin: BaikalCabinSite): ShelterCollider => ({
   minX: wall.minX + cabin.offsetX, maxX: wall.maxX + cabin.offsetX, minZ: wall.minZ + cabin.offsetZ, maxZ: wall.maxZ + cabin.offsetZ,
 });
 export const BAIKAL_WALLS: readonly ShelterCollider[] = BAIKAL_CABINS.flatMap(cabin => FIRST_CABIN_WALLS.map(wall => translateCollider(wall, cabin)));
 export const BAIKAL_FURNITURE: readonly ShelterCollider[] = [
-  ...BAIKAL_CABINS.flatMap(cabin => FIRST_CABIN_FURNITURE.map(wall => translateCollider(wall, cabin))),
+  ...BAIKAL_CABINS.flatMap(cabin => CABIN_FURNITURE[cabin.id].map(wall => translateCollider(wall, cabin))),
   rect(69.7, -191.4, .95, .95), // the aurora room's compact telescope tripod
 ];
 export const BAIKAL_TREES: readonly { x: number; z: number; height: number; seed: number }[] = (() => {

@@ -10,9 +10,15 @@ function LadderIcon() {
   </svg>;
 }
 
+function BoardIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+    <rect x="3.5" y="3.5" width="17" height="17" rx="2.5" /><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17" /><circle cx="9.2" cy="9.2" r="2" fill="currentColor" /><circle cx="14.8" cy="14.8" r="2" />
+  </svg>;
+}
+
 /** Uses the shared nearby-actions column, leaving the fixed left thumb pad clear. */
-export default function UyuniBunkerControls({ state, enabled, busy, disabled, onAction }: {
-  state: BunkerState; enabled: boolean; busy: BunkerAction | null; disabled: boolean;
+export default function UyuniBunkerControls({ state, enabled, busy, disabled, gameLabel, onGame, onAction }: {
+  state: BunkerState; enabled: boolean; busy: BunkerAction | null; disabled: boolean; gameLabel: string | null; onGame: () => void;
   onAction: (action: BunkerAction) => void;
 }) {
   const ladder = !state.inside ? state.nearId !== null : state.ladderNear && !state.seated;
@@ -22,9 +28,13 @@ export default function UyuniBunkerControls({ state, enabled, busy, disabled, on
       aria-keyshortcuts="E" onClick={() => onAction(state.inside ? "exit" : "enter")}>
       <span className={styles.contextIcon}><LadderIcon /></span>
       <span className={styles.contextCopy}>
-        <strong>{busy === "enter" ? "천천히 내려가는 중…" : busy === "exit" ? "천천히 올라가는 중…" : state.inside ? "사다리 올라가기" : "사다리 내려가기"}</strong>
+        <strong>{!enabled && !state.inside ? "로그인 후 이용" : busy === "enter" ? "천천히 내려가는 중…" : busy === "exit" ? "천천히 올라가는 중…" : state.inside ? "사다리 올라가기" : "사다리 내려가기"}</strong>
         <small>{!enabled ? "쉬어갈 공간을 준비하고 있어요" : state.inside ? "호텔 데크로 돌아가요" : `${state.name || "호텔"} · 아래층의 아늑한 쉼터`}</small>
       </span>
+    </button>}
+    {gameLabel && <button type="button" className={styles.contextButton} disabled={disabled} aria-keyshortcuts={ladder || sofa ? undefined : "E"} onClick={onGame}>
+      <span className={styles.contextIcon}><BoardIcon /></span>
+      <span className={styles.contextCopy}><strong>{gameLabel}</strong></span>
     </button>}
     {sofa && <button type="button" className={styles.contextButton}
       disabled={disabled || !enabled || busy !== null || (!state.seated && !state.available)}

@@ -20,10 +20,11 @@ const hotels = await load("../lib/beach/uyuni-hotel-layout.ts", {}, ["UYUNI_HOTE
 const layout = await load("../lib/beach/uyuni-bunker-layout.ts", hotels, [
   "UYUNI_BUNKERS", "BUNKER_FLOOR_Y", "BUNKER_CEILING_Y", "BUNKER_LADDER_LOCAL", "BUNKER_SOFA_LOCAL", "BUNKER_SEATS", "BUNKER_COLLIDERS",
   "BUNKER_PLAYER_INSET", "BUNKER_INTERACTION_REACH", "BUNKER_SEAT_REACH", "bunkerById", "bunkerForSpot", "bunkerSeat", "claimedBunkerSeat",
-  "nearbyBunkerEntry", "nearbyBunkerLadder", "nearbyBunkerSofa", "bunkerColliders",
+  "nearbyBunkerEntry", "nearbyBunkerLadder", "nearbyBunkerSofa", "bunkerColliders", "BUNKER_GAMES_LOCAL", "BUNKER_GAME_TABLES", "BUNKER_GAME_REACH", "nearbyBunkerGame",
 ]);
-const textiles = await load("../lib/beach/shelter-textiles.ts", {}, ["createShelterPillowGeometry"]);
-const { buildUyuniBunkers } = await load("../lib/beach/uyuni-bunkers.ts", { ...layout, ...textiles }, ["buildUyuniBunkers"]);
+const baikalLayout = await load("../lib/beach/baikal-layout.ts", {}, ["BAIKAL_CABIN", "BAIKAL_CABINS", "BAIKAL_COZY_PER_ROOM", "BAIKAL_ROOM_OCCLUSION_BOX", "baikalRoofHeight"]);
+const cozy = await load("../lib/beach/baikal-cozy.ts", baikalLayout, ["cushionGeometry", "drapeGeometry", "logGeometry", "poufGeometry", "softBoxGeometry"]);
+const { buildUyuniBunkers } = await load("../lib/beach/uyuni-bunkers.ts", { ...layout, ...cozy, createBaikalFlameMaterial: () => new THREE.MeshBasicMaterial() }, ["buildUyuniBunkers"]);
 const close = (actual, expected, message = `${actual} ≈ ${expected}`) => assert.ok(Math.abs(actual - expected) < 1e-5, message);
 function fixture() {
   const scene = new THREE.Scene(), wood = new THREE.Texture(), cotton = new THREE.Texture();
@@ -81,17 +82,17 @@ test("all room walls and the entire ceiling are closed, including the wooden lad
   const f = fixture();
   for (const bunker of layout.UYUNI_BUNKERS) {
     f.control.setActive(bunker.id);
-    const ceiling = f.scene.getObjectByName(`uyuni-bunker-ceiling-plaster-${bunker.id}`);
+    const ceiling = f.scene.getObjectByName(`uyuni-bunker-timber-ceiling-${bunker.id}`);
     for (const dx of [-9.8, -5, 0, 5, 9.8]) for (const dz of [-8.8, -6.8, 0, 6, 8.8]) {
       const hit = new THREE.Raycaster(new THREE.Vector3(bunker.x + dx, bunker.floorY + 1.6, bunker.z + dz), new THREE.Vector3(0, 1, 0)).intersectObject(ceiling)[0];
       assert.ok(hit, "there is no sky opening above any part of the library"); close(hit.point.y, bunker.ceilingY); assert.ok(hit.face.normal.y < -.99);
     }
-    const walls = f.scene.getObjectByName(`uyuni-bunker-limestone-walls-${bunker.id}`);
+    const walls = f.scene.getObjectByName(`uyuni-bunker-timber-walls-${bunker.id}`);
     for (const [dx, dz, distance] of [[1, 0, 10], [-1, 0, 10], [0, 1, 9], [0, -1, 9]]) {
       const hit = new THREE.Raycaster(new THREE.Vector3(bunker.x, bunker.floorY + 2.5, bunker.z), new THREE.Vector3(dx, 0, dz)).intersectObject(walls)[0];
       assert.ok(hit); close(hit.distance, distance);
     }
-    const floor = f.scene.getObjectByName(`uyuni-bunker-limestone-floor-${bunker.id}`);
+    const floor = f.scene.getObjectByName(`uyuni-bunker-oak-floor-${bunker.id}`);
     const hit = new THREE.Raycaster(new THREE.Vector3(bunker.arrival.x, bunker.floorY + .1, bunker.arrival.z), new THREE.Vector3(0, -1, 0)).intersectObject(floor)[0];
     close(hit.point.y, bunker.floorY);
   }
@@ -101,7 +102,7 @@ test("all room walls and the entire ceiling are closed, including the wooden lad
 test("each authoritative sofa hip meets a rounded cushion while the wide entry route stays clear", () => {
   const f = fixture();
   for (const bunker of layout.UYUNI_BUNKERS) {
-    const cushions = f.scene.getObjectByName(`uyuni-bunker-ivory-linen-${bunker.id}`);
+    const cushions = f.scene.getObjectByName(`uyuni-bunker-boucle-${bunker.id}`);
     for (const seat of layout.BUNKER_SEATS.filter(seat => seat.spotId === bunker.spotId)) {
       const hit = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .12, seat.z), new THREE.Vector3(0, -1, 0), 0, .3).intersectObject(cushions)[0];
       assert.ok(hit); close(hit.point.y, seat.avatarY, "seated avatars touch the top rather than float or sink");
@@ -137,8 +138,44 @@ test("two furnished rooms share finite mobile-bounded geometry, injected texture
     assert.equal(a.children[i].geometry, b.children[i].geometry); assert.equal(a.children[i].material, b.children[i].material);
   }
   assert.equal(f.wood.repeat.x, 1); assert.equal(f.cotton.repeat.x, 1);
-  assert.equal(f.scene.getObjectByName("uyuni-bunker-ivory-linen-dawn").material.map, f.cotton);
+  assert.equal(f.scene.getObjectByName("uyuni-bunker-boucle-dawn").material.map, f.cotton);
   assert.equal(f.scene.getObjectByName("uyuni-bunker-warm-oak-dawn").material.map, f.wood);
+  cleanup(f);
+});
+
+test("the room lights itself and keeps a breathing fire without shadow passes or extra scene lights", () => {
+  const f = fixture();
+  f.control.setActive("dawn");
+  const flames = f.scene.getObjectByName("uyuni-bunker-flames-dawn");
+  assert.ok(flames.isInstancedMesh); assert.ok(flames.count > 0);
+  const shader = { uniforms: {}, vertexShader: "#include <common>\n#include <begin_vertex>", fragmentShader: "#include <common>\n#include <lights_fragment_begin>\n#include <aomap_fragment>" };
+  f.scene.getObjectByName("uyuni-bunker-timber-walls-dawn").material.onBeforeCompile(shader);
+  assert.ok(shader.uniforms.uRoomLight.value.length > 4);
+  assert.match(shader.fragmentShader, /uRoomFire/);
+  assert.doesNotMatch(shader.fragmentShader, /NUM_POINT_LIGHTS > 0 \) && defined\( RE_Direct/, "visitor lights do not also wash the walls");
+  const seen = new Set();
+  for (let time = 0; time < 40; time += .37) { f.control.update(time); seen.add(shader.uniforms.uRoomFire.value.toFixed(3)); assert.ok(shader.uniforms.uRoomFire.value > .8 && shader.uniforms.uRoomFire.value < 1.25, "it pulses, never strobes"); }
+  assert.ok(seen.size > 10);
+  cleanup(f);
+});
+
+test("each lodge has one omok and one othello table in reach of open floor, and only the live stones are drawn", () => {
+  const f = fixture();
+  assert.deepEqual(Array.from(layout.BUNKER_GAME_TABLES, table => table.id), ["bunker-dawn-omok", "bunker-dawn-othello", "bunker-dusk-omok", "bunker-dusk-othello"]);
+  for (const table of layout.BUNKER_GAME_TABLES) {
+    const bunker = layout.bunkerById(table.bunkerId);
+    assert.equal(layout.nearbyBunkerGame(bunker.id, table.x + 1.6, table.z)?.id, table.id);
+    assert.equal(layout.nearbyBunkerGame(null, table.x, table.z), null, "nothing is usable from above ground");
+    assert.equal(layout.nearbyBunkerGame(bunker.id, table.x, table.z + 2.5), null);
+    assert.ok(!layout.bunkerColliders(bunker.id).some(collider => pointIn(table.x, table.z - 1.2, collider, .3)), "a visitor can stand at the table");
+  }
+  f.control.setActive("dawn");
+  const stones = f.scene.getObjectByName("uyuni-bunker-stones-dawn"), omok = { id: "bunker-dawn-omok", game: "omok", size: 15, version: 1, cells: `BW${".".repeat(223)}` };
+  assert.equal(stones.count, 0);
+  f.control.setBoardGames([omok, { id: "bunker-dawn-othello", game: "othello", size: 8, version: 1, cells: `${".".repeat(27)}WB${".".repeat(35)}` }]);
+  assert.equal(stones.count, 4);
+  f.control.setBoardGames([{ ...omok, version: 2, cells: ".".repeat(225) }]);
+  assert.equal(stones.count, 0, "a cleared board leaves no stones behind");
   cleanup(f);
 });
 

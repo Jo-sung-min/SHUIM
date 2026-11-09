@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BAIKAL_CABIN, BAIKAL_COZY_LIGHTS, BAIKAL_ROOM_OCCLUSION_BOX, baikalRoofHeight } from "./baikal-layout";
+import { BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_COZY_PER_ROOM, BAIKAL_ROOM_OCCLUSION_BOX, baikalRoofHeight } from "./baikal-layout";
 import type { BaikalUniforms } from "./baikal-materials";
 
 /* ---------------- warm interior lighting, as a patch over MeshStandardMaterial ---------------- */
@@ -7,23 +7,25 @@ const O = BAIKAL_ROOM_OCCLUSION_BOX, c = BAIKAL_CABIN, roofSlope = (baikalRoofHe
 const glsl = (value: number) => Number.isInteger(value) ? `${value}.0` : `${value}`;
 
 export const COZY_LIGHT_FUNCTIONS = `
-uniform vec4 uCozyPos[COZY_COUNT];
-uniform vec4 uCozyTint[COZY_COUNT];
+uniform vec4 uCozyPos[${BAIKAL_COZY_PER_ROOM * BAIKAL_CABINS.length}];
+uniform vec4 uCozyTint[${BAIKAL_COZY_PER_ROOM * BAIKAL_CABINS.length}];
+uniform float uRoomEnv[${BAIKAL_CABINS.length}];
 uniform float uFireGlow;
 uniform float uLamp;
 uniform sampler2D uRoomOcc;
 uniform float uHasRoomOcc;
-// Every warm source in the room at once, no shadow maps: soft wrapped diffuse, ceiling spots with a real cone, the stove (light 0) breathing.
-vec3 cozyIrradiance(vec3 p, vec3 n) {
+// Every warm source in this room at once, no shadow maps: soft wrapped diffuse, ceiling spots with a real cone, the room's first light breathing.
+vec3 cozyIrradiance(vec3 p, vec3 n, int room) {
   vec3 sum = vec3(0.0);
-  for (int i = 0; i < COZY_COUNT; i++) {
+  int first = room * ${BAIKAL_COZY_PER_ROOM};
+  for (int i = first; i < first + COZY_COUNT; i++) {
     vec3 l = uCozyPos[i].xyz - p;
     float d2 = dot(l, l) + 0.09;
     vec3 L = l / sqrt(d2);
     float cosine = dot(n, L);
     float diffuse = max(cosine, 0.0) * 0.8 + (cosine * 0.5 + 0.5) * 0.2;
     float cone = uCozyTint[i].a > 0.5 ? smoothstep(0.66, 0.93, L.y) : 1.0;
-    float power = uCozyPos[i].w * (i == 0 ? uFireGlow : uLamp);
+    float power = uCozyPos[i].w * (i == first ? uFireGlow : uLamp);
     sum += uCozyTint[i].rgb * power * diffuse * cone / d2;
   }
   return sum;
@@ -37,10 +39,11 @@ float cozyShellShade(vec3 p, vec3 n) {
   float nearest = min(d.x, min(d.y, d.z));
   return mix(0.52, 1.0, smoothstep(0.0, 0.85, nearest));
 }
-float cozyFloorShade(vec3 p, vec3 n) {
+float cozyFloorShade(vec3 p, vec3 n, int room) {
   if (uHasRoomOcc < 0.5 || n.y < 0.5 || p.y > ${glsl(c.floorY + .16)}) return 1.0;
   vec2 uv = vec2((p.x - ${glsl(O.minX)}) / ${glsl(O.maxX - O.minX)}, (${glsl(O.maxZ)} - p.z) / ${glsl(O.maxZ - O.minZ)});
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+  uv.x = (float(room) + uv.x) / ${glsl(BAIKAL_CABINS.length)};
   vec2 shade = texture2D(uRoomOcc, uv).rg;
   return (1.0 - shade.r * 0.7) * (1.0 - shade.g * 0.42);
 }
@@ -50,6 +53,7 @@ const VERT_PARS = `
 uniform vec2 uRoomOrigins[3];
 varying vec3 vCozyWorld;
 varying vec2 vCozyRoom;
+varying float vCozyRoomIndex;
 `;
 const VERT_BODY = `
 vec4 cozyWorld = vec4(transformed, 1.0);
@@ -60,11 +64,13 @@ cozyWorld = modelMatrix * cozyWorld;
 vCozyWorld = cozyWorld.xyz;
 // Merged and instanced pieces alike find their own room, so all three cabins stay lit from far across the ice.
 vCozyRoom = uRoomOrigins[0];
-for (int i = 1; i < 3; i++) if (distance(cozyWorld.xz, uRoomOrigins[i] + vec2(-23.0, 6.0)) < distance(cozyWorld.xz, vCozyRoom + vec2(-23.0, 6.0))) vCozyRoom = uRoomOrigins[i];
+vCozyRoomIndex = 0.0;
+for (int i = 1; i < 3; i++) if (distance(cozyWorld.xz, uRoomOrigins[i] + vec2(-23.0, 6.0)) < distance(cozyWorld.xz, vCozyRoom + vec2(-23.0, 6.0))) { vCozyRoom = uRoomOrigins[i]; vCozyRoomIndex = float(i); }
 `;
 const FRAG_PARS = `
 varying vec3 vCozyWorld;
 varying vec2 vCozyRoom;
+varying float vCozyRoomIndex;
 ${COZY_LIGHT_FUNCTIONS}
 vec3 cozyBoxProject(vec3 direction) {
   vec3 p = vCozyWorld - vec3(vCozyRoom.x, 0.0, vCozyRoom.y);
@@ -77,12 +83,14 @@ const FRAG_BODY = `
 {
   vec3 cozyLocal = vCozyWorld - vec3(vCozyRoom.x, 0.0, vCozyRoom.y);
   vec3 cozyNormal = normalize(transpose(mat3(viewMatrix)) * geometryNormal);
-  float cozyShade = cozyShellShade(cozyLocal, cozyNormal) * cozyFloorShade(cozyLocal, cozyNormal);
-  vec3 cozyLight = cozyIrradiance(cozyLocal, cozyNormal);
+  int cozyRoomId = int(vCozyRoomIndex + 0.5);
+  float cozyEnv = uRoomEnv[cozyRoomId];
+  float cozyShade = cozyShellShade(cozyLocal, cozyNormal) * cozyFloorShade(cozyLocal, cozyNormal, cozyRoomId);
+  vec3 cozyLight = cozyIrradiance(cozyLocal, cozyNormal, cozyRoomId);
   reflectedLight.directDiffuse += cozyLight * BRDF_Lambert(material.diffuseColor);
-  reflectedLight.indirectDiffuse *= cozyShade;
+  reflectedLight.indirectDiffuse *= cozyShade * cozyEnv;
   reflectedLight.directDiffuse *= mix(1.0, cozyShade, 0.55);
-  reflectedLight.indirectSpecular *= mix(1.0, cozyShade, 0.6);
+  reflectedLight.indirectSpecular *= mix(1.0, cozyShade, 0.6) * cozyEnv;
   #ifdef COZY_FABRIC
   // Soft cloth: fine fibres catch light at the silhouette, the peach-skin rim of velvet and wool.
   float cozyRim = pow(1.0 - saturate(dot(geometryNormal, geometryViewDir)), 2.6);
@@ -104,9 +112,9 @@ const BOX_PROJECTED_ENV = THREE.ShaderChunk.envmap_physical_pars_fragment
  * the captured room environment, every lamp and the stove. Nothing here costs a draw call or a shadow pass.
  */
 export function applyCozyLighting(material: THREE.MeshStandardMaterial, shared: BaikalUniforms, options: CozyOptions = {}) {
-  const count = options.count ?? BAIKAL_COZY_LIGHTS.length;
+  const count = options.count ?? BAIKAL_COZY_PER_ROOM;
   material.onBeforeCompile = (shader) => {
-    for (const name of ["uCozyPos", "uCozyTint", "uFireGlow", "uLamp", "uRoomOcc", "uHasRoomOcc", "uRoomOrigins"]) shader.uniforms[name] = shared[name];
+    for (const name of ["uCozyPos", "uCozyTint", "uFireGlow", "uLamp", "uRoomOcc", "uHasRoomOcc", "uRoomOrigins", "uRoomEnv"]) shader.uniforms[name] = shared[name];
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", `#include <common>\n${VERT_PARS}`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>\n${VERT_BODY}`);
@@ -122,92 +130,6 @@ export function applyCozyLighting(material: THREE.MeshStandardMaterial, shared: 
   };
   material.customProgramCacheKey = () => `baikal-cozy-${count}-${options.fabric ? 1 : 0}-${options.mirrorFloor ? 1 : 0}-${options.cavity ?? "n"}-${options.glowVertex ? 1 : 0}`;
   return material;
-}
-
-/* ---------------- fur: shell-textured strands on a low polygon patch ---------------- */
-const FUR_VERT = `
-attribute float aShell;
-attribute float aFurLength;
-attribute vec3 color;
-uniform vec2 uRoomOrigins[3];
-varying vec2 vUv;
-varying float vShellLevel;
-varying vec3 vWorld;
-varying vec3 vNormal;
-varying vec3 vTint;
-varying vec2 vRoom;
-void main() {
-  vUv = uv; vShellLevel = aShell; vTint = color;
-  // Long hair flops over and clumps; the comb direction wanders so the pile never looks brushed flat.
-  float wander = sin(position.x * 3.1 + position.z * 2.3) + sin(position.z * 5.7 - position.x * 1.9) * 0.6;
-  vec3 comb = vec3(cos(wander), -1.15, sin(wander)) * aShell * aShell * aFurLength * 0.62;
-  vec3 world = position + normal * aFurLength * aShell + comb;
-  vWorld = (modelMatrix * vec4(world, 1.0)).xyz; vNormal = normalize(mat3(modelMatrix) * normal);
-  vRoom = uRoomOrigins[0];
-  for (int i = 1; i < 3; i++) if (distance(vWorld.xz, uRoomOrigins[i] + vec2(-23.0, 6.0)) < distance(vWorld.xz, vRoom + vec2(-23.0, 6.0))) vRoom = uRoomOrigins[i];
-  gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
-}`;
-const FUR_FRAG = `
-#define COZY_COUNT ${BAIKAL_COZY_LIGHTS.length}
-uniform sampler2D uFur;
-uniform float uHasFur;
-varying vec2 vUv;
-varying float vShellLevel;
-varying vec3 vWorld;
-varying vec3 vNormal;
-varying vec3 vTint;
-varying vec2 vRoom;
-${COZY_LIGHT_FUNCTIONS}
-void main() {
-  vec4 strand = uHasFur > 0.5 ? texture2D(uFur, vUv) : vec4(0.8, 0.5, 0.5, 1.0);
-  if (vShellLevel > 0.001 && strand.r < vShellLevel * 1.02) discard;
-  vec3 local = vWorld - vec3(vRoom.x, 0.0, vRoom.y);
-  vec3 n = normalize(vNormal + vec3(sin(vUv.x * 41.0) * 0.3, 0.0, cos(vUv.y * 37.0) * 0.3));
-  // Tips carry the light, roots sit in their own shade.
-  float depth = mix(0.3, 1.14, pow(vShellLevel, 0.75));
-  vec3 base = vTint * (0.82 + 0.3 * strand.g) * (0.86 + 0.28 * strand.b);
-  vec3 ambient = vec3(0.5, 0.36, 0.22) * 0.2 * mix(0.4, 1.0, uLamp);
-  vec3 light = (ambient * 3.14159 + cozyIrradiance(local, n)) * cozyShellShade(local, n);
-  vec3 color = base / 3.14159 * light * depth;
-  gl_FragColor = vec4(color, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  #include <fog_fragment>
-}`;
-export function createBaikalFurMaterial(shared: BaikalUniforms, fur: THREE.Texture | null): THREE.ShaderMaterial {
-  const material = new THREE.ShaderMaterial({
-    uniforms: { uCozyPos: shared.uCozyPos, uCozyTint: shared.uCozyTint, uFireGlow: shared.uFireGlow, uLamp: shared.uLamp, uRoomOcc: shared.uRoomOcc, uHasRoomOcc: shared.uHasRoomOcc, uRoomOrigins: shared.uRoomOrigins,
-      uFur: { value: fur }, uHasFur: { value: fur ? 1 : 0 } },
-    vertexShader: FUR_VERT, fragmentShader: FUR_FRAG, side: THREE.DoubleSide,
-  });
-  material.name = "baikal-sheepskin";
-  return material;
-}
-
-/** A pelt with a wandering outline. `surface` lifts it onto whatever it lies on. */
-export function furPatchGeometry(width: number, depth: number, seed: number, tint: THREE.Color, length = .05, surface: (x: number, z: number) => number = () => 0): THREE.BufferGeometry {
-  const rings = 10, spokes = 56, positions: number[] = [], normals: number[] = [], uvs: number[] = [], lengths: number[] = [], colors: number[] = [], index: number[] = [];
-  const outline = (a: number) => 1 + .09 * Math.sin(a * 3 + seed) + .06 * Math.sin(a * 7 + seed * 2.3) + .05 * Math.sin(a * 11 + seed * .7);
-  const add = (x: number, z: number, edge: number) => {
-    const y = surface(x, z), e = .02, nx = surface(x - e, z) - surface(x + e, z), nz = surface(x, z - e) - surface(x, z + e), ny = 2 * e, m = Math.hypot(nx, ny, nz);
-    positions.push(x, y, z); normals.push(nx / m, ny / m, nz / m); uvs.push(x / 1.05, z / 1.05);
-    lengths.push(length * (1 - Math.pow(edge, 7) * .5)); colors.push(tint.r, tint.g, tint.b);
-  };
-  add(0, 0, 0);
-  for (let r = 1; r <= rings; r++) for (let s = 0; s < spokes; s++) {
-    const a = s / spokes * Math.PI * 2, t = r / rings, o = outline(a);
-    add(Math.cos(a) * width / 2 * t * o, Math.sin(a) * depth / 2 * t * o, t);
-  }
-  for (let s = 0; s < spokes; s++) index.push(0, 1 + (s + 1) % spokes, 1 + s);
-  for (let r = 1; r < rings; r++) for (let s = 0; s < spokes; s++) {
-    const a = 1 + (r - 1) * spokes + s, b = 1 + (r - 1) * spokes + (s + 1) % spokes, d = a + spokes, e = b + spokes;
-    index.push(a, b, d, b, e, d);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geometry.setAttribute("aFurLength", new THREE.Float32BufferAttribute(lengths, 1));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3)); geometry.setIndex(index);
-  return geometry;
 }
 
 /* ---------------- soft goods ---------------- */
@@ -370,6 +292,76 @@ export function curtainGeometry(width: number, height: number, pleats: number, s
   for (let j = 0; j < rows; j++) for (let i = 0; i < columns; i++) {
     const a = j * (columns + 1) + i, b = a + 1, d = a + columns + 1, e = d + 1;
     index.push(a, b, d, b, e, d);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3)); geometry.setIndex(index); geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * A thick quilt laid over a flat top. It balloons in stitched squares, rolls over the edge, and hangs in soft folds until it reaches `ground`.
+ * The origin is the middle of the top surface, so it can be dropped straight onto a mattress.
+ */
+export function quiltGeometry(width: number, depth: number, options: { overhang?: number; ground?: number; puff?: number; cell?: number; seed?: number; step?: number; rumple?: number } = {}): THREE.BufferGeometry {
+  const overhang = options.overhang ?? .25, ground = options.ground ?? .3, puff = options.puff ?? .04, cell = options.cell ?? .36, seed = options.seed ?? 0, step = options.step ?? .05, rumple = options.rumple ?? 0, roll = .07;
+  const fullW = width + overhang * 2, fullD = depth + overhang * 2;
+  const columns = Math.max(6, Math.ceil(fullW / step)), rows = Math.max(6, Math.ceil(fullD / step));
+  const positions: number[] = [], uvs: number[] = [], colors: number[] = [], index: number[] = [];
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= columns; i++) {
+    const px = (i / columns - .5) * fullW, pz = (j / rows - .5) * fullD;
+    const cx = Math.max(-width / 2, Math.min(width / 2, px)), cz = Math.max(-depth / 2, Math.min(depth / 2, pz));
+    const ox = px - cx, oz = pz - cz, over = Math.hypot(ox, oz), dx = over > 1e-6 ? ox / over : 0, dz = over > 1e-6 ? oz / over : 0;
+    // The first bit of overhang rolls over a rounded edge, the rest falls straight.
+    const arc = Math.min(over, roll * Math.PI / 2), lateralRoll = roll * Math.sin(arc / roll), dropRoll = roll * (1 - Math.cos(arc / roll));
+    let lateral = lateralRoll, drop = dropRoll + Math.max(0, over - roll * Math.PI / 2);
+    const hanging = THREE.MathUtils.clamp(over / overhang, 0, 1), along = Math.abs(ox) > Math.abs(oz) ? pz : px;
+    lateral += Math.sin(along * 7.3 + seed * 2.1) * Math.sin(along * 2.9 - seed) * .035 * hanging;
+    const seamX = Math.abs(Math.sin(Math.PI * px / cell)), seamZ = Math.abs(Math.sin(Math.PI * pz / cell));
+    const stitched = Math.pow(seamX * seamZ, .55);
+    const loft = puff * stitched * (1 - hanging * .55);
+    const lump = rumple * (Math.sin(px * 3.1 + seed) * Math.sin(pz * 2.7 - seed * 1.4) + .5 * Math.sin(px * 7.3 - pz * 5.1 + seed * 2.2));
+    const y = Math.max(-ground, loft + lump - drop);
+    positions.push(cx + dx * lateral, y, cz + dz * lateral); uvs.push(px * 1.4, pz * 1.4);
+    const shade = (.74 + .26 * stitched) * (1 - hanging * .1);
+    colors.push(shade, shade, shade);
+  }
+  for (let j = 0; j < rows; j++) for (let i = 0; i < columns; i++) {
+    const a = j * (columns + 1) + i, b = a + 1, d = a + columns + 1, e = d + 1;
+    index.push(a, d, b, b, d, e);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3)); geometry.setIndex(index); geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * The blanket that settles on someone who sits down: up over the shoulders, across the lap and off the knees, wrapped around the body.
+ * Origin is the seat contact, +z towards the knees.
+ */
+export function seatBlanketGeometry(columns = 34, rows = 40): THREE.BufferGeometry {
+  const spine = new THREE.CatmullRomCurve3([[0, .42, -.2], [0, .52, -.07], [0, .44, .12], [0, .24, .24], [0, .2, .46], [0, .15, .68], [0, -.14, .78], [0, -.46, .8]].map(([x, y, z]) => new THREE.Vector3(x, y, z)), false, "centripetal");
+  const across = new THREE.Vector3(1, 0, 0), centre = new THREE.Vector3(), tangent = new THREE.Vector3(), normal = new THREE.Vector3(), p = new THREE.Vector3();
+  const positions: number[] = [], uvs: number[] = [], colors: number[] = [], index: number[] = [];
+  const length = spine.getLength();
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= columns; i++) {
+    const s = j / rows, t = i / columns * 2 - 1;
+    spine.getPointAt(s, centre); spine.getTangentAt(s, tangent); normal.crossVectors(tangent, across).normalize();
+    const half = .34 + .12 * Math.sin(Math.min(1, s * 1.5) * Math.PI / 2) + s * .05;
+    // The sides close around the body, more at the shoulders than at the knees, and the cloth stays plump down the middle.
+    const wrap = (1 - s) * .13 + .08, bulge = (1 - t * t) * .07 - Math.pow(Math.abs(t), 3) * wrap;
+    const hang = THREE.MathUtils.smoothstep(s, .45, 1);
+    const fold = Math.sin(t * 8.5 + s * 2.2 + 1.3) * .018 * (.3 + hang * 1.4) + Math.sin(t * 19 - s * 5) * .006;
+    const ruck = Math.sin(s * 23 + t * 2.1) * .007;
+    p.copy(centre).addScaledVector(across, t * half).addScaledVector(normal, bulge + fold + ruck);
+    positions.push(p.x, p.y, p.z); uvs.push(t * half * 2.2, s * length * 2.2);
+    const shade = (.86 + .14 * Math.sin(t * 8.5 + s * 2.2 + 1.3)) * (1 - Math.pow(Math.abs(t), 6) * .16);
+    colors.push(shade, shade, shade);
+  }
+  for (let j = 0; j < rows; j++) for (let i = 0; i < columns; i++) {
+    const a = j * (columns + 1) + i, b = a + 1, d = a + columns + 1, e = d + 1;
+    index.push(a, d, b, b, d, e);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));

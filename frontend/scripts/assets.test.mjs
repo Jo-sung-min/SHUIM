@@ -12,15 +12,6 @@ test("the spring water recording is served by the app, not the CDN", () => {
   assert.equal(assetsFor().assetUrl("/audio/onsen-water-v1.mp3"), "/audio/onsen-water-v1.mp3");
 });
 
-test("Mongsil artwork stays Git-bundled without a CDN dependency", () => {
-  for (const base of [undefined, "https://media.example.com"]) {
-    for (const view of ["front", "back", "left", "right"]) {
-      const path = `/characters/mongsil/${view}-v1.webp`;
-      assert.equal(assetsFor(base).assetUrl(path), path);
-    }
-  }
-});
-
 const MAP_TEXTURES = [
   "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp",
   "/garden/art/grass-natural-v1.webp", "/garden/art/grass-natural-mobile-v1.webp",

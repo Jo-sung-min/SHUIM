@@ -3,8 +3,9 @@ import type { Daylight } from "./daylight";
 import { UYUNI_SURFACE, UYUNI_WATER_FRAGMENT, UYUNI_WATER_VERTEX, uyuniDryAmount } from "./uyuni-shader";
 import { buildUyuniHotels } from "./uyuni-hotels";
 import { uyuniHotelFloorHeight } from "./uyuni-hotel-layout";
-import { buildUyuniBunkers } from "./uyuni-bunkers";
+import { type UyuniBunkerOptions, buildUyuniBunkers } from "./uyuni-bunkers";
 import type { UyuniBunkerId } from "./uyuni-bunker-layout";
+import type { BoardGame } from "./net";
 
 export interface UyuniWalker { x: number; z: number; moving: boolean }
 export type UyuniSkyUniforms = Record<string, THREE.IUniform>;
@@ -26,7 +27,7 @@ export class UyuniWorld {
   private bunkers: ReturnType<typeof buildUyuniBunkers> | null = null;
   private indoor = false;
 
-  constructor(scene: THREE.Scene, skyUniforms: UyuniSkyUniforms, sandTexture: THREE.Texture, hotelTextures?: { wood: THREE.Texture; cotton: THREE.Texture }) {
+  constructor(scene: THREE.Scene, skyUniforms: UyuniSkyUniforms, sandTexture: THREE.Texture, hotelTextures?: { wood: THREE.Texture; cotton: THREE.Texture }, bunkerOptions?: UyuniBunkerOptions) {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         ...skyUniforms,
@@ -49,9 +50,11 @@ export class UyuniWorld {
     scene.add(this.surface, this.fill, this.sun);
     if (hotelTextures) {
       this.hotels = buildUyuniHotels(scene, hotelTextures);
-      this.bunkers = buildUyuniBunkers(scene, hotelTextures);
+      this.bunkers = buildUyuniBunkers(scene, hotelTextures, bunkerOptions);
     }
   }
+
+  setBoardGames(games: readonly BoardGame[]) { this.bunkers?.setBoardGames(games); }
 
   setBunkerActive(id: UyuniBunkerId | null) {
     this.indoor = id !== null;
@@ -78,7 +81,8 @@ export class UyuniWorld {
   }
 
   update(time: number, camera: THREE.Camera, walker?: UyuniWalker) {
-    if (this.disposed || this.indoor || !Number.isFinite(time)) return;
+    if (this.disposed || !Number.isFinite(time)) return;
+    if (this.indoor) { this.bunkers?.update(time); return; }
     const uniforms = this.surface.material.uniforms;
     if (this.lastTime !== null && time < this.lastTime) {
       for (const ripple of this.ripples) ripple.w = 0;

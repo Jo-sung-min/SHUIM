@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BAIKAL_BLOCKS, BAIKAL_ROOM_OCCLUSION_BOX, BAIKAL_SNOW_DRIFT_BOX, BAIKAL_WIND } from "./baikal-layout";
+import { BAIKAL_BLOCKS, BAIKAL_CABINS, BAIKAL_ROOM_OCCLUSION_BOX, BAIKAL_SNOW_DRIFT_BOX, BAIKAL_WIND } from "./baikal-layout";
 
 /**
  * Every Baikal surface texture beyond the two photographs is generated once on the visitor's own GPU: a few draws at load,
@@ -10,9 +10,6 @@ export interface BaikalBake {
   snowDrift: THREE.Texture | null;
   boucle: THREE.Texture;
   knit: THREE.Texture;
-  fur: THREE.Texture;
-  rug: THREE.Texture;
-  rugNormal: THREE.Texture;
   planks: THREE.Texture;
   planksNormal: THREE.Texture;
   /** The same oak with no board joints, for furniture and beams. */
@@ -81,19 +78,6 @@ float surfaceHeight(vec2 uv) {
   return clamp(strand * (0.42 + 0.5 * loop) + ply * 0.05 + pfbm(uv * 150.0, vec2(150.0), 2) * 0.1, 0.0, 1.0);
 }`, `void main() { gl_FragColor = heightNormal(5.0); }`);
 
-/** One tall strand per cell. The fur shells cut against this; deliberately left without mipmaps so strands stay crisp. */
-const FUR_FRAG = withNoise(`float surfaceHeight(vec2 uv) { return 0.0; }`, `
-void main() {
-  vec2 p = vUv * 96.0, i = floor(p), f = fract(p);
-  float best = 0.0, tone = 0.5;
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 g = vec2(float(x), float(y)), id = mod(i + g, 96.0), r = g + h22(id) * 0.9 - f;
-    float grow = 0.35 + 0.65 * h21(id + 3.7), strand = max(0.0, 1.0 - length(r) / 0.62) * grow;
-    if (strand > best) { best = strand; tone = h21(id + 9.1); }
-  }
-  gl_FragColor = vec4(best, tone, pfbm(vUv * 18.0, vec2(18.0), 3), 1.0);
-}`);
-
 /** Wide brushed-oak boards laid along V, each with its own colour, ring pattern, end joint and the occasional knot. */
 const PLANKS_BODY = `
 uniform float uBoards;
@@ -149,25 +133,6 @@ vec4 stones(vec2 uv) {
 float surfaceHeight(vec2 uv) { return stones(uv).a; }`;
 const STONE_FRAG = withNoise(STONE_BODY, `void main() { gl_FragColor = vec4(stones(vUv).rgb, 1.0); }`);
 const STONE_NORMAL_FRAG = withNoise(STONE_BODY, `void main() { gl_FragColor = heightNormal(7.0); }`);
-
-/** A hand-tufted wool rug: cream pile, thin charcoal diamond lattice softened by the tufts themselves. */
-const RUG_BODY = `
-vec4 pile(vec2 uv) {
-  vec2 q = uv * 3.0;
-  vec2 warp = vec2(pfbm(uv * 9.0, vec2(9.0), 3), pfbm(uv * 9.0 + 3.3, vec2(9.0), 3)) * 0.07 - 0.035;
-  vec2 d = abs(fract(q + warp) - 0.5);
-  float lattice = 1.0 - smoothstep(0.01, 0.034, abs(d.x + d.y - 0.5));
-  vec2 tufts = pwor(uv * 150.0, vec2(150.0));
-  float pileHeight = 1.0 - smoothstep(0.05, 0.72, tufts.x);
-  float mottled = pfbm(uv * 6.0, vec2(6.0), 4);
-  vec3 wool = mix(vec3(0.34, 0.285, 0.215), vec3(0.47, 0.40, 0.31), mottled);
-  vec3 color = mix(wool, vec3(0.1, 0.075, 0.06), lattice * (0.7 + 0.3 * pileHeight));
-  color *= 0.84 + 0.2 * pileHeight;
-  return vec4(color, pileHeight * (1.0 - lattice * 0.25));
-}
-float surfaceHeight(vec2 uv) { return pile(uv).a; }`;
-const RUG_FRAG = withNoise(RUG_BODY, `void main() { gl_FragColor = vec4(pile(vUv).rgb, 1.0); }`);
-const RUG_NORMAL_FRAG = withNoise(RUG_BODY, `void main() { gl_FragColor = heightNormal(4.0); }`);
 
 /** Ferns of hoar frost for the corners of the panes. */
 const FROST_FRAG = withNoise(`float surfaceHeight(vec2 uv) { return 0.0; }`, `
@@ -287,18 +252,21 @@ function bakeSnowDrift(): THREE.Texture | null {
   return texture;
 }
 
-export function bakeBaikalTextures(renderer: THREE.WebGLRenderer, mobile: boolean): BaikalBake {
+/** The fabric, timber and stone on their own, for warm rooms outside Baikal. */
+export type CozySurfaces = Pick<BaikalBake, "boucle" | "knit" | "planks" | "planksNormal" | "wood" | "stone" | "stoneNormal"> & { dispose(): void };
+
+function startBake(renderer: THREE.WebGLRenderer, mobile: boolean) {
   const scene = new THREE.Scene(), camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
   const mesh = new THREE.Mesh(geometry); mesh.frustumCulled = false; scene.add(mesh);
   const targets: THREE.WebGLRenderTarget[] = [], previous = renderer.getRenderTarget(), autoClear = renderer.autoClear;
   const shrink = mobile ? .5 : 1;
-  const bake = (name: string, size: number, fragmentShader: string, srgb = false, uniforms: Record<string, THREE.IUniform> = {}, mipmaps = true) => {
+  const bake = (name: string, size: number, fragmentShader: string, srgb = false, uniforms: Record<string, THREE.IUniform> = {}) => {
     const pixels = Math.max(64, Math.round(size * shrink));
     const target = new THREE.WebGLRenderTarget(pixels, pixels, {
       type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
-      magFilter: THREE.LinearFilter, minFilter: mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter, generateMipmaps: mipmaps,
+      magFilter: THREE.LinearFilter, minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true,
       colorSpace: srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace, anisotropy: Math.min(mobile ? 4 : 8, renderer.capabilities.getMaxAnisotropy()),
     });
     target.texture.name = `baikal-${name}`;
@@ -307,18 +275,29 @@ export function bakeBaikalTextures(renderer: THREE.WebGLRenderer, mobile: boolea
     material.dispose(); targets.push(target);
     return target.texture;
   };
+  const finish = () => { renderer.setRenderTarget(previous); renderer.autoClear = autoClear; geometry.dispose(); scene.clear(); };
   const boards = { uBoards: { value: 8 }, uGaps: { value: 1 } };
   const solid = { uBoards: { value: 3 }, uGaps: { value: 0 } };
-  const textures = {
-    boucle: bake("boucle", 512, BOUCLE_FRAG), knit: bake("knit", 512, KNIT_FRAG), fur: bake("fur", 512, FUR_FRAG, false, {}, false),
-    rug: bake("rug", 1024, RUG_FRAG, true), rugNormal: bake("rug-normal", 1024, RUG_NORMAL_FRAG),
+  const surfaces = () => ({
+    boucle: bake("boucle", 512, BOUCLE_FRAG), knit: bake("knit", 512, KNIT_FRAG),
     planks: bake("planks", 2048, PLANKS_FRAG, true, boards), planksNormal: bake("planks-normal", 1024, PLANKS_NORMAL_FRAG, false, boards),
     wood: bake("wood", 1024, PLANKS_FRAG, true, solid),
     stone: bake("stone", 1024, STONE_FRAG, true), stoneNormal: bake("stone-normal", 1024, STONE_NORMAL_FRAG),
-    frost: bake("frost", 1024, FROST_FRAG),
-  };
-  renderer.setRenderTarget(previous); renderer.autoClear = autoClear;
-  geometry.dispose(); scene.clear();
+  });
+  return { bake, surfaces, finish, targets };
+}
+
+export function bakeCozySurfaces(renderer: THREE.WebGLRenderer, mobile: boolean): CozySurfaces {
+  const { surfaces, finish, targets } = startBake(renderer, mobile), textures = surfaces();
+  finish();
+  let disposed = false;
+  return { ...textures, dispose() { if (disposed) return; disposed = true; targets.forEach(target => target.dispose()); } };
+}
+
+export function bakeBaikalTextures(renderer: THREE.WebGLRenderer, mobile: boolean): BaikalBake {
+  const { bake, surfaces, finish, targets } = startBake(renderer, mobile);
+  const textures = { ...surfaces(), frost: bake("frost", 1024, FROST_FRAG) };
+  finish();
   const iceVolume = bakeIceVolume(mobile ? 1024 : 2048, renderer), snowDrift = bakeSnowDrift();
   let disposed = false;
   return { ...textures, iceVolume, snowDrift, dispose() {
@@ -329,7 +308,7 @@ export function bakeBaikalTextures(renderer: THREE.WebGLRenderer, mobile: boolea
 
 /**
  * Soft contact shadow under everything in a room, baked from above once. R is tight, for the dark line where furniture meets the floor; G is wide, for the room's soft ambient pooling.
- * All three cabins are the same room, so the first one's map serves them all.
+ * Each house is furnished differently, so the three maps sit side by side in one atlas.
  */
 const BLUR_FRAG = `
 uniform sampler2D tSource;
@@ -349,23 +328,30 @@ uniform sampler2D tWide;
 varying vec2 vUv;
 void main() { gl_FragColor = vec4(texture2D(tTight, vUv).r, texture2D(tWide, vUv).r, 0.0, 1.0); }`;
 export function bakeBaikalRoomOcclusion(renderer: THREE.WebGLRenderer, scene: THREE.Scene, floorY: number, layer: number): THREE.WebGLRenderTarget {
-  const box = BAIKAL_ROOM_OCCLUSION_BOX, size = 512;
+  const box = BAIKAL_ROOM_OCCLUSION_BOX, cell = 512, width = cell * BAIKAL_CABINS.length, height = cell;
   const previous = renderer.getRenderTarget(), autoClear = renderer.autoClear, clearColor = renderer.getClearColor(new THREE.Color()), clearAlpha = renderer.getClearAlpha();
-  const make = () => new THREE.WebGLRenderTarget(size, size, { type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
-  const raw = new THREE.WebGLRenderTarget(size, size, { type: THREE.UnsignedByteType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
+  const make = () => new THREE.WebGLRenderTarget(width, height, { type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
+  const raw = new THREE.WebGLRenderTarget(width, height, { type: THREE.UnsignedByteType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const halfWidth = (box.maxX - box.minX) / 2, halfDepth = (box.maxZ - box.minZ) / 2;
   const camera = new THREE.OrthographicCamera(-halfWidth, halfWidth, halfDepth, -halfDepth, .01, 1.55);
-  camera.position.set((box.minX + box.maxX) / 2, floorY + 1.6, (box.minZ + box.maxZ) / 2); camera.up.set(0, 0, -1); camera.lookAt(camera.position.x, floorY, camera.position.z); camera.layers.set(layer); camera.updateMatrixWorld();
+  camera.up.set(0, 0, -1); camera.layers.set(layer);
   const white = new THREE.MeshBasicMaterial({ color: 0xffffff }), override = scene.overrideMaterial, fog = scene.fog, background = scene.background;
   scene.overrideMaterial = white; scene.fog = null; scene.background = null;
-  renderer.setClearColor(0x000000, 1); renderer.autoClear = true; renderer.setRenderTarget(raw); renderer.render(scene, camera);
+  renderer.setClearColor(0x000000, 1); renderer.setRenderTarget(raw); renderer.clear(); renderer.autoClear = false;
+  BAIKAL_CABINS.forEach((site, index) => {
+    camera.position.set((box.minX + box.maxX) / 2 + site.offsetX, floorY + 1.6, (box.minZ + box.maxZ) / 2 + site.offsetZ);
+    camera.lookAt(camera.position.x, floorY, camera.position.z); camera.updateMatrixWorld();
+    raw.viewport.set(index * cell, 0, cell, cell); raw.scissor.set(index * cell, 0, cell, cell); raw.scissorTest = true;
+    renderer.setRenderTarget(raw); renderer.render(scene, camera);
+  });
+  renderer.autoClear = true;
   scene.overrideMaterial = override; scene.fog = fog; scene.background = background; white.dispose();
   const quadScene = new THREE.Scene(), quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
   const blur = new THREE.ShaderMaterial({ vertexShader: BAKE_VERT, fragmentShader: BLUR_FRAG, uniforms: { tSource: { value: null }, uStep: { value: new THREE.Vector2() } }, depthTest: false, depthWrite: false, toneMapped: false, blending: THREE.NoBlending });
   const mesh = new THREE.Mesh(geometry, blur); mesh.frustumCulled = false; quadScene.add(mesh);
   const run = (source: THREE.WebGLRenderTarget, target: THREE.WebGLRenderTarget, x: number, y: number) => {
-    blur.uniforms.tSource.value = source.texture; (blur.uniforms.uStep.value as THREE.Vector2).set(x / size, y / size);
+    blur.uniforms.tSource.value = source.texture; (blur.uniforms.uStep.value as THREE.Vector2).set(x / width, y / height);
     renderer.setRenderTarget(target); renderer.render(quadScene, quadCamera);
   };
   const a = make(), b = make(), c = make(), d = make();

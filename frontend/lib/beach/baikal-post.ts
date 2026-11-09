@@ -10,9 +10,11 @@ uniform sampler2D tSrc;
 uniform float uThreshold;
 varying vec2 vUv;
 void main() {
-  vec3 c = texture2D(tSrc, vUv).rgb;
+  // Characters write zero alpha, so a pale shirt can never start to glow.
+  vec4 source = texture2D(tSrc, vUv);
+  vec3 c = source.rgb * source.a;
   float peak = max(c.r, max(c.g, c.b));
-  float knee = uThreshold * 0.55;
+  float knee = uThreshold * 0.22;
   float soft = clamp(peak - uThreshold + knee, 0.0, 2.0 * knee);
   soft = soft * soft / (4.0 * knee + 1e-4);
   float weight = max(soft, peak - uThreshold) / max(peak, 1e-4);
@@ -151,7 +153,7 @@ export class BaikalPost {
     renderer.autoClear = false;
     // Indoors the lamps are the subject, so more of their warmth is let through the threshold.
     this.bright.uniforms.tSrc.value = this.target.texture;
-    this.bright.uniforms.uThreshold.value = THREE.MathUtils.lerp(.8, .62, this.interior);
+    this.bright.uniforms.uThreshold.value = THREE.MathUtils.lerp(.84, .76, this.interior);
     this.draw(this.bright, this.chain[0]);
     for (let i = 1; i < this.levels; i++) {
       const source = this.chain[i - 1];

@@ -419,7 +419,17 @@ export interface TickRequest {
   care?: { to: string; kind: CareKind };
 }
 
+export type BoardGameKind = "omok" | "othello";
+export type BoardGameColor = "black" | "white";
+export interface BoardGameSeat { pid: string | null; nick: string }
+export interface BoardGame {
+  id: string; game: BoardGameKind; size: number; cells: string; black: BoardGameSeat | null; white: BoardGameSeat | null;
+  turn: BoardGameColor | null; result: BoardGameColor | "draw" | null; reason: string | null; lastCell: number | null; legal: number[];
+  blackCount: number; whiteCount: number; turnMsLeft: number; passed: BoardGameColor | null; version: number;
+}
+
 export interface TickResponse {
+  boardGames?: BoardGame[];
   gardenMoments?: GardenMoment[];
   gardenMomentCooldowns?: GardenMomentCooldowns;
   sequence?: number;
@@ -539,6 +549,33 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
     fireworks: fireworks.fireworks, fireworksCooldownUntil: fireworks.fireworksCooldownUntil };
 }
 
+function readBoardSeat(value: unknown): BoardGameSeat | null | undefined {
+  if (value === null || value === undefined) return null;
+  const seat = value as BoardGameSeat | undefined;
+  return seat && typeof seat === "object" && typeof seat.nick === "string" && (seat.pid === null || typeof seat.pid === "string") ? seat : undefined;
+}
+/** The server leaves out every field that has no value, so a free seat or a board between games simply isn't there. */
+export function readBoardGame(value: unknown): BoardGame | null {
+  const sent = value as BoardGame | null | undefined;
+  if (!sent || typeof sent !== "object") return null;
+  const board: BoardGame = { ...sent, turn: sent.turn ?? null, result: sent.result ?? null, reason: sent.reason ?? null, lastCell: sent.lastCell ?? null, passed: sent.passed ?? null, legal: sent.legal ?? [] };
+  if (typeof board.id !== "string" || !["omok", "othello"].includes(board.game)) return null;
+  if (board.size !== (board.game === "omok" ? 15 : 8) || typeof board.cells !== "string" || board.cells.length !== board.size * board.size || !/^[.BW]*$/.test(board.cells)) return null;
+  const inBoard = (cell: unknown) => Number.isInteger(cell) && (cell as number) >= 0 && (cell as number) < board.cells.length;
+  const black = readBoardSeat(board.black), white = readBoardSeat(board.white);
+  if (black === undefined || white === undefined || !Number.isSafeInteger(board.version) || !Number.isFinite(board.turnMsLeft)) return null;
+  if (!(board.turn === null || board.turn === "black" || board.turn === "white") || !(board.lastCell === null || inBoard(board.lastCell))) return null;
+  if (!(board.result === null || board.result === "black" || board.result === "white" || board.result === "draw")) return null;
+  if (!Array.isArray(board.legal) || !board.legal.every(inBoard)) return null;
+  return { ...board, black, white };
+}
+export async function playBoardGame(ticket: string, action: "join" | "leave" | "move" | "rematch", tableId: string, cell?: number, version?: number): Promise<BoardGame> {
+  const state = await post<unknown>("/api/beach/board", { ticket, action, tableId, ...(cell === undefined ? {} : { cell }), ...(version === undefined ? {} : { version }) }, { signal: AbortSignal.timeout(8000) });
+  const board = readBoardGame(state);
+  if (!board) throw new Error("게임 상태를 확인하지 못했어요. 다시 눌러 주세요.");
+  return board;
+}
+
 export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promise<TickResponse> {
   if (!validBunkerLayer(body.bunkerId)) throw new BeachUnavailable("머무는 층을 다시 확인해 주세요.", 400);
   const response = await post<TickResponse>("/api/beach/tick", body,
@@ -550,6 +587,7 @@ export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promis
     if (!lighting) throw new Error("방의 시간을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
     response.lighting = lighting;
   }
+  response.boardGames = (Array.isArray(response.boardGames) ? response.boardGames : []).map(readBoardGame).filter((board): board is BoardGame => board !== null);
   const fireworks = readFireworksState(response);
   response.fireworks = fireworks.fireworks;
   response.fireworksCooldownUntil = fireworks.fireworksCooldownUntil;

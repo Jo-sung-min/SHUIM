@@ -1,29 +1,26 @@
 /** Stable IDs also travel through the room server; old pixel choices migrate by gender. */
-export type BeachCharacter = "male" | "female-3d" | "mongsil";
+export type BeachCharacter = "male" | "female-3d";
 
 export const BEACH_CHARACTERS = [
   { id: "male", label: "남자", skin: 0, preview: "/beach/male-avatar.webp" },
   { id: "female-3d", label: "여자", skin: 3, preview: "/beach/female-avatar.webp" },
-  { id: "mongsil", label: "몽실", skin: 6, preview: "/characters/mongsil/front-v1.webp" },
 ] as const;
 
 function currentCharacter(value: unknown): BeachCharacter | null {
-  if (value === "mongsil") return "mongsil";
-  if (value === "male" || value === "pixel-male" || value === "cat-gentleman") return "male";
+  if (value === "male" || value === "pixel-male" || value === "cat-gentleman" || value === "mongsil") return "male";
   if (value === "female-3d" || value === "female" || value === "cat-lady") return "female-3d";
   return null;
 }
 
 export function characterFromSkin(skin: number): BeachCharacter {
   if (!Number.isFinite(skin)) return "male";
-  if (skin === 6) return "mongsil";
   const row = Math.trunc(skin);
   return ((row % 2) + 2) % 2 === 1 ? "female-3d" : "male";
 }
 
 export function characterSkin(character: BeachCharacter): number {
   const selected = currentCharacter(character);
-  return selected === "mongsil" ? 6 : selected === "female-3d" ? 3 : 0;
+  return selected === "female-3d" ? 3 : 0;
 }
 
 /** A reconnect can belong to a different account after another tab changes the session. */

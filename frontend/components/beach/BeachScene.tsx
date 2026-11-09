@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { assetCssUrl } from "@/lib/assets";
 import { MAPS, type MapId } from "@/lib/beach/maps";
 import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode, type BoatRideState, type BunkerState } from "@/lib/beach/engine";
-import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, enterBeachBunker, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
+import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, playBoardGame, type BoardGame, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, enterBeachBunker, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
 import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
 import { ONSEN_SEATS_PER_BATH } from "@/lib/beach/onsen-rest";
@@ -23,6 +23,8 @@ import RoomFireworksControls from "./RoomFireworksControls";
 import FireworkTicketSheet from "@/components/FireworkTicketSheet";
 import UyuniMomentControls from "./UyuniMomentControls";
 import UyuniBunkerControls, { type BunkerAction } from "./UyuniBunkerControls";
+import BunkerBoardGame, { type BoardAction } from "./BunkerBoardGame";
+import { BUNKER_GAME_TABLES } from "@/lib/beach/uyuni-bunker-layout";
 import GardenPondControls from "./GardenPondControls";
 import BaikalJourney from "./BaikalJourney";
 import BambooFestivalControls from "./BambooFestivalControls";
@@ -46,7 +48,7 @@ const INTRO_VISIBLE_MS = 4000;
 const INTRO_FADE_MS = 700;
 const EMPTY_ONSEN: OnsenState = { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
 const EMPTY_PAVILION: PavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "", kind: "pavilion" };
-const EMPTY_BUNKER: BunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false, seated: false, spotId: null, occupied: 0, capacity: 6, available: false };
+const EMPTY_BUNKER: BunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false, seated: false, spotId: null, gameNearId: null, occupied: 0, capacity: 6, available: false };
 type SkyPhase = "walking" | "joining" | "standing";
 
 /** 마지막에 고른 시점 (기기별로 기억) */
@@ -108,6 +110,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const boatActionRef = useRef<() => void>(() => {});
   const bunkerActionRef = useRef<() => void>(() => {});
   const bunkerEnabledRef = useRef(false);
+  const boardGamesRef = useRef<BoardGame[]>([]);
+  const boardBusyRef = useRef(false);
   const bunkerBusyRef = useRef<BunkerAction | null>(null);
   const bunkerOperationRef = useRef(0);
   const bunkerInsideRef = useRef(false);
@@ -215,6 +219,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [boat, setBoat] = useState<BoatRideState | null>(null);
   const [bunker, setBunker] = useState<BunkerState>(EMPTY_BUNKER);
   const [bunkerEnabled, setBunkerEnabled] = useState(false);
+  const [boardGames, setBoardGames] = useState<BoardGame[]>([]);
+  const [boardTableId, setBoardTableId] = useState<string | null>(null);
+  const [boardBusy, setBoardBusy] = useState(false);
   const [bunkerBusy, setBunkerBusy] = useState<BunkerAction | null>(null);
   const [rain, setRain] = useState(0);
   const [photo, setPhoto] = useState<BeachPhoto | null>(null);
@@ -377,7 +384,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   }, [lightingControl, hudHidden, photo, phase, actionsOpen, characterPickerOpen, powderOpen]);
 
   useEffect(() => { if (hudHidden || photo || phase !== "ready" || lost || mapId === "uyuni") setFieldOpen(false); }, [hudHidden, photo, phase, lost, mapId]);
-  const controlsPaused = Boolean(photo) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
+  // Only a board that is really on screen may take the controls away.
+  const boardPanelOpen = boardTableId !== null && boardGames.some(board => board.id === boardTableId);
+  const controlsPaused = boardPanelOpen || Boolean(photo) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
     controlsPausedRef.current = controlsPaused;
@@ -551,6 +560,18 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     setFlightUntil(remaining > 0 ? Date.now() + remaining : 0);
   }, []);
 
+  /** A move's own reply can beat an older poll home, so a board only ever steps forward. */
+  const applyBoardGames = useCallback((incoming: readonly BoardGame[] | undefined) => {
+    const current = boardGamesRef.current, next = (incoming ?? []).map(board => {
+      const seen = current.find(item => item.id === board.id);
+      return seen && seen.version >= board.version ? seen : board;
+    });
+    if (next.length === current.length && next.every((board, index) => board === current[index])) return;
+    boardGamesRef.current = next;
+    setBoardGames(next);
+    engineRef.current?.setBoardGames(next);
+  }, []);
+
   const reenter = useCallback(async (engine: BeachEngine, visit: number, epoch: number, signal: AbortSignal): Promise<boolean> => {
     const belongsToVisit = () => aliveRef.current && engineRef.current === engine && visitGenerationRef.current === visit && requestEpochRef.current === epoch;
     if (!belongsToVisit() || blockedRef.current) return false;
@@ -666,7 +687,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       if (res.sequence !== undefined && res.sequence < requestSequence) return false;
       sequenceRef.current = Math.max(sequenceRef.current, res.sequence ?? requestSequence);
       engine.setPlayers(res.players, { serverTime: res.serverTime, sentAt, receivedAt: performance.now() });
-      remoteMovingRef.current = res.players.some(player => player.moving);
+      // Someone across the board should see a move almost at once.
+      const myPid = meRef.current?.pid;
+      remoteMovingRef.current = res.players.some(player => player.moving) || Boolean(res.boardGames?.some(board => board.turn !== null && (board.black?.pid === myPid || board.white?.pid === myPid)));
+      applyBoardGames(res.boardGames);
       setPeople(previous => sameBeachRoster(previous, res.players) ? previous : res.players);
       if (res.careCapabilities) setCareCapabilities(previous => previous.wave === (res.careCapabilities!.wave === true)
         && previous.hug === (res.careCapabilities!.hug === true) ? previous : { wave: res.careCapabilities!.wave === true, hug: res.careCapabilities!.hug === true });
@@ -726,7 +750,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         scheduleTick();
       }
     }
-  }, [handleEvent, reenter, scheduleTick, stopWithError, applyFire, applyLighting, applyFireworks, applyMoments, applyPondMoments, applyMusic, rememberVisit]);
+  }, [applyBoardGames, handleEvent, reenter, scheduleTick, stopWithError, applyFire, applyLighting, applyFireworks, applyMoments, applyPondMoments, applyMusic, rememberVisit]);
   tickRunnerRef.current = runTick;
 
   useEffect(() => {
@@ -784,6 +808,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     onsenEnabledRef.current = false; setOnsenEnabled(false); setOnsen(EMPTY_ONSEN);
     pavilionEnabledRef.current = false; setPavilionEnabled(false); setPavilion(EMPTY_PAVILION);
     bunkerEnabledRef.current = false; bunkerInsideRef.current = false; setBunkerEnabled(false); setBunker(EMPTY_BUNKER);
+    boardGamesRef.current = []; setBoardGames([]); setBoardTableId(null);
     bunkerOperationRef.current++; bunkerBusyRef.current = null; setBunkerBusy(null);
     setRestActionSpot(null);
     fireTimeRef.current = 0;
@@ -862,6 +887,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             onBunkerChange: (state) => {
               setBunker(state);
               if (state.inside && !bunkerInsideRef.current) { setMomentOpen(false); setActionsOpen(false); }
+              if (!state.inside && bunkerInsideRef.current) { setBoardTableId(null); boardGamesRef.current = []; setBoardGames([]); }
               bunkerInsideRef.current = state.inside;
             },
             onBunkerAction: () => bunkerActionRef.current(),
@@ -1385,6 +1411,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     if (state.seated) void changeBunker("stand");
     else if (state.inside && state.ladderNear) void changeBunker("exit");
     else if (state.inside && state.sofaNear) void changeBunker("sit");
+    else if (state.inside && state.gameNearId) { setActionsOpen(false); setBoardTableId(state.gameNearId); }
     else if (!state.inside && state.nearId) void changeBunker("enter");
   };
   benchActionRef.current = () => { void toggleStargazing("fire-benches"); };
@@ -1559,7 +1586,28 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const restContextVisible = !bunker.inside && !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
   const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
   const guestbookVisible = mapId === "bamboo" && nearGuestbook && Boolean(ticketRef.current);
-  const bunkerContextVisible = mapId === "uyuni" && (bunker.inside ? bunker.ladderNear || bunker.sofaNear || bunker.seated : bunker.nearId !== null);
+  const myBoardPid = meRef.current?.pid ?? null;
+  const seatedBoard = myBoardPid ? boardGames.find(board => board.black?.pid === myBoardPid || board.white?.pid === myBoardPid) ?? null : null;
+  const reachableBoardId = bunker.gameNearId ?? seatedBoard?.id ?? null;
+  const reachableBoard = reachableBoardId ? BUNKER_GAME_TABLES.find(table => table.id === reachableBoardId) ?? null : null;
+  const openBoard = boardTableId ? boardGames.find(board => board.id === boardTableId) ?? null : null;
+  const boardTitle = boardTableId ? BUNKER_GAME_TABLES.find(table => table.id === boardTableId)?.name ?? "" : "";
+  const playBoard = async (action: BoardAction, cell?: number) => {
+    const ticket = ticketRef.current, tableId = boardTableId;
+    if (!ticket || !tableId || boardBusyRef.current) return;
+    boardBusyRef.current = true; setBoardBusy(true);
+    try {
+      const version = action === "move" || action === "rematch" ? boardGamesRef.current.find(board => board.id === tableId)?.version : undefined;
+      const updated = await playBoardGame(ticket, action, tableId, cell, version);
+      applyBoardGames(boardGamesRef.current.map(board => board.id === updated.id ? updated : board));
+      haptic();
+      scheduleTick(0);
+    } catch (cause) {
+      if (cause instanceof BeachGone) { ticketRef.current = null; scheduleTick(0); }
+      showToast(cause instanceof Error ? cause.message : "잠시 후 다시 눌러 주세요.", { kind: "info" });
+    } finally { boardBusyRef.current = false; setBoardBusy(false); }
+  };
+  const bunkerContextVisible = mapId === "uyuni" && (bunker.inside ? bunker.ladderNear || bunker.sofaNear || bunker.seated || reachableBoard !== null : bunker.nearId !== null);
   const bunkerTravel = bunkerBusy === "enter" || bunkerBusy === "exit";
   const contextVisible = bunkerContextVisible || restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || (!bunker.inside && Boolean(rest)) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
@@ -1677,7 +1725,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg></button>
         <div className={styles.contextActions} role="group" aria-label="지금 할 수 있는 행동" tabIndex={0} hidden={!(contextVisible || fireContextVisible) || characterPickerOpen || powderOpen}>
           {bunkerContextVisible && <UyuniBunkerControls state={bunker} enabled={bunkerEnabled} busy={bunkerBusy}
-            disabled={lost || Boolean(skyPhase) || momentBusy || fireworksBusy || capturing} onAction={action => void changeBunker(action)} />}
+            disabled={lost || Boolean(skyPhase) || momentBusy || fireworksBusy || capturing} onAction={action => void changeBunker(action)}
+            gameLabel={reachableBoard ? `${reachableBoard.name} ${seatedBoard?.id === reachableBoard.id ? "이어 두기" : "두기"}` : null}
+            onGame={() => { if (reachableBoard) { setActionsOpen(false); setBoardTableId(reachableBoard.id); } }} />}
           {guestbookVisible && <button type="button" className={styles.contextButton} disabled={lost} aria-haspopup="dialog"
             onClick={() => { setActionsOpen(false); setGuestbookOpen(true); haptic(); }}>
             <span className={styles.contextIcon}><IconPen /></span>
@@ -1760,6 +1810,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       {!fireworksFree && <FireworkTicketSheet portal open={ticketSheetOpen} loginNext={mapId} onClose={() => setTicketSheetOpen(false)}
         onTickets={(next) => setFireworkTickets(next)} />}
       {photo && <PhotoPreview key={photo.url} photo={photo} onClose={closePhoto} />}
+      {openBoard && <BunkerBoardGame title={boardTitle} board={openBoard} myPid={myBoardPid} busy={boardBusy} onAction={(action, cell) => void playBoard(action, cell)} onClose={() => setBoardTableId(null)} />}
       {guestbookInSight && phase === "ready" && mapId === "bamboo" && ticketRef.current &&
         <BambooBulletin key={ticketRef.current} ticket={ticketRef.current} initialName={meRef.current?.nick}
           open={guestbookOpen} onEntries={displayNotes} onClose={() => setGuestbookOpen(false)} />}

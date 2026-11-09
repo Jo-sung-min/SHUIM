@@ -300,8 +300,6 @@ test("legacy pixel selections resolve to 3D characters and matching onsen robes"
 test("fireworks allocate on the first room event, forward clocks and updates, and are released with both robe pools", () => {
   const { engine, camera } = fixture();
   let poolsDisposed = 0;
-  let paperDisposed = 0;
-  engine.paperAvatarModels = { dispose() { paperDisposed++; } };
   engine.onsenAvatarModels.dispose = engine.femaleOnsenAvatarModels.dispose = () => poolsDisposed++;
   const count = effects.length;
   engine.applyFireworks([], 1000); assert.equal(effects.length, count);
@@ -315,6 +313,5 @@ test("fireworks allocate on the first room event, forward clocks and updates, an
     cove: { setFireFlare() {}, update() {} } });
   engine.updateWorld(0.1); assert.equal(manager.updated.at(-1), camera);
   engine.dispose(); assert.equal(manager.disposed, 1); assert.equal(poolsDisposed, 2);
-  assert.equal(paperDisposed, 1); assert.equal(engine.paperAvatarModels, null);
   engine.applyFireworks(events, 1400); assert.equal(effects.length, count + 1);
 });

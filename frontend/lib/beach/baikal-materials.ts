@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { BAIKAL_SKY_FUNCTIONS, BAIKAL_SKY_UNIFORMS } from "./baikal-sky";
-import { BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_COZY_LIGHTS, BAIKAL_SNOW_DRIFT_BOX, baikalRoofHeight } from "./baikal-layout";
+import { BAIKAL_CABIN, BAIKAL_CABINS, BAIKAL_COZY_PER_ROOM, BAIKAL_COZY_ROOMS, BAIKAL_ROOM_AMBIENT, BAIKAL_SNOW_DRIFT_BOX, baikalRoofHeight } from "./baikal-layout";
 
 const glslFloat = (value: number) => Number.isInteger(value) ? `${value}.0` : `${value}`;
 
@@ -22,7 +22,6 @@ export interface BaikalUniforms {
   uWalker: THREE.IUniform<THREE.Vector2>;
   uSnowShift: THREE.IUniform<number>;
   uWind: THREE.IUniform<THREE.Vector2>;
-  uDrift: THREE.IUniform<THREE.Vector2>;
   uRoof: THREE.IUniform<THREE.Vector4>;
   uRoofLine: THREE.IUniform<THREE.Vector2>;
   uLamp: THREE.IUniform<number>;
@@ -50,7 +49,9 @@ export interface BaikalUniforms {
   uCozyPos: THREE.IUniform<THREE.Vector4[]>;
   uCozyTint: THREE.IUniform<THREE.Vector4[]>;
   uRoomOrigins: THREE.IUniform<THREE.Vector2[]>;
+  uRoomEnv: THREE.IUniform<number[]>;
 }
+const cozySlots = () => BAIKAL_COZY_ROOMS.flatMap(room => Array.from({ length: BAIKAL_COZY_PER_ROOM }, (_, i) => room[i] ?? null));
 export function createBaikalUniforms(skyUniforms: Record<string, THREE.IUniform>): BaikalUniforms {
   const c = BAIKAL_CABIN, slope = (baikalRoofHeight(c.maxX) - baikalRoofHeight(c.minX)) / (c.maxX - c.minX);
   const storm = skyUniforms.uStorm ?? (skyUniforms.uStorm = { value: 0 });
@@ -61,7 +62,7 @@ export function createBaikalUniforms(skyUniforms: Record<string, THREE.IUniform>
     uFogColor: { value: new THREE.Vector3(.8, .86, .92) }, uFogNear: { value: 60 }, uFogFar: { value: 320 },
     uCabinLight: { value: new THREE.Vector4(c.maxX, (c.minZ + c.maxZ) / 2, (c.maxZ - c.minZ) / 2, 0) },
     uLayers: { value: 3 }, uWalker: { value: new THREE.Vector2(0, 40) }, uSnowShift: { value: 0 },
-    uWind: { value: new THREE.Vector2(-7, -2) }, uDrift: { value: new THREE.Vector2() },
+    uWind: { value: new THREE.Vector2(-.45, -.14) },
     uRoof: { value: new THREE.Vector4(c.minX - .4, c.eaveMaxX + .6, c.minZ - c.sideEave, c.maxZ + c.sideEave) },
     uRoofLine: { value: new THREE.Vector2(baikalRoofHeight(0), slope) },
     uLamp: { value: 1 },
@@ -72,8 +73,9 @@ export function createBaikalUniforms(skyUniforms: Record<string, THREE.IUniform>
     uIceVolume: { value: null }, uHasIceVolume: { value: 0 }, uSnowDrift: { value: null }, uHasSnowDrift: { value: 0 },
     uFrost: { value: null }, uHasFrost: { value: 0 }, uRoomCube: { value: null }, uHasRoomCube: { value: 0 },
     uRoomOcc: { value: null }, uHasRoomOcc: { value: 0 }, uFireGlow: { value: 1 },
-    uCozyPos: { value: BAIKAL_COZY_LIGHTS.map(l => new THREE.Vector4(l.x, l.y, l.z, l.power)) },
-    uCozyTint: { value: BAIKAL_COZY_LIGHTS.map(l => new THREE.Vector4(l.r, l.g, l.b, l.spot ? 1 : 0)) },
+    uCozyPos: { value: cozySlots().map(l => new THREE.Vector4(l?.x ?? 0, l?.y ?? 0, l?.z ?? 0, l?.power ?? 0)) },
+    uCozyTint: { value: cozySlots().map(l => new THREE.Vector4(l?.r ?? 0, l?.g ?? 0, l?.b ?? 0, l?.spot ? 1 : 0)) },
+    uRoomEnv: { value: [...BAIKAL_ROOM_AMBIENT] },
     uRoomOrigins: { value: BAIKAL_CABINS.map(c => new THREE.Vector2(c.offsetX, c.offsetZ)) },
   };
 }
@@ -550,6 +552,7 @@ uniform float uHasFrost;
 uniform samplerCube uRoomCube;
 uniform float uHasRoomCube;
 uniform vec2 uRoomOrigins[3];
+uniform float uRoomEnv[3];
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying vec2 vUv;
@@ -585,7 +588,8 @@ void main() {
   // At night a dark window is half a mirror, and the room you are sitting in hangs out there in the snow.
   if (insideView > 0.5 && uHasRoomCube > 0.5) {
     vec2 room = uRoomOrigins[0];
-    for (int i = 1; i < 3; i++) if (distance(vWorld.xz, uRoomOrigins[i] + vec2(-23.0, 6.0)) < distance(vWorld.xz, room + vec2(-23.0, 6.0))) room = uRoomOrigins[i];
+    float roomLight = uRoomEnv[0];
+    for (int i = 1; i < 3; i++) if (distance(vWorld.xz, uRoomOrigins[i] + vec2(-23.0, 6.0)) < distance(vWorld.xz, room + vec2(-23.0, 6.0))) { room = uRoomOrigins[i]; roomLight = uRoomEnv[i]; }
     vec3 local = vWorld - vec3(room.x, 0.0, room.y);
     vec3 r = reflect(-v, -n);
     vec3 boxMin = vec3(-30.0, 0.6, -2.0), boxMax = vec3(-16.0, 7.0, 14.0);
@@ -596,7 +600,7 @@ void main() {
     mirrored = pow(mirrored / (1.0 + mirrored * 0.7), vec3(1.0 / 2.2));
     float mirror = mix(0.03, 0.17, night) + fresnel * 0.4;
     color = mix(color, mirrored, 0.94);
-    alpha = max(alpha, mirror * clamp(uLamp * 1.3, 0.0, 1.0));
+    alpha = max(alpha, mirror * clamp(uLamp * 1.3, 0.0, 1.0) * roomLight);
   } else {
     color = mix(color, vec3(1.0, 0.72, 0.42), inside * 0.6);
     alpha += inside * fresnel * 0.25;
@@ -620,32 +624,27 @@ export function createBaikalGlassMaterial(shared: BaikalUniforms): THREE.ShaderM
   return material;
 }
 
-/* ---------------- the blizzard ---------------- */
+/* ---------------- falling snow ---------------- */
 const SNOW_VERT = `
 attribute vec4 aFlake;
 uniform float uTime;
 uniform float uNearSpan;
 uniform float uFarSpan;
 uniform float uHeight;
-uniform vec2 uWind;
-uniform vec2 uDrift;
-uniform vec4 uRoof;
-uniform vec2 uRoofLine;
 uniform vec4 uRoofs[3];
 uniform vec2 uRoofLines[3];
 uniform vec4 uCabinLights[3];
-uniform vec4 uCabinLight;
 varying float vAlpha;
 varying vec2 vUv;
 varying float vWarm;
 void main() {
   vUv = uv;
   float span = mix(uNearSpan, uFarSpan, aFlake.w);
-  float fallSpeed = mix(1.3, 2.4, fract(aFlake.z * 7.31));
-  // Flakes live in a box wrapped around the camera; the accumulated wind drift slides the whole field.
-  vec2 seedPos = aFlake.xy * span + uDrift;
-  vec2 offset = mod(seedPos - cameraPosition.xz + span * 0.5, span) - span * 0.5;
-  offset += vec2(sin(uTime * 1.7 + aFlake.z * 40.0), cos(uTime * 1.3 + aFlake.z * 31.0)) * 0.25 * (1.0 - aFlake.w * 0.6);
+  float fallSpeed = mix(0.5, 1.05, fract(aFlake.z * 7.31));
+  // Straight down out of a still sky: flakes live in a box around the camera and only rock a little as they fall.
+  vec2 offset = mod(aFlake.xy * span - cameraPosition.xz + span * 0.5, span) - span * 0.5;
+  float phase = aFlake.z * 40.0;
+  offset += vec2(sin(uTime * 0.7 + phase), cos(uTime * 0.55 + phase * 1.3)) * 0.2;
   vec2 site = cameraPosition.xz + offset;
   float column = uHeight;
   float top = cameraPosition.y + column * 0.55;
@@ -658,19 +657,11 @@ void main() {
     underRoof = max(underRoof, step(roof.x, site.x) * step(site.x, roof.y) * step(roof.z, site.y) * step(site.y, roof.w) * step(y, roofY));
   }
   float aboveGround = step(-0.15, y);
-  vec3 origin = vec3(site.x, y, site.y);
-  // The quad stretches along its own velocity in view space: nearby flakes streak, distant ones stay dots.
-  vec3 velocity = vec3(uWind.x, -fallSpeed, uWind.y);
-  vec4 vc = viewMatrix * vec4(origin, 1.0);
-  vec3 vv = mat3(viewMatrix) * velocity;
-  vec2 dir = normalize(vv.xy + vec2(0.0, -1e-4));
-  vec2 perp = vec2(-dir.y, dir.x);
-  float speed = length(velocity);
-  float size = mix(0.028, 0.05, fract(aFlake.z * 3.7)) * mix(1.0, 1.9, aFlake.w);
-  float stretch = 1.0 + speed * 0.24 * (1.0 - aFlake.w * 0.6);
-  vc.xy += perp * position.x * size + dir * position.y * size * stretch;
+  vec4 vc = viewMatrix * vec4(site.x, y, site.y, 1.0);
+  float size = mix(0.032, 0.062, fract(aFlake.z * 3.7)) * mix(1.0, 1.75, aFlake.w);
+  vc.xy += position.xy * size;
   float distanceToCamera = length(offset), edge = max(abs(offset.x), abs(offset.y)) / (span * 0.5);
-  vAlpha = (1.0 - smoothstep(0.7, 1.0, edge)) * smoothstep(0.3, 1.2, distanceToCamera) * (1.0 - underRoof) * aboveGround * mix(1.0, 0.7, aFlake.w);
+  vAlpha = (1.0 - smoothstep(0.7, 1.0, edge)) * smoothstep(0.3, 1.2, distanceToCamera) * (1.0 - underRoof) * aboveGround * mix(1.0, 0.75, aFlake.w);
   vWarm = 0.0;
   for (int i = 0; i < 3; i++) {
     vec4 light = uCabinLights[i];
@@ -682,20 +673,17 @@ void main() {
   gl_Position = projectionMatrix * vc;
 }`;
 const SNOW_FRAG = `
-uniform float uStorm;
 uniform float uStars;
 varying float vAlpha;
 varying vec2 vUv;
 varying float vWarm;
 void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float r = length(p);
-  float a = (1.0 - smoothstep(0.35, 1.0, r)) * vAlpha * (0.12 + 0.88 * clamp(uStorm, 0.0, 1.0));
+  float r = length(vUv * 2.0 - 1.0);
+  float a = (1.0 - smoothstep(0.3, 1.0, r)) * vAlpha * 0.78;
   if (a < 0.01) discard;
   float night = smoothstep(0.25, 0.95, uStars);
-  vec3 flake = mix(vec3(0.96, 0.97, 1.0), vec3(0.62, 0.70, 0.85), night);
-  vec3 color = mix(flake, vec3(1.0, 0.80, 0.55), clamp(vWarm, 0.0, 1.0));
-  gl_FragColor = vec4(color, a);
+  vec3 flake = mix(vec3(0.98, 0.985, 1.0), vec3(0.74, 0.8, 0.96), night);
+  gl_FragColor = vec4(mix(flake, vec3(1.0, 0.82, 0.58), clamp(vWarm, 0.0, 1.0)), a);
 }`;
 export function createBaikalSnowMaterial(shared: BaikalUniforms): THREE.ShaderMaterial {
   const material = new THREE.ShaderMaterial({
@@ -703,63 +691,7 @@ export function createBaikalSnowMaterial(shared: BaikalUniforms): THREE.ShaderMa
     vertexShader: SNOW_VERT, fragmentShader: SNOW_FRAG, toneMapped: false, fog: false,
     transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
   });
-  material.name = "baikal-blizzard";
-  return material;
-}
-
-/* ---------------- snow sheets blowing over the ice ---------------- */
-const DRIFT_VERT = `
-attribute vec4 aSheet;
-attribute vec2 aSeed;
-uniform float uTime;
-uniform vec2 uDrift;
-uniform float uSpan;
-uniform vec4 uRoof;
-uniform vec4 uRoofs[3];
-varying vec2 vUv;
-varying float vFade;
-varying vec2 vSeed;
-void main() {
-  vUv = uv; vSeed = aSeed;
-  vec2 base = aSheet.xz * uSpan + uDrift * 1.35;
-  vec2 offset = mod(base - cameraPosition.xz + uSpan * 0.5, uSpan) - uSpan * 0.5;
-  vec3 pos = vec3(cameraPosition.x + offset.x, aSheet.y + sin(uTime * 0.8 + aSeed.y * 20.0) * 0.15, cameraPosition.z + offset.y);
-  float d = length(offset);
-  float indoors = 0.0;
-  for (int i = 0; i < 3; i++) {
-    vec4 roof = uRoofs[i];
-    indoors = max(indoors, step(roof.x, pos.x) * step(pos.x, roof.y) * step(roof.z, pos.z) * step(pos.z, roof.w));
-  }
-  vFade = smoothstep(3.0, 9.0, d) * (1.0 - smoothstep(0.65, 1.0, max(abs(offset.x), abs(offset.y)) / (uSpan * 0.5))) * (1.0 - indoors);
-  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-  vec3 world = pos + right * position.x * aSheet.w * 2.2 + up * position.y * aSheet.w * 0.7;
-  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
-}`;
-const DRIFT_FRAG = `
-uniform float uTime;
-uniform float uStorm;
-uniform float uStars;
-varying vec2 vUv;
-varying float vFade;
-varying vec2 vSeed;
-${COMMON}
-void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float shape = (1.0 - smoothstep(0.3, 1.0, abs(p.x))) * (1.0 - smoothstep(0.1, 1.0, abs(p.y)));
-  vec2 flow = vec2(vUv.x * 4.0 + uTime * 0.9 + vSeed.x * 10.0, vUv.y * 2.0 + vSeed.y * 5.0);
-  float wisps = frostNoise(flow) * 0.6 + frostNoise(flow * 2.3 + 4.0) * 0.4;
-  float a = shape * smoothstep(0.35, 0.8, wisps) * vFade * clamp(uStorm, 0.0, 1.0) * 0.22;
-  if (a < 0.005) discard;
-  float night = smoothstep(0.25, 0.95, uStars);
-  gl_FragColor = vec4(mix(vec3(0.95, 0.97, 1.0), vec3(0.55, 0.63, 0.78), night), a);
-}`;
-export function createBaikalDriftMaterial(shared: BaikalUniforms): THREE.ShaderMaterial {
-  const material = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uSpan: { value: 60 } }, vertexShader: DRIFT_VERT, fragmentShader: DRIFT_FRAG, toneMapped: false, fog: false,
-    transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
-  });
-  material.name = "baikal-blowing-snow";
+  material.name = "baikal-snowfall";
   return material;
 }
 

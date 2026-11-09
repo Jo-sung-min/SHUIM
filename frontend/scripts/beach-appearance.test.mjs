@@ -46,15 +46,14 @@ test("reconnecting after an account switch never inherits the previous account's
   assert.equal(api.characterAfterEntry({ id: "account-a", skin: 0 }, previous, null), "female-3d", "same-account reconnect migrates an old in-memory choice even when storage is unavailable");
 });
 
-test("the picker adds Mongsil while preserving the two existing characters and server skin IDs", async () => {
+test("the picker offers the two ordinary characters with their stable server skin IDs", async () => {
   const values = new Map();
   const api = await preferenceApi({ localStorage: { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) } });
-  const choices = [["male", 0], ["female-3d", 3], ["mongsil", 6]];
+  const choices = [["male", 0], ["female-3d", 3]];
   assert.deepEqual(Array.from(api.BEACH_CHARACTERS, ({ id, skin }) => [id, skin]), choices);
   assert.deepEqual(Array.from(api.BEACH_CHARACTERS, ({ id, label, preview }) => ({ id, label, preview })), [
     { id: "male", label: "남자", preview: "/beach/male-avatar.webp" },
     { id: "female-3d", label: "여자", preview: "/beach/female-avatar.webp" },
-    { id: "mongsil", label: "몽실", preview: "/characters/mongsil/front-v1.webp" },
   ]);
   for (const [id, skin] of choices) {
     api.saveCharacter("account", id);
@@ -69,7 +68,6 @@ test("the picker adds Mongsil while preserving the two existing characters and s
   }
   assert.equal(api.characterSkin("male"), 0);
   assert.equal(api.characterSkin("female-3d"), 3);
-  assert.equal(api.characterSkin("mongsil"), 6);
 });
 
 test("legacy pixel preferences migrate on read, write and reconnect without crossing accounts", async () => {
@@ -94,24 +92,25 @@ test("legacy pixel preferences migrate on read, write and reconnect without cros
 
 test("legacy server rows resolve to the matching 3D gender without renumbering the female model", async () => {
   const api = await preferenceApi(undefined);
-  for (const oldSkin of [-6, -2, -1, 0, 1, 2, 3, 4, 5, 7, 8, 100]) {
+  for (const oldSkin of [-6, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100]) {
     assert.equal(api.characterSkin(api.characterFromSkin(oldSkin)), ((oldSkin % 2) + 2) % 2 === 1 ? 3 : 0);
   }
   assert.equal(api.characterFromSkin(Number.NaN), "male");
   assert.equal(api.characterFromSkin(Number.POSITIVE_INFINITY), "male");
-  assert.equal(api.characterFromSkin(6), "mongsil");
-  assert.equal(api.characterFromSkin(6.9), "male", "only the exact new skin ID becomes Mongsil");
+  assert.equal(api.characterFromSkin(6), "male", "the retired Mongsil skin becomes an ordinary character");
+  assert.equal(api.characterFromSkin(7), "female-3d");
   assert.equal(api.characterSkin("unknown"), 0);
 });
 
-test("removed cat preferences migrate to the ordinary characters across storage and reconnect", async () => {
+test("removed cat and Mongsil preferences migrate to the ordinary characters across storage and reconnect", async () => {
   const values = new Map([
     ["sorow:beach-character:v1:one", "cat-gentleman"],
     ["sorow:beach-character:v1:two", "cat-lady"],
+    ["sorow:beach-character:v1:three", "mongsil"],
   ]);
   const api = await preferenceApi({ localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) } });
-  assert.deepEqual(Array.from(api.BEACH_CHARACTERS, choice => choice.id), ["male", "female-3d", "mongsil"]);
-  for (const [id, removed, selected, oldSkin, skin] of [["one", "cat-gentleman", "male", 4, 0], ["two", "cat-lady", "female-3d", 5, 3]]) {
+  assert.deepEqual(Array.from(api.BEACH_CHARACTERS, choice => choice.id), ["male", "female-3d"]);
+  for (const [id, removed, selected, oldSkin, skin] of [["one", "cat-gentleman", "male", 4, 0], ["two", "cat-lady", "female-3d", 5, 3], ["three", "mongsil", "male", 6, 0]]) {
     assert.equal(api.savedCharacter(id), selected);
     assert.equal(values.get(`sorow:beach-character:v1:${id}`), selected, "persist the migration so every map uses the ordinary character");
     assert.equal(api.characterAfterEntry({ id, skin: oldSkin }, { id, character: removed }, null), selected);
@@ -124,17 +123,15 @@ test("removed cat preferences migrate to the ordinary characters across storage 
   assert.equal(readOnly.savedCharacter("one"), "female-3d");
 });
 
-test("Mongsil survives reconnect without storage and never leaks to a different account", async () => {
-  const api = await preferenceApi(undefined);
-  const previous = { id: "mongsil-owner", character: "mongsil" };
-  assert.equal(api.characterAfterEntry({ id: previous.id, skin: 0 }, previous, null), "mongsil");
-  assert.equal(api.characterAfterEntry({ id: "other", skin: 0 }, previous, null), "male");
-  assert.equal(api.characterAfterEntry({ id: "other", skin: 3 }, previous, "female-3d"), "female-3d");
-  assert.equal(api.characterAfterEntry({ id: "returned", skin: 6 }, null, null), "mongsil");
-  assert.doesNotThrow(() => api.saveCharacter(previous.id, "mongsil"));
+test("a stored choice that no longer exists falls back to the account's own skin", async () => {
+  const values = new Map([["sorow:beach-character:v1:one", "dog-girl"]]);
+  const api = await preferenceApi({ localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) } });
+  assert.equal(api.savedCharacter("one"), null);
+  assert.equal(api.characterAfterEntry({ id: "one", skin: 3 }, { id: "one", character: "dog-girl" }, api.savedCharacter("one")), "female-3d");
+  assert.equal(api.characterAfterEntry({ id: "one", skin: 0 }, null, api.savedCharacter("one")), "male");
 });
 
-test("Mongsil entry and movement carry the stable ID on every map", async () => {
+test("entry and movement carry the stable character ID on every map", async () => {
   const calls = [];
   const api = await load("../lib/beach/net.ts", {
     fetch: async (url, options) => {
@@ -143,12 +140,12 @@ test("Mongsil entry and movement carry the stable ID on every map", async () => 
     }, Error, AbortSignal,
   }, ["enterBeach", "tickBeach"]);
   for (const mapId of ["beach", "uyuni", "bamboo", "garden", "cloudspa", "baikal"]) {
-    await api.enterBeach("circle", "mongsil", mapId, { ticket: "previous", sequence: 4 });
-    await api.tickBeach({ ticket: "ticket", x: 1, z: 2, yaw: 0, moving: true, character: "mongsil", sequence: 5 });
-    assert.equal(calls.at(-2).body.character, "mongsil");
+    await api.enterBeach("circle", "female-3d", mapId, { ticket: "previous", sequence: 4 });
+    await api.tickBeach({ ticket: "ticket", x: 1, z: 2, yaw: 0, moving: true, character: "female-3d", sequence: 5 });
+    assert.equal(calls.at(-2).body.character, "female-3d");
     assert.equal(calls.at(-2).body.mapId ?? "beach", mapId);
     assert.equal(calls.at(-2).body.resumeTicket, "previous");
-    assert.equal(calls.at(-1).body.character, "mongsil");
+    assert.equal(calls.at(-1).body.character, "female-3d");
     assert.equal(calls.at(-1).body.sequence, 5);
   }
 });
@@ -170,7 +167,7 @@ test("enter and movement updates send the selected character for remote players"
   assert.equal(calls[1].body.ticket, "ticket");
   assert.deepEqual(calls[2].body, { communityId: "circle" }, "initial unknown-account entry does not inherit another account's choice");
   const choices = await preferenceApi(undefined);
-  for (const legacy of ["pixel-male", "female", "cat-gentleman", "cat-lady"]) {
+  for (const legacy of ["pixel-male", "female", "cat-gentleman", "cat-lady", "mongsil"]) {
     const character = choices.characterAfterEntry({ id: "account", skin: 0 }, { id: "account", character: legacy }, null);
     await api.enterBeach("circle", character);
     await api.tickBeach({ ticket: "ticket", x: 1, z: 2, yaw: 0, moving: false, character });
