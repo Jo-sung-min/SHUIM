@@ -9,6 +9,30 @@
       "contentType": "image/png"
     },
     {
+      "key": "baikal/art/lake-ice-mobile-v1.webp",
+      "bytes": 184348,
+      "sha256": "052a8295b4ac07ccd81c303e0a5adee7589b0c0af0eeaa340a7b78b2363b00b7",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "baikal/art/lake-ice-v1.webp",
+      "bytes": 412110,
+      "sha256": "3e406a5eea3a1e7355d4c5c674be4e0186fd8e7c5082dbb1090e61f6a958f718",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "baikal/art/snow-natural-mobile-v1.webp",
+      "bytes": 97754,
+      "sha256": "a3b8ea56259e26e5485cff6a7b1cce97f3eeabd50fa949dadf39fb1e77a88192",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "baikal/art/snow-natural-v1.webp",
+      "bytes": 230756,
+      "sha256": "16f2cbf8413726fd444e080f98cd0f6de86895a75519737fcf17e8735f45abc3",
+      "contentType": "image/webp"
+    },
+    {
       "key": "beach/chars-v2.png",
       "bytes": 93713,
       "sha256": "ebcd1d3dff2879be31ac83b1da94634f58117fccfbc52e988b3caf45839bb7c7",

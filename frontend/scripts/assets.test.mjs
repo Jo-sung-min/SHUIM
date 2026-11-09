@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { assetsFor } from "./assets-fixture.mjs";
+import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 
 const CDN = "https://cdn.sorow.co.kr";
 test("the spring water recording is served by the app, not the CDN", () => {
@@ -26,6 +27,8 @@ const MAP_TEXTURES = [
   "/cloudspa/art/cloud-bank-v1.webp", "/cloudspa/art/cloud-bank-mobile-v1.webp",
   "/cloudspa/art/cloud-surface-v1.webp", "/cloudspa/art/cloud-surface-mobile-v1.webp",
   ...["nw", "ne", "sw", "se"].map(direction => `/cloudspa/art/city-${direction}-v2.webp`),
+  "/baikal/art/snow-natural-v1.webp", "/baikal/art/snow-natural-mobile-v1.webp",
+  "/baikal/art/lake-ice-v1.webp", "/baikal/art/lake-ice-mobile-v1.webp",
 ];
 test("public media defaults to the verified CDN and supports an optional replacement origin", () => {
   const paths = ["/splash.webp", "/sorow-logo.png", "/beach/chars-v2.png", "/feed/moon-wave.svg", "/beach/models/tripo-female-onsen-mobile-v2.glb", "/beach/fx/firework-boom-v1.mp3", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png", "/garden/art/spring-hills-panorama-v1.webp", "/garden/art/willow-canopy-v1.webp"];
@@ -148,14 +151,14 @@ test("actual Three.js loading entry points request CDN textures and models with 
   lanterns.dispose(); fireworks.dispose(); campfire.dispose();
 });
 
-test("unuploaded Baikal photo textures stay bundled locally even with a CDN override", async () => {
+test("Baikal photo textures are verified CDN WebP files within the mobile transfer budget", async () => {
   let mobileBytes = 0;
   for (const name of ["snow-natural", "lake-ice"]) {
     for (const suffix of ["", "-mobile"]) {
       const path = `/baikal/art/${name}${suffix}-v1.webp`;
-      for (const base of [undefined, CDN, "https://media.example.com/static"])
-        assert.equal(assetsFor(base).assetUrl(path), path);
-      const bytes = await readFile(new URL(`../public${path}`, import.meta.url));
+      assert.equal(assetsFor().assetUrl(path), `${CDN}${path}`);
+      assert.equal(assetsFor("https://media.example.com/static").assetUrl(path), `https://media.example.com/static${path}`);
+      const bytes = await readAssetBytes(path);
       assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
       assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
       if (suffix) mobileBytes += bytes.length;

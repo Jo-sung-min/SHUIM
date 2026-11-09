@@ -2,13 +2,13 @@
 
 Mode: built-in image_gen (two separate generations).
 
-Snow: `frontend/public/baikal/art/snow-natural-v1.webp` (1254 square), `snow-natural-mobile-v1.webp` (768 square).
-Ice: `frontend/public/baikal/art/lake-ice-v1.webp` (1254 square), `lake-ice-mobile-v1.webp` (768 square).
+Snow: `https://cdn.sorow.co.kr/baikal/art/snow-natural-v1.webp` (1254 square), `snow-natural-mobile-v1.webp` (768 square).
+Ice: `https://cdn.sorow.co.kr/baikal/art/lake-ice-v1.webp` (1254 square), `lake-ice-mobile-v1.webp` (768 square).
 Original PNG sources: `output/imagegen/baikal/snow-natural-source-v1.png`, `lake-ice-source-v1.png`.
 
 The supplied Baikal ice photo was a material reference only. Both final images were inspected. Sharp was used only to create WebP delivery sizes; the native generated images are kept unchanged.
 
-These files are committed to Git. Baikal art stays on the app's local public path until a later, explicitly requested AWS migration. No S3 upload was attempted.
+The WebP files live on S3/CDN and are recorded in `frontend/public-assets.manifest.json`; they are no longer tracked in Git. The PNG sources stay in Git.
 
 ## Snow prompt
 

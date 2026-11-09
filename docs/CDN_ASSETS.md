@@ -75,6 +75,8 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 사용자 요청에 따라 `frontend/public/garden/art/*.webp`와 `frontend/public/cloudspa/art/*.webp`의 이미지 소스 15개는 GitHub 저장소에도 포함합니다. 기존에 검증한 CDN 주소와 파일 해시는 유지하며, 이 병합 작업에서는 S3에 추가 업로드하지 않습니다. 이 두 폴더의 WebP만 `.gitignore` 예외로 관리하므로 다른 공개 미디어의 기존 관리 방식은 유지됩니다.
 
 
-### 바이칼 이미지 — Git 보관, AWS 업로드 대기
+### 바이칼 이미지 — CDN 이전 (2026-11-09)
 
-바이칼의 눈·얼음 생성 원본은 `output/imagegen/baikal/`에, 실행용 WebP(1254px/모바일 768px)는 `frontend/public/baikal/art/`에 보관합니다. 현재 `/baikal/art/` 경로는 CDN 변환 대상에서 제외되어 앱이 직접 제공합니다. S3 업로드 및 CDN 검증은 하지 않았으므로 CDN manifest에도 추가하지 않았습니다. 집에서 AWS 업로드를 완료하고 무결성·CORS를 확인한 다음 CDN 경로 변환과 manifest를 함께 갱신합니다. 생성 프롬프트는 `output/imagegen/baikal-assets.md`에 있습니다.
+실행용 WebP 4개(1254px/모바일 768px)를 S3 `baikal/art/`에 올리고 CDN에서 SHA256·형식·CORS를 검증했습니다. 앱은 `/baikal/art/` 경로를 CDN에서 읽고, manifest에 4개를 기록했습니다. 해당 WebP는 Git 추적에서 빼고 `.gitignore` 예외도 지웠습니다. 생성 원본 PNG는 `output/imagegen/baikal/`에, 생성 프롬프트는 `output/imagegen/baikal-assets.md`에 있습니다.
+
+`scripts/sync-public-assets.py --apply`는 `frontend/public`의 로컬 파일을 모두 대상으로 삼습니다. `characters/mongsil/*.webp`와 `audio/onsen-water-v1.mp3`는 앱이 직접 제공하는 파일이라 manifest에 없고 CDN에도 올리지 않았으므로, 전체 실행 시 함께 올라가지 않게 주의합니다.

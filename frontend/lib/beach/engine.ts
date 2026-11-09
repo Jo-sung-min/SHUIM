@@ -519,7 +519,6 @@ export class BeachEngine {
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
       const cotton = this.loadEnvironmentTexture("/beach/real/white-cotton-v1.webp", true);
       wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
-      // Baikal artwork is bundled in Git until its separate AWS upload is requested.
       const snow = this.loadEnvironmentTexture(this.mobile ? "/baikal/art/snow-natural-mobile-v1.webp" : "/baikal/art/snow-natural-v1.webp");
       const ice = this.loadEnvironmentTexture(this.mobile ? "/baikal/art/lake-ice-mobile-v1.webp" : "/baikal/art/lake-ice-v1.webp");
       for (const texture of [snow, ice]) {
