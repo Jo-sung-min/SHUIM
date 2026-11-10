@@ -209,13 +209,13 @@ class AccountSafetyPostgresTest {
             status.setRollbackOnly();
             DbUser anonymous = user("policy-kakao-new");
             PolicyConsentService policies = new PolicyConsentService(jdbc, mock(AuthService.class));
-            KakaoLoginService kakao = new KakaoLoginService(jdbc, null, policies, tx, RestClient.builder(), "https://www.sorow.co.kr", "test", "", true);
+            KakaoLoginService kakao = new KakaoLoginService(jdbc, null, policies, null, tx, RestClient.builder(), "https://www.sorow.co.kr", "test", "", true);
             KakaoLoginService.Profile profile = new KakaoLoginService.Profile("policy-new-kakao", null, "새계정");
             assertThrows(KakaoLoginService.SignupConsentRequiredException.class, () -> kakao.findOrCreateUser(profile, null));
             assertThrows(KakaoLoginService.SignupConsentRequiredException.class, () -> kakao.findOrCreateUser(profile, anonymous.id()));
             assertEquals(0, count("SELECT count(*) FROM users WHERE kakao_id = 'policy-new-kakao'"));
             policies.accept(anonymous, PolicyConsentService.VERSION, true);
-            assertEquals(anonymous.id(), kakao.findOrCreateUser(profile, anonymous.id()));
+            assertEquals(anonymous.id(), kakao.findOrCreateUser(profile, anonymous.id()).userId());
             assertEquals(1, count("SELECT count(*) FROM users WHERE id = 'policy-kakao-new' AND is_anonymous = FALSE"));
             assertTrue(policies.state(anonymous).aiAccepted());
         });
@@ -231,10 +231,10 @@ class AccountSafetyPostgresTest {
             PolicyConsentService policies = new PolicyConsentService(jdbc, mock(AuthService.class));
             policies.accept(existing, PolicyConsentService.VERSION, false);
             policies.accept(visitor, PolicyConsentService.VERSION, true);
-            KakaoLoginService kakao = new KakaoLoginService(jdbc, null, policies, tx, RestClient.builder(), "https://www.sorow.co.kr", "test", "", true);
+            KakaoLoginService kakao = new KakaoLoginService(jdbc, null, policies, null, tx, RestClient.builder(), "https://www.sorow.co.kr", "test", "", true);
             KakaoLoginService.Profile profile = new KakaoLoginService.Profile("policy-existing-kakao", null, "기존계정");
-            assertEquals(existing.id(), kakao.findOrCreateUser(profile, null));
-            assertEquals(existing.id(), kakao.findOrCreateUser(profile, visitor.id()));
+            assertEquals(existing.id(), kakao.findOrCreateUser(profile, null).userId());
+            assertEquals(existing.id(), kakao.findOrCreateUser(profile, visitor.id()).userId());
             assertFalse(policies.state(existing).aiAccepted());
         });
     }

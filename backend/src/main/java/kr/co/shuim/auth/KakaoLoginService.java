@@ -5,6 +5,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.common.Ids;
+import kr.co.shuim.points.FireworkTicketService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +32,7 @@ import java.util.Optional;
  *   GET /api/auth/kakao → state 를 httpOnly 쿠키(5분)에 두고 kauth.kakao.com 동의 화면으로 302
  *   → 카카오가 <app.origin>/api/auth/kakao/callback?code&state 로 돌려보냄 (프론트 프록시를 거쳐 백엔드로)
  *   → state 검증 → 토큰 교환 → kapi.kakao.com/v2/user/me → users.kakao_id 로 찾거나 만들고 세션 쿠키 발급 → 앱 홈으로.
- * 로그인 전 익명 유저로 활동하던 중이면 그 행을 카카오 계정으로 승격해 외침·힘내요가 이어진다.
+ * 로그인 전 익명 유저로 활동하던 중이면 그 행을 카카오 계정으로 승격해 외침·힘내요가 이어진다. 새로 가입한 계정에는 폭죽 이용권을 선물한다.
  * KAKAO_CLIENT_ID 가 비어 있으면 configured() 가 false 이고 /api/auth/me 가 kakao: false 를 내려 버튼이 숨겨진다.
  * HTTP 는 ai/ClaudeClient 와 같이 JDK HttpClient 위의 RestClient 를 쓴다.
  */
@@ -48,6 +49,7 @@ public class KakaoLoginService {
     private final JdbcClient jdbc;
     private final AuthService auth;
     private final PolicyConsentService policies;
+    private final FireworkTicketService tickets;
     private final TransactionTemplate tx;
     private final RestClient http;
     private final String appOrigin;
@@ -55,7 +57,7 @@ public class KakaoLoginService {
     private final String clientSecret;
     private final boolean secureCookie;
 
-    public KakaoLoginService(JdbcClient jdbc, AuthService auth, PolicyConsentService policies, TransactionTemplate tx, RestClient.Builder builder,
+    public KakaoLoginService(JdbcClient jdbc, AuthService auth, PolicyConsentService policies, FireworkTicketService tickets, TransactionTemplate tx, RestClient.Builder builder,
                              @Value("${app.origin}") String appOrigin,
                              @Value("${app.kakao.client-id:}") String clientId,
                              @Value("${app.kakao.client-secret:}") String clientSecret,
@@ -63,6 +65,7 @@ public class KakaoLoginService {
         this.jdbc = jdbc;
         this.auth = auth;
         this.policies = policies;
+        this.tickets = tickets;
         this.tx = tx;
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory();
         factory.setReadTimeout(Duration.ofSeconds(15));
@@ -124,7 +127,7 @@ public class KakaoLoginService {
         try {
             Profile p = fetchProfile(code);
             String anonId = auth.currentUser(req).filter(DbUser::anonymous).map(DbUser::id).orElse(null);
-            String userId = tx.execute(status -> findOrCreateUser(p, anonId));
+            String userId = signIn(p, anonId);
             auth.switchSession(req, res, userId);
             return appUri("/?kakao=1");
         } catch (SignupConsentRequiredException e) {
@@ -173,10 +176,27 @@ public class KakaoLoginService {
 
     static final class SignupConsentRequiredException extends RuntimeException {}
 
+    record Account(String userId, boolean created) {}
+
+    /** 선물이 실패해도 가입은 막지 않도록 가입 트랜잭션과 따로 준다 */
+    String signIn(Profile p, String anonUserId) {
+        Account account = tx.execute(status -> findOrCreateUser(p, anonUserId));
+        if (account.created()) grantSignupTickets(account.userId());
+        return account.userId();
+    }
+
+    private void grantSignupTickets(String userId) {
+        try {
+            tx.executeWithoutResult(status -> tickets.grantKakaoSignup(userId));
+        } catch (RuntimeException e) {
+            log.warn("kakao signup tickets not granted for {}: {}", userId, e.toString());
+        }
+    }
+
     /** Existing accounts keep their own consent. New accounts must upgrade the consenting anonymous session. */
-    String findOrCreateUser(Profile p, String anonUserId) {
+    Account findOrCreateUser(Profile p, String anonUserId) {
         Optional<String> existing = jdbc.sql("SELECT id FROM users WHERE kakao_id = ?").param(p.kakaoId()).query(String.class).optional();
-        if (existing.isPresent()) return existing.get();
+        if (existing.isPresent()) return new Account(existing.get(), false);
         if (!policies.hasSignupConsent(anonUserId)) throw new SignupConsentRequiredException();
         String nick = p.nick() == null || p.nick().length() < 2 ? null : (p.nick().length() > 12 ? p.nick().substring(0, 12) : p.nick());
         // 이미 이메일 계정이 쓰는 주소면 비워 둔다 (users.email UNIQUE)
@@ -184,7 +204,7 @@ public class KakaoLoginService {
         if (anonUserId != null) {
             int n = jdbc.sql("UPDATE users SET kakao_id = ?, email = COALESCE(?, email), nick = COALESCE(?, nick), is_anonymous = FALSE, registered_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = ? AND is_anonymous = TRUE")
                 .param(p.kakaoId()).param(email).param(nick).param(anonUserId).update();
-            if (n > 0) return anonUserId;
+            if (n > 0) return new Account(anonUserId, true);
         }
         // If the consenting anonymous row changed concurrently, require another review instead of creating an unrelated account.
         throw new SignupConsentRequiredException();

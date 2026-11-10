@@ -117,9 +117,9 @@ class AdminUsersPostgresTest {
         var policies = mock(PolicyConsentService.class);
         when(policies.hasSignupConsent("date-kakao")).thenReturn(true);
         when(policies.hasSignupConsent("date-toss")).thenReturn(true);
-        var kakao = new KakaoLoginService(jdbc, null, policies, null, RestClient.builder(), "https://example.test", "test", "", false);
+        var kakao = new KakaoLoginService(jdbc, null, policies, null, null, RestClient.builder(), "https://example.test", "test", "", false);
         var toss = new TossLoginService(jdbc, null, policies, null, null, RestClient.builder(), "", "", "", "https://example.test");
-        assertEquals("date-kakao", kakao.findOrCreateUser(new KakaoLoginService.Profile("date-k-key", null, "카카오후"), "date-kakao"));
+        assertEquals("date-kakao", kakao.findOrCreateUser(new KakaoLoginService.Profile("date-k-key", null, "카카오후"), "date-kakao").userId());
         assertEquals("date-toss", toss.findOrCreateUser("date-t-key", "date-toss"));
         LocalDateTime kakaoAt = registeredAt("date-kakao"), tossAt = registeredAt("date-toss");
         assertNotNull(kakaoAt); assertNotNull(tossAt);

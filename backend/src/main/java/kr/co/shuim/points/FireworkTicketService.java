@@ -15,12 +15,13 @@ import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
- * 폭죽 이용권 지갑. 온기 포인트 1,000 P 로 사거나(points_buy) 후원 기업 멋져요로 받고(sponsor_cheer) 발사 때 한 장씩 쓴다(launch).
+ * 폭죽 이용권 지갑. 온기 포인트 1,000 P 로 사거나(points_buy) 후원 기업 멋져요로 받거나(sponsor_cheer) 카카오 가입 선물로 받고(kakao_signup) 발사 때 한 장씩 쓴다(launch).
  * 잠금 순서는 언제나 이용권 지갑 → 포인트 지갑/기업 행 이라 교착이 없다.
  */
 @Service
 public class FireworkTicketService implements FireworkTickets {
     public static final int TICKET_PRICE = 1000;
+    public static final int KAKAO_SIGNUP_TICKETS = 5;
     public static final String NO_TICKET = "폭죽 이용권이 없어요. 온기 포인트로 사거나 후원 기업 멋져요로 받을 수 있어요.";
     public record Entry(String id, String reason, int amount, int balanceAfter, long createdAt, String sponsorName) {}
     public record Account(int tickets, long points, int ticketPrice, List<String> cheeredToday, int cheersLeftToday, int dailyCheers, List<Entry> history) {}
@@ -65,14 +66,23 @@ public class FireworkTicketService implements FireworkTickets {
         }
         long remaining = points.spend(user.id(), "buy:" + key, "firework_ticket", TICKET_PRICE, now,
             "온기 포인트가 부족해요. 이용권 1장에 " + TICKET_PRICE + " P 가 필요해요.");
-        int tickets = credit(user.id(), "buy:" + key, "points_buy", null, balance, now);
+        int tickets = credit(user.id(), "buy:" + key, "points_buy", null, balance, 1, now);
         return new Purchase(tickets, remaining);
     }
 
     /** Called inside the sponsor cheer transaction after the caller locked this wallet with {@link #lock}. */
     public int grant(String userId, String eventKey, String sponsorId, int lockedBalance, long now) {
         if (recorded(eventKey)) return lockedBalance;
-        return credit(userId, eventKey, "sponsor_cheer", sponsorId, lockedBalance, now);
+        return credit(userId, eventKey, "sponsor_cheer", sponsorId, lockedBalance, 1, now);
+    }
+
+    /** 카카오로 새로 가입한 계정의 선물. 계정마다 한 번만 들어간다. 잠금이 필요하니 트랜잭션 안에서 부른다 */
+    public int grantKakaoSignup(String userId) {
+        long now = clock.getAsLong();
+        int balance = lock(userId, now);
+        String eventKey = "signup:kakao:" + userId;
+        if (recorded(eventKey)) return balance;
+        return credit(userId, eventKey, "kakao_signup", null, balance, KAKAO_SIGNUP_TICKETS, now);
     }
 
     @Override
@@ -110,10 +120,10 @@ public class FireworkTicketService implements FireworkTickets {
         if (!points.eligible(user)) throw ApiException.forbidden("현재 계정에서는 폭죽 이용권을 이용할 수 없어요.");
     }
 
-    private int credit(String userId, String eventKey, String reason, String sponsorId, int balance, long now) {
-        int after = Math.addExact(balance, 1);
+    private int credit(String userId, String eventKey, String reason, String sponsorId, int balance, int amount, long now) {
+        int after = Math.addExact(balance, amount);
         jdbc.sql("INSERT INTO firework_ticket_ledger(id,user_id,event_key,reason,amount,balance_after,sponsor_id,created_at) VALUES (?,?,?,?,?,?,?::uuid,?)")
-            .param(UUID.randomUUID()).param(userId).param(eventKey).param(reason).param(1).param(after).param(sponsorId).param(now).update();
+            .param(UUID.randomUUID()).param(userId).param(eventKey).param(reason).param(amount).param(after).param(sponsorId).param(now).update();
         jdbc.sql("UPDATE firework_ticket_wallets SET balance=?,updated_at=? WHERE user_id=?").param(after).param(now).param(userId).update();
         return after;
     }
