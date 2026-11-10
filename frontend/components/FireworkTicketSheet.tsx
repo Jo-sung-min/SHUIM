@@ -168,9 +168,7 @@ export function FireworkTicketCard({ userId }: { userId: string }) {
   return <section className={styles.card} aria-label="내 폭죽 이용권">
     <button type="button" className={styles.cardButton} onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}>
       <span className={styles.cardIcon}><IconSparkle />{locked && <span className={styles.cardLock} aria-hidden="true"><IconLock /></span>}</span>
-      <span className={styles.cardText}><strong>폭죽 이용권</strong><small>{locked ? "포인트로 바꾸거나 후원 기업 멋져요로 받아요" : "소로우 공간에서 불꽃놀이를 쏠 수 있어요"}</small></span>
-      <span className={styles.cardBalance} data-empty={locked || undefined}>{balance}</span>
-      <IconChevronR />
+      <span className={styles.cardText}><small>폭죽 이용권</small><span className={styles.cardBalance} data-empty={locked || undefined}>{balance}</span></span>
     </button>
     <FireworkTicketSheet open={open} onClose={() => setOpen(false)} onTickets={(next) => { setTickets(next); setFailed(false); }} />
   </section>;

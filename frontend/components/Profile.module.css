@@ -7,22 +7,26 @@
 .header { padding: 4px 0 0; }
 .top { display: flex; align-items: center; gap: 18px; }
 .top :global(.avatar.xl) { flex: none; width: 80px; height: 80px; border-radius: 50%; font-size: 28px; }
-.numbers { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; }
-.number { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; padding: 4px 0; border-radius: 12px; color: var(--text); }
+.topMain { flex: 1; min-width: 0; }
+.numbers { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 2px; }
+.number { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; justify-content: center; padding: 4px 0; border-radius: 12px; color: var(--text); }
 a.number:active { background: var(--surface-2); }
 .number b { font-size: 19px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .number small { font-size: 12.5px; color: var(--text-2); }
 
-.who { margin-top: 12px; }
+.who { margin-top: 14px; }
 .nameRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .nameRow h2 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
-.bio { margin: 6px 0 0; font-size: 14.5px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; color: var(--text); }
+.bio { margin: 0; font-size: 14.5px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; color: var(--text); }
 .bio.empty { color: var(--text-3); }
 .meta { margin: 6px 0 0; font-size: 12.5px; color: var(--text-3); }
 .mutual { display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; }
 
 .actions { display: flex; gap: 8px; margin-top: 14px; }
 .actions > :global(.btn) { flex: 1; min-height: 38px; font-size: 14px; }
+
+/* 온기 포인트 · 폭죽 이용권 한 줄 */
+.wallets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
 
 /* ---------- 칭호 칩 (닉네임 옆) ---------- */
 .title {
@@ -69,7 +73,9 @@ a.number:active { background: var(--surface-2); }
 .tab[aria-selected="true"] { color: var(--text); font-weight: 750; }
 .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: -1px; height: 2px; background: var(--text); border-radius: 2px; }
 .tab small { margin-left: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.panel { padding-top: 4px; }
+/* 아래 콘텐츠 영역을 넉넉히: 글이 없어도 화면 아래까지 차고, 빈 안내는 그 가운데에 */
+.panel { display: flex; flex-direction: column; min-height: max(420px, 58vh); padding-top: 4px; }
+.panel > :global(.empty) { margin: auto 0; }
 
 .list { display: grid; gap: 8px; margin-top: 12px; }
 .comfort { display: block; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }

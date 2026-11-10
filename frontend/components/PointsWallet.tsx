@@ -65,9 +65,7 @@ export function PointsCard({ userId }: { userId: string }) {
   return <section className={styles.card} aria-label="내 온기 포인트">
     <Link href="/points" className={styles.cardLink}>
       <IconCoin className={styles.cardIcon} />
-      <span className={styles.cardText}><strong>온기 포인트</strong><small>잔액과 적립 내역</small></span>
-      <span className={styles.cardBalance}>{loading ? "확인 중…" : wallet ? `${wallet.balance.toLocaleString("ko-KR")} P` : "내역 보기"}</span>
-      <IconChevronR />
+      <span className={styles.cardText}><small>온기 포인트</small><span className={styles.cardBalance}>{loading ? "확인 중…" : wallet ? `${wallet.balance.toLocaleString("ko-KR")} P` : "내역 보기"}</span></span>
     </Link>
     {(error || guest) && <div className={styles.cardError}><p>{guest ? "로그인 후 포인트를 확인해요." : "포인트를 불러오지 못했어요."}</p><button type="button" className="text-btn muted" onClick={() => void refresh()}>다시 확인</button></div>}
   </section>;

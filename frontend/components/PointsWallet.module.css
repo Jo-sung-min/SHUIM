@@ -2,15 +2,13 @@
 .page { display: grid; gap: var(--sp-3); }
 .page > * { min-width: 0; }
 
-.card { margin: var(--sp-3) 0 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
-.cardLink { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: center; gap: 12px; padding: var(--sp-2); border-radius: inherit; color: var(--text); text-decoration: none; transition: background var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.card { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.cardLink { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 10px; padding: 12px 14px; border-radius: inherit; color: var(--text); text-decoration: none; transition: background var(--dur) var(--ease), transform var(--dur) var(--ease); }
 .cardLink:active { background: var(--surface-2); transform: scale(.98); }
 .cardIcon { width: 22px; height: 22px; color: var(--text-2); }
-.cardText { display: grid; gap: 4px; }
-.cardText strong { font-size: 15px; font-weight: 650; line-height: 1.4; }
-.cardText small { color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.cardText { display: grid; gap: 1px; min-width: 0; }
+.cardText small { color: var(--text-2); font-size: 12.5px; line-height: 1.4; white-space: nowrap; }
 .cardBalance { font-size: 16px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cardLink > svg:last-child { width: 16px; height: 16px; color: var(--text-3); }
 .cardError { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-1); padding: 0 var(--sp-2) var(--sp-1); }
 .cardError p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.6; }
 

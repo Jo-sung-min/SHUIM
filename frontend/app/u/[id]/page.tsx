@@ -76,6 +76,7 @@ export default function PublicProfilePage() {
       <div className="screen">
         <ProfileHeader
           profile={p}
+          middle={<BadgeShelf earned={p.badges} />}
           actions={isMe ? (
             <>
               <Link href="/me" className="btn ghost sm">내 공간으로</Link>
@@ -94,7 +95,6 @@ export default function PublicProfilePage() {
         />
         {!isMe && <div className="row" style={{ gap: 20, marginTop: 12 }}><BlockUser userId={p.id} /><SafetyReport kind="user" targetId={p.id} /></div>}
 
-        <BadgeShelf earned={p.badges} />
         <ProfileTabs data={data} />
       </div>
 

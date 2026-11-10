@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Me, fetchMe, signOut } from "@/lib/auth";
+import { MyProfile, fetchMyProfile } from "@/lib/social";
+import { shareProfile } from "@/lib/share-profile";
+import ProfileSheet from "@/components/ProfileSheet";
 import { ConfirmSheet, Segmented, TopBar } from "@/components/ui";
-import { IconBook, IconBriefcase, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconNote, IconSettings, IconShield, IconUser } from "@/components/Icons";
+import { IconBook, IconBriefcase, IconCalendar, IconChevronL, IconChevronR, IconFlag, IconNote, IconPen, IconSettings, IconShare, IconShield, IconUser } from "@/components/Icons";
 import { ThemePref, loadTheme, saveTheme } from "@/lib/theme";
 import { RecordKind, clearRecordKind, loadGoals, loadJournal, loadMemos, loadSchedule, syncRecords } from "@/lib/storage";
 import { toastSuccess } from "@/lib/toast";
@@ -28,7 +31,7 @@ const RECORD_KINDS: { kind: RecordKind; label: string; obj: string; unit: string
 
 /**
  * 설정: 나 화면의 톱니에서 들어온다.
- * 계정(닉네임은 /auth), 화면 모드, 기록 관리(종류별 삭제), 편의 기능(차단한 사용자·서비스 안내·관리자), 맨 아래 로그아웃을 한곳에 모았다.
+ * 계정(닉네임은 /auth, 프로필 편집·공유), 화면 모드, 기록 관리(종류별 삭제), 편의 기능(차단한 사용자·서비스 안내·관리자), 맨 아래 로그아웃을 한곳에 모았다.
  * 로그인하지 않아도 열린다 — 화면 모드는 이 기기에만 저장되는 설정이라서.
  */
 export default function SettingsPage() {
@@ -36,9 +39,14 @@ export default function SettingsPage() {
   const [theme, setTheme] = useState<ThemePref>("system"); // 서버 렌더와 맞추려고 기본값으로 시작해 마운트 후 읽는다
   const [counts, setCounts] = useState<Record<RecordKind, number> | null>(null);
   const [clearing, setClearing] = useState<RecordKind | null>(null);
+  const [profile, setProfile] = useState<MyProfile | null>(null);
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     setTheme(loadTheme());
-    fetchMe().then(setMe).catch(() => setMe(null));
+    fetchMe().then((m) => {
+      setMe(m);
+      if (m.user) fetchMyProfile().then(setProfile).catch(() => setProfile(null));
+    }).catch(() => setMe(null));
     // 서버 기록을 먼저 맞춘 뒤 센다 (실패해도 이 기기 기록으로)
     syncRecords().catch(() => false).then(() => setCounts({ journal: Object.keys(loadJournal()).length, memos: loadMemos().length, goals: loadGoals().length, schedule: loadSchedule().length }));
   }, []);
@@ -67,6 +75,8 @@ export default function SettingsPage() {
             ) : (
               <Link href="/auth" className={styles.menuRow}><IconUser /><span className={styles.menuLabel}><strong>{me ? "로그인 · 회원가입" : "계정"}</strong><small>{me ? "기록을 보관하고 다른 기기에서도 이어서 봐요" : "확인하고 있어요…"}</small></span><IconChevronR /></Link>
             )}
+            {user && <button type="button" className={styles.menuRow} disabled={!profile} onClick={() => setEditing(true)}><IconPen /><span className={styles.menuLabel}><strong>프로필 편집</strong><small>사진 · 닉네임 · 소개 · 칭호</small></span><IconChevronR /></button>}
+            {user && <button type="button" className={styles.menuRow} disabled={!profile} onClick={() => { if (profile) void shareProfile(profile.id, profile.nick); }}><IconShare /><span className={styles.menuLabel}><strong>프로필 공유</strong></span><IconChevronR /></button>}
           </div>
         </section>
 
@@ -117,6 +127,15 @@ export default function SettingsPage() {
           {logoutError && <p className={styles.error} role="alert" style={{ marginTop: 8 }}>{logoutError}</p>}
         </section>}
       </div>
+      {profile && (
+        <ProfileSheet
+          key={editing ? "open" : "closed"}
+          open={editing}
+          profile={profile}
+          onClose={() => setEditing(false)}
+          onSaved={(p) => { setProfile(p); setEditing(false); toastSuccess("프로필을 저장했어요"); fetchMe(true).then(setMe).catch(() => undefined); }}
+        />
+      )}
       <ConfirmSheet
         open={clearing !== null}
         title={`${clearingInfo?.obj ?? "기록을"} 모두 지울까요?`}
