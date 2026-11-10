@@ -135,7 +135,7 @@ class BeachControllerTest {
         @SuppressWarnings("unchecked") Map<String, Object> spawn = (Map<String, Object>) out.get("spawn");
         assertEquals(Set.of("x", "z", "yaw"), spawn.keySet());
         assertTrue((double) spawn.get("z") >= 2.8 && (double) spawn.get("z") <= 4);
-        assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -1.0, "maxZ", 63.0), out.get("bounds"));
+        assertEquals(Map.of("minX", -22.0, "maxX", 22.0, "minZ", -15.0, "maxZ", 63.0), out.get("bounds"));
         assertEquals(1, out.get("count"));
         assertEquals(Map.of("communityId", "circle-a", "mapId", "beach", "count", 1, "capacity", 20), controller.count("circle-a", request));
         BeachRoom.TickResult tick = controller.tick(new BeachController.TickBody((String) out.get("ticket"), 1.0, 2.0, null, null,

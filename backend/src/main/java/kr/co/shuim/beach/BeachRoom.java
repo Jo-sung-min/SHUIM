@@ -29,8 +29,9 @@ import java.util.function.LongSupplier;
  * 같은 유저가 탭을 둘 열면 presence 도 둘이고(티켓마다 하나) 서로에게도 보인다.
  */
 public class BeachRoom {
-    /** 세계 경계 (m). 물가는 z = 0, 바다는 z 가 음수 쪽. 들어오는 위치는 전부 이 안으로 자른다 */
-    public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -1, MAX_Z = 55;
+    /** 세계 경계 (m). 물가는 z = 0, 바다는 z 가 음수 쪽. 들어오는 위치는 전부 이 안으로 자른다.
+     *  MIN_Z 는 바닷가 앞 얕은 물로 양쪽 바위 끝(z ≈ -16) 바로 앞까지 걸어 들어갈 수 있게 (프론트는 물속 모래 경사를 따라 걷는다). */
+    public static final double MIN_X = -22, MAX_X = 22, MIN_Z = -15, MAX_Z = 55;
     /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
     public static final int CAPACITY = SpaceCapacity.MAX;
     private int capacity = CAPACITY;

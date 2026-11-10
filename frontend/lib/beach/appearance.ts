@@ -60,3 +60,22 @@ export function saveCharacter(userId: string, character: BeachCharacter): void {
   try { window.localStorage.setItem(preferenceKey(userId), selected); }
   catch { /* Keep the current visit usable when storage is unavailable. */ }
 }
+
+function chibiKey(userId: string): string {
+  return `sorow:beach-chibi:v1:${encodeURIComponent(userId)}`;
+}
+
+/** 관리자 치비 미리보기를 켜 두었는지 (내 화면 전용, 방 서버에는 보내지 않는다) */
+export function savedChibi(userId: string): boolean {
+  if (!userId) return false;
+  try { return window.localStorage.getItem(chibiKey(userId)) === "1"; }
+  catch { return false; }
+}
+
+export function saveChibi(userId: string, on: boolean): void {
+  if (!userId) return;
+  try {
+    if (on) window.localStorage.setItem(chibiKey(userId), "1");
+    else window.localStorage.removeItem(chibiKey(userId));
+  } catch { /* Keep the current visit usable when storage is unavailable. */ }
+}
