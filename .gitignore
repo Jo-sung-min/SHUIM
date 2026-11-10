@@ -57,3 +57,5 @@ Thumbs.db
 # Generated map artwork is kept in Git at the user's request.
 !frontend/public/garden/art/*.webp
 !frontend/public/cloudspa/art/*.webp
+# 명화 큐레이션 피드(CDN feed/curation/ 에 올릴 원본, 사용자 요청으로 Git 에도 보관)
+!frontend/public/feed/curation/*.webp
