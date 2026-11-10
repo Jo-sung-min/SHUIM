@@ -287,6 +287,7 @@ function TodayWrite() {
             </button>
           )
         )}
+        <HelpBanner />
       </div>
 
       <ConfirmSheet

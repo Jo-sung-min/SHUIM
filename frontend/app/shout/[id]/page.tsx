@@ -218,6 +218,7 @@ export default function ShoutPostPage() {
                 ))}
               </div>
             )}
+            <HelpBanner />
           </section>
 
           <div className={styles.dock}>

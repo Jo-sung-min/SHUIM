@@ -30,7 +30,7 @@
 .resultCount { margin-left: auto; color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- 목록 ---------- */
-.list { padding-bottom: calc(var(--tabbar-space) + 96px); }
+.list { padding-bottom: calc(var(--tabbar-space) + 96px); display: flex; flex-direction: column; min-height: 100dvh; }
 
 /* 카테고리 + 정렬 줄 */
 .filterBar {
@@ -133,7 +133,7 @@
 .time { margin-left: auto; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .more { width: 32px; height: 32px; margin-right: -8px; color: var(--text-3); }
 
-.help { margin-top: var(--sp-3); }
+.help { margin-top: auto; }
 
 /* ---------- 글 화면 상단 바 ---------- */
 .bar {

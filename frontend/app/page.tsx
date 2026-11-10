@@ -467,6 +467,7 @@ export default function HomePage() {
             <span>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></span>
           </p>
         )}
+        <HelpBanner />
       </div>
     </>
   );
