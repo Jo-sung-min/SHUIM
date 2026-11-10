@@ -17,20 +17,6 @@
   .rail .tagline { -webkit-line-clamp: 1; }
 }
 
-/* ---------- 홈 진열대 (모바일 폭): 같은 액자를 가로로 넘겨 본다. 거터까지 번져 화면 끝에서 끝으로 흐른다 ---------- */
-.shelf { margin-top: 32px; }
-.shelfHead { margin: 0 2px 10px; }
-.shelfHead h3 { margin: 0; font-size: 16px; line-height: 1.5; letter-spacing: -.02em; word-break: keep-all; }
-.shelfHead h3 small { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--text-2); }
-.shelfTrack {
-  display: grid; grid-auto-flow: column; grid-auto-columns: 152px; gap: 12px;
-  margin-inline: calc(-1 * var(--gutter)); padding: 6px var(--gutter) 16px;
-  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter);
-  scrollbar-width: none;
-}
-.shelfTrack::-webkit-scrollbar { display: none; }
-.shelfTrack > * { scroll-snap-align: start; }
-
 /* ---------- 액자 테 ---------- */
 .card {
   position: relative; display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; width: 100%;

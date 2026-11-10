@@ -31,7 +31,6 @@ import {
 import { completeKakaoLogin, fetchMe } from "@/lib/auth";
 import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
-import { SponsorShelf } from "@/components/SponsorRails";
 import { SkeletonCard, SkeletonHero, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus, IconHeart, IconStar, IconPen } from "@/components/Icons";
@@ -471,9 +470,6 @@ export default function HomePage() {
             <span>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></span>
           </p>
         )}
-
-        {/* 후원 액자 진열대: 모바일 폭에서만 맨 아래에 (타일과 그 결과 사이를 끊지 않게). PC 폭에서는 양옆 레일이 대신한다 */}
-        <SponsorShelf />
       </div>
     </>
   );
