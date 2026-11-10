@@ -306,6 +306,28 @@ void main() {
 }`;
 
 /* ---------------- 도우미 ---------------- */
+
+/** 그림자를 지켜 줄 큰 형체: 오두막 뼈대(인스턴스 조각은 작아도 모이면 건물), 만의 능선, 절벽 */
+const STRUCTURE_SHADOW = /timber|roof|deck|walls|ridge|cliff/;
+/** 한 조각(인스턴스) 크기가 이보다 작으면 작은 소품 (m, 경계 구 반지름) */
+const SMALL_PROP_RADIUS = 1.3;
+const propScale = new THREE.Vector3();
+
+/**
+ * 휴대폰 렉 줄이기: 작은 소품(화로 돌·쿠션·이불·베개·커튼·잎·등불 틀·화분·모닥불·통나무 벤치 등)은
+ * 그림자를 드리우지 않는다. 그림자 패스가 소품을 한 번 더 그리지 않는다 (화로 돌만 삼각형 11만).
+ * 사람(스킨 메시)과 건물·지형 그림자는 그대로. 늦게 불러오는 소품도 있어 주기적으로 다시 훑는다.
+ */
+function trimSmallPropShadows(scene: THREE.Scene) {
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.castShadow || (mesh as THREE.SkinnedMesh).isSkinnedMesh || STRUCTURE_SHADOW.test(mesh.name)) return;
+    const geometry = mesh.geometry;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    mesh.getWorldScale(propScale);
+    if (geometry.boundingSphere!.radius * Math.max(propScale.x, propScale.y, propScale.z) < SMALL_PROP_RADIUS) mesh.castShadow = false;
+  });
+}
 type Region = { x: number; y: number; w: number; h: number };
 
 function regionTexture(base: THREE.Texture, r: Region, atlasW: number, atlasH: number): THREE.Texture {
@@ -501,6 +523,7 @@ export class BeachEngine {
   private skyRenderMode = false;
   private renderSize = { width: 0, height: 0, pixelRatio: 0 };
   private mobile: boolean;
+  private lastPropShadowTrim = -Infinity;
 
   private handlers: EngineHandlers;
   private canvas: HTMLCanvasElement;
@@ -1628,7 +1651,8 @@ export class BeachEngine {
       const sunUp = d.sun[1] > -0.02;
       (s.uLightDir.value as THREE.Vector3).set(...(sunUp ? d.sun : d.moon));
       const moonLight: [number, number, number] = [0.8, 0.85, 1.0];
-      (s.uLightColor.value as THREE.Vector3).set(...(sunUp ? d.sunColor : moonLight));
+      // 먼 바다의 달빛 반짝임도 은은하게 (가까운 바다의 가는 달빛 길과 맞춘다)
+      (s.uLightColor.value as THREE.Vector3).set(...(sunUp ? d.sunColor : moonLight.map((v) => v * 0.3) as [number, number, number]));
       s.uSpec.value = d.specular;
       (s.uFog.value as THREE.Vector3).set(...d.fog);
       s.uFogNear.value = d.fogNear;
@@ -2240,6 +2264,10 @@ export class BeachEngine {
     if (this.garden) {
       this.fireworkAudio?.updateGardenSound(insideHall(this.self.x, this.self.z), this.rainNow, dt);
       this.garden.renderReflection(this.renderer, this.camera);
+    }
+    if (this.mobile && this.mapId === "beach" && this.time - this.lastPropShadowTrim > 2) {
+      this.lastPropShadowTrim = this.time;
+      trimSmallPropShadows(this.scene);
     }
     if (this.ultraSea?.enabled && !this.activeBunkerId) this.ultraSea.prepare(dt, this.camera);
     this.drawScene();

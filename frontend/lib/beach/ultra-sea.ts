@@ -178,7 +178,8 @@ export class BeachUltraSea {
     const dir = this.sky.sunDir.set(sunDir[0], sunDir[1], sunDir[2]).normalize();
     // 원본은 HDR 하늘(해 세기 ~9)을 노출로 낮춘다. 여기 하늘은 사진(0~1)이라 해도 그 눈금에 맞춘다.
     // 달빛은 해보다 훨씬 약하다 (밤에 달이 높이 떠 있어도)
-    const k = isSun ? 0.95 : 0.16;
+    // 밤바다의 달빛은 최소한으로: 바다 정면 낮은 달이 물에 가는 은빛 길만 남긴다 (0.16 일 땐 하얀 덩어리로 번졌다)
+    const k = isSun ? 0.95 : 0.0032;
     this.sky.sunColor.set(sunColor[0] * k, sunColor[1] * k, sunColor[2] * k);
     const t = Array.isArray(tint) ? new THREE.Vector3(tint[0], tint[1], tint[2]) : (tint as THREE.Vector3);
     // 사진은 늦게 도착한다: 색조가 바뀌었거나 사진이 새로 올라왔을 때만 다시 굽는다
@@ -210,8 +211,9 @@ export class BeachUltraSea {
     r.autoClear = false; // 원본 패스들은 스스로 지운다
     const u = this.surface.uniforms;
     this.sim.update(dt);
-    // 휴대폰은 코스틱을 한 프레임 걸러 갱신한다 (물결이 느려 티가 나지 않는다)
-    if (!this.mobile || (this.frameNo++ & 1) === 0) this.caustics.update(this.sky.sunDir);
+    // 휴대폰은 코스틱과 굴절 패스를 한 프레임씩 번갈아 갱신한다 (물결이 느려 티가 나지 않고, 한 프레임에 몰리지 않는다)
+    const odd = this.mobile && (this.frameNo++ & 1) === 1;
+    if (!odd) this.caustics.update(this.sky.sunDir);
     this.surface.update(camera, this.time % 3600);
     if (this.mobile) {
       // 휴대폰은 늘 절반 밀도 격자 (정점 20만 → 5만). 바닷가 카메라는 낮아 원본은 촘촘한 쪽을 고른다.
@@ -224,7 +226,9 @@ export class BeachUltraSea {
     // 굴절: 물 아래 모래(와 절벽)만 낮은 해상도로 다시 그려 물이 읽는다. 그림자 지도는 다시 굽지 않는다.
     const size = r.getDrawingBufferSize(new THREE.Vector2());
     const w = Math.max(1, Math.round(size.x * this.refractScale)), h = Math.max(1, Math.round(size.y * this.refractScale));
+    let fresh = false;
     if (!this.refractRT || this.refractRT.width !== w || this.refractRT.height !== h) {
+      fresh = true;
       this.refractRT?.dispose();
       this.refractRT = new THREE.WebGLRenderTarget(w, h, {
         type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(w, h, THREE.FloatType), generateMipmaps: false,
@@ -237,6 +241,12 @@ export class BeachUltraSea {
       // 새로 켜진 불빛(모닥불 등)도 굴절 패스에서 모래를 비추게
       this.lastLightLayers = this.time;
       this.scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(REFRACT_LAYER); });
+    }
+    // 휴대폰: 굴절 화면은 코스틱을 건너뛴 프레임에만 다시 그린다 (그 사이엔 한 프레임 전 화면을 그대로 읽는다)
+    if (this.mobile && !odd && !fresh) {
+      r.setRenderTarget(prev);
+      r.autoClear = autoClear;
+      return;
     }
     const mask = camera.layers.mask, visible = this.surface.mesh.visible;
     camera.layers.set(REFRACT_LAYER);
