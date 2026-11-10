@@ -372,9 +372,6 @@ export default function HomePage() {
                 {/^https?:\/\//i.test(openMoment.quote.sourceUrl) && <a href={openMoment.quote.sourceUrl} target="_blank" rel="noopener noreferrer">원문 보기</a>}
               </details>
             )}
-            <div className={styles.momentRefresh}>
-              <button type="button" className="btn ghost sm" onClick={() => void call(open)}>{MOMENTS[open].heading} 다시 받기</button>
-            </div>
           </section>
         )}
 

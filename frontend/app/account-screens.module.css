@@ -183,7 +183,6 @@
 .momentQuote p { margin: 12px 0 8px; font-size: 14px; color: var(--text); }
 .momentQuote span, .momentQuote small { display: block; }
 .momentQuote a { display: inline-block; margin-top: 6px; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
-.momentRefresh { display: flex; justify-content: flex-end; margin-top: 14px; }
 .pending { display: grid; gap: 12px; padding-top: 12px; }
 .pending :global(.skeleton) { height: 96px; border-radius: 20px; }
 @media (max-width: 360px) {
