@@ -52,7 +52,7 @@ export default function WritePage() {
 
   const close = () => {
     if (busy) return;
-    if (dirty && !window.confirm("작성 중인 글을 버릴까요?")) return;
+    if (dirty && !window.confirm("쓰던 글을 버릴까요?")) return;
     if (window.history.length > 1) router.back();
     else router.replace("/");
   };
@@ -64,8 +64,8 @@ export default function WritePage() {
     const picked: Photo[] = [];
     for (const file of Array.from(list)) {
       if (picked.length >= room) { setError(`사진은 최대 ${SHOUT_MAX_IMAGES}장까지 올릴 수 있어요.`); break; }
-      if (!PHOTO_TYPES.includes(file.type)) { setError("JPG·PNG·WebP·GIF 사진만 올릴 수 있어요."); continue; }
-      if (file.size > MAX_PHOTO_BYTES) { setError("20MB 이하의 사진을 골라 주세요."); continue; }
+      if (!PHOTO_TYPES.includes(file.type)) { setError("JPG·PNG·WebP·GIF만 올릴 수 있어요."); continue; }
+      if (file.size > MAX_PHOTO_BYTES) { setError("20MB 이하로 골라 주세요."); continue; }
       picked.push({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) });
     }
     if (picked.length) setPhotos((cur) => [...cur, ...picked]);
@@ -114,7 +114,7 @@ export default function WritePage() {
   const editingPhoto = photos.find((p) => p.id === editing);
 
   return (
-    <div inert={Boolean(editingPhoto)}>
+    <div className={styles.page} inert={Boolean(editingPhoto)}>
       <header className={styles.bar}>
         <button type="button" className="icon-btn" aria-label="닫기" onClick={close}><IconClose /></button>
         <h1>새 외침</h1>
@@ -123,60 +123,54 @@ export default function WritePage() {
         </button>
       </header>
 
+      {/* 어디에: 한 줄로 넘겨 고른다 */}
+      <div className={styles.boards} role="radiogroup" aria-label="광장">
+        {SHOUT_CATEGORIES.map((x) => (
+          <button key={x.id} type="button" role="radio" aria-checked={cat === x.id} className={`${styles.board} ${cat === x.id ? styles.boardOn : ""}`} onClick={() => setCat(x.id)} disabled={busy}>
+            <ShoutCatIcon id={x.id} />
+            {x.head}
+          </button>
+        ))}
+      </div>
+
       <div className={styles.form}>
-        {blocked && <div className="notice warn">이 계정은 신고 누적으로 차단되어 글을 쓸 수 없어요.</div>}
+        {blocked && <div className="notice warn">차단된 계정은 글을 쓸 수 없어요.</div>}
 
-        <div>
-          <textarea
-            className={styles.text}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={c.placeholder}
-            maxLength={MAX_TEXT}
-            autoFocus
-            aria-label="내용"
-            disabled={busy}
-          />
-          <div className={styles.count}>{text.length}/{MAX_TEXT} · 익명으로 올라가요</div>
-        </div>
+        <textarea
+          className={styles.text}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={c.placeholder}
+          maxLength={MAX_TEXT}
+          autoFocus
+          aria-label={`${c.label}에 쓸 내용`}
+          disabled={busy}
+        />
 
-        <section className={styles.section} aria-labelledby="write-photos">
-          <h2 id="write-photos">사진 <span className="tiny muted" style={{ fontWeight: 500 }}>{photos.length}/{SHOUT_MAX_IMAGES}</span></h2>
-          <div className={styles.photos}>
+        {photos.length > 0 && (
+          <div className={styles.photos} aria-label="사진">
             {photos.map((p, i) => (
               <div key={p.id} className={styles.photo}>
-                <button type="button" className={styles.photoEdit} disabled={busy} onClick={() => setEditing(p.id)} aria-label={`사진 ${i + 1} 편집 (자르기·필터·조정)`}>
+                <button type="button" className={styles.photoEdit} disabled={busy} onClick={() => setEditing(p.id)} aria-label={`사진 ${i + 1} 편집`}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- 고른 사진 미리보기(blob:) */}
                   <img src={p.preview} alt="" />
-                  <span aria-hidden="true">편집</span>
                 </button>
                 {!busy && <button type="button" className={styles.remove} aria-label={`사진 ${i + 1} 빼기`} onClick={() => removePhoto(p.id)}><IconClose /></button>}
                 {progress && progress.index === i && <div className={styles.progress}><span style={{ width: `${progress.percent}%` }} /></div>}
               </div>
             ))}
-            {photos.length < SHOUT_MAX_IMAGES && (
-              <button type="button" className={styles.add} disabled={busy || canUpload === false} onClick={() => fileInput.current?.click()} aria-label="사진 추가">
-                <IconImage />
-                사진 추가
-              </button>
-            )}
           </div>
-          <input ref={fileInput} type="file" accept={PHOTO_TYPES.join(",")} multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-          {canUpload === false && <p className={styles.hint}>사진 올리기는 아직 준비 중이에요. 글은 바로 올릴 수 있어요.</p>}
-        </section>
+        )}
 
-        <section className={styles.section} aria-labelledby="write-cat">
-          <h2 id="write-cat">어디에 외칠까요</h2>
-          <div className="chips wrap" role="radiogroup" aria-labelledby="write-cat">
-            {SHOUT_CATEGORIES.map((x) => (
-              <button key={x.id} type="button" role="radio" aria-checked={cat === x.id} className={`chip ${cat === x.id ? "on" : ""}`} onClick={() => setCat(x.id)} disabled={busy}>
-                <ShoutCatIcon id={x.id} />
-                {x.label}
-              </button>
-            ))}
-          </div>
-          <p className={styles.hint}>{c.desc}</p>
-        </section>
+        <div className={styles.tools}>
+          <button type="button" className={styles.tool} disabled={busy || canUpload === false || photos.length >= SHOUT_MAX_IMAGES} onClick={() => fileInput.current?.click()}
+            aria-label={canUpload === false ? "사진은 준비 중이에요" : `사진 추가 (${photos.length}/${SHOUT_MAX_IMAGES})`}>
+            <IconImage />
+            {photos.length > 0 && <span>{photos.length}/{SHOUT_MAX_IMAGES}</span>}
+          </button>
+          <span className={styles.meta}>익명 · {text.length}/{MAX_TEXT}</span>
+        </div>
+        <input ref={fileInput} type="file" accept={PHOTO_TYPES.join(",")} multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
 
         {hasCrisisSignal(text) && <HelpBanner alert />}
         {error && <p className={styles.error} role="alert">{error}</p>}
