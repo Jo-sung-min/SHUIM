@@ -50,11 +50,43 @@ export class ChibiCharacter {
     this.face = skinned(build.face, materials.face, "ChibiFace");
     this.face.morphTargetInfluences = new Array(build.face.morphAttributes.position?.length ?? 0).fill(0);
     this.outline.renderOrder = 1;
+    // 실루엣 선 두께는 화면 픽셀 기준이라 그리는 캔버스 해상도를 알아야 한다. 어느 장면에 들어가도 스스로 맞춘다.
+    const size = new THREE.Vector2();
+    this.outline.onBeforeRender = renderer => {
+      renderer.getDrawingBufferSize(size);
+      const u = materials.outline.uniforms;
+      (u.uRes.value as THREE.Vector2).copy(size);
+      u.uWidth.value = ((materials.outline.userData.widthCss as number | undefined) ?? 0.9) * renderer.getPixelRatio();
+    };
     this.face.renderOrder = 2;
 
     this.shadow = createBlobShadow();
     this.object.add(this.shadow);
     this.motion = new ChibiMotion(bones, this.face);
+  }
+
+  private followed: { x: number; z: number } | null = null;
+
+  /**
+   * 다른 장면(바닷가 등)의 캐릭터 상태를 따라간다. 위치·높이는 그룹이 옮기고, 이동 거리와 방향은 모션에 넘긴다.
+   * yaw 는 이 캐릭터 기준(0 이면 +z 를 봄). 한 번에 너무 멀리 뛰면 순간이동으로 보고 방향을 바로 맞춘다.
+   */
+  follow(dt: number, x: number, y: number, z: number, yaw: number, moving: boolean) {
+    const s = this.object.scale.x || 1;
+    const last = this.followed;
+    if (!last || Math.hypot(x - last.x, z - last.z) > 2) this.motion.snapYaw(yaw);
+    this.motion.follow(last ? (x - last.x) / s : 0, last ? (z - last.z) / s : 0, yaw, moving);
+    this.followed = { x, z };
+    this.object.position.set(x, y, z);
+    this.update(dt);
+  }
+
+  /** 다음 follow 를 순간이동으로 다루게 한다 (앉았다 일어남 등) */
+  resetFollow() { this.followed = null; }
+
+  /** 장면의 낮·노을·밤 색조 (sRGB 0~1) */
+  setTint(r: number, g: number, b: number) {
+    for (const m of Object.values(this.materials)) (m.uniforms.uTint.value as THREE.Color).setRGB(r, g, b, THREE.SRGBColorSpace);
   }
 
   update(dt: number) {
@@ -65,7 +97,7 @@ export class ChibiCharacter {
     this.materials.toon.uniforms.uBlush.value = 0.3 + 0.28 * f.smile;
     // 그림자: 발밑을 따라가고 뛰면 작고 옅어진다
     const lift = this.root.position.y;
-    this.shadow.position.set(m.position.x, 0.002, m.position.z);
+    this.shadow.position.set(this.root.position.x, 0.002, this.root.position.z);
     this.shadow.rotation.z = -m.yaw;
     const s = 1 / (1 + lift * 2.2);
     this.shadow.scale.set(s, s, 1);

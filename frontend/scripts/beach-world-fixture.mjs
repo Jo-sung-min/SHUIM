@@ -105,4 +105,10 @@ vm.runInNewContext(`${baikalSource}\nglobalThis.api = {
   baikalRoofHeight, insideBaikalCabin, underBaikalRoof, baikalCeilingHeight, baikalShoreHeight, baikalTerraceHeight, baikalFloorHeight, baikalSnowCover,
   baikalStormAt, baikalForSpot, baikalSeat, claimedBaikalSeat, nearbyBaikalPlace, resolveBaikalWalk
 };`, baikalContext);
-export const hotSpring = { ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };
+// The beach sand slopes into the shallow sea; walkers follow the same seabed the water uses.
+const shoreSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/shore-terrain.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const shoreContext = { THREE };
+vm.runInNewContext(`${shoreSource}\nglobalThis.api = { BEACH_EDGE_Z, REFRACT_LAYER, sandHeight, beachSandGeometry };`, shoreContext);
+export const hotSpring = { ...shoreContext.api, ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };

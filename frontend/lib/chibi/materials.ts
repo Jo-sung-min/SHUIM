@@ -27,8 +27,10 @@ const SKIN_VERT = /* glsl */ `
 export function createToonMaterial() {
   return new THREE.ShaderMaterial({
     vertexColors: true,
+    toneMapped: false,
     uniforms: {
       uLightDir: { value: new THREE.Vector3(-0.38, 0.66, 0.66).normalize() },
+      uTint: { value: new THREE.Color(1, 1, 1) },
       uShade: { value: new THREE.Color(0.86, 0.76, 0.84) },
       uShade2: { value: new THREE.Color(0.74, 0.64, 0.76) },
       uThreshold: { value: 0.43 },
@@ -61,6 +63,7 @@ export function createToonMaterial() {
       #include <common>
       #include <color_pars_fragment>
       uniform vec3 uLightDir;
+      uniform vec3 uTint;
       uniform vec3 uShade;
       uniform vec3 uShade2;
       uniform float uThreshold;
@@ -92,7 +95,7 @@ export function createToonMaterial() {
         // 아주 약한 테두리 빛 (밝은 쪽에만)
         float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * uRim * lit;
         col += rim * vec3(1.0, 0.96, 0.93);
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(col * uTint, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -102,11 +105,13 @@ export function createToonMaterial() {
 export function createOutlineMaterial() {
   return new THREE.ShaderMaterial({
     vertexColors: true,
+    toneMapped: false,
     side: THREE.BackSide,
     uniforms: {
       uWidth: { value: 1.1 },
       uRes: { value: new THREE.Vector2(1, 1) },
       uColor: { value: new THREE.Color(0.5, 0.36, 0.4) },
+      uTint: { value: new THREE.Color(1, 1, 1) },
     },
     vertexShader: /* glsl */ `
       ${SKIN_VERT}
@@ -132,8 +137,9 @@ export function createOutlineMaterial() {
       #include <common>
       #include <color_pars_fragment>
       uniform vec3 uColor;
+      uniform vec3 uTint;
       void main() {
-        gl_FragColor = vec4(vColor.rgb * uColor, 1.0);
+        gl_FragColor = vec4(vColor.rgb * uColor * uTint, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -143,6 +149,7 @@ export function createOutlineMaterial() {
 export function createFaceMaterial() {
   return new THREE.ShaderMaterial({
     vertexColors: true,
+    toneMapped: false,
     side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -2,
@@ -156,6 +163,7 @@ export function createFaceMaterial() {
       uPupil: { value: new THREE.Color("#35267a") },
       uSclera: { value: new THREE.Color("#ffffff") },
       uScleraShade: { value: new THREE.Color("#d7d0ee") },
+      uTint: { value: new THREE.Color(1, 1, 1) },
     },
     vertexShader: /* glsl */ `
       ${SKIN_VERT}
@@ -176,7 +184,7 @@ export function createFaceMaterial() {
       #include <color_pars_fragment>
       uniform vec2 uEye;
       uniform vec2 uGaze;
-      uniform vec3 uIrisTop, uIrisMid, uIrisLow, uPupil, uSclera, uScleraShade;
+      uniform vec3 uIrisTop, uIrisMid, uIrisLow, uPupil, uSclera, uScleraShade, uTint;
       varying vec2 vKind;
       varying vec3 vMorph;
       float aa(float d) { float w = fwidth(d) * 0.75; return 1.0 - smoothstep(-w, w, d); }
@@ -205,7 +213,7 @@ export function createFaceMaterial() {
           float h2 = aa(length(vec2((dx - 0.012) / 0.0052, (dy + 0.022) / 0.0052)) - 1.0);
           col = mix(col, vec3(1.0), max(h1, h2 * 0.9));
         }
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(col * uTint, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,

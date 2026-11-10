@@ -4,7 +4,7 @@ export const SERVICE_CHECK_INTERVAL_MS = 30_000;
 export const SERVICE_RETRY_INTERVAL_MS = 10_000;
 export const SERVICE_TIMEOUT_MS = 7_000;
 
-const PUBLIC_PATHS = ["/info", "/privacy", "/terms", "/account-deletion", "/chibi-lab"];
+const PUBLIC_PATHS = ["/info", "/privacy", "/terms", "/account-deletion"];
 
 /** Public information works without a database. */
 export function isServicePublicPath(pathname: string): boolean {

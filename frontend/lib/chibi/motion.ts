@@ -76,7 +76,13 @@ export class ChibiMotion {
   private walk = new Spring(); // 걷기 섞임 0..1
   private stepIdle = new Spring(); // 제자리 회전 종종걸음
   private phase = 0;
-  private readonly cycle = 0.24; // 한 걸음 주기 동안 나아가는 거리 (좌우 한 번씩)
+  // 한 걸음 주기(좌우 한 번씩) 동안 나아가는 거리와 발이 땅에 닿아 있는 비율. 빠를수록 보폭이 길고 땅에 닿는 시간이 짧다(종종 뛰기).
+  private cycle = 0.24; private duty = 0.56;
+  private run = new Spring();
+  // 디딤 보폭 섞임: 몸이 움직이는 동안은 1 이어야 디딘 발이 땅에 붙는다 (걷기 섞임 wb 와 따로, 빨리 따라간다)
+  private stride = new Spring();
+  // 게임 엔진이 위치를 정하는 모드 (바닷가 등)
+  private external = false; private extDist = 0;
   private y = 0; private vy = 0; private airborne = false;
   private jumpT = -1;
   private squash = new Spring(); private squashTarget = 0;
@@ -135,6 +141,25 @@ export class ChibiMotion {
   get yaw() { return this.rootYaw.x; }
   get isAirborne() { return this.airborne || this.jumpT >= 0; }
 
+  /**
+   * 바깥(게임 엔진)이 위치·방향을 정할 때 매 프레임 update 전에 부른다.
+   * dx/dz 는 이번 프레임에 움직인 거리(캐릭터 단위). 걸음 위상은 이 거리로 돌아 발이 미끄러지지 않고,
+   * 방향은 머리→가슴→골반 스프링이 뒤따른다. 루트 뼈는 제자리에 두고 위치는 바깥 그룹이 옮긴다.
+   */
+  follow(dx: number, dz: number, yaw: number, moving: boolean) {
+    this.external = true;
+    const d = Math.hypot(dx, dz);
+    if (Number.isFinite(d) && d < 1) { this.extDist += d; this.position.x += dx; this.position.z += dz; }
+    if (Number.isFinite(yaw)) this.targetYaw = this.rootYaw.x + wrap(yaw - this.rootYaw.x);
+    this.locomotion = moving ? "walk" : "idle";
+  }
+
+  /** 순간이동처럼 끊긴 뒤에는 방향 스프링을 바로 맞춘다 */
+  snapYaw(yaw: number) {
+    for (const s of [this.headYaw, this.chestYaw, this.rootYaw]) { s.x = yaw; s.v = 0; }
+    this.targetYaw = yaw;
+  }
+
   // ------------------------------------------------------------ 매 프레임
   update(rawDt: number) {
     const dt = clamp(rawDt, 0, 1 / 20) * this.settings.speed;
@@ -145,7 +170,7 @@ export class ChibiMotion {
     const looseZ = THREE.MathUtils.lerp(0.82, 0.42, soft); // 말랑할수록 덜 감쇠(더 출렁)
 
     // --- 걷기 자동 조종: 반경 밖이면 안쪽으로 돌아선다
-    if (this.locomotion === "walk") {
+    if (this.locomotion === "walk" && !this.external) {
       const r = Math.hypot(this.position.x, this.position.z);
       const fwdX = Math.sin(this.targetYaw), fwdZ = Math.cos(this.targetYaw);
       if (r > this.wanderRadius && (this.position.x * fwdX + this.position.z * fwdZ) > 0) {
@@ -170,9 +195,15 @@ export class ChibiMotion {
     const turningInPlace = !walking && Math.abs(yawErr) > 0.12 && !this.airborne ? 1 : 0;
     const sb = this.stepIdle.step(turningInPlace, 2.2, 1.0, dt);
     const align = Math.pow(Math.max(0, Math.cos(yawErr)), 2);
-    const speed = this.settings.walkSpeed * clamp(wb, 0, 1) * (0.35 + 0.65 * align);
-    const fwd = _v1.set(Math.sin(ry), 0, Math.cos(ry));
-    this.position.addScaledVector(fwd, speed * dt);
+    let speed: number;
+    if (this.external) { speed = this.extDist / dt; this.extDist = 0; }
+    else {
+      speed = this.settings.walkSpeed * clamp(wb, 0, 1) * (0.35 + 0.65 * align);
+      this.position.addScaledVector(_v1.set(Math.sin(ry), 0, Math.cos(ry)), speed * dt);
+    }
+    const runT = clamp(this.run.step(smooth(0.45, 1.6, speed), 2.5, 1, dt), 0, 1);
+    this.cycle = 0.24 + 0.26 * runT;
+    this.duty = 0.56 - 0.2 * runT;
     // 걷기 위상은 실제 이동 거리로 진행 → 보폭과 속도가 늘 맞는다. 제자리 회전 때는 시간으로 진행.
     const prevPhase = this.phase;
     this.phase = (this.phase + (speed * dt) / this.cycle + sb * dt * 1.7 * (1 - clamp(wb, 0, 1))) % 1;
@@ -222,11 +253,13 @@ export class ChibiMotion {
 
     // --- 걷기 리듬
     const ph = this.phase * 2 * Math.PI;
-    const bob = (0.5 - 0.5 * Math.cos(2 * ph)) * 0.011 * stepAmt - 0.009 * stepAmt;
+    // 뛸 때는 골반을 낮춰 짧은 다리가 긴 보폭에 닿게 한다
+    const bob = (0.5 - 0.5 * Math.cos(2 * ph)) * (0.011 + 0.01 * runT) * stepAmt - (0.009 + 0.035 * runT) * stepAmt;
 
     // ================= 뼈에 적용
     const root = this.b("Root");
-    root.position.set(this.position.x, this.y, this.position.z);
+    if (this.external) root.position.set(0, this.y, 0);
+    else root.position.set(this.position.x, this.y, this.position.z);
     root.quaternion.setFromAxisAngle(Y, ry);
     // 부피를 지키는 눌림/늘어남 (발바닥 기준)
     root.scale.set(1 / Math.sqrt(1 + sq), 1 + sq, 1 / Math.sqrt(1 + sq));
@@ -242,7 +275,7 @@ export class ChibiMotion {
     // 몸통 비틀림: 가슴이 골반보다 앞서고, 걸을 때는 골반 반대로 돈다
     const twist = cy - ry;
     const spine = this.b("Spine"), chest = this.b("Chest");
-    _e.set(-crouch * 0.6 + 0.02 * stepAmt, twist * 0.45 - 0.045 * Math.sin(ph) * stepAmt, -0.02 * Math.sin(ph) * stepAmt, "XYZ");
+    _e.set(-crouch * 0.6 + (0.02 + 0.13 * runT) * stepAmt, twist * 0.45 - 0.045 * Math.sin(ph) * stepAmt, -0.02 * Math.sin(ph) * stepAmt, "XYZ");
     spine.quaternion.setFromEuler(_e);
     _e.set(-crouch * 0.4 + breath * 0.012 * idleW, twist * 0.55 - 0.035 * Math.sin(ph) * stepAmt, -0.012 * sway * idleW, "XYZ");
     chest.quaternion.setFromEuler(_e);
@@ -267,7 +300,7 @@ export class ChibiMotion {
     const ap = this.armPitch.step(0, 2.2 * looseF, looseZ, dt, aFwd * 2.2);
     const as = this.armSpread.step(0, 2.0 * looseF, looseZ, dt, this.accel.y * 1.0 * (0.6 + 0.8 * soft));
     for (const [s, sgn] of [["_L", 1], ["_R", -1]] as const) {
-      const swing = Math.cos(ph) * 0.42 * stepAmt * (s === "_L" ? 1 : -1);
+      const swing = Math.cos(ph) * (0.42 + 0.22 * runT) * stepAmt * (s === "_L" ? 1 : -1);
       const idleArm = Math.sin((tm * 2 * Math.PI) / 3.4 + (s === "_L" ? 0 : 0.6)) * 0.03 * idleW;
       const spread = clamp(as, -0.35, 0.6) + 0.08 * stepAmt + idleArm + 0.15 * this.surprise.x;
       _e.set(clamp(swing - ap, -0.7, 0.7), 0, sgn * spread, "XYZ");
@@ -278,11 +311,14 @@ export class ChibiMotion {
 
     // 다리 IK: 발 궤적은 루트 공간에서 정한다. 디딤 구간은 이동 속도와 정확히 반대로 움직인다.
     root.updateMatrixWorld(true);
-    const travel = this.cycle * 0.56 * clamp(wb, 0, 1);
-    const lift = 0.034 * stepAmt;
+    // 위상이 이동 거리로 돌기 때문에, 움직이는 동안 디딤 구간 이동량이 duty·cycle 과 같아야 발이 미끄러지지 않는다.
+    // 걷기 시작(바닷가는 첫 프레임부터 전속력)·멈춤 때만 짧게 섞인다.
+    const strideMix = clamp(this.stride.step(speed > 0.02 ? 1 : 0, 6, 1, dt), 0, 1);
+    const travel = this.cycle * this.duty * strideMix;
+    const lift = (0.034 + 0.022 * runT) * stepAmt;
     for (const [s, off] of [["_L", 0], ["_R", 0.5]] as const) {
       let p = (this.phase + off) % 1;
-      const duty = 0.56;
+      const duty = this.duty;
       let dz = 0, dy = 0, toe = 0;
       if (p < duty) { const u = p / duty; dz = travel / 2 - u * travel; }
       else { p = (p - duty) / (1 - duty); const e = smooth(0, 1, p); dz = -travel / 2 + e * travel; dy = lift * Math.sin(Math.PI * p); toe = -0.35 * Math.sin(Math.PI * p) * stepAmt; }

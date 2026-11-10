@@ -10,7 +10,9 @@ import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, sus
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
 import { hourLabel, hourOverride, rainOverride } from "@/lib/beach/daylight";
 import { ONSEN_SEATS_PER_BATH } from "@/lib/beach/onsen-rest";
-import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, type BeachCharacter } from "@/lib/beach/appearance";
+import { BEACH_CHARACTERS, characterAfterEntry, characterSkin, savedCharacter, saveCharacter, savedChibi, saveChibi, type BeachCharacter } from "@/lib/beach/appearance";
+import { fetchMe } from "@/lib/auth";
+import type { ChibiPreview } from "@/lib/chibi/beach-preview";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
 import { IconBoat, IconCheck, IconChevronL, IconChevronR, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconSorowSmile, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
@@ -206,6 +208,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [view, setView] = useState<ViewMode>("first");
   const [character, setCharacter] = useState<BeachCharacter>("male");
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  // 관리자 미리보기: 내 화면에서만 내 캐릭터를 치비로 그린다. 방 서버에는 원래 캐릭터(skin)를 그대로 보낸다.
+  const [chibiAdmin, setChibiAdmin] = useState(false);
+  const [chibiOn, setChibiOn] = useState(false);
+  const [chibiBusy, setChibiBusy] = useState(false);
+  const chibiRef = useRef<ChibiPreview | null>(null);
+  const chibiWantedRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [restEnabled, setRestEnabled] = useState(false);
   const [bedEnabled, setBedEnabled] = useState(false);
@@ -240,6 +248,47 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
   useEffect(() => () => photo?.dispose(), [photo]);
   useEffect(() => () => window.cancelAnimationFrame(photoFocusFrameRef.current), []);
+
+  // 들어온 방의 계정이 관리자일 때만 치비 선택지를 보이고, 지난번에 켜 둔 상태를 되살린다
+  useEffect(() => {
+    if (phase !== "ready") return;
+    let alive = true;
+    void fetchMe().then((account) => {
+      const id = meRef.current?.id;
+      if (!alive || !id) return;
+      const admin = Boolean(account.admin && account.user?.id === id);
+      setChibiAdmin(admin);
+      setChibiOn(admin && savedChibi(id));
+    });
+    return () => { alive = false; };
+  }, [phase]);
+
+  // 켜면 치비를 (워커에서 한 번만) 빚어 엔진에 넘기고, 끄면 원래 아바타로 돌린다
+  useEffect(() => {
+    const wanted = chibiOn && chibiAdmin;
+    chibiWantedRef.current = wanted;
+    const engine = engineRef.current;
+    if (!wanted) { if (chibiRef.current) engine?.setChibiSelf(null); return; }
+    if (chibiRef.current) { engine?.setChibiSelf(chibiRef.current.character); return; }
+    let alive = true;
+    setChibiBusy(true);
+    import("@/lib/chibi/beach-preview")
+      .then((m) => m.createChibiPreview(1.35))
+      .then((preview) => {
+        if (!alive || chibiRef.current) { preview.dispose(); return; }
+        chibiRef.current = preview;
+        if (chibiWantedRef.current) engineRef.current?.setChibiSelf(preview.character);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setChibiOn(false);
+        showToast("치비를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.", { kind: "info" });
+      })
+      .finally(() => setChibiBusy(false));
+    return () => { alive = false; };
+  }, [chibiOn, chibiAdmin]);
+
+  useEffect(() => () => { chibiRef.current?.dispose(); chibiRef.current = null; }, []);
 
   const closePhoto = useCallback(() => {
     const visit = visitGenerationRef.current;
@@ -899,6 +948,8 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           },
         });
         engineRef.current = engine;
+        // 다시 들어와 엔진이 새로 생겨도 관리자 치비 미리보기를 이어 간다
+        if (chibiWantedRef.current && chibiRef.current) engine.setChibiSelf(chibiRef.current.character);
         setMusicControl(entered.musicControl === true);
         applyMusic(entered.music, entered.serverTime, true);
         if (mapId === "bamboo") applyFestival(engine, entered.festival, entered.serverTime ?? Date.now());
@@ -1650,6 +1701,18 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       </svg>
       <span>폭죽음</span><small>{fireworksMuted ? "꺼짐" : "켜짐"}</small>
     </button>;
+  /** 관리자 전용: 남자/여자 선택과 따로, 내 화면의 내 캐릭터만 치비로 바꾼다 */
+  const toggleChibi = () => {
+    const me = meRef.current;
+    if (!me || !chibiAdmin || chibiBusy) return;
+    const next = !chibiOn;
+    setChibiOn(next);
+    saveChibi(me.id, next);
+    if (next) engineRef.current?.setView("third");
+    setCharacterPickerOpen(false);
+    characterTriggerRef.current?.focus();
+    haptic();
+  };
   const toggleCharacterPicker = () => { haptic(); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); setCharacterPickerOpen((open) => !open); };
   const characterChoices = <div className={styles.characterChoices} role="group" aria-label="캐릭터 선택">
     {BEACH_CHARACTERS.map((option) => <button key={option.id} type="button" className={styles.characterChoice} aria-pressed={character === option.id} onClick={() => chooseCharacter(option.id)}>
@@ -1657,6 +1720,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       <span className={styles.characterLabel}>{option.label}</span>
       {character === option.id && <span className={styles.characterSelected} aria-hidden="true"><IconCheck /></span>}
     </button>)}
+    {chibiAdmin && <button type="button" className={styles.characterChoice} aria-pressed={chibiOn} aria-busy={chibiBusy} disabled={chibiBusy}
+      aria-label="치비 미리보기 (관리자, 내 화면에서만 보여요)" onClick={toggleChibi}>
+      <span className={styles.characterModel + " " + styles.chibiModel} aria-hidden="true" />
+      <span className={styles.characterLabel}>{chibiBusy ? "빚는 중…" : "치비 (나만 보기)"}</span>
+      {chibiOn && !chibiBusy && <span className={styles.characterSelected} aria-hidden="true"><IconCheck /></span>}
+    </button>}
   </div>;
   /** 방의 시간과 인원. 좁은 화면은 상단 가운데, 넓은 화면은 오른쪽 도구 묶음 맨 앞에 선다 */
   const statusPill = phase === "ready" && (timeLabel || count !== null) && <div className={styles.glass + " " + styles.status}>

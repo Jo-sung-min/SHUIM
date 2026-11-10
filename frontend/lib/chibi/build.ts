@@ -130,7 +130,7 @@ interface GeoData {
   index: Uint32Array;
   morphs: { name: string; array: Float32Array }[];
 }
-/** 워커에서 메인 스레드로 옮길 수 있는 순수 배열 묶음 */
+/** 메싱 결과: 순수 배열 묶음 (뼈대·지오메트리는 assembleChibi 가 만든다) */
 export interface ChibiData { body: GeoData; face: GeoData; ms: number }
 
 function toData(g: THREE.BufferGeometry): GeoData {
@@ -157,18 +157,11 @@ function fromData(d: GeoData): THREE.BufferGeometry {
   return g;
 }
 
-export function chibiTransferables(d: ChibiData): ArrayBuffer[] {
-  const out: ArrayBuffer[] = [];
-  for (const g of [d.body, d.face]) {
-    for (const a of Object.values(g.attributes)) out.push(a.array.buffer as ArrayBuffer);
-    out.push(g.index.buffer as ArrayBuffer);
-    for (const m of g.morphs) out.push(m.array.buffer as ArrayBuffer);
-  }
-  return out;
-}
-
-/** 무거운 부분(메싱·가중치·그림자 굽기). three 의 수학만 쓰므로 Web Worker 에서 돌 수 있다. */
-export function buildChibiData(opts: BuildOptions = {}): ChibiData {
+/**
+ * 무거운 부분(메싱·가중치·그림자 굽기)을 몇 단계로 나눈다. 단계마다 멈춰(yield) 브라우저가 한 번씩 숨을 쉬게 한다.
+ * (예전엔 Web Worker 로 돌렸지만, `new Worker(new URL(..., import.meta.url))` 가 Turbopack 프로덕션 빌드를 멈춰 세웠다.)
+ */
+function* buildChibiSteps(opts: BuildOptions = {}): Generator<void, ChibiData, void> {
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
   const coarse = opts.coarse ?? 1;
   const defs = chibiParts();
@@ -177,10 +170,13 @@ export function buildChibiData(opts: BuildOptions = {}): ChibiData {
     const fs = names.map(n => sdf.get(n)!);
     return (x: number, y: number, z: number) => { let d = Infinity; for (const f of fs) d = Math.min(d, f(x, y, z)); return d; };
   };
-  const parts = defs.map(p => meshPart(p, coarse));
+  const parts: PartMesh[] = [];
+  for (const p of defs) { parts.push(meshPart(p, coarse)); yield; }
   // 다른 덩어리 속에 완전히 묻힌 삼각형(머리카락 속 두개골 뒤, 몸통 속 옷깃 안쪽 등)은 보이지 않으니 버린다
   defs.forEach((p, i) => cullBuried(parts[i], union(defs.filter(o => o !== p).map(o => o.name)), 0.004));
+  yield;
   defs.forEach((p, i) => { if (p.cover.length) bakeCover(parts[i], union(p.cover), p.coverStrength, Math.max(1, (p.h * coarse) / 0.0115)); });
+  yield;
   const boneIndex = new Map(BONES.map((b, i) => [b.name, i]));
 
   // 합치기: 몸·옷깃·머리카락·앞머리·리본을 한 지오메트리로 (드로우 콜 1)
@@ -244,20 +240,22 @@ export function assembleChibi(data: ChibiData): ChibiBuild {
   };
 }
 
+/** 한 번에 끝까지 (테스트·노드용) */
+export function buildChibiData(opts: BuildOptions = {}): ChibiData {
+  const steps = buildChibiSteps(opts);
+  for (;;) { const r = steps.next(); if (r.done) return r.value; }
+}
+
 export function buildChibi(opts: BuildOptions = {}): ChibiBuild {
   return assembleChibi(buildChibiData(opts));
 }
 
-/** 워커에서 빌드하고, 워커를 못 쓰면 메인 스레드에서 빌드한다 */
-export function buildChibiAsync(): Promise<ChibiBuild> {
-  return new Promise(resolve => {
-    let worker: Worker | null = null;
-    const fallback = () => { worker?.terminate(); resolve(buildChibi()); };
-    try {
-      worker = new Worker(new URL("./chibi.worker.ts", import.meta.url), { type: "module" });
-      worker.onmessage = (e: MessageEvent<ChibiData>) => { worker!.terminate(); resolve(assembleChibi(e.data)); };
-      worker.onerror = fallback;
-      worker.postMessage({});
-    } catch { fallback(); }
-  });
+/** 브라우저용: 단계 사이마다 이벤트 루프에 양보해 화면이 길게 멈추지 않는다 */
+export async function buildChibiAsync(opts: BuildOptions = {}): Promise<ChibiBuild> {
+  const steps = buildChibiSteps(opts);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return assembleChibi(r.value);
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+  }
 }

@@ -38,9 +38,10 @@ function walkElements(tree, visit) {
 }
 
 /** Execute the real component and effects; only the renderer and external HTTP transport are replaced. */
-function harness({ sessionStorage = storage(), component = "scene", props = { communityId: "ours", mapId: "uyuni" } } = {}) {
+function harness({ sessionStorage = storage(), component = "scene", props = { communityId: "ours", mapId: "uyuni" }, admin = false } = {}) {
   let now = 1_700_000_000_000, nextTimer = 1, cursor = 0, dirty = true, mounted = false, tree;
   const slots = [], effects = [], pendingEffects = [], timers = new Map(), requests = [], engines = [], toasts = [], refs = new WeakMap();
+  const chibi = { created: 0, disposed: 0 };
   const document = Object.assign(eventTarget(), { hidden: false, visibilityState: "visible", body: { style: { overflow: "" } } });
   const localStorage = storage(), navigator = { onLine: true };
   const schedule = (fn, delay, interval = false) => { const id = nextTimer++; timers.set(id, { fn, at: now + delay, delay, interval }); return id; };
@@ -99,7 +100,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     start() { this.events.push(["start"]); }
     stop() { this.events.push(["stop"]); this.self.moving = false; this.transitionVersion++; }
     dispose() { this.events.push(["dispose"]); }
-    setInputPaused(value) { this.inputPaused = value; } setSkin() {} setHourOverride() {} resize() {} cancelAutoWalk() {}
+    setInputPaused(value) { this.inputPaused = value; } setSkin() {} setChibiSelf(character) { this.chibi = character; } setView(view) { this.camera.view = view; } setHourOverride() {} resize() {} cancelAutoWalk() {}
     setRainOverride(amount) { this.events.push(["rainOverride", amount]); }
     applyGardenMoments(events, serverTime) { this.events.push(["pond", plain(events), serverTime]); }
     uyuniMusicVolume = 25;
@@ -159,6 +160,8 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name.endsWith("/daylight")) return { hourLabel: () => "낮", hourOverride: () => null, rainOverride: () => null };
     if (name.endsWith("/assets")) return { assetCssUrl: () => "none" };
     if (name.endsWith("/routes")) return { route: path => path };
+    if (name.endsWith("/auth")) return { fetchMe: async () => ({ admin, user: admin ? { id: "user-1" } : null }) };
+    if (name.endsWith("/beach-preview")) return { createChibiPreview: async () => { chibi.created++; return { character: { name: "chibi" }, dispose() { chibi.disposed++; } }; } };
     if (name.endsWith("/toast")) return { showToast(message) { toasts.push(message); }, toastSuccess(message) { toasts.push(message); }, tick() {} };
     if (name.endsWith(".css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
     return new Proxy({ default: "section" }, { get: (object, key) => object[key] ?? "i" });
@@ -176,7 +179,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     while (pendingEffects.length) pendingEffects.shift()();
   }
   async function flush() { for (let i = 0; i < 20; i++) { await Promise.resolve(); render(); } }
-  return { requests, engines, toasts, document, window, navigator, sessionStorage, continuity, net,
+  return { requests, engines, toasts, document, window, navigator, sessionStorage, continuity, net, chibi,
     get tree() { return tree; }, get now() { return now; },
     async mount() { mounted = true; render(); await flush(); }, flush,
     async unmount() { mounted = false; for (const effect of effects) effect?.cleanup?.(); await flush(); },
@@ -746,4 +749,44 @@ test("cloud spa cannot claim unavailable or disabled places", async () => {
     assert.equal(of(h, "rest").length, 0); assert.equal(of(h, "tick").length, 0);
     await h.unmount();
   }
+});
+
+function chibiChoice(h) {
+  let found;
+  walkElements(h.tree, node => { if (String(node.props["aria-label"] ?? "").startsWith("치비 미리보기")) found = node; });
+  return found;
+}
+async function openCharacterPicker(h) {
+  let trigger;
+  walkElements(h.tree, node => {
+    if (node.props["aria-controls"] && React.Children.toArray(node.props.children).some(child => child?.props?.children === "내 캐릭터")) trigger = node;
+  });
+  assert.ok(trigger, "the character picker trigger is rendered");
+  trigger.props.onClick(); await h.flush();
+}
+
+test("only administrators can preview the chibi, and only on their own screen", async () => {
+  const member = harness(), memberEngine = await joined(member); await member.flush();
+  await openCharacterPicker(member);
+  assert.equal(chibiChoice(member), undefined, "ordinary members are not offered the preview");
+  assert.equal(memberEngine.chibi, undefined);
+  await member.unmount();
+
+  const h = harness({ admin: true }), engine = await joined(h); await h.flush();
+  await openCharacterPicker(h);
+  const choice = chibiChoice(h);
+  assert.ok(choice, "the administrator of this room sees the preview choice");
+  assert.equal(choice.props["aria-pressed"], false);
+  choice.props.onClick(); await h.flush(); await h.flush();
+  assert.equal(engine.chibi?.name, "chibi", "the engine draws the chibi for this screen");
+  assert.equal(h.chibi.created, 1);
+  assert.equal(h.window.localStorage.getItem("sorow:beach-chibi:v1:user-1"), "1");
+  const pose = of(h, "tick").at(-1);
+  if (pose) assert.notEqual(pose.body.character, "chibi", "the room server keeps the ordinary character");
+  await openCharacterPicker(h);
+  chibiChoice(h).props.onClick(); await h.flush();
+  assert.equal(engine.chibi, null, "turning it off restores the ordinary avatar");
+  assert.equal(h.window.localStorage.getItem("sorow:beach-chibi:v1:user-1"), null);
+  await h.unmount();
+  assert.equal(h.chibi.disposed, 1, "leaving the scene releases the preview's materials");
 });

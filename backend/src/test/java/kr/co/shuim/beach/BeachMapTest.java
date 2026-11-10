@@ -34,7 +34,7 @@ class BeachMapTest {
         service.tick(salt.ticket(), 0, -45, .5, true, null, null);
         service.tick(coast.ticket(), 0, -45, .5, true, null, null);
         assertEquals(-45, salt.z());
-        assertEquals(-1, coast.z());
+        assertEquals(BeachRoom.MIN_Z, coast.z());
         service.tick(salt.ticket(), 100, -100, .5, true, null, null);
         assertEquals(22, salt.x()); assertEquals(-50, salt.z());
         service.tick(salt.ticket(), Double.NaN, Double.NEGATIVE_INFINITY, .5, false, null, null);

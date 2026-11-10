@@ -155,6 +155,14 @@
 .characterChoice:active { transform:scale(.96); }
 .characterChoice:focus-visible { outline:3px solid #7e9b86; outline-offset:2px; }
 .characterLabel { display:flex; align-items:center; justify-content:center; min-height:18px; white-space:nowrap; }
+/* 관리자 치비 미리보기: 그림 파일 없이 금발·하늘색 원피스를 닮은 파스텔 아이콘 */
+.characterModel.chibiModel { background:
+  radial-gradient(circle at 50% 34%, #fde4d3 0 15%, transparent 15.5%),
+  radial-gradient(ellipse 34% 30% at 50% 30%, #f8dca6 0 99%, transparent 100%),
+  radial-gradient(ellipse 22% 19% at 50% 72%, #7fa6ee 0 99%, transparent 100%),
+  radial-gradient(ellipse 38% 40% at 50% 46%, #f8dca6 0 99%, transparent 100%),
+  radial-gradient(circle at 66% 16%, #6f9cec 0 6%, transparent 6.5%); }
+.characterChoice[aria-busy="true"] { cursor:progress; opacity:.75; }
 .characterSelected { position:absolute; top:7px; right:7px; display:grid; place-items:center; width:20px; height:20px; border:1px solid #ffffff70; border-radius:50%; background:#66866a; color:#fff; text-shadow:none; }
 .characterChoice svg { width:13px; height:13px; }
 .characterSprite, .characterModel { display:block; width:72px; height:104px; flex:none; }

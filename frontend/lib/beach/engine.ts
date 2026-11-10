@@ -50,6 +50,9 @@ import { FireworkAudio } from "./firework-audio";
 import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-avatar";
+import type { ChibiCharacter } from "../chibi/character";
+import { BeachUltraSea, SAND_SHORE_ALBEDO, SAND_SHORE_CAUSTICS, SAND_SHORE_PARS, ULTRA_RADIUS } from "./ultra-sea";
+import { REFRACT_LAYER, beachSandGeometry, sandHeight } from "./shore-terrain";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
@@ -249,6 +252,7 @@ const SEA_FRAG = `
 uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uFoam; uniform vec3 uSkyRef;
 uniform vec3 uLightDir; uniform vec3 uLightColor; uniform float uSpec; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uCamPos;
 uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uLantern; uniform float uDeepNight;
+uniform float uUltraRadius;
 varying vec3 vWorld;
 ${NOISE_GLSL}
 float waves(vec2 p, float t) {
@@ -258,6 +262,7 @@ float waves(vec2 p, float t) {
     + noise(p * 9.1 - t * 0.23) * 0.025;
 }
 void main() {
+  if (length(vWorld.xz) < uUltraRadius - 2.0) discard;
   vec2 p = vWorld.xz; float t = uTime;
   float dist = distance(uCamPos, vWorld);
   float w = waves(p, t);
@@ -367,6 +372,10 @@ export class BeachEngine {
   private skyMat!: THREE.ShaderMaterial;
   private lastStarView: THREE.Quaternion | null = null;
   private seaMat!: THREE.ShaderMaterial;
+  /** 만 안쪽 가까운 바다 (Ultra Water). 지원하지 않는 기기·낮은 화질에선 원래 바다만 */
+  private ultraSea: BeachUltraSea | null = null;
+  /** 물에 들어간 사람은 굴절 패스에도 그려 물속 다리가 비친다 */
+  private wading = new WeakMap<THREE.Object3D, boolean>();
   private sandMat!: THREE.MeshStandardMaterial;
   private photo: THREE.Texture | null = null;
   private assetLoads: Promise<void>[] = [];
@@ -439,6 +448,8 @@ export class BeachEngine {
   private fxTex!: Record<FxNode["kind"], THREE.Texture>;
   /** 3인칭일 때 보이는 내 캐릭터 */
   private selfNode: (AvatarNode & { animT: number }) | null = null;
+  /** 관리자 미리보기: 내 화면에서만 내 캐릭터를 치비로 그린다 (방 서버에는 원래 캐릭터 그대로) */
+  private chibiSelf: ChibiCharacter | null = null;
   private view: ViewMode;
   private skin: number;
   private followCam = new THREE.Vector3();
@@ -577,6 +588,8 @@ export class BeachEngine {
     } else {
       this.buildGround();
       this.cove = new Cove(this.scene, this.obstacles);
+      const ridge = this.scene.getObjectByName("cove-original-ridge");
+      if (this.ultraSea && ridge && !this.mobile) this.ultraSea.addRefracted(ridge);
     }
     this.avatarModels = new BeachAvatarModels();
     this.femaleAvatarModels = new BeachAvatarModels("female");
@@ -672,6 +685,15 @@ export class BeachEngine {
   }
 
   private buildGround() {
+    try {
+      if (BeachUltraSea.supported(this.renderer)) {
+        this.ultraSea = new BeachUltraSea(this.renderer, this.scene, { photo: this.photo, photoTint: this.skyMat.uniforms.uPhotoTint, tier: this.mobile ? "mobile" : "high", skyFragment: SKY_FRAGMENT, skyUniforms: this.skyMat.uniforms });
+      }
+    } catch (error) {
+      console.warn("[beach] 가까운 바다를 시작하지 못해 원래 바다로 그립니다", error);
+      this.ultraSea = null;
+    }
+    const ultra = this.ultraSea;
     this.sandMat = new THREE.MeshStandardMaterial({
       map: this.loadEnvironmentTexture("/beach/real/white-sand-v1.webp", true, [120, 75]),
       normalMap: this.loadEnvironmentTexture("/beach/real/sand-normal.jpg", false, [120, 75]),
@@ -682,11 +704,21 @@ export class BeachEngine {
       shader.vertexShader = "varying vec3 vCoastWorld;\n" + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvCoastWorld = (modelMatrix * vec4(position, 1.0)).xyz;");
       shader.fragmentShader = "varying vec3 vCoastWorld;\n" + shader.fragmentShader;
+      if (ultra) {
+        // 가까운 바다와 같은 해안 지도·시간으로: 물이 모래 위로 찰랑 올라왔다 빠지는 막, 젖은 자국, 물속 코스틱
+        Object.assign(shader.uniforms, ultra.sandUniforms);
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", "#include <common>\n" + SAND_SHORE_PARS)
+          .replace("#include <map_fragment>", "#include <map_fragment>\n" + SAND_SHORE_ALBEDO)
+          .replace("#include <lights_fragment_end>", "#include <lights_fragment_end>\n" + SAND_SHORE_CAUSTICS);
+        return;
+      }
       shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", "#include <map_fragment>\nfloat wetSand = 1.0 - smoothstep(-0.8, 2.8, vCoastWorld.z);\ndiffuseColor.rgb *= 1.0 - wetSand * 0.3;");
     };
-    const sand = new THREE.Mesh(new THREE.PlaneGeometry(240, 150), this.sandMat);
-    sand.rotation.x = -Math.PI / 2;
-    sand.position.set(0, 0, 72); // Shoreline stays at z=-3; the white sand reaches the distant ridge.
+    // 걷는 모래(z ≥ -1.2)는 그대로, 그 앞은 물가로 기울어 얕은 바다 바닥으로 이어진다 (무늬 좌표는 예전 평면과 같다).
+    // 사람이 그 경사를 따라 물에 걸어 들어간다 (deckHeight).
+    const sand = new THREE.Mesh(beachSandGeometry(), this.sandMat);
+    ultra?.addRefracted(sand);
     sand.renderOrder = 0;
     sand.receiveShadow = true;
     this.scene.add(sand);
@@ -698,6 +730,7 @@ export class BeachEngine {
         uFog: { value: new THREE.Vector3() }, uFogNear: { value: 28 }, uFogFar: { value: 150 }, uCamPos: { value: new THREE.Vector3() },
         uPhoto: { value: this.photo }, uPhotoTint: this.skyMat.uniforms.uPhotoTint, uLantern: this.skyMat.uniforms.uLantern,
         uDeepNight: this.skyMat.uniforms.uDeepNight,
+        uUltraRadius: { value: ultra ? ULTRA_RADIUS : 0 },
       },
       vertexShader: WORLD_VERT,
       fragmentShader: SEA_FRAG,
@@ -765,6 +798,15 @@ export class BeachEngine {
 
   private baseAvatarPool(kind: AvatarKind) {
     return kind === "female" ? this.femaleAvatarModels : this.avatarModels;
+  }
+
+  /** 물가 안쪽으로 들어간 사람만 굴절 레이어에 (바뀔 때만 훑는다) */
+  private markWading(root: THREE.Object3D | undefined, z: number) {
+    if (!root || !this.ultraSea) return;
+    const wading = z < -0.6;
+    if (this.wading.get(root) === wading) return;
+    this.wading.set(root, wading);
+    root.traverse((o) => { if (wading) o.layers.enable(REFRACT_LAYER); else o.layers.disable(REFRACT_LAYER); });
   }
 
   private syncAvatar(node: AvatarNode, skin: number, x: number, z: number) {
@@ -857,6 +899,24 @@ export class BeachEngine {
     this.setView("third");
     this.orbitYaw = this.self.yaw + Math.PI;
     this.followSnap = true;
+  }
+
+  /**
+   * 관리자 미리보기용 치비. 내 화면에서만 원래 아바타 대신 그리고, 위치·좌석·제스처는 원래 아바타가 그대로 맡는다.
+   * 앉거나 누운 자세는 아직 치비 포즈가 없어 원래 아바타로 돌아간다. 해제(null)하면 원래 아바타만 남는다.
+   * 지오메트리·재질은 넘겨준 쪽이 정리한다.
+   */
+  setChibiSelf(character: ChibiCharacter | null) {
+    if (this.disposed || character === this.chibiSelf) return;
+    this.chibiSelf?.object.removeFromParent();
+    this.chibiSelf = character;
+    if (character) {
+      character.resetFollow();
+      character.object.visible = false;
+      const t = this.daylight.tint;
+      character.setTint(t[0], t[1], t[2]);
+      this.scene.add(character.object);
+    }
   }
 
   /** Stable IDs select either model or either atlas row without rejoining the room. */
@@ -1559,6 +1619,7 @@ export class BeachEngine {
       (s.uFog.value as THREE.Vector3).set(...d.fog);
       s.uFogNear.value = d.fogNear;
       s.uFogFar.value = d.fogFar;
+      this.ultraSea?.setDaylight(sunUp ? d.sun : d.moon, sunUp ? d.sunColor : moonLight, this.skyMat.uniforms.uPhotoTint.value as THREE.Vector3, sunUp);
     }
 
     const fog = this.scene.fog as THREE.Fog;
@@ -1571,6 +1632,8 @@ export class BeachEngine {
     for (const m of this.tinted) (m as THREE.SpriteMaterial).color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
     for (const p of this.players.values()) p.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
     this.selfNode?.mat.color.setRGB(d.tint[0], d.tint[1], d.tint[2], THREE.SRGBColorSpace);
+    if (this.activeBunkerId) this.chibiSelf?.setTint(1, 1, 1);
+    else this.chibiSelf?.setTint(d.tint[0], d.tint[1], d.tint[2]);
     if (this.activeBunkerId) {
       this.selfNode?.mat.color.setHex(0xffffff);
       for (const p of this.players.values()) p.mat.color.setHex(0xffffff);
@@ -2118,6 +2181,10 @@ export class BeachEngine {
     this.cloudSpa?.setQuality(level === "low");
     this.baikal?.setQuality(level === "low");
     this.uyuniMoments?.setQuality(level);
+    if (this.ultraSea) {
+      this.ultraSea.enabled = level === "high";
+      if (this.seaMat) this.seaMat.uniforms.uUltraRadius.value = this.ultraSea.enabled ? ULTRA_RADIUS : 0;
+    }
     this.resize();
     this.handlers.onQuality?.(level);
   }
@@ -2159,6 +2226,7 @@ export class BeachEngine {
       this.fireworkAudio?.updateGardenSound(insideHall(this.self.x, this.self.z), this.rainNow, dt);
       this.garden.renderReflection(this.renderer, this.camera);
     }
+    if (this.ultraSea?.enabled && !this.activeBunkerId) this.ultraSea.prepare(dt, this.camera);
     this.drawScene();
   }
 
@@ -2584,14 +2652,34 @@ export class BeachEngine {
     return true;
   }
 
-  /** First-person hides both renderers; the sprite remains a position/fallback anchor. */
   private updateSelfAvatar(dt: number) {
+    this.updateSelfAvatarBase(dt);
+    const chibi = this.chibiSelf, n = this.selfNode;
+    if (!chibi || !n) return;
+    const tooClose = (this.activeBunkerId || this.cloudSpa || this.baikal) && Math.hypot(this.camera.position.x - this.self.x, this.camera.position.z - this.self.z) < 1.35;
+    const shown = this.view === "third" && !tooClose;
+    const posed = Boolean(this.floatingPose(this.skyRest) || this.fixedSeat || this.restSeat);
+    const use = shown && !posed;
+    chibi.object.visible = use;
+    if (!use) { chibi.resetFollow(); return; }
+    if (n.avatar) n.avatar.root.visible = false;
+    n.sprite.visible = false;
+    n.shadow.visible = false;
+    const y = this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0);
+    // 바닷가의 yaw 는 (-sin, -cos) 을 보고, 치비는 (sin, cos) 을 본다
+    chibi.follow(dt, this.self.x, y, this.self.z, this.self.yaw + Math.PI, this.self.moving);
+    this.markWading(chibi.object, this.self.z);
+  }
+
+  /** First-person hides both renderers; the sprite remains a position/fallback anchor. */
+  private updateSelfAvatarBase(dt: number) {
     const n = this.selfNode;
     if (!n) return;
     // In a narrow indoor orbit the character must not fill the lens when a wall or ladder pulls it forward.
     const tooClose = (this.activeBunkerId || this.cloudSpa || this.baikal) && Math.hypot(this.camera.position.x - this.self.x, this.camera.position.z - this.self.z) < 1.35;
     const shown = this.view === "third" && !tooClose;
     const avatar = this.syncAvatar(n, this.skin, this.self.x, this.self.z);
+    this.markWading(avatar?.root, this.self.z);
     const lying = this.floatingPose(this.skyRest);
     avatar?.update(dt, {
       ...this.self, y: this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0), visible: shown, lying,
@@ -2699,6 +2787,7 @@ export class BeachEngine {
     if (ledge !== null) return ledge;
     const spring = hotSpringFloorHeight(x, z);
     if (spring !== null) return spring;
+    if (this.mapId === "beach" && z < 0) return sandHeight(z);
     return SHELTERS.find((s) => Math.abs(x - s.x) <= s.width / 2 && Math.abs(z - s.z) <= s.depth / 2)?.floorY ?? 0;
   }
 
@@ -2803,6 +2892,7 @@ export class BeachEngine {
       const deck = this.deckHeight(p.cur.x, p.cur.z);
       if (!resting) p.sprite.position.set(p.cur.x, onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : deck + hop, p.cur.z);
       const avatar = this.syncAvatar(p, p.data.skin, p.cur.x, p.cur.z);
+      this.markWading(avatar?.root, p.cur.z);
       p.sprite.visible = !avatar;
       this.pixelDepth?.update(p.sprite, p.data.skin, Boolean(resting) && p.sprite.visible);
       avatar?.update(dt, { ...p.cur, y: deck + hop, moving: walking, visible: true, lying: resting, seated });
@@ -2897,6 +2987,10 @@ export class BeachEngine {
     window.removeEventListener("blur", this.onBlur);
     for (const p of this.players.values()) this.removePlayer(p);
     this.players.clear();
+    this.chibiSelf?.object.removeFromParent();
+    this.chibiSelf = null;
+    this.ultraSea?.dispose();
+    this.ultraSea = null;
     if (this.selfNode) {
       this.pixelDepth?.remove(this.selfNode.sprite);
       this.selfNode.avatar?.dispose();
