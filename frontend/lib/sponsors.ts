@@ -56,7 +56,7 @@ export const fmtSponsorWon = (won: number) => won >= 10_000 && won % 10_000 === 
 /** "+" 카드·후원 페이지의 문의 메일. 제목·본문 템플릿을 넣어 담당자가 바로 답할 수 있게 한다. */
 export function sponsorInquiryMailto(contact: SponsorContact, company = ""): string {
   const subject = `[소로우 후원 배너 문의] ${company || "기업명"}`;
-  const body = ["기업명: " + company, "담당자·연락처: ", "홈페이지 링크: ", "희망 게시 시작일: ", "한 줄 소개(40자 이내): ", "", `${contact.priceLabel} · 로고는 답장에 첨부해 주세요.`].join("\n");
+  const body = ["기업명: " + company, "담당자·연락처: ", "홈페이지 링크: ", "희망 게시 시작일: ", "한 줄 소개(40자 이내): ", "", `${contact.priceLabel} · 액자에 걸 대표 그림(정사각형 사진이나 로고)은 답장에 첨부해 주세요.`].join("\n");
   return `mailto:${contact.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 

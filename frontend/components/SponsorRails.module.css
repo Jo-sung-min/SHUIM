@@ -1,32 +1,117 @@
-/* PC 양옆 후원 배너 열: 앱 기둥(480px) 바깥에 고정, 리퀴드 글래스 토큰(--lg-*)으로만 칠한다. 1024px 미만과 미니앱에서는 없다. */
-.rail { position: fixed; top: 24px; bottom: 24px; z-index: 5; display: none; flex-direction: column; gap: 12px; width: 168px; }
+/*
+ * PC 양옆 후원 액자 열: 앱 기둥(480px) 바깥에 고정. 1024px 미만과 미니앱에서는 없다.
+ * 액자 = 리퀴드 글래스 테(--lg-*) + 꽉 찬 그림 창 + 아래 명패(기업명·한 줄 소개). 라이트/나이트는 토큰만으로 따라간다.
+ * 열 높이를 넘으면 액자가 함께 줄고(그림 창이 낮아지며 object-fit 으로 잘림), 명패는 줄지 않는다.
+ */
+.rail {
+  --rail-w: clamp(168px, calc((100vw - var(--app-w)) / 2 - 104px), 188px);
+  position: fixed; top: 24px; bottom: 24px; z-index: 5; display: none; flex-direction: column; gap: 14px; width: var(--rail-w);
+}
 .rail[data-side="left"] { right: calc(50% + var(--app-w) / 2 + 24px); }
 .rail[data-side="right"] { left: calc(50% + var(--app-w) / 2 + 24px); }
 @media (min-width: 1024px) { .rail { display: flex; } }
+/* 낮은 화면(노트북 등): 여백과 소개 줄을 줄여 그림 창 높이를 지킨다 */
+@media (max-height: 780px) {
+  .rail { top: 16px; bottom: 16px; gap: 10px; }
+  .rail .label { padding-top: 8px; }
+  .rail .tagline { -webkit-line-clamp: 1; }
+}
 
+/* ---------- 액자 테 ---------- */
 .card {
-  display: grid; justify-items: center; gap: 8px; min-width: 0; padding: 16px 14px 15px; border-radius: 20px;
+  position: relative; display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; width: 100%;
+  padding: 7px; border-radius: 20px; margin: 0;
   background-color: var(--lg-fill); background-image: var(--lg-sheen); border: 1px solid var(--lg-line);
   box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow);
   -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
-  color: var(--text); text-align: center; text-decoration: none; font: inherit; cursor: pointer;
-  transition: transform var(--dur) var(--ease), background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  color: var(--text); text-align: left; text-decoration: none; font: inherit; cursor: pointer;
+  transition: transform var(--dur-slow) var(--ease), background-color var(--dur) var(--ease), box-shadow var(--dur-slow) var(--ease);
 }
-.card:hover { transform: translateY(-2px); background-color: var(--lg-fill-strong); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow-float); }
-.card:active { transform: translateY(0) scale(.98); }
-.card:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
-.badge { align-self: start; justify-self: start; font-size: 10px; font-weight: 700; letter-spacing: .12em; color: var(--text-3); }
-.logo { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; overflow: hidden; background: var(--surface); border: 1px solid var(--lg-line); box-shadow: inset 0 1px 0 var(--lg-rim); color: var(--accent); font-size: 22px; font-weight: 800; }
-.logo img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; font-size: 13px; font-weight: 750; line-height: 1.35; letter-spacing: -.01em; overflow-wrap: anywhere; }
-.tagline { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; color: var(--text-2); font-size: 11.5px; line-height: 1.5; overflow-wrap: anywhere; word-break: keep-all; }
+.card:hover { transform: translateY(-3px); background-color: var(--lg-fill-strong); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow-float); }
+.card:active { transform: translateY(0) scale(.985); }
+.card:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; }
 
-.plus { border-style: dashed; border-color: var(--border-strong); background-image: none; background-color: color-mix(in srgb, var(--lg-fill) 60%, transparent); }
-.plus:hover { border-style: solid; }
-.plusMark { display: grid; place-items: center; width: 44px; height: 44px; margin-top: 4px; border-radius: 50%; background: var(--lg-lens); color: var(--text-2); box-shadow: inset 0 1px 0 var(--lg-rim); }
-.plusMark svg { width: 22px; height: 22px; }
-.plus .title { color: var(--text-2); }
+/* ---------- 그림 창 ---------- */
+.art {
+  position: relative; display: grid; place-items: center; flex: 1 1 auto; min-height: 64px; aspect-ratio: 1;
+  overflow: hidden; border-radius: 13px; isolation: isolate; container-type: size;
+  background: var(--surface-2);
+  /* 테 안쪽에 걸린 작품처럼: 아주 얕은 그림자로 매트 위에 살짝 뜬다 */
+  box-shadow: 0 1px 1.5px rgba(12, 12, 24, .1), 0 10px 18px -12px rgba(12, 12, 30, .5);
+}
+/* 그림 가장자리의 머리카락 선 + 위쪽 유리 반사 */
+.art::after {
+  content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+.art img, .initial { transition: transform 700ms var(--ease); }
+.art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card:hover .art img, .card:hover .initial { transform: scale(1.045); }
 
+/* 광고 표시: 그림 위 왼쪽 위의 작은 유리 알약 */
+.badge {
+  position: absolute; top: 7px; left: 7px; z-index: 4; padding: 3px 7px 3.5px; border-radius: 999px;
+  background: rgba(16, 16, 22, .34); box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .28);
+  -webkit-backdrop-filter: blur(10px) saturate(160%); backdrop-filter: blur(10px) saturate(160%);
+  color: #fff; font-size: 10px; font-weight: 700; line-height: 1.2; letter-spacing: .06em;
+}
+
+/* ---------- 그림이 없을 때: 이름 첫 글자로 그린 추상화 (그림이 있을 땐 불러오는 동안의 바탕) ---------- */
+.art[data-tone="0"] { --a: #b7a6f1; --b: #f6cfd9; --c: #7f6ed8; } /* 라일락 노을 */
+.art[data-tone="1"] { --a: #8cc4bd; --b: #e4f0dc; --c: #4f8f8c; } /* 바다 유리 */
+.art[data-tone="2"] { --a: #f1ad95; --b: #f9e4c4; --c: #cf7c6c; } /* 복숭아 저녁 */
+.art[data-tone="3"] { --a: #7183c2; --b: #cdd5f3; --c: #3f4f93; } /* 먹빛 새벽 */
+.art[data-tone="4"] { --a: #a4bc90; --b: #eef0d4; --c: #6f8c64; } /* 세이지 들판 */
+.art[data-tone="5"] { --a: #dba2b4; --b: #f8e0d6; --c: #b0708a; } /* 장밋빛 노을 */
+.art[data-tone] {
+  background:
+    /* 테마 베일: 라이트에선 살짝 밝게, 나이트에선 살짝 어둡게 가라앉힌다 */
+    linear-gradient(color-mix(in srgb, var(--surface) 14%, transparent), color-mix(in srgb, var(--surface) 14%, transparent)),
+    radial-gradient(64% 56% at 80% 16%, rgba(255, 255, 255, .62), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(95% 85% at 4% 104%, var(--c), transparent 68%),
+    linear-gradient(158deg, var(--a), var(--b));
+}
+/* 종이 결 */
+.tone::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .32; mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.initial {
+  position: relative; z-index: 2; color: rgba(255, 255, 255, .96); font-size: clamp(28px, min(40cqi, 56cqh), 76px); font-weight: 250; line-height: 1;
+  letter-spacing: -.04em; text-shadow: 0 2px 18px rgba(30, 20, 60, .18), 0 1px 1px rgba(30, 20, 60, .08);
+}
+
+/* ---------- 명패 ---------- */
+.label { display: grid; gap: 3px; flex: none; min-width: 0; padding: 10px 6px 5px; }
+.title { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 13.5px; font-weight: 750; line-height: 1.3; letter-spacing: -.015em; }
+.name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.out { flex: none; width: 13px; height: 13px; margin-left: auto; color: var(--text-3); transition: transform var(--dur) var(--ease), color var(--dur) var(--ease); }
+.card:hover .out { color: var(--text); transform: translate(1px, -1px); }
+.tagline {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%;
+  color: var(--text-2); font-size: 11.5px; line-height: 1.5; overflow-wrap: anywhere; word-break: keep-all;
+}
+
+/* ---------- 빈 액자 ("+") ---------- */
+.plus { flex-shrink: 3; background-color: color-mix(in srgb, var(--lg-fill) 72%, transparent); }
+.vacant {
+  align-content: center; gap: 9px;
+  background: radial-gradient(80% 70% at 50% 38%, var(--lg-fill-strong), transparent 75%), var(--lg-lens);
+  box-shadow: inset 0 1px 3px rgba(12, 12, 24, .08);
+}
+.vacant::after { inset: 7px; border-radius: 8px; box-shadow: none; border: 1.5px dashed color-mix(in srgb, var(--text) 16%, transparent); }
+.plusMark {
+  display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; justify-self: center;
+  background: var(--lg-fill-strong); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow); color: var(--text-2);
+  transition: transform var(--dur-slow) var(--ease), color var(--dur) var(--ease);
+}
+.plusMark svg { width: 20px; height: 20px; }
+.plus:hover .plusMark { transform: scale(1.07); color: var(--accent); }
+.vacantNote { color: var(--text-3); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; }
+.plus .name { color: var(--text-2); }
+.plus:hover .name { color: var(--text); }
+
+/* ---------- 안내 시트 ---------- */
 .terms { display: grid; gap: 10px; margin: 0 0 var(--sp-2); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 14px; line-height: 1.6; }
 .terms div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 8px; }
 .terms dt { color: var(--text-2); font-weight: 600; }
@@ -36,5 +121,11 @@
 .more svg { width: 14px; height: 14px; }
 .more:hover { color: var(--text); }
 
-@media (prefers-reduced-transparency: reduce) { .card { -webkit-backdrop-filter: none; backdrop-filter: none; background-color: var(--surface); } }
-@media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover, .card:active { transform: none; } }
+@media (prefers-reduced-transparency: reduce) {
+  .card { -webkit-backdrop-filter: none; backdrop-filter: none; background-color: var(--surface); }
+  .badge { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(16, 16, 22, .62); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .art img, .initial, .plusMark, .out { transition: none; }
+  .card:hover, .card:active, .card:hover .art img, .card:hover .initial, .plus:hover .plusMark { transform: none; }
+}

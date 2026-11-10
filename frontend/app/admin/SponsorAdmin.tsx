@@ -211,7 +211,7 @@ function BannerForm({ banner, sponsors, nextPosition, busy, onCancel, onSubmit }
         <input id={`${prefix}-tagline`} value={tagline} maxLength={TAGLINE_MAX} placeholder="카드에 두 줄까지 보여요" onChange={(event) => setTagline(event.target.value)} /></div>
       <div className="field"><label htmlFor={`${prefix}-link`}>링크</label>
         <input id={`${prefix}-link`} type="url" inputMode="url" value={linkUrl} placeholder="https://" onChange={(event) => setLinkUrl(event.target.value)} /></div>
-      <ImageField id={`${prefix}-image`} label="이미지 · 로고" hint="정사각형 사진을 추천해요. 384×384 로 줄여 저장해요." current={banner ? bannerImageHref(banner) : null} draft={image} busy={busy} onDraft={setImage} />
+      <ImageField id={`${prefix}-image`} label="대표 그림 (액자)" hint="PC 양옆 액자에 꽉 차게 걸려요. 정사각형으로 잘라 384×384 로 저장하고, 없으면 이름 첫 글자 그림이 걸려요." current={banner ? bannerImageHref(banner) : null} draft={image} busy={busy} onDraft={setImage} />
       <div className={styles.row}>
         <div className="field"><label htmlFor={`${prefix}-starts`}>게시 시작</label><input id={`${prefix}-starts`} type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></div>
         <div className="field"><label htmlFor={`${prefix}-ends`}>게시 종료</label><input id={`${prefix}-ends`} type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></div>
