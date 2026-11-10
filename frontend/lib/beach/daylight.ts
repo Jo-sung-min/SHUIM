@@ -186,6 +186,16 @@ const UYUNI_TWILIGHT_KEYS: [number, Key][] = [
   [20, daylightAt(20)],
 ];
 
+/**
+ * 바닷가의 달은 밤새 바다 정면(−z) 위 낮게(약 14°) 떠 있다: 물에 비친 달빛 길이 바다 한가운데로 곧게 내려온다.
+ * (하늘을 가로지르는 달은 옆으로 치우치거나 너무 높아 비친 모습이 화면 밖으로 나갔다)
+ */
+export const BEACH_MOON: Vec3 = normalize([0, Math.sin(0.24), -Math.cos(0.24)]);
+
+export function beachDaylightAt(hourIn: number): Daylight {
+  return { ...daylightAt(hourIn), moon: BEACH_MOON };
+}
+
 /** 우유니의 주황빛 잔광과 첫 별. 낮·새벽·20시 이후의 밤은 기존 팔레트를 그대로 쓴다. */
 export function uyuniDaylightAt(hourIn: number): Daylight {
   const base = daylightAt(hourIn);

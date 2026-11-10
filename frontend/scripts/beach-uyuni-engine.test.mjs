@@ -21,7 +21,7 @@ const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["cre
 const huts = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "bedSlot", "claimedBedSlot"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls", "findWalkingPath", "findClearApproach"]);
-const daylight = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "uyuniDaylightAt", "cloudSpaDaylightAt", "baikalDaylightAt"]);
+const daylight = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "beachDaylightAt", "BEACH_MOON", "uyuniDaylightAt", "cloudSpaDaylightAt", "baikalDaylightAt"]);
 const sky = await load("../lib/beach/sky-shader.ts", {}, ["SKY_FRAGMENT", "SKY_UNIFORMS", "SKY_FUNCTIONS"]);
 const coast = await load("../lib/beach/uyuni-coast.ts", {}, ["UYUNI_COAST_FUNCTIONS"]);
 const uyuniSky = await load("../lib/beach/uyuni-shader.ts", { ...sky, ...coast }, ["UYUNI_SKY_FRAGMENT"]);
@@ -161,7 +161,7 @@ test("each confirmed map launches the grand show on its own stage", () => {
 
 test("Uyuni uses its sunset palette for manual selection and periodic clock updates while beach stays unchanged", () => {
   for (const mapId of ["uyuni", "beach"]) {
-    const expected = mapId === "uyuni" ? daylight.uyuniDaylightAt : daylight.daylightAt;
+    const expected = mapId === "uyuni" ? daylight.uyuniDaylightAt : daylight.beachDaylightAt;
     const engine = Object.assign(Object.create(BeachEngine.prototype), {
       mapId, hourOverride: 18, quality: "high", qualityWarmupUntil: Infinity, lastDaylightAt: -Infinity,
       lastRender: 0, time: 0, clock: { update() {}, getDelta: () => 0.016 },
@@ -176,8 +176,19 @@ test("Uyuni uses its sunset palette for manual selection and periodic clock upda
     engine.frame();
     assert.deepEqual(engine.daylightNow, expected(19), "natural-time refresh uses the same map palette");
     engine.setHourOverride(20);
-    assert.deepEqual(engine.daylightNow, daylight.daylightAt(20), "both maps retain the original full night");
+    assert.deepEqual(engine.daylightNow, mapId === "uyuni" ? daylight.daylightAt(20) : daylight.beachDaylightAt(20), "both maps retain the original full night");
   }
+});
+
+test("the beach moon hangs low straight out to sea, so its reflection runs down the middle of the water", () => {
+  for (const hour of [20, 22, 0, 3]) {
+    const beach = daylight.beachDaylightAt(hour), base = daylight.daylightAt(hour);
+    assert.equal(JSON.stringify(beach.moon), JSON.stringify(daylight.BEACH_MOON));
+    assert.equal(JSON.stringify({ ...beach, moon: base.moon }), JSON.stringify(base), "only the moon moves");
+  }
+  const [x, y, z] = daylight.BEACH_MOON;
+  assert.equal(x, 0);
+  assert.ok(z < -0.9 && y > 0.15 && y < 0.35);
 });
 
 test("Uyuni sky requests no panorama texture while the beach retains and shares its existing photo", () => {

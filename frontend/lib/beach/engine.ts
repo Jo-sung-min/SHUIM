@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import { assetLoader, assetUrl } from "../assets";
 import { CHAR_ANIM, CHAR_ATLAS, CHAR_VIEW, PROP, PROPS_ATLAS, type PropName } from "./atlas";
-import { type Daylight, baikalDaylightAt, bambooDaylightAt, bambooSunsetAmount, cloudSpaDaylightAt, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
+import { type Daylight, baikalDaylightAt, bambooDaylightAt, bambooSunsetAmount, beachDaylightAt, cloudSpaDaylightAt, daylightAt, gardenDaylightAt, uyuniDaylightAt } from "./daylight";
 import { CAMPFIRE, Cove } from "./cove";
 import { SHELTERS, SHELTER_SEATS, SHELTER_COLLIDERS, BED_CAPACITY, bedSlot, claimedBedSlot, type BedState } from "./shelters";
 import { HOT_SPRING, HOT_SPRING_COLLIDERS, hotSpringBathDistance, hotSpringBathIndex, hotSpringFloorHeight, hotSpringCeilingHeight, hotSpringInWater } from "./hot-spring";
@@ -1589,7 +1589,7 @@ export class BeachEngine {
   }
 
   private mapDaylight(): Daylight {
-    return (this.mapId === "baikal" ? baikalDaylightAt : this.mapId === "cloudspa" ? cloudSpaDaylightAt : this.mapId === "uyuni" ? uyuniDaylightAt : this.mapId === "bamboo" ? bambooDaylightAt : this.mapId === "garden" ? gardenDaylightAt : daylightAt)(this.hour());
+    return (this.mapId === "baikal" ? baikalDaylightAt : this.mapId === "cloudspa" ? cloudSpaDaylightAt : this.mapId === "uyuni" ? uyuniDaylightAt : this.mapId === "bamboo" ? bambooDaylightAt : this.mapId === "garden" ? gardenDaylightAt : this.mapId === "beach" ? beachDaylightAt : daylightAt)(this.hour());
   }
 
   get daylightNow() {
