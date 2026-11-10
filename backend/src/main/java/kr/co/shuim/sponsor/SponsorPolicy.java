@@ -14,7 +14,8 @@ public final class SponsorPolicy {
 
     /** 한 회원이 하루(Asia/Seoul)에 멋져요로 받을 수 있는 이용권 수 */
     public static final int DAILY_CHEERS = 3;
-    public static final int SLOTS_PER_SIDE = 4;
+    /** PC 양옆 후원 액자 칸 수(한쪽). 프론트는 열 높이를 이 수로 나눠 한 화면에 다 보인다 */
+    public static final int SLOTS_PER_SIDE = 5;
     /** 후원 1,000원 = 폭죽 1개 */
     public static final long WON_PER_FIREWORK = 1_000L;
     public static final long MAX_CONTRIBUTION_WON = 100_000_000L;

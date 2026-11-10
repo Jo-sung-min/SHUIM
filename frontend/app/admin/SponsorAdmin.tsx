@@ -118,7 +118,7 @@ function BannerAdmin() {
   if (!banners) return error ? <LoadError message={error} onRetry={() => void load()} /> : <SkeletonScreen count={2} lines={3} label="배너를 확인하고 있어요" />;
   const live = banners.filter((banner) => banner.status === "live").length;
   return <>
-    <Hero label="홍보 배너" title={live ? `지금 ${live}개의 배너가 보여요` : "아직 보이는 배너가 없어요"} sub="PC 화면에서 메인 양옆에 글라스 카드로 보여요. 한쪽에 4칸씩, 노출 순서가 작을수록 위에 와요. 빈 칸에는 '+' 안내 카드가 보여요." stats={[`전체 ${banners.length}개`, `게시 중 ${live}개`]} />
+    <Hero label="홍보 배너" title={live ? `지금 ${live}개의 배너가 보여요` : "아직 보이는 배너가 없어요"} sub="PC 화면에서 메인 양옆에 액자로 보여요(그림 위에 이름·소개). 한쪽에 5칸씩 한 화면에 다 보이고, 노출 순서가 작을수록 위에 와요. 빈 칸에는 '+' 빈 액자가 보여요." stats={[`전체 ${banners.length}개`, `게시 중 ${live}개`]} />
     <div className={styles.toolbar}>
       <span className="tiny muted">홀수 순서는 왼쪽, 짝수 순서는 오른쪽 열이에요.</span>
       <div className="row" style={{ gap: 6 }}>

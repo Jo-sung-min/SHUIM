@@ -16,7 +16,8 @@ export interface SponsorsResponse { sponsors: Sponsor[]; contact: SponsorContact
 export interface SponsorCheerResult { tickets: number; sponsor: Sponsor; cheersLeftToday: number }
 
 export const DEFAULT_SPONSOR_CONTACT: SponsorContact = { email: "hello@sorow.co.kr", priceLabel: "30일 30만원" };
-export const SPONSOR_BANNER_SLOTS = 4;
+/** 한쪽 액자 칸 수의 기본값 (서버 SponsorPolicy.SLOTS_PER_SIDE 와 맞춘다) */
+export const SPONSOR_BANNER_SLOTS = 5;
 /** 후원 1,000원 = 폭죽 1개 */
 export const WON_PER_FIREWORK = 1000;
 
