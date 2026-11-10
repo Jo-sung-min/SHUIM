@@ -18,7 +18,7 @@ import { ONSEN_SEATS, ONSEN_FLOATS, ONSEN_FLOATS_PER_BATH, ONSEN_FLOAT_RADIUS, O
 import { FIRE_BENCH_SEATS, FIRE_BENCH_REACH, claimedFireBenchSlot } from "./fire-benches";
 import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
-import { SKY_FRAGMENT } from "./sky-shader";
+import { HORIZON_MELT, SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
 import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
 import type { BoardGame } from "./net";
@@ -51,7 +51,7 @@ import { UyuniMoments } from "./uyuni-moments";
 import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-avatar";
 import type { ChibiCharacter } from "../chibi/character";
-import { BeachUltraSea, SAND_SHORE_ALBEDO, SAND_SHORE_CAUSTICS, SAND_SHORE_PARS, ULTRA_RADIUS } from "./ultra-sea";
+import { BeachUltraSea, FAR_SKY_SHARE, SAND_SHORE_ALBEDO, SAND_SHORE_CAUSTICS, SAND_SHORE_PARS, ULTRA_RADIUS } from "./ultra-sea";
 import { REFRACT_LAYER, beachSandGeometry, sandHeight } from "./shore-terrain";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
@@ -253,8 +253,10 @@ uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uFo
 uniform vec3 uLightDir; uniform vec3 uLightColor; uniform float uSpec; uniform vec3 uFog; uniform float uFogNear; uniform float uFogFar; uniform vec3 uCamPos;
 uniform sampler2D uPhoto; uniform vec3 uPhotoTint; uniform float uLantern; uniform float uDeepNight;
 uniform float uUltraRadius;
+uniform vec3 uSkyHorizon; uniform vec3 uSun; uniform vec3 uSunColor; uniform float uFarSkyShare;
 varying vec3 vWorld;
 ${NOISE_GLSL}
+${HORIZON_MELT}
 float waves(vec2 p, float t) {
   return sin(p.y * 1.2 + p.x * 0.12 - t * 1.1) * 0.13
     + sin(p.x * 2.7 + p.y * 1.8 + t * 0.85) * 0.045
@@ -290,8 +292,16 @@ void main() {
   float foamNoise = noise(p * 7.5 + vec2(t * 0.2, 0.0)) * noise(p * 18.0 - t * 0.3);
   col = mix(col, uFoam, foamLine * smoothstep(0.04, 0.44, foamNoise) * 0.88);
   float alpha = 1.0 - smoothstep(-0.2, 1.6, edge);
-  vec3 farSea = texture2D(uPhoto, vec2(0.5, 0.475)).rgb * uPhotoTint;
+  // 수평선 바로 아래는 하늘 셰이더와 같은 식으로 하늘 수평선 색(+ 해 무리, 풍등 빛)에 녹는다: 바다 끝이 떠 보이지 않게
+  vec3 viewDir = normalize(vWorld - uCamPos);
+  vec3 level = normalize(vec3(viewDir.x, 0.0, viewDir.z));
+  float sunDistance = length(level - uSun);
+  vec3 horizonSky = uSkyHorizon + uSunColor * exp(-sunDistance * sunDistance / 0.012) * 0.07 * smoothstep(-0.025, 0.05, uSun.y)
+    + vec3(1.0, 0.52, 0.18) * uLantern * 0.135 * mix(1.0, 0.08, uDeepNight);
+  // 가까운 바다(ultra-sea)가 있으면 그 끝과 같은 색: 사진의 먼 바다 파랑에 수평선 하늘을 반쯤 비친 색
+  vec3 farSea = mix(texture2D(uPhoto, vec2(0.5, 0.475)).rgb * uPhotoTint, horizonSky, uFarSkyShare);
   col = mix(col, farSea, smoothstep(55.0, 260.0, dist));
+  col = mix(col, horizonSky, horizonMelt(viewDir.y));
   gl_FragColor = vec4(col, alpha);
 }`;
 
@@ -652,6 +662,7 @@ export class BeachEngine {
         uHorizonFog: { value: new THREE.Vector3(0.5, 0.6, 0.4) },
         uBambooSunset: { value: 0 },
         uStorm: { value: 0 }, uAurora: { value: 0 },
+        uFarSkyShare: { value: 0 },
       },
       vertexShader: SKY_VERT,
       fragmentShader: this.mapId === "baikal" ? BAIKAL_SKY_FRAGMENT : this.mapId === "cloudspa" ? CLOUD_SPA_SKY_FRAGMENT : this.mapId === "uyuni" ? UYUNI_SKY_FRAGMENT : this.mapId === "bamboo" ? BAMBOO_SKY_FRAGMENT : this.mapId === "garden" ? GARDEN_SKY_FRAGMENT : SKY_FRAGMENT,
@@ -694,6 +705,7 @@ export class BeachEngine {
       this.ultraSea = null;
     }
     const ultra = this.ultraSea;
+    this.skyMat.uniforms.uFarSkyShare.value = ultra ? FAR_SKY_SHARE : 0;
     this.sandMat = new THREE.MeshStandardMaterial({
       map: this.loadEnvironmentTexture("/beach/real/white-sand-v1.webp", true, [120, 75]),
       normalMap: this.loadEnvironmentTexture("/beach/real/sand-normal.jpg", false, [120, 75]),
@@ -731,6 +743,8 @@ export class BeachEngine {
         uPhoto: { value: this.photo }, uPhotoTint: this.skyMat.uniforms.uPhotoTint, uLantern: this.skyMat.uniforms.uLantern,
         uDeepNight: this.skyMat.uniforms.uDeepNight,
         uUltraRadius: { value: ultra ? ULTRA_RADIUS : 0 },
+        uSkyHorizon: this.skyMat.uniforms.uSkyHorizon, uSun: this.skyMat.uniforms.uSun, uSunColor: this.skyMat.uniforms.uSunColor,
+        uFarSkyShare: this.skyMat.uniforms.uFarSkyShare,
       },
       vertexShader: WORLD_VERT,
       fragmentShader: SEA_FRAG,
@@ -2184,6 +2198,7 @@ export class BeachEngine {
     if (this.ultraSea) {
       this.ultraSea.enabled = level === "high";
       if (this.seaMat) this.seaMat.uniforms.uUltraRadius.value = this.ultraSea.enabled ? ULTRA_RADIUS : 0;
+      this.skyMat.uniforms.uFarSkyShare.value = this.ultraSea.enabled ? FAR_SKY_SHARE : 0;
     }
     this.resize();
     this.handlers.onQuality?.(level);

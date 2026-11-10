@@ -14,6 +14,7 @@ uniform vec3 uSun;
 uniform vec3 uSunColor;
 uniform vec3 uCloudColor;
 uniform float uCloudAmount;
+uniform float uFarSkyShare;
 `;
 
 export const SKY_FUNCTIONS = `
@@ -79,9 +80,18 @@ vec4 daylightSky(vec3 d, float clearBias) {
 }
 `;
 
+/**
+ * 수평선 바로 아래(시선이 0.86° 이내로 내려간 곳)가 하늘 수평선 색으로 녹는 정도.
+ * 하늘(수평선 아래 틈)·먼 바다 평면·가까운 바다가 같은 식을 써야 바다 끝이 하늘과 이어진다 (떠 보이는 띠가 없다).
+ */
+export const HORIZON_MELT = `
+float horizonMelt(float dy) { return smoothstep(-0.015, 0.0, dy); }
+`;
+
 export const SKY_FRAGMENT = `${SKY_UNIFORMS}
 varying vec3 vDir;
 ${SKY_FUNCTIONS}
+${HORIZON_MELT}
 vec3 beachSky(vec3 direction) {
   vec3 d = normalize(direction);
   float up = max(d.y, 0.0);
@@ -100,8 +110,11 @@ vec3 beachSky(vec3 direction) {
     vec2 uv = vec2(azimuth / 6.2831853 + 0.5, asin(clamp(d.y, -1.0, 1.0)) / 3.1415927 + 0.5);
     vec2 coastUv = vec2(0.5 + sin(azimuth) * 0.12, max(0.54, uv.y));
     float seaFacing = smoothstep(0.12, 0.8, -d.z);
-    vec3 coast = mix(textureLod(uPhoto, coastUv, 0.0).rgb, textureLod(uPhoto, uv, 0.0).rgb, seaFacing) * uPhotoTint;
-    col = mix(coast, col, smoothstep(-0.02, 0.0, d.y));
+    // 바다 쪽은 먼 바다 평면이 수렴하는 색과 같게 (사진의 수평선 바로 아래 파랑, 가까운 바다가 있으면 수평선 하늘을 섞은 색):
+    // 평면 끝과 수평선 사이 틈이 바다로 이어진다
+    vec3 farSea = mix(textureLod(uPhoto, vec2(0.5, 0.475), 0.0).rgb * uPhotoTint, col, uFarSkyShare);
+    vec3 coast = mix(textureLod(uPhoto, coastUv, 0.0).rgb * uPhotoTint, farSea, seaFacing);
+    col = mix(coast, col, horizonMelt(d.y));
   }
 
   if (uStars > 0.0 && d.y > 0.0) {

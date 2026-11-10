@@ -111,4 +111,9 @@ const shoreSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/sh
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const shoreContext = { THREE };
 vm.runInNewContext(`${shoreSource}\nglobalThis.api = { BEACH_EDGE_Z, REFRACT_LAYER, sandHeight, beachSandGeometry };`, shoreContext);
-export const hotSpring = { ...shoreContext.api, ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };
+// The far sea melts into the sky at the horizon with the same GLSL the sky uses.
+const skySource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/sky-shader.ts", import.meta.url), "utf8"))
+  .replace(/\bexport\s+(?=const\b)/g, "");
+const skyContext = {};
+vm.runInNewContext(`${skySource}\nglobalThis.api = { HORIZON_MELT };`, skyContext);
+export const hotSpring = { ...skyContext.api, ...shoreContext.api, ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };

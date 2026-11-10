@@ -19,11 +19,14 @@ import { bakeWaterTextures } from "../ultra-water/water/bakeTextures.js";
 import { CAUSTICS_GLSL, WaveCaustics } from "../ultra-water/water/Caustics.js";
 import { FloaterShadow } from "../ultra-water/scene/floaterShadow.js";
 import { REFRACT_LAYER, sandHeight } from "./shore-terrain";
+import { HORIZON_MELT } from "./sky-shader";
 
 /** 원본 해수면(0)을 바닷가에서는 이 높이로 */
 export const SEA_Y = -0.22;
 /** 원본 물이 덮는 반경(원점 기준, m). 그 밖은 원래 먼 바다 평면 */
 export const ULTRA_RADIUS = 260;
+/** 가까운 바다가 있을 때 먼 바다 색에 섞는 수평선 하늘 비율 (가까운 바다 끝과 먼 바다 평면이 같은 색으로 만난다) */
+export const FAR_SKY_SHARE = 0.45;
 
 export type UltraTier = "high" | "mobile";
 
@@ -284,7 +287,7 @@ function patchWaterMaterial(material: THREE.ShaderMaterial) {
   v = must(v, "uniform float uGridScale;", "uniform float uGridScale;\nuniform float uSeaY;");
   v = must(v, "gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);", `gl_Position = projectionMatrix * viewMatrix * vec4(vWorld + ${lift}, 1.0);`);
   let f = material.fragmentShader;
-  f = must(f, "uniform float uCamSide;", "uniform float uCamSide;\nuniform float uSeaY;\nuniform float uUltraRadius;\nuniform vec3 uFarSea;\nuniform float uFineNear;");
+  f = must(f, "uniform float uCamSide;", "uniform float uCamSide;\nuniform float uSeaY;\nuniform float uUltraRadius;\nuniform vec3 uFarSea;\nuniform float uFineNear;\n" + HORIZON_MELT);
   // 가까이(~10m 는 온전히, 80m 까지 서서히)만 잔 물결 두 겹(12m·2.1m 파장대)을 줄인다. 그보다 먼 물은 그대로.
   // 2차 모멘트도 같은 비율이라 줄어든 몫이 거칠기로 간다.
   f = must(f, "  vec4 s2 = texture(uSlope2, vXZ / uLength.z) * damp.z;\n  vec4 s3 = texture(uSlope3, vXZ / uLength.w) * damp.z;",
@@ -295,11 +298,25 @@ function patchWaterMaterial(material: THREE.ShaderMaterial) {
   // 여기선 모래만 그리므로, 수평선 쪽 스치는 시선에서 빈(검은) 굴절 화면이 드러나던 것을 막는다.
   f = must(f, "  col = mix(refracted, col, smoothstep(0.0, 0.12 + dist * 5e-4, vth));",
     "  col = mix(refracted, col, max(smoothstep(0.0, 0.12 + dist * 5e-4, vth), step(0.9995, textureLod(uSceneDepth, ruv, 0.0).r)));");
-  f = must(f, "  fragColor = vec4(col, 2.0);", `  col = mix(col, uFarSea, smoothstep(uUltraRadius * 0.45, uUltraRadius * 0.95, dist));
-  #ifdef TONE_MAPPING
+  // 세로 결: 바닷가 카메라는 물을 스치듯 봐서, 물결 기울기마다 반사 비율(프레넬)이 0.3↔0.8 로 크게 뒤집혀
+  // 해안과 나란한 물결이 밝고 어두운 줄로 늘어서 보인다. 반사 비율은 거의 평평한 법선으로 재고
+  // (반사 방향·해 반사는 물결 그대로), 하늘 반사도 조금 줄인다. (측정: 줄무늬 대비 −67%, 밝기는 그대로)
+  f = must(f, "  float F = F0 + (F90 - F0) * pow(1.0 - NoV, 5.0);",
+    "  float NoVf = max(dot(normalize(mix(Nrm, vec3(0.0, 1.0, 0.0), 0.85)), V), 1e-4);\n  float F = F0 + (F90 - F0) * pow(1.0 - NoVf, 5.0);");
+  f = must(f, "  vec3 col = mix(body, refl, F *", "  vec3 col = mix(body, refl, 0.8 * F *");
+  // 먼 바다·수평선은 톤 매핑 뒤 화면 값으로 녹인다: 원래 먼 바다와 하늘 셰이더는 그 값을 톤 매핑 없이 그대로 쓴다
+  // (톤 매핑 앞에서 섞으면 경계에 밝은 띠가 남는다). 수평선 바로 아래는 하늘과 같은 규칙으로 하늘 수평선 색에 녹는다.
+  f = must(f, "  fragColor = vec4(col, 2.0);", `  #ifdef TONE_MAPPING
   col = toneMapping(col);
   #endif
-  fragColor = linearToOutputTexel(vec4(col, 1.0));`);
+  vec4 outColor = linearToOutputTexel(vec4(col, 1.0));
+  // 먼 바다는 사진의 진한 파랑 그대로면 회청색(하늘 반사) 물과 베이지 수평선 사이에 진한 줄로 떠 보인다.
+  // 스치는 시선의 물처럼 수평선 하늘을 반쯤 비친 색으로 녹인다 (먼 바다 평면 SEA_FRAG 도 같은 색).
+  vec3 horizonSky = pow(max(skyLod(normalize(vec3(-V.x, 0.0, -V.z)), 0.0), vec3(0.0)), vec3(1.0 / 2.2));
+  vec3 farTone = mix(pow(uFarSea, vec3(1.0 / 2.2)), horizonSky, ${FAR_SKY_SHARE.toFixed(2)});
+  outColor.rgb = mix(outColor.rgb, farTone, smoothstep(uUltraRadius * 0.45, uUltraRadius * 0.95, dist));
+  outColor.rgb = mix(outColor.rgb, horizonSky, horizonMelt(-V.y));
+  fragColor = outColor;`);
   material.vertexShader = v;
   material.fragmentShader = f;
   material.toneMapped = true;
