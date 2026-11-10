@@ -91,6 +91,27 @@ class BeachFireworkTicketsTest {
     }
 
     @Test
+    void whileMemberFireworksAreClosedOnlyAdministratorsSeeAndLaunchThem() {
+        controller.setMemberFireworks(false);
+        tickets.grant("member", 2);
+        Map<String, Object> member = controller.enter(new BeachController.EnterBody("room"), request, new MockHttpServletResponse());
+        assertEquals(false, member.get("fireworksControl"));
+        assertFalse(member.containsKey("fireworkTickets"));
+        var me = visitor("room", "member", "beach");
+        var refused = assertThrows(ApiException.class, () -> launch(me, UUID.randomUUID().toString(), "bloom"));
+        assertEquals(403, refused.status());
+        assertEquals(2, tickets.balance("member"));
+        assertEquals(List.of(), tickets.launches);
+
+        actor(user("operator", "admin", false));
+        Map<String, Object> admin = controller.enter(new BeachController.EnterBody("room"), request, new MockHttpServletResponse());
+        assertEquals(true, admin.get("fireworksControl"));
+        assertEquals(true, admin.get("fireworksFree"));
+        var operator = visitor("room", "operator", "beach");
+        assertEquals("bloom", launch(operator, UUID.randomUUID().toString(), "bloom").event().variant());
+    }
+
+    @Test
     void oneTicketBuysOneLaunchAndTheNextAttemptIsRefusedBeforeTouchingTheRoom() {
         tickets.grant("member", 1);
         var me = visitor("room", "member", "garden");

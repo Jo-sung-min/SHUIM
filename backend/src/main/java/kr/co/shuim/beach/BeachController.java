@@ -18,6 +18,7 @@ import kr.co.shuim.config.ApiException;
 import kr.co.shuim.points.FireworkTickets;
 import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -73,9 +74,18 @@ public class BeachController {
         this.tickets = tickets;
     }
 
-    /** Registered members launch with tickets; administrators keep the free control. Without a ticket store only administrators may. */
+    /**
+     * 회원 폭죽(이용권으로 쏘기)은 아직 닫혀 있다: 운영 설정 app.fireworks.members-enabled 가 켜질 때까지 관리자만 쏘고,
+     * 회원에게는 발사 버튼·이용권 잔액이 내려가지 않는다. 직접 만든(테스트) 컨트롤러는 열린 상태로 시작한다.
+     */
+    private boolean memberFireworks = true;
+
+    @Value("${app.fireworks.members-enabled:false}")
+    void setMemberFireworks(boolean enabled) { this.memberFireworks = enabled; }
+
+    /** Registered members launch with tickets (once opened); administrators keep the free control. Without a ticket store only administrators may. */
     private boolean fireworksAllowed(DbUser me) {
-        return auth.isAdmin(me) || (tickets != null && !me.anonymous() && !me.blocked());
+        return auth.isAdmin(me) || (memberFireworks && tickets != null && !me.anonymous() && !me.blocked());
     }
 
     /** { to: 유저 id, kind: "comfort" | "hug" | "wave" } */
@@ -224,7 +234,7 @@ public class BeachController {
         boolean fireworksFree = auth.isAdmin(me);
         out.put("fireworksControl", fireworksAllowed(me));
         out.put("fireworksFree", fireworksFree);
-        if (!fireworksFree && tickets != null) out.put("fireworkTickets", tickets.balance(me.id()));
+        if (!fireworksFree && fireworksAllowed(me)) out.put("fireworkTickets", tickets.balance(me.id()));
         BeachRoom.FireworksState fireworks = beach.fireworks(circle.id(), map.id());
         out.put("fireworks", fireworks.events());
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
@@ -373,6 +383,7 @@ public class BeachController {
         requireMember(visit.communityId(), me);
         String variant = BeachRoom.requireFireworkVariant(body.selectedVariant());
         if (auth.isAdmin(me)) return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant);
+        if (!memberFireworks) throw ApiException.forbidden("불꽃놀이는 아직 준비 중이에요.");
         if (!fireworksAllowed(me)) throw ApiException.forbidden("가입한 회원만 불꽃놀이를 쏠 수 있어요.");
         if ("songi".equals(variant))
             throw ApiException.forbidden("송이에게 보내는 문구 불꽃은 관리자만 띄울 수 있어요.");

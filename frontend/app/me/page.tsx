@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Me, fetchMe } from "@/lib/auth";
+import { Me, canUseFireworks, fetchMe } from "@/lib/auth";
 import { loadGoals, loadJournal, loadMemos, loadNotifSeen, loadSchedule, markNotifSeen, streak, syncRecords, todayKey } from "@/lib/storage";
 import { MyProfile, ProfilePage, ServerNotification, fetchMyProfile, fetchNotifications, fetchProfilePage, markBadgesSeen, unreadMessages, updateMyProfile } from "@/lib/social";
 import { Empty, SkeletonList, TopBar, fmtRelative } from "@/components/ui";
@@ -139,7 +139,7 @@ export default function MePage() {
 
             {user && <div className={profileStyles.wallets}>
               <PointsCard key={user.id} userId={user.id} />
-              <FireworkTicketCard key={`fireworks-${user.id}`} userId={user.id} />
+              {me && canUseFireworks(me) && <FireworkTicketCard key={`fireworks-${user.id}`} userId={user.id} />}
             </div>}
 
             {page ? <ProfileTabs data={page} /> : <div style={{ marginTop: 20 }} role="status" aria-label="내 글을 불러오고 있어요"><SkeletonList count={2} lines={2} /></div>}

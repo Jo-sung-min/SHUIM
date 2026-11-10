@@ -38,6 +38,9 @@ app:
     simulate: ${COMMUNITY_SIMULATE:true}
   circle:
     private-test-creation-enabled: ${PRIVATE_TEST_CIRCLES_ENABLED:false}
+  fireworks:
+    # 회원이 이용권으로 폭죽을 쏘는 기능. 꺼져 있으면 관리자만 쏘고, 회원에게는 폭죽·이용권 화면이 보이지 않는다
+    members-enabled: ${FIREWORKS_MEMBERS_ENABLED:false}
   kakao:
     # Kakao Developers › 내 애플리케이션 › 앱 키 › REST API 키. 비우면 카카오 로그인이 꺼지고 버튼이 숨겨진다 (/api/auth/me 의 kakao: false)
     client-id: ${KAKAO_CLIENT_ID:}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { fetchMe } from "@/lib/auth";
+import { canUseFireworks, fetchMe } from "@/lib/auth";
 import { SESSION_KEY } from "@/lib/storage";
 import { fetchPoints, pointReason, pointsSessionChanged, type PointsWallet as Wallet } from "@/lib/points";
 import { IconChevronL, IconChevronR, IconCoin, IconHeart, IconMessage, IconSparkle, IconRefresh, IconCheck } from "./Icons";
@@ -14,6 +14,8 @@ function useWallet(expectedUserId?: string) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [guest, setGuest] = useState(false);
   const [loading, setLoading] = useState(true);
+  // 폭죽 이용권 안내는 폭죽을 쏠 수 있는 사람에게만 (지금은 관리자만)
+  const [fireworks, setFireworks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
   const controller = useRef<AbortController | null>(null);
@@ -31,6 +33,7 @@ function useWallet(expectedUserId?: string) {
       if (current !== request.current) return;
       if (!me.configured) throw new Error("연결을 확인한 뒤 다시 시도해 주세요.");
       if (!me.user) { setGuest(true); return; }
+      setFireworks(canUseFireworks(me));
       if (expectedUserId && me.user.id !== expectedUserId) throw new Error("계정이 변경되었어요. 내 공간을 다시 열어 주세요.");
       const next = await fetchPoints(me.user.id, abort.signal);
       if (current === request.current) setWallet(next);
@@ -57,7 +60,7 @@ function useWallet(expectedUserId?: string) {
       document.removeEventListener("visibilitychange", visible);
     };
   }, [refresh]);
-  return { wallet, guest, loading, error, refresh };
+  return { wallet, guest, loading, error, refresh, fireworks };
 }
 
 export function PointsCard({ userId }: { userId: string }) {
@@ -74,7 +77,7 @@ export function PointsCard({ userId }: { userId: string }) {
 const date = (timestamp: number) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(timestamp);
 
 export default function PointsWallet() {
-  const { wallet, guest, loading, error, refresh } = useWallet();
+  const { wallet, guest, loading, error, refresh, fireworks } = useWallet();
   const [ticketOpen, setTicketOpen] = useState(false);
   return <>
     <TopBar title="온기 포인트" right={<>
@@ -108,9 +111,11 @@ export default function PointsWallet() {
             <details className={styles.rules}><summary>자세한 적립 기준<IconChevronR /></summary><ul>{wallet.rules.map((rule, index) => <li key={index}>{rule}</li>)}</ul></details>
           </section>
 
+          {fireworks && <>
           <aside className={styles.future}><IconSparkle /><div><h2>폭죽 이용권으로 바꿀 수 있어요</h2><p>1,000 P 로 폭죽 이용권 1장. 바닷가·유우니·대나무숲·봄물 정원에서 불꽃놀이를 한 번 쏠 수 있어요.</p>
             <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setTicketOpen(true)}>이용권으로 바꾸기</button></div></aside>
           <FireworkTicketSheet open={ticketOpen} loginNext="points" onClose={() => setTicketOpen(false)} onTickets={() => { if (ticketOpen) void refresh(); }} />
+          </>}
 
           <section className={styles.section} aria-labelledby="points-history">
             <div className={styles.sectionHead}><h2 id="points-history">적립 내역</h2><span>최근 30건</span></div>

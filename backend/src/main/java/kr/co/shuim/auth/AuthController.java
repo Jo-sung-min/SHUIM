@@ -3,6 +3,7 @@ package kr.co.shuim.auth;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.config.ApiException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +24,12 @@ public class AuthController {
         this.toss = toss;
         this.policies = policies;
     }
+
+    /** 회원 폭죽(이용권)이 열렸는지: 닫혀 있으면 프론트가 관리자 외에는 폭죽·이용권 화면을 숨긴다 */
+    private boolean memberFireworks;
+
+    @Value("${app.fireworks.members-enabled:false}")
+    void setMemberFireworks(boolean enabled) { this.memberFireworks = enabled; }
 
     static Map<String, Object> publicUser(DbUser u) {
         if (u == null || u.anonymous()) return null;
@@ -45,6 +52,7 @@ public class AuthController {
         out.put("configured", true);
         out.put("kakao", kakao.configured()); // KAKAO_CLIENT_ID 가 비어 있으면 false → 프론트가 버튼을 숨긴다
         out.put("toss", toss.configured()); // 미니앱 토스 로그인 (mTLS 인증서가 있을 때만)
+        out.put("memberFireworks", memberFireworks);
         out.put("anonymousId", u.filter(DbUser::anonymous).map(DbUser::id).orElse(null));
         return out;
     }

@@ -28,6 +28,8 @@ export interface Me {
   toss: boolean;
   /** 로그인 전 방문자의 익명 유저 id (서버가 세션으로 만든 것, 없으면 빠진다) */
   anonymousId?: string;
+  /** 회원이 이용권으로 폭죽을 쏠 수 있게 열렸는지 (닫혀 있으면 관리자만: canUseFireworks) */
+  memberFireworks?: boolean;
 }
 
 function syncSessionKey(user: Account | null) {
@@ -57,6 +59,11 @@ async function post<T>(path: string, body: unknown): Promise<T & { error?: strin
 let meCache: Me | null = null;
 
 /** A recovered connection must re-read the session instead of keeping an outage result. */
+/** 폭죽·이용권 화면을 보여 줄지: 관리자는 늘, 가입 회원은 회원 폭죽이 열렸을 때만 */
+export function canUseFireworks(me: Me): boolean {
+  return me.admin || (me.memberFireworks === true && Boolean(me.user));
+}
+
 export function resetAuthCache() {
   meCache = null;
 }
@@ -69,7 +76,7 @@ export async function fetchMe(force = false): Promise<Me> {
     const json = (await res.json()) as Me;
     // Java omits null fields, so a valid guest response has no `user` property.
     if (!res.ok || !json || json.configured !== true || typeof json.admin !== "boolean" || typeof json.kakao !== "boolean") throw new Error("계정 연결을 확인하지 못했어요.");
-    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao), toss: Boolean(json.toss), anonymousId: json.anonymousId ?? undefined };
+    meCache = { user: json.user ?? null, admin: Boolean(json.admin), configured: true, kakao: Boolean(json.kakao), toss: Boolean(json.toss), anonymousId: json.anonymousId ?? undefined, memberFireworks: json.memberFireworks === true };
   } catch {
     // A network failure is not a logout. Keep the local account namespace and do not cache this failure.
     return { user: null, admin: false, configured: false, kakao: false, toss: false };
@@ -96,7 +103,7 @@ export async function signUp(email: string, nick: string, password: string, cons
   if (err) return { ok: false, error: err };
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/signup", { email, nick, password, ...consent });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "가입하지 못했어요" };
-  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false };
+  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false, memberFireworks: meCache?.memberFireworks };
   resetRecordsSync();
   syncSessionKey(r.user);
   adoptGuestData(r.user.id); // 가입 전 이 기기에서 쓰던 기록을 새 계정으로 (서버에도 한 번 올린다)
@@ -106,7 +113,7 @@ export async function signUp(email: string, nick: string, password: string, cons
 export async function signIn(email: string, password: string): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/login", { email, password });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "로그인하지 못했어요" };
-  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false };
+  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false, memberFireworks: meCache?.memberFireworks };
   resetRecordsSync();
   syncSessionKey(r.user);
   adoptGuestData(r.user.id); // 게스트 기록은 계정(서버)에 아직 없는 부분에만 들어간다
@@ -152,7 +159,7 @@ export async function signInWithToss(): Promise<{ ok: true; account: Account } |
   const r = await post<{ user: Account | null; admin: boolean; consentRequired?: boolean }>("/api/auth/toss", code);
   if (r.consentRequired) return { ok: false, error: r.error ?? "가입 안내를 확인해 주세요.", consentRequired: true };
   if (r.error || !r.user) return { ok: false, error: r.error ?? "로그인하지 못했어요" };
-  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: false, toss: true };
+  meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: false, toss: true, memberFireworks: meCache?.memberFireworks };
   resetRecordsSync();
   syncSessionKey(r.user);
   adoptGuestData(r.user.id); // 로그인 전 이 기기에서 쓰던 기록을 계정으로
