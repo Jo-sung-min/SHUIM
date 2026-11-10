@@ -1,0 +1,22 @@
+/* 위는 작아진 콘텐츠가 보이도록 투명, 누르면 닫힘 */
+.backdrop { position: fixed; inset: 0; z-index: 34; background: transparent; }
+.sheet {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 35;
+  width: 100%; max-width: var(--app-w); display: flex; flex-direction: column;
+  border-radius: 20px 20px 0 0; background: var(--surface); color: var(--text);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.18); outline: none;
+  transition: height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.dragging { transition: none; }
+@keyframes rise { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
+.head { position: relative; flex: none; display: grid; place-items: center; padding: 10px 16px 12px; touch-action: none; cursor: grab; user-select: none; }
+.handle { width: 38px; height: 5px; border-radius: 3px; background: var(--border-strong, rgba(127, 127, 127, 0.35)); margin-bottom: 10px; }
+.head b { font-size: 15px; font-weight: 700; }
+.close { position: absolute; right: 8px; bottom: 4px; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text-2); }
+.close svg { width: 20px; height: 20px; }
+.body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--gutter) 12px; }
+.body :global(.comment:first-child) { border-top: 0; }
+.foot { flex: none; padding: 8px var(--gutter) calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
+.foot :global(.composer) { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .sheet { transition: none; animation: none; } }

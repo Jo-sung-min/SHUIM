@@ -17,10 +17,13 @@ import {
   isFlagged,
   listFeed,
   pagesOf,
+  repliesOf,
+  topCommentsOf,
   userById,
 } from "@/lib/community";
 import { Sheet, fmtRelative } from "@/components/ui";
-import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
+import { CheerButton, CommentComposer, CommentRow, LineAction, LoadError, ReportSheet, TargetMenuSheet, run, type ReplyTarget } from "@/components/CommunityUI";
+import CommentSheet from "@/components/CommentSheet";
 import FeedComposer from "@/components/FeedComposer";
 import { ReelVideo, ScreenPhoto } from "@/components/FeedMedia";
 import Link from "next/link";
@@ -42,6 +45,8 @@ export default function FeedPage() {
   const [remembered] = useState(() => readScrollMemory<{ limit: number; filter: Filter }>("/feed")?.extra ?? null);
   const [filter, setFilter] = useState<Filter>(remembered?.filter ?? "all");
   const [openComments, setOpenComments] = useState<string | null>(null);
+  const [sheetHeight, setSheetHeight] = useState(0);
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
   const [writing, setWriting] = useState(false);
@@ -189,7 +194,7 @@ export default function FeedPage() {
 
   return (
     <>
-      <div className="feed-top">
+      <div className="feed-top" style={openComments ? { opacity: 0, pointerEvents: "none" } : undefined}>
         <span className="feed-title">{FILTERS.find(([v]) => v === filter)?.[1]}</span>
         <button className="feed-more" onClick={() => setTopMenu(true)} aria-label="피드 메뉴" aria-haspopup="dialog">
           <IconMore />
@@ -199,7 +204,7 @@ export default function FeedPage() {
       <div className={`ptr ${refreshing ? "spin" : ""}`} style={{ opacity: refreshing ? 1 : Math.min(1, pull / 64), transform: `translate(-50%, ${refreshing ? 0 : Math.min(0, pull - 64)}px)` }} aria-hidden={!refreshing && pull === 0}>
         {refreshing ? "새로고침 중…" : pull >= 64 ? "놓으면 새로고침" : "당겨서 새로고침"}
       </div>
-      <div className="feed" role="feed" ref={feedRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onWheel={onWheel} style={{ transform: pull ? `translateY(${pull * 0.4}px)` : undefined, transition: pull ? "none" : "transform 0.25s" }}>
+      <div className="feed" role="feed" ref={feedRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onWheel={onWheel} style={{ transform: pull ? `translateY(${pull * 0.4}px)` : undefined, transition: pull ? "none" : "transform 0.25s", overflowY: openComments ? "hidden" : undefined, background: openComments ? "#000" : undefined }}>
         {items.length === 0 ? (
           <section className="reel bg-1">
             <div className="reel-body">
@@ -228,6 +233,7 @@ export default function FeedPage() {
               onMenu={() => setMenu({ kind: "feed", id: f.id })}
               onFollow={() => run(setS, () => api.toggleFollow(f.authorId))}
               onProfile={() => setProfile(f.authorId)}
+              shrink={openComments === f.id && sheetHeight ? shrinkFor(sheetHeight, feedRef.current?.clientHeight ?? 0) : null}
             />
           ))
         )}
@@ -240,16 +246,31 @@ export default function FeedPage() {
         )}
       </div>
 
-      <Sheet open={Boolean(currentComments)} onClose={() => setOpenComments(null)} title={`위로 ${currentComments ? commentsOf(s, currentComments.id).length : 0}개`}>
-        {currentComments && (
-          <>
-            <p className="tiny muted" style={{ margin: "0 0 8px", whiteSpace: "pre-wrap" }}>
-              {currentComments.text.slice(0, 80)}{currentComments.text.length > 80 ? "…" : ""}
-            </p>
-            <CommentThread s={s} postId={currentComments.id} onChange={setS} onMenu={(t) => setMenu(t)} placeholder="이 글이 닿았다면 한마디." />
-          </>
-        )}
-      </Sheet>
+      <CommentSheet
+        open={Boolean(currentComments)}
+        title={`댓글 ${currentComments ? commentsOf(s, currentComments.id).length : 0}`}
+        onClose={() => { setOpenComments(null); setReplyTo(null); setSheetHeight(0); }}
+        onHeight={setSheetHeight}
+        footer={currentComments && <CommentComposer s={s} postId={currentComments.id} onChange={setS} placeholder="위로 한마디" replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />}
+      >
+        {currentComments && (topCommentsOf(s, currentComments.id).length === 0
+          ? <p className={styles.noComments}>첫 위로를 남겨 주세요</p>
+          : <div className="comment-list">
+              {topCommentsOf(s, currentComments.id).map((cm) => (
+                <CommentRow
+                  key={cm.id}
+                  s={s}
+                  comment={cm}
+                  replies={repliesOf(s, cm.id)}
+                  onCheer={() => run(setS, () => api.toggleCheer({ kind: "comment", id: cm.id }))}
+                  onMenu={() => setMenu({ kind: "comment", id: cm.id })}
+                  onReply={setReplyTo}
+                  onReplyCheer={(r) => run(setS, () => api.toggleCheer({ kind: "comment", id: r.id }))}
+                  onReplyMenu={(r) => setMenu({ kind: "comment", id: r.id })}
+                />
+              ))}
+            </div>)}
+      </CommentSheet>
 
       <Sheet open={Boolean(profile)} onClose={() => setProfile(null)} title="크리에이터">
         {profile && <CreatorProfile s={s} userId={profile} onFollow={() => run(setS, () => api.toggleFollow(profile))} onBio={(b) => run(setS, () => api.updateBio(b))} />}
@@ -307,9 +328,16 @@ export default function FeedPage() {
 
 /* ================= 한 장: 콘텐츠(사진+글) 여러 개면 가로로 넘겨 봄 ================= */
 
-function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile }: {
+/** 댓글 시트가 올라오면 이 글을 시트 위 남은 칸에 맞게 줄인다 */
+function shrinkFor(sheetHeight: number, reelHeight: number) {
+  if (!reelHeight || typeof window === "undefined") return null;
+  const room = window.innerHeight - sheetHeight - 20;
+  return Math.max(0.12, Math.min(1, room / reelHeight));
+}
+
+function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile, shrink }: {
   s: CommunityStore; post: FeedPost; revealed: boolean; onReveal: () => void; onCheer: () => void; onSave: () => void;
-  onComments: () => void; onMenu: () => void; onFollow: () => Promise<boolean>; onProfile: () => void;
+  onComments: () => void; onMenu: () => void; onFollow: () => Promise<boolean>; onProfile: () => void; shrink?: number | null;
 }) {
   const me = s.me.id;
   const author = userById(s, post.authorId);
@@ -338,6 +366,10 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
     if (el) setIdx(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
   };
   const anyImage = pages.some((p) => p.image);
+  const shrinkStyle = { transform: shrink ? `translateY(10px) scale(${shrink})` : undefined, transformOrigin: "top center", transition: "transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s",
+    // 시트를 끝까지 올리면 댓글만 보이게
+    opacity: shrink && shrink < 0.2 ? 0 : undefined } as const;
+  const shrinkClass = shrink ? ` ${styles.shrunk}` : "";
   const videoPage = pages.length === 1 && pages[0].video ? pages[0] : null;
   const meta = (
     <div className="reel-meta">
@@ -379,7 +411,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
     const caption = current.text || (idx === 0 || current.image || current.video ? post.text : "");
     const title = current.title || (idx === 0 ? post.title : undefined);
     return (
-      <section id={`reel-${post.id}`} className={`reel ${styles.fullPost}`}>
+      <section id={`reel-${post.id}`} className={`reel ${styles.fullPost}${shrinkClass}`} style={shrinkStyle}>
         {flagged ? flaggedBox : videoPage?.video ? (
           <ReelVideo src={assetUrl(videoPage.video)} poster={videoPage.image ? assetUrl(videoPage.image) : undefined} ratio={videoPage.ratio}
             silent={videoPage.muted} overlays={videoPage.overlays} label={`${author.nick}님의 영상`} />
@@ -407,7 +439,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
   }
 
   return (
-    <section id={`reel-${post.id}`} className={`reel bg-${post.bg}`}>
+    <section id={`reel-${post.id}`} className={`reel bg-${post.bg}${shrinkClass}`} style={shrinkStyle}>
       {flagged ? flaggedBox : (
         <div className="reel-slides" ref={slides} onScroll={onSlidesScroll} aria-label={`콘텐츠 ${pages.length}개`}>
           {pages.map((p, i) => (

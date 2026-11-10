@@ -38,3 +38,8 @@
 .videoCaption button { min-height: 28px; padding: 0; border: 0; background: none; color: rgba(255, 255, 255, 0.8); font-size: 13px; font-weight: 700; }
 .captionTitle { display: block; font-size: 12px; font-weight: 700; opacity: 0.9; margin-bottom: 1px; }
 .videoCaption :global(.hl) { --hl-a: 45%; }
+
+/* 댓글 시트가 열리면: 글은 위로 작아지고 겉 정보는 숨김 */
+.shrunk.shrunk { border-radius: 18px; overflow: hidden; }
+.shrunk .fullInfo, .shrunk .pageDots, .shrunk :global(.reel-meta), .shrunk :global(.reel-actions) { opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.noComments { margin: 28px 0; text-align: center; color: var(--text-3); font-size: 14px; }
