@@ -136,6 +136,12 @@ export class BeachUltraSea {
     (u.uFoam.value as THREE.Vector4).set(0.02, 1.0, 0.12, 0.72);
     // 휴대폰은 반짝이(픽셀마다 도는 확률 계산)를 끈다
     u.uGlint.value = mobile ? 0 : 0.35;
+    // 휴대폰: 가까운 물의 가장 잔 물결 두 겹은 화면 픽셀보다 잘아 해 반사가 지글거린다.
+    // 카메라 가까이에서 그 물결을 줄이고(줄인 만큼 표면 거칠기로 남아 빛이 부드럽게 번진다),
+    // 기본 거칠기를 조금 올리고, 저해상도 굴절 화면이 흔들려 보이지 않게 굴절 어긋남을 줄인다. 먼 물은 그대로.
+    // (측정: 해 반사 줄기의 픽셀 단위 지글거림 −59%, 그 깜빡임 −34%. 이보다 세게 줄여도 거의 나아지지 않는다)
+    u.uFineNear = { value: mobile ? 0.12 : 1.0 };
+    if (mobile) (u.uOptics.value as THREE.Vector4).setX(0.055).setY(0.022);
     this.mobile = mobile;
     u.uReflection.value = emptyReflection();
     u.uSeaY = { value: SEA_Y };
@@ -278,7 +284,11 @@ function patchWaterMaterial(material: THREE.ShaderMaterial) {
   v = must(v, "uniform float uGridScale;", "uniform float uGridScale;\nuniform float uSeaY;");
   v = must(v, "gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);", `gl_Position = projectionMatrix * viewMatrix * vec4(vWorld + ${lift}, 1.0);`);
   let f = material.fragmentShader;
-  f = must(f, "uniform float uCamSide;", "uniform float uCamSide;\nuniform float uSeaY;\nuniform float uUltraRadius;\nuniform vec3 uFarSea;");
+  f = must(f, "uniform float uCamSide;", "uniform float uCamSide;\nuniform float uSeaY;\nuniform float uUltraRadius;\nuniform vec3 uFarSea;\nuniform float uFineNear;");
+  // 가까이(~10m 는 온전히, 80m 까지 서서히)만 잔 물결 두 겹(12m·2.1m 파장대)을 줄인다. 그보다 먼 물은 그대로.
+  // 2차 모멘트도 같은 비율이라 줄어든 몫이 거칠기로 간다.
+  f = must(f, "  vec4 s2 = texture(uSlope2, vXZ / uLength.z) * damp.z;\n  vec4 s3 = texture(uSlope3, vXZ / uLength.w) * damp.z;",
+    "  float fineK = mix(uFineNear, 1.0, smoothstep(10.0, 80.0, dist));\n  vec4 s2 = texture(uSlope2, vXZ / uLength.z) * damp.z * fineK;\n  vec4 s3 = texture(uSlope3, vXZ / uLength.w) * damp.z * fineK;");
   f = must(f, "  vec3 toCam = cameraPosition - vWorld;", `  if (length(vWorld.xz) > uUltraRadius) discard;\n  vec3 toCam = cameraPosition - ${lift} - vWorld;`);
   f = f.split("viewMatrix * vec4(vWorld, 1.0)").join(`viewMatrix * vec4(vWorld + ${lift}, 1.0)`);
   // 물가의 얇은 막 처리는 굴절 화면에 실제 바닥이 있을 때만. 원본은 굴절 화면에 하늘까지 그리지만
