@@ -1,0 +1,118 @@
+.root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 80% at 50% 38%, #fbf7ff 0%, #ece6f6 55%, #ddd6ec 100%);
+  color: #3d3550;
+  font-size: 14px;
+  user-select: none;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+}
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #6c6288;
+}
+
+.hud {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.62);
+  backdrop-filter: blur(6px);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  pointer-events: none;
+}
+
+.hud b { font-weight: 700; color: #2b2340; }
+.dim { color: #7b7294; }
+
+.panel {
+  position: absolute;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 16px));
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 24px rgb(80 60 120 / 0.12);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.row::-webkit-scrollbar { display: none; }
+.row.wrap { flex-wrap: wrap; overflow: visible; }
+
+.label {
+  flex: none;
+  min-width: 34px;
+  font-size: 12px;
+  color: #7b7294;
+}
+
+.row button {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #f1edf8;
+  color: #3d3550;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.row button.on {
+  background: #7fa6ee;
+  color: #fff;
+}
+
+.row button.more {
+  margin-left: auto;
+  background: transparent;
+  color: #6c6288;
+  font-weight: 500;
+}
+
+.slider {
+  flex: 1 1 120px;
+  min-width: 110px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #7b7294;
+  white-space: nowrap;
+}
+
+.slider output { min-width: 26px; color: #3d3550; font-variant-numeric: tabular-nums; }
+.slider input { flex: 1; min-width: 60px; accent-color: #7fa6ee; }
