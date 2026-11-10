@@ -20,7 +20,7 @@ import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { HORIZON_MELT, SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
-import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
+import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerCeilingAt, bunkerFloorAt, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
 import type { BoardGame } from "./net";
 import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
@@ -596,7 +596,11 @@ export class BeachEngine {
       const cotton = this.loadEnvironmentTexture("/beach/real/white-cotton-v1.webp", true);
       wood.wrapS = wood.wrapT = cotton.wrapS = cotton.wrapT = THREE.RepeatWrapping;
       this.uyuniTextures = [sand, wood, cotton];
-      this.uyuni = new UyuniWorld(this.scene, this.skyMat.uniforms, sand, { wood, cotton }, { renderer: this.renderer, mobile: this.mobile });
+      this.uyuni = new UyuniWorld(this.scene, this.skyMat.uniforms, sand, { wood, cotton }, { renderer: this.renderer, mobile: this.mobile, loadTexture: path => {
+        const texture = this.loadEnvironmentTexture(path, true);
+        this.assetLoads.at(-1)?.catch(() => { /* The hall keeps its drawn stone if the photograph cannot be fetched. */ });
+        return texture;
+      } });
       this.cove = this.uyuni;
     } else if (this.mapId === "bamboo") {
       const wood = this.loadEnvironmentTexture("/beach/real/shelter-wood-v2.webp", true);
@@ -1160,6 +1164,8 @@ export class BeachEngine {
   }
 
   get bunkerId(): UyuniBunkerId | null { return this.activeBunkerId; }
+  /** An underground room reaches past the edge of the map above it, so indoors only its own walls apply. */
+  private get walkBounds() { return bunkerById(this.activeBunkerId)?.bounds ?? this.bounds; }
 
   get bunkerState(): BunkerState {
     const room = bunkerById(this.activeBunkerId);
@@ -1183,6 +1189,8 @@ export class BeachEngine {
   private updateBunkerState() {
     if (!this.uyuni) return;
     const state = this.bunkerState, key = JSON.stringify(state);
+    // Someone is standing by a hatch: build the room below in the gaps between frames, before the ladder is used.
+    if (state.nearId && !state.inside) this.uyuni.prepareBunkers?.(4);
     if (key === this.lastBunkerState) return;
     this.lastBunkerState = key;
     this.handlers.onBunkerChange?.(state);
@@ -1569,8 +1577,8 @@ export class BeachEngine {
     }
     const step = Math.min(dist, WALK_SPEED * dt);
     const [cx, cz] = this.collide(this.self.x + (dx / dist) * step, this.self.z + (dz / dist) * step, true);
-    const nx = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
-    const nz = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
+    const nx = Math.max(this.walkBounds.minX + 0.4, Math.min(this.walkBounds.maxX - 0.4, cx));
+    const nz = Math.max(this.walkBounds.minZ + 0.3, Math.min(this.walkBounds.maxZ - 0.4, cz));
     const progressed = Math.hypot(nx - this.self.x, nz - this.self.z);
     this.self.x = nx;
     this.self.z = nz;
@@ -2106,15 +2114,15 @@ export class BeachEngine {
     let x = finite(origin.x, finite(this.self.x, 0)), z = finite(origin.z, finite(this.self.z, 3));
     // A stale position may overlap a newly added piece of furniture. Project it out before rendering.
     for (let pass = 0; pass < 4; pass++) {
-      x = clamp(x, this.bounds.minX + 0.4, this.bounds.maxX - 0.4);
-      z = clamp(z, this.bounds.minZ + 0.3, this.bounds.maxZ - 0.4);
+      x = clamp(x, this.walkBounds.minX + 0.4, this.walkBounds.maxX - 0.4);
+      z = clamp(z, this.walkBounds.minZ + 0.3, this.walkBounds.maxZ - 0.4);
       if (!this.uyuni) for (const obstacle of this.obstacles) {
         if (Math.hypot(x - obstacle.x, z - obstacle.z) < 1e-4) x = obstacle.x + obstacle.r + 0.35;
       }
       [x, z] = this.collide(x, z);
     }
-    this.self.x = clamp(x, this.bounds.minX + 0.4, this.bounds.maxX - 0.4);
-    this.self.z = clamp(z, this.bounds.minZ + 0.3, this.bounds.maxZ - 0.4);
+    this.self.x = clamp(x, this.walkBounds.minX + 0.4, this.walkBounds.maxX - 0.4);
+    this.self.z = clamp(z, this.walkBounds.minZ + 0.3, this.walkBounds.maxZ - 0.4);
     this.self.yaw = yaw(finite(preserveLocal ? this.self.yaw : spawn.yaw, 0));
     this.self.pitch = clamp(finite(this.beforeSkyRest?.pitch, 0.07), -0.55, 0.5);
     this.self.moving = false;
@@ -2270,6 +2278,7 @@ export class BeachEngine {
       trimSmallPropShadows(this.scene);
     }
     if (this.ultraSea?.enabled && !this.activeBunkerId) this.ultraSea.prepare(dt, this.camera);
+    if (this.activeBunkerId) this.uyuni?.prepareWater?.(dt, this.camera, this.quality === "high");
     this.drawScene();
   }
 
@@ -2373,8 +2382,8 @@ export class BeachEngine {
         const nx = this.self.x + dx * speed * dt;
         const nz = this.self.z + dz * speed * dt;
         const [cx, cz] = this.collide(nx, nz, true);
-        this.self.x = Math.max(this.bounds.minX + 0.4, Math.min(this.bounds.maxX - 0.4, cx));
-        this.self.z = Math.max(this.bounds.minZ + 0.3, Math.min(this.bounds.maxZ - 0.4, cz));
+        this.self.x = Math.max(this.walkBounds.minX + 0.4, Math.min(this.walkBounds.maxX - 0.4, cx));
+        this.self.z = Math.max(this.walkBounds.minZ + 0.3, Math.min(this.walkBounds.maxZ - 0.4, cz));
         this.self.bobT += dt * speed * 2.6;
       }
     }
@@ -2553,7 +2562,7 @@ export class BeachEngine {
     const wanted = new THREE.Vector3(this.self.x - direction.x * reach,
       eyeY, this.self.z - direction.z * reach);
     // Pavilion seats face outward, so the orbit sits inside the roof: stay below the rafters.
-    const seatCeiling = this.baikal ? baikalCeilingHeight(wanted.x, wanted.z) : this.cloudSpa ? cloudSpaCeilingHeight(wanted.x, wanted.z) : this.activeBunkerId ? bunkerById(this.activeBunkerId)!.ceilingY : this.bamboo ? bambooCeilingHeight(wanted.x, wanted.z) : this.garden ? gardenCeilingHeight(wanted.x, wanted.z) : null;
+    const seatCeiling = this.baikal ? baikalCeilingHeight(wanted.x, wanted.z) : this.cloudSpa ? cloudSpaCeilingHeight(wanted.x, wanted.z) : this.activeBunkerId ? bunkerCeilingAt(this.activeBunkerId, wanted.x, wanted.z) : this.bamboo ? bambooCeilingHeight(wanted.x, wanted.z) : this.garden ? gardenCeilingHeight(wanted.x, wanted.z) : null;
     if (seatCeiling !== null) wanted.y = Math.min(wanted.y, seatCeiling - 0.2);
     // Onsen seats have their backs to the rock: the orbit stays over the bath instead of ending up inside the hillside.
     if (this.onsenSeat) {
@@ -2581,8 +2590,8 @@ export class BeachEngine {
     const focusY = this.deckHeight(x, z) + (this.restSeat ? 1.0 : 1.25);
     const elev = Math.max(0.08, Math.min(1.0, 0.4 - this.self.pitch * 0.8));
     const f = this.facing(this.orbitYaw);
-    const reach = this.activeBunkerId ? 3.6 : this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
-    const ceiling = this.baikal ? baikalCeilingHeight(x, z) : this.cloudSpa ? cloudSpaCeilingHeight(x, z) : this.activeBunkerId ? bunkerById(this.activeBunkerId)!.ceilingY : this.uyuni ? uyuniHotelCeilingHeight(x, z) : this.bamboo ? bambooCeilingHeight(x, z) : this.garden ? gardenCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
+    const reach = this.activeBunkerId ? 4.6 : this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
+    const ceiling = this.baikal ? baikalCeilingHeight(x, z) : this.cloudSpa ? cloudSpaCeilingHeight(x, z) : this.activeBunkerId ? bunkerCeilingAt(this.activeBunkerId, x, z) : this.uyuni ? uyuniHotelCeilingHeight(x, z) : this.bamboo ? bambooCeilingHeight(x, z) : this.garden ? gardenCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
     const cosE = Math.cos(elev), sinE = Math.sin(elev);
     const wanted = new THREE.Vector3();
     for (let k = 1; k >= 0.06; k -= 0.06) {
@@ -2644,7 +2653,7 @@ export class BeachEngine {
     const bunker = bunkerById(this.activeBunkerId);
     if (bunker) {
       const b = bunker.bounds;
-      if (p.x < b.minX + .25 || p.x > b.maxX - .25 || p.z < b.minZ + .25 || p.z > b.maxZ - .25 || p.y < bunker.floorY + .25 || p.y > bunker.ceilingY - .25) return false;
+      if (p.x < b.minX + .25 || p.x > b.maxX - .25 || p.z < b.minZ + .25 || p.z > b.maxZ - .25 || p.y < bunkerFloorAt(bunker.id, p.x, p.z) + .25 || p.y > bunkerCeilingAt(bunker.id, p.x, p.z) - .25) return false;
       return !bunkerColliders(bunker.id).some(wall => (wall.kind === "wall" || wall.kind === "shelf" || wall.kind === "ladder")
         && p.x > wall.minX - .2 && p.x < wall.maxX + .2 && p.z > wall.minZ - .2 && p.z < wall.maxZ + .2);
     }
@@ -2822,7 +2831,7 @@ export class BeachEngine {
   private deckHeight(x: number, z: number) {
     if (this.baikal) return baikalFloorHeight(x, z);
     if (this.cloudSpa) return cloudSpaFloorHeight(x, z);
-    if (this.activeBunkerId) return bunkerById(this.activeBunkerId)!.floorY;
+    if (this.activeBunkerId) return bunkerFloorAt(this.activeBunkerId, x, z);
     if (this.uyuni) return uyuniHotelFloorHeight(x, z);
     if (this.bamboo) return this.bamboo.floorHeight(x, z);
     if (this.garden) return gardenFloorHeight(x, z);

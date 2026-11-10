@@ -11,10 +11,11 @@ final class BeachBunkers {
         String sofa() { return "bunker-" + id + "-sofa"; }
         double entryZ() { return z - 6.8; }
         double arrivalZ() { return z - 5.4; }
-        double minX() { return x - 9.6; }
-        double maxX() { return x + 9.6; }
+        // BUNKER_EXTENT in the layout, less the .4 a visitor keeps from each wall.
+        double minX() { return x - 17.6; }
+        double maxX() { return x + 17.6; }
         double minZ() { return z - 8.6; }
-        double maxZ() { return z + 8.6; }
+        double maxZ() { return z + 26.6; }
         BeachRoom.BenchSeat seat(int slot) {
             if (slot < 0 || slot >= SOFA_SLOTS) throw ApiException.badRequest("소파 자리를 다시 골라 주세요.");
             return new BeachRoom.BenchSeat(x + (slot < 3 ? -5.3 : 5.3), z + (slot % 3 - 1) * 1.8,

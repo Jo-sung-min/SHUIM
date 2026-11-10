@@ -124,7 +124,7 @@ test("actual Three.js loading entry points request CDN textures and models with 
   const { TripoCampfireModel } = await load("campfire-model", ["TripoCampfireModel"]);
   const campfire = new TripoCampfireModel(scene, 0, 0, []); await campfire.ready;
   const atlas = await load("atlas", ["CHAR_ANIM", "CHAR_ATLAS", "CHAR_VIEW"]);
-  const { BeachEngine } = await load("engine", ["BeachEngine"], { ...atlas, CAMPFIRE: { x: 0, z: 12 } });
+  const { BeachEngine } = await load("engine", ["BeachEngine"], { ...atlas, CAMPFIRE: { x: 0, z: 12 }, HORIZON_MELT: "" });
   const engine = Object.assign(Object.create(BeachEngine.prototype), { assetLoads: [], renderer: { capabilities: { getMaxAnisotropy: () => 4 } } });
   const environmentPaths = ["/beach/real/white-sand-v1.webp", "/beach/real/white-cotton-v1.webp", ...MAP_TEXTURES];
   for (const path of environmentPaths) engine.loadEnvironmentTexture(path);

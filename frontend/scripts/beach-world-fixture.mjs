@@ -54,7 +54,7 @@ const bunkerSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/u
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const bunkerContext = { ...hotelContext.api };
 vm.runInNewContext(`${bunkerSource}\nglobalThis.api = {
-  UYUNI_BUNKERS, BUNKER_FLOOR_Y, BUNKER_CEILING_Y, BUNKER_PLAYER_INSET,
+  UYUNI_BUNKERS, BUNKER_FLOOR_Y, BUNKER_CEILING_Y, BUNKER_PLAYER_INSET, bunkerFloorAt, bunkerCeilingAt,
   BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, BUNKER_INTERACTION_REACH, BUNKER_COLLIDERS,
   bunkerById, bunkerForSpot, bunkerSeat, bunkerColliders, claimedBunkerSeat,
   nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa

@@ -300,7 +300,7 @@ const isBunkerId = (value: unknown): value is BunkerId => value === "dawn" || va
 function validBunkerLayer(value: unknown): boolean { return value == null || isBunkerId(value); }
 function insideBunker(id: BunkerId, x: number, z: number): boolean {
   const cx = id === "dawn" ? -12 : 12, cz = id === "dawn" ? 23 : 29;
-  return Math.abs(x - cx) <= 9.61 && Math.abs(z - cz) <= 8.61;
+  return Math.abs(x - cx) <= 17.61 && z - cz >= -8.61 && z - cz <= 26.61;
 }
 function matchesBunkerSeat(state: RestPresence): boolean {
   if (!isBunkerId(state.bunkerId) || state.spotId !== `bunker-${state.bunkerId}-sofa`

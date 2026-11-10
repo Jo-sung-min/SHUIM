@@ -105,6 +105,11 @@ test("standing and seated resumes restore the indoor floor before collision proj
   engine.restoreVisit(rest,rest,{ view:"first",yaw:1.1,pitch:.1,orbitYaw:1.1,restSpot:null },true);
   assert.equal(engine.bunkerId,"dusk"); close(engine.self.x,20); close(engine.self.z,24);
   close(camera.position.y,-8.6+1.55); assert.equal(engine.sky.visible,false);
+  // The shelter reaches past the edge of the map above it: indoors only its own walls hold a visitor.
+  const map={ minX:-22,maxX:22,minZ:-50,maxZ:55 }, room=hotSpring.bunkerById("dusk"), far={ ...bunkerRest("dusk"),x:24,z:31 };
+  assert.ok(far.x>map.maxX && room.bounds.maxX>far.x);
+  engine.restoreVisit(far,far,{ view:"first",yaw:1.1,pitch:.1,orbitYaw:1.1,restSpot:null },false,map);
+  close(engine.self.x,24); close(engine.self.z,31); assert.equal(engine.bunkerId,"dusk");
   const seat=hotSpring.BUNKER_SEATS.find(s=>s.spotId==="bunker-dusk-sofa" && s.slot===4);
   engine.restoreVisit(seat,{ ...seat,pose:"sitting",bunkerId:"dusk" });
   assert.equal(engine.bunkerState.seated,true); assert.equal(engine.pavilionSeat.slot,4);

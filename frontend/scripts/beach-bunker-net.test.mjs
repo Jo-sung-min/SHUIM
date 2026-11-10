@@ -71,10 +71,19 @@ test("all twelve shared sofa seats require their canonical layer, slot, position
   }
 });
 
+test("positions anywhere in the hall are accepted, upstairs included, and nothing beyond its walls", async () => {
+  for (const [x, z] of [[-29.6, 14.4], [5.6, 49.6], [-12, 49.6], [-29.6, 49.6], [-12, 45]]) {
+    const inside = await setup(async () => response({ selfRest: { ...standing(), x, z } })).tickBeach({ ticket: "visit", bunkerId: "dawn" });
+    assert.equal(inside.selfRest.x, x); assert.equal(inside.selfRest.z, z);
+  }
+  for (const [x, z] of [[-29.7, 20], [5.7, 20], [-12, 49.7], [-12, 14.3]])
+    await assert.rejects(setup(async () => response({ selfRest: { ...standing(), x, z } })).tickBeach({ ticket: "visit", bunkerId: "dawn" }), /쉴 자리/);
+});
+
 test("layer and indoor bounds validation rejects malformed confirmations without inventing a floor", async () => {
   for (const bad of [
     { ...standing(), bunkerId: "other" }, { ...standing(), bunkerId: true }, { ...standing(), bunkerId: {} },
-    { ...standing(), x: 12 }, { ...standing(), z: 40 }, { ...standing(), x: null },
+    { ...standing(), x: 12 }, { ...standing(), z: 52 }, { ...standing(), x: null },
     { ...standing(), pose: "lying", spotId: "hotel-dawn", slot: 0 },
     { ...standing(), spotId: "bunker-dawn-sofa", slot: 0 },
   ]) {
