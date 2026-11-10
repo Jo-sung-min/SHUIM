@@ -44,7 +44,9 @@ public class AccountDeletionService {
             UNION SELECT unnest(images) FROM feed_posts WHERE author_id = ?
             UNION SELECT page->>'image' FROM feed_posts, jsonb_array_elements(pages) page
                   WHERE author_id = ? AND page->>'image' IS NOT NULL
-            """).param(id).param(id).param(id).param(id).query(String.class).list();
+            UNION SELECT page->>'video' FROM feed_posts, jsonb_array_elements(pages) page
+                  WHERE author_id = ? AND page->>'video' IS NOT NULL
+            """).param(id).param(id).param(id).param(id).param(id).query(String.class).list();
         for (String url : urls) {
             String key = s3.ownedKeyFromUrl(url, id);
             if (key != null) keys.add(key);

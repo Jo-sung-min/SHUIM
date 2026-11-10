@@ -5,6 +5,7 @@
 
 import { addDays, todayKey } from "./dates";
 import { stripHighlights } from "./highlight";
+import type { TextOverlay } from "./feed-media";
 
 export type ShoutCat = "misfortune" | "anxiety" | "money" | "work" | "relation" | "body" | "small-win" | "free";
 
@@ -110,11 +111,20 @@ export interface Comment extends Base {
   parentId?: string;
 }
 
-/** 피드 글 안의 콘텐츠 하나: 사진(선택) + 제목(선택) + 글. 가로로 넘기면 사진과 글이 함께 바뀐다 */
+/**
+ * 피드 글 안의 콘텐츠 하나: 사진(선택) + 제목(선택) + 글. 가로로 넘기면 사진과 글이 함께 바뀐다.
+ * 영상(릴스)이면 video 에 MP4, image 에 표지. overlays 는 사진·영상 위에 얹은 글(ratio 기준 좌표).
+ */
 export interface FeedPage {
   image?: string;
   title?: string;
   text: string;
+  video?: string;
+  duration?: number;
+  ratio?: number;
+  /** 소리 없이 올린 영상 */
+  muted?: boolean;
+  overlays?: TextOverlay[];
 }
 
 export interface FeedPost extends Base {

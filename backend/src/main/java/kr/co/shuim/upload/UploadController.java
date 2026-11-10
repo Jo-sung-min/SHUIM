@@ -26,7 +26,8 @@ public class UploadController {
     /** GET /api/upload/presign — 업로드 가능 여부와 제한 */
     @GetMapping("/api/upload/presign")
     public Map<String, Object> info() {
-        return Map.of("configured", s3.configured(), "maxBytes", S3Service.MAX_UPLOAD_BYTES, "types", List.copyOf(S3Service.ALLOWED_TYPES.keySet()));
+        return Map.of("configured", s3.configured(), "maxBytes", S3Service.MAX_UPLOAD_BYTES, "maxVideoBytes", S3Service.MAX_VIDEO_BYTES,
+            "types", List.copyOf(S3Service.ALLOWED_TYPES.keySet()));
     }
 
     /** POST /api/upload/presign { contentType, size } → { uploadUrl, key, publicUrl, headers, expiresIn } */

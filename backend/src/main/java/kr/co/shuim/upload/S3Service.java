@@ -44,8 +44,10 @@ import java.util.Map;
 @Service
 public class S3Service {
     private static final Logger log = LoggerFactory.getLogger(S3Service.class);
-    public static final Map<String, String> ALLOWED_TYPES = new LinkedHashMap<>(Map.of("image/jpeg", "jpg", "image/png", "png", "image/webp", "webp", "image/gif", "gif"));
+    public static final Map<String, String> ALLOWED_TYPES = new LinkedHashMap<>(Map.of("image/jpeg", "jpg", "image/png", "png", "image/webp", "webp", "image/gif", "gif", "video/mp4", "mp4"));
     public static final long MAX_UPLOAD_BYTES = 5L * 1024 * 1024;
+    /** 30초 릴스는 브라우저에서 720p H.264 로 줄여 보통 10MB 안팎 */
+    public static final long MAX_VIDEO_BYTES = 25L * 1024 * 1024;
     private static final Duration PRESIGN_TTL = Duration.ofSeconds(60);
 
     private final String region;
@@ -167,8 +169,10 @@ public class S3Service {
         if (!configured()) throw ApiException.unavailable("지금은 사진을 첨부할 수 없어요. 잠시 후 다시 시도해 주세요.");
         String ext = ALLOWED_TYPES.get(contentType);
         if (ext == null) throw ApiException.badRequest("JPG, PNG, WebP, GIF 사진을 선택해 주세요.");
-        if (size <= 0) throw ApiException.badRequest("비어 있는 사진은 첨부할 수 없어요. 다른 사진을 선택해 주세요.");
-        if (size > MAX_UPLOAD_BYTES) throw ApiException.badRequest("사진은 한 장당 " + (MAX_UPLOAD_BYTES / 1024 / 1024) + "MB 이하여야 해요. 크기를 줄인 뒤 다시 선택해 주세요.");
+        boolean video = contentType.startsWith("video/");
+        if (size <= 0) throw ApiException.badRequest(video ? "비어 있는 영상은 올릴 수 없어요." : "비어 있는 사진은 첨부할 수 없어요. 다른 사진을 선택해 주세요.");
+        if (video && size > MAX_VIDEO_BYTES) throw ApiException.badRequest("영상은 " + (MAX_VIDEO_BYTES / 1024 / 1024) + "MB 이하여야 해요.");
+        if (!video && size > MAX_UPLOAD_BYTES) throw ApiException.badRequest("사진은 한 장당 " + (MAX_UPLOAD_BYTES / 1024 / 1024) + "MB 이하여야 해요. 크기를 줄인 뒤 다시 선택해 주세요.");
         String day = LocalDate.now(java.time.ZoneOffset.UTC).toString().replace('-', '/');
         String key = prefix + "/" + day + "/" + userId + "-" + Ids.randomHex(8) + "." + ext;
         String cacheControl = "public, max-age=300";

@@ -1,5 +1,7 @@
 package kr.co.shuim.community;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.Map;
 
@@ -66,7 +68,20 @@ public final class Model {
         }
     }
 
-    public record FeedPage(String image, String title, String text) {}
+    /**
+     * 피드 콘텐츠 한 장. 영상(릴스)이면 video 에 MP4 주소, image 에 표지(옛 화면은 사진처럼 보여 준다).
+     * ratio = 사진·영상의 가로/세로, overlays = 그 위에 얹은 글(좌표·크기는 화면 너비 기준 비율).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record FeedPage(String image, String title, String text, String video, Double duration, Double ratio, Boolean muted, List<Overlay> overlays) {
+        public FeedPage(String image, String title, String text) {
+            this(image, title, text, null, null, null, null, null);
+        }
+    }
+
+    /** 사진·영상 위에 얹은 글 하나. x·y 는 글 가운데의 위치(0~1), size 는 글자 크기(콘텐츠 너비 대비) */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Overlay(String text, double x, double y, double size, String color, String font, String align, String style) {}
 
     public record FeedPost(String id, String title, String text, int bg, String image, List<String> images, List<FeedPage> pages,
                            String authorId, long createdAt, List<String> cheers, List<Report> reports, List<String> saves, Boolean hidden, Long reviewedAt) implements Item {}

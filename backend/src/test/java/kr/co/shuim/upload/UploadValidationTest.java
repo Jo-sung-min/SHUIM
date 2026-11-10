@@ -26,6 +26,18 @@ class UploadValidationTest {
     }
 
     @Test
+    void videosHaveTheirOwnLimitAndOnlyMp4IsAccepted() {
+        ApiException large = assertThrows(ApiException.class, () -> configured.presignUpload("user", "video/mp4", S3Service.MAX_VIDEO_BYTES + 1));
+        assertEquals(400, large.status());
+        assertTrue(large.getMessage().contains("영상") && large.getMessage().contains("25MB"));
+        assertEquals(400, assertThrows(ApiException.class, () -> configured.presignUpload("user", "video/mp4", 0)).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> configured.presignUpload("user", "video/quicktime", 1000)).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> configured.presignUpload("user", "video/webm", 1000)).status());
+        // 사진 한도는 그대로
+        assertEquals(400, assertThrows(ApiException.class, () -> configured.presignUpload("user", "image/webp", S3Service.MAX_UPLOAD_BYTES + 1)).status());
+    }
+
+    @Test
     void unavailableAttachmentDoesNotCreateAnAccountOrExposeConfiguration() {
         AuthService auth = mock(AuthService.class);
         CommunityConsentService consent = mock(CommunityConsentService.class);

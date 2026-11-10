@@ -22,6 +22,7 @@ import {
 import { Sheet, fmtRelative } from "@/components/ui";
 import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import FeedComposer from "@/components/FeedComposer";
+import { MediaFrame, Overlays, ReelVideo } from "@/components/FeedMedia";
 import Link from "next/link";
 import { IconBookmark, IconBubble, IconFlame, IconMore, IconPen } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
@@ -337,6 +338,55 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
     if (el) setIdx(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
   };
   const anyImage = pages.some((p) => p.image);
+  const videoPage = pages.length === 1 && pages[0].video ? pages[0] : null;
+  const meta = (
+    <div className="reel-meta">
+      <button className="reel-author" onClick={onProfile}>
+        <span className="avatar">{author.nick.slice(0, 1)}</span>
+        <span>
+          <b>{mine ? `${author.nick} (나)` : author.nick} <TitleChip title={author.title} small /></b>
+          <small>크리에이터 · 리스너 {creator.followers.length} · {fmtRelative(post.createdAt)}</small>
+        </span>
+      </button>
+      {!mine && (
+        <button type="button" className={`pillbtn follow ${following ? "on" : ""}`} onClick={handleFollow} aria-pressed={following} aria-busy={followingBusy} disabled={followingBusy}>
+          {followingBusy ? "변경 중…" : following ? "리스닝 취소" : "리스닝"}
+        </button>
+      )}
+    </div>
+  );
+  const actions = (
+    <div className="reel-actions">
+      <CheerButton vertical count={post.cheers.length} on={cheered} onClick={onCheer} />
+      <LineAction vertical icon={<IconBubble />} label={comments} onClick={onComments} ariaLabel="위로 댓글" />
+      <LineAction vertical on={saved} icon={<IconBookmark style={saved ? { fill: "currentColor" } : undefined} />} label="저장" onClick={onSave} ariaLabel={saved ? "저장 취소" : "저장"} />
+      <LineAction vertical icon={<IconMore />} onClick={onMenu} ariaLabel="더보기" />
+    </div>
+  );
+
+  // 릴스: 세로 전체 화면 영상, 보이면 음소거 자동 재생
+  if (videoPage?.video) {
+    return (
+      <section id={`reel-${post.id}`} className={`reel ${styles.videoPost}`}>
+        {flagged ? (
+          <div className="reel-body" style={{ pointerEvents: "auto", padding: "0 84px 0 24px" }}>
+            <button className="flagged-box reel-flagged" onClick={onReveal}>
+              <b>신고가 누적되어 검토 중인 글이에요</b>
+              위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 · 눌러서 보기
+            </button>
+          </div>
+        ) : (
+          <>
+            <ReelVideo src={assetUrl(videoPage.video)} poster={videoPage.image ? assetUrl(videoPage.image) : undefined} ratio={videoPage.ratio}
+              silent={videoPage.muted} overlays={videoPage.overlays} label={`${author.nick}님의 영상`} />
+            {(videoPage.text || post.text) && <ReelCaption text={videoPage.text || post.text} />}
+          </>
+        )}
+        {meta}
+        {actions}
+      </section>
+    );
+  }
 
   return (
     <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${anyImage ? "has-img " + styles.photoPost : ""}`}>
@@ -352,8 +402,16 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
           {pages.map((p, i) => (
             <article key={i} className={`slide ${p.image ? "has-img " + styles.photoSlide : ""}`} aria-label={`${i + 1}번째 콘텐츠`}>
               {p.image && <div className={styles.photoFrame}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={assetUrl(p.image)} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
+                {p.ratio ? (
+                  <MediaFrame ratio={p.ratio} className={styles.photoFit}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={assetUrl(p.image)} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
+                    <Overlays overlays={p.overlays} />
+                  </MediaFrame>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={assetUrl(p.image)} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
+                )}
               </div>}
               <div className="slide-body">
                 {(p.title || (p.image && post.title)) && <div className="reel-title">{p.title || post.title}</div>}
@@ -369,27 +427,26 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
           <div className="reel-count">{idx + 1}/{pages.length}</div>
         </>
       )}
-      <div className="reel-meta">
-        <button className="reel-author" onClick={onProfile}>
-          <span className="avatar">{author.nick.slice(0, 1)}</span>
-          <span>
-            <b>{mine ? `${author.nick} (나)` : author.nick} <TitleChip title={author.title} small /></b>
-            <small>크리에이터 · 리스너 {creator.followers.length} · {fmtRelative(post.createdAt)}</small>
-          </span>
-        </button>
-        {!mine && (
-          <button type="button" className={`pillbtn follow ${following ? "on" : ""}`} onClick={handleFollow} aria-pressed={following} aria-busy={followingBusy} disabled={followingBusy}>
-            {followingBusy ? "변경 중…" : following ? "리스닝 취소" : "리스닝"}
-          </button>
-        )}
-      </div>
-      <div className="reel-actions">
-        <CheerButton vertical count={post.cheers.length} on={cheered} onClick={onCheer} />
-        <LineAction vertical icon={<IconBubble />} label={comments} onClick={onComments} ariaLabel="위로 댓글" />
-        <LineAction vertical on={saved} icon={<IconBookmark style={saved ? { fill: "currentColor" } : undefined} />} label="저장" onClick={onSave} ariaLabel={saved ? "저장 취소" : "저장"} />
-        <LineAction vertical icon={<IconMore />} onClick={onMenu} ariaLabel="더보기" />
-      </div>
+      {meta}
+      {actions}
     </section>
+  );
+}
+
+/** 릴스 캡션: 두 줄까지, 더보기로 펼침 */
+function ReelCaption({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 2);
+  }, [text, open]);
+  return (
+    <div className={`${styles.videoCaption} ${open ? styles.videoCaptionOpen : ""}`}>
+      <p ref={ref} className={open ? undefined : styles.clamped}><Highlighted text={text} /></p>
+      {(long || open) && <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}>{open ? "접기" : "더보기"}</button>}
+    </div>
   );
 }
 

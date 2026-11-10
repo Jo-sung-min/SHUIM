@@ -233,7 +233,12 @@ public class CommunityService {
             List<FeedPage> out = new ArrayList<>();
             for (Map<String, Object> p : list) {
                 Object t = p.get("text");
-                out.add(new FeedPage(str(p.get("image")), str(p.get("title")), t == null ? "" : String.valueOf(t)));
+                String video = p.get("video") instanceof String v ? v : null;
+                Double ratio = FeedMedia.ratio(p.get("ratio"));
+                List<Overlay> overlays = ratio == null ? List.of() : FeedMedia.overlays(p.get("overlays"));
+                out.add(new FeedPage(str(p.get("image")), str(p.get("title")), t == null ? "" : String.valueOf(t),
+                    video, video == null ? null : FeedMedia.duration(p.get("duration")), ratio,
+                    video != null && Boolean.TRUE.equals(p.get("muted")) ? Boolean.TRUE : null, overlays.isEmpty() ? null : overlays));
             }
             return out;
         } catch (Exception e) {
@@ -438,9 +443,27 @@ public class CommunityService {
                 Map<String, Object> p = (Map<String, Object>) m;
                 String t = str(p.get("text"), 280);
                 String img = okUrl(p.get("image")) ? str(p.get("image"), 500) : null;
+                String video = null;
+                Double duration = null;
+                if (p.get("video") != null) {
+                    // 영상은 이 사용자가 방금 올린 MP4 만 받는다 (다른 사람 영상·외부 주소로 피드를 채우지 못하게)
+                    video = str(p.get("video"), 500);
+                    String key = video == null ? null : s3.ownedKeyFromUrl(video, me.id());
+                    if (key == null || !key.endsWith(".mp4")) throw ApiException.badRequest("영상을 다시 올려 주세요.");
+                    duration = FeedMedia.duration(p.get("duration"));
+                    if (duration == null) throw ApiException.badRequest("영상은 30초까지 올릴 수 있어요.");
+                    if (img == null) throw ApiException.badRequest("영상 표지를 다시 골라 주세요.");
+                }
                 if (t == null && img == null) continue;
-                list.add(new FeedPage(img, str(p.get("title"), 24), t == null ? "" : t));
+                Double ratio = img == null ? null : FeedMedia.ratio(p.get("ratio"));
+                if (video != null && ratio == null) throw ApiException.badRequest("영상을 다시 올려 주세요.");
+                List<Overlay> overlays = ratio == null ? List.of() : FeedMedia.overlays(p.get("overlays"));
+                list.add(new FeedPage(img, str(p.get("title"), 24), t == null ? "" : t, video, duration, ratio,
+                    video != null && Boolean.TRUE.equals(p.get("muted")) ? Boolean.TRUE : null, overlays.isEmpty() ? null : overlays));
             }
+        }
+        if (list.size() > 1 && list.stream().anyMatch(page -> page.video() != null)) {
+            throw ApiException.badRequest("영상은 한 게시물에 하나만 올릴 수 있어요.");
         }
         if (list.isEmpty()) {
             String t = str(body, 280);
@@ -475,13 +498,14 @@ public class CommunityService {
     @Transactional
     public Store deleteFeedPost(DbUser me, String id) {
         Db.lockCommunity(jdbc);
-        record Img(String image, List<String> images) {}
-        Optional<Img> r = jdbc.sql("DELETE FROM feed_posts WHERE id = ? AND author_id = ? RETURNING image, images").param(id).param(me.id())
-            .query((rs, i) -> new Img(rs.getString("image"), Db.textArray(rs, "images"))).optional();
+        record Img(String image, List<String> images, String pages) {}
+        Optional<Img> r = jdbc.sql("DELETE FROM feed_posts WHERE id = ? AND author_id = ? RETURNING image, images, pages").param(id).param(me.id())
+            .query((rs, i) -> new Img(rs.getString("image"), Db.textArray(rs, "images"), rs.getString("pages"))).optional();
         if (r.isPresent()) {
             jdbc.sql("DELETE FROM comments WHERE post_kind = 'feed' AND post_id = ?").param(id).update();
             Set<String> urls = new LinkedHashSet<>(r.get().images());
             if (r.get().image() != null) urls.add(r.get().image());
+            for (FeedPage page : parsePages(r.get().pages())) if (page.video() != null) urls.add(page.video());
             for (String u : urls) if (s3.ownedKeyFromUrl(u, me.id()) != null) s3.deleteUploadedImage(u);
         }
         return loadStore(me);

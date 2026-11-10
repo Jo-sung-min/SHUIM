@@ -238,7 +238,7 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
       </div>
 
       {tab === "crop" && <>
-        <p className={styles.hint} id={helpId}>사진을 움직이거나 두 손가락으로 확대해 보세요.<br />키보드 방향키로도 위치를 조절할 수 있어요.</p>
+        <p className="sr-only" id={helpId}>사진을 끌어 위치를, 두 손가락이나 방향키로 확대·이동해요.</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.controls}>
           {allowAspectChange && <div className={styles.ratios} role="group" aria-label="사진 비율">
@@ -256,7 +256,7 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
       </>}
 
       {tab === "filter" && <>
-        <p className={styles.hint} id={helpId}>필터를 고르고 아래 슬라이더로 세기를 조절해요.</p>
+        <p className="sr-only" id={helpId}>필터를 고르고 슬라이더로 세기를 조절해요.</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.filters} role="radiogroup" aria-label="필터">
           {LOOK_PRESETS.map((preset) => {
@@ -282,7 +282,7 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
       </>}
 
       {tab === "adjust" && <>
-        <p className={styles.hint} id={helpId}>카메라 앱처럼 밝기·대비·채도·색온도를 손봐요.</p>
+        <p className="sr-only" id={helpId}>밝기·대비·채도·색온도를 조절해요.</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.controls}>
           {ADJUST_FIELDS.map((field) => {
@@ -299,7 +299,6 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
         </div>
       </>}
 
-      <p className={styles.privacy}>편집을 마친 사진은 게시하거나 저장할 때 전송돼요.</p>
     </div>
   </div>;
 }

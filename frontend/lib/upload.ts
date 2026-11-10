@@ -160,32 +160,7 @@ export async function uploadImage(file: File, progressOrOptions?: ((pct: number)
     }
     if (![presigned.uploadUrl, presigned.publicUrl, presigned.key].every((value) => typeof value === "string" && value.length)) throw new Error("사진 첨부를 준비하지 못했어요. 다시 시도해 주세요.");
     checkCancelled(scope.signal);
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      let settled = false;
-      const finish = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        scope.signal.removeEventListener("abort", abort);
-        xhr.onload = xhr.onerror = xhr.ontimeout = xhr.onabort = null;
-        xhr.upload.onprogress = null;
-        if (error) reject(error); else resolve();
-      };
-      const abort = () => { xhr.abort(); finish(cancelled()); };
-      xhr.open("PUT", presigned.uploadUrl!);
-      xhr.timeout = timeout;
-      for (const [key, value] of Object.entries(presigned.headers ?? {})) xhr.setRequestHeader(key, value);
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) options.onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)));
-      };
-      xhr.onload = () => finish(xhr.status >= 200 && xhr.status < 300 ? undefined : new Error("사진을 올리지 못했어요. 다시 시도해 주세요."));
-      xhr.onerror = () => finish(new Error("사진을 올리지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요."));
-      xhr.ontimeout = () => finish(new Error(TIMEOUT_ERROR));
-      xhr.onabort = () => finish(cancelled());
-      scope.signal.addEventListener("abort", abort, { once: true });
-      if (scope.signal.aborted) abort();
-      else { try { xhr.send(blob); } catch { finish(new Error("사진을 올리지 못했어요. 다시 시도해 주세요.")); } }
-    });
+    await putBlob(presigned.uploadUrl!, presigned.headers ?? {}, blob, scope.signal, timeout, options.onProgress, "사진", TIMEOUT_ERROR);
     options.onProgress?.(100);
     return { url: presigned.publicUrl!, key: presigned.key!, bytes: blob.size };
   } catch (error) {
@@ -193,6 +168,78 @@ export async function uploadImage(file: File, progressOrOptions?: ((pct: number)
     checkCancelled(scope.signal);
     if (error instanceof Error && /사진/.test(error.message)) throw error;
     throw new Error("사진을 올리지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
+  } finally { scope.dispose(); }
+}
+
+/** Presigned S3 PUT with progress; the signed headers must be sent exactly. */
+function putBlob(url: string, headers: Record<string, string>, blob: Blob, signal: AbortSignal, timeout: number,
+  onProgress: ((pct: number) => void) | undefined, noun: "사진" | "영상", timeoutError: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      xhr.onload = xhr.onerror = xhr.ontimeout = xhr.onabort = null;
+      xhr.upload.onprogress = null;
+      if (error) reject(error); else resolve();
+    };
+    const abort = () => { xhr.abort(); finish(cancelled()); };
+    xhr.open("PUT", url);
+    xhr.timeout = timeout;
+    for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.onload = () => finish(xhr.status >= 200 && xhr.status < 300 ? undefined : new Error(`${noun}을 올리지 못했어요. 다시 시도해 주세요.`));
+    xhr.onerror = () => finish(new Error(`${noun}을 올리지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.`));
+    xhr.ontimeout = () => finish(new Error(timeoutError));
+    xhr.onabort = () => finish(cancelled());
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    else { try { xhr.send(blob); } catch { finish(new Error(`${noun}을 올리지 못했어요. 다시 시도해 주세요.`)); } }
+  });
+}
+
+const VIDEO_TIMEOUT_ERROR = "영상을 올리는 데 시간이 걸리고 있어요. 연결을 확인한 뒤 다시 시도해 주세요.";
+
+/** 브라우저에서 준비한 릴스 MP4 를 올린다 (prepareVideo 결과, 25MB 이하) */
+export async function uploadVideo(blob: Blob, options: UploadOptions = {}): Promise<UploadResult> {
+  if (blob.type !== "video/mp4" || !blob.size) throw new Error("영상을 다시 준비해 주세요.");
+  if (blob.size > 25 * 1024 * 1024) throw new Error("영상이 너무 커요. 구간을 줄여 주세요.");
+  try {
+    await interruptible(requireCommunityConsent(), options.signal);
+  } catch (error) {
+    checkCancelled(options.signal);
+    if (error instanceof Error && error.message.includes("커뮤니티") && !/S3|CORS|서버/.test(error.message)) throw error;
+    throw new Error("영상을 올리지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.");
+  }
+  const timeout = Number.isFinite(options.timeoutMs) && options.timeoutMs! > 0 ? Math.min(options.timeoutMs!, 600_000) : 300_000;
+  const scope = timedSignal(options.signal, timeout);
+  try {
+    options.onProgress?.(0);
+    const res = await fetch("/api/upload/presign", {
+      method: "POST", credentials: "same-origin", signal: scope.signal,
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contentType: blob.type, size: blob.size }),
+    });
+    const presigned = await res.json().catch(() => ({})) as { uploadUrl?: string; key?: string; publicUrl?: string; headers?: Record<string, string>; message?: string };
+    if (!res.ok) {
+      if (res.status === 401) throw new Error("로그인 상태를 확인한 뒤 다시 올려 주세요.");
+      if (res.status === 429) throw new Error("여러 번 올렸어요. 잠시 후 다시 시도해 주세요.");
+      if (res.status === 400 && typeof presigned.message === "string" && /영상/.test(presigned.message)) throw new Error(presigned.message);
+      throw new Error("지금은 영상을 올릴 수 없어요. 잠시 후 다시 시도해 주세요.");
+    }
+    if (![presigned.uploadUrl, presigned.publicUrl, presigned.key].every((value) => typeof value === "string" && value.length)) throw new Error("영상을 올리지 못했어요. 다시 시도해 주세요.");
+    checkCancelled(scope.signal);
+    await putBlob(presigned.uploadUrl!, presigned.headers ?? {}, blob, scope.signal, timeout, options.onProgress, "영상", VIDEO_TIMEOUT_ERROR);
+    options.onProgress?.(100);
+    return { url: presigned.publicUrl!, key: presigned.key!, bytes: blob.size };
+  } catch (error) {
+    if (scope.timedOut) throw new Error(VIDEO_TIMEOUT_ERROR);
+    checkCancelled(scope.signal);
+    if (error instanceof Error && /영상|로그인|여러 번/.test(error.message)) throw error;
+    throw new Error("영상을 올리지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
   } finally { scope.dispose(); }
 }
 
