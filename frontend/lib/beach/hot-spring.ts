@@ -467,8 +467,9 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
   const fencePosts = cloneSurface(fenceWood);
   fencePosts.color.set(0x805932);
   // One quiet tone under the water, so neither the bench nor the bowl shows through as a shape.
+  // Pale and neutral: the milky water shows it faintly, without tinting the bath blue.
   const poolStone = cloneSurface(stone);
-  poolStone.color.setRGB(0.5, 0.72, 0.76);
+  poolStone.color.setRGB(0.5, 0.52, 0.48);
   poolStone.roughness = 0.55;
   poolStone.side = THREE.DoubleSide;
   const cliffFaces = cloneSurface(stone);
@@ -669,7 +670,8 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
   const pool = new THREE.PlaneGeometry(1, 1);
   instances("onsen-lantern-light-pools", pool, lanternPools, lanterns.filter(isDeckLantern).map(lanternPool)).renderOrder = 2;
 
-  // Turquoise and even by day. At night it turns to dark glass that breaks each lantern into shivering streaks.
+  // Milky mineral water by day: a soft white veil the bath floor shows faintly through, thinner at the rim.
+  // At night it turns to dim, still-milky glass that breaks each lantern into shivering streaks.
   const quietWater = (center: string, lamps: readonly THREE.Vector3[]) => new THREE.ShaderMaterial({
     uniforms: { uTime: clock, uNight: darkness, uLamps: { value: lamps } },
     vertexShader: `varying vec3 vWorld; void main() { vec4 world = modelMatrix * vec4(position, 1.0); vWorld = world.xyz; gl_Position = projectionMatrix * viewMatrix * world; }`,
@@ -690,20 +692,26 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
         float swell = sin(dot(p, vec2(0.83, 0.41)) * 1.7 + uTime * 0.31)
           + sin(dot(p, vec2(-0.37, 0.93)) * 2.3 - uTime * 0.23)
           + sin(dot(p, vec2(0.64, -0.77)) * 3.1 + uTime * 0.17);
-        vec3 day = vec3(0.10, 0.44, 0.50) * (1.0 + swell * 0.018);
-        day = mix(day, day * 1.12 + vec3(0.02, 0.03, 0.03), smoothstep(3.6, 4.3, length(p)) * 0.5);
+        float rim = smoothstep(3.4, 4.4, length(p));
         float night = smoothstep(0.15, 0.75, uNight);
         float height = surface(vWorld.xz);
         vec3 normal = normalize(vec3((height - surface(vWorld.xz + vec2(0.05, 0.0))) * 0.75, 1.0, (height - surface(vWorld.xz + vec2(0.0, 0.05))) * 0.75));
         vec3 view = normalize(vWorld - cameraPosition), mirrored = reflect(view, normal);
         float grazing = pow(1.0 - max(0.0, dot(-view, normal)), 5.0);
-        vec3 dark = vec3(0.018, 0.05, 0.062) * (1.0 + swell * 0.03) + vec3(0.05, 0.075, 0.11) * grazing * 0.8;
         float haze = noise(p * 0.55 + vec2(uTime * 0.05, -uTime * 0.04)) * 0.6 + noise(p * 1.3 - uTime * 0.07) * 0.4;
-        dark = mix(dark, vec3(0.17, 0.17, 0.165), smoothstep(0.35, 0.85, haze) * 0.28);
+        // milky white with a faint jade cast; slow clouds of suspended minerals drift through it
+        vec3 day = vec3(0.74, 0.83, 0.79) * (1.0 + swell * 0.012) * mix(0.95, 1.04, smoothstep(0.3, 0.8, haze));
+        // the surface still reads as water: soft ripple light and a sky sheen toward grazing angles
+        day *= 0.94 + 0.12 * smoothstep(0.6, 1.4, height);
+        day += vec3(0.12, 0.13, 0.13) * grazing;
+        vec3 dark = vec3(0.075, 0.08, 0.075) * (1.0 + swell * 0.03) + vec3(0.05, 0.06, 0.08) * grazing * 0.8;
+        dark = mix(dark, vec3(0.17, 0.17, 0.165), smoothstep(0.35, 0.85, haze) * 0.3);
         float shimmer = 0.0;
         for (int i = 0; i < LAMPS; i++) shimmer += pow(max(0.0, dot(mirrored, normalize(uLamps[i] - vWorld))), 700.0);
         vec3 water = mix(day, dark, night) + vec3(1.0, 0.74, 0.38) * smoothstep(0.08, 0.9, shimmer) * night;
-        gl_FragColor = vec4(water, mix(0.88, 0.95, night));
+        // translucent: the floor shows faintly through the middle, more where the water thins at the rim
+        float veil = mix(mix(0.86, 0.7, rim), 0.92, night) + grazing * 0.2;
+        gl_FragColor = vec4(water, min(veil, 0.95));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -850,8 +858,8 @@ export function buildHotSpring(scene: THREE.Scene, materials: Materials = {}) {
         float foam = clamp(vFoam * (0.35 + 0.75 * sheet), 0.0, 1.0);
         float ragged = noise(vec2(along * 1.4 - uTime * 0.9, vFlow.x > 0.0 ? 2.0 : 9.0)) * 0.3;
         float edge = smoothstep(1.0, 0.7 - ragged, abs(vFlow.x));
-        vec3 day = mix(vec3(0.34, 0.66, 0.72), vec3(0.96, 0.99, 0.99), foam);
-        vec3 night = mix(vec3(0.07, 0.20, 0.24), vec3(0.50, 0.60, 0.62), foam);
+        vec3 day = mix(vec3(0.80, 0.84, 0.81), vec3(0.97, 0.98, 0.97), foam);
+        vec3 night = mix(vec3(0.13, 0.14, 0.13), vec3(0.50, 0.52, 0.50), foam);
         gl_FragColor = vec4(mix(day, night, uNight * 0.9), edge * mix(0.5, 0.95, foam) * vFlow.z);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

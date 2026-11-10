@@ -146,6 +146,12 @@ export class BeachUltraSea {
     u.uFineNear = { value: mobile ? 0.12 : 1.0 };
     if (mobile) (u.uOptics.value as THREE.Vector4).setX(0.055).setY(0.022);
     this.mobile = mobile;
+    if (mobile) {
+      // 휴대폰은 절반 밀도 격자만 그린다: 촘촘한 격자(삼각형 40만, 6.9MB)는 처음부터 놓아 준다
+      this.surface.grids[0].dispose();
+      this.surface.grids[0] = this.surface.grids[1];
+      this.surface.mesh.geometry = this.surface.grids[1];
+    }
     u.uReflection.value = emptyReflection();
     u.uSeaY = { value: SEA_Y };
     u.uUltraRadius = { value: ULTRA_RADIUS };
@@ -255,7 +261,7 @@ export class BeachUltraSea {
   dispose() {
     this.surface.mesh.removeFromParent();
     this.surface.material.dispose();
-    this.surface.mesh.geometry.dispose();
+    for (const grid of new Set([...this.surface.grids, this.surface.mesh.geometry])) grid.dispose();
     this.refractRT?.dispose();
     this.cubeRT.dispose();
     this.farRT.dispose();
