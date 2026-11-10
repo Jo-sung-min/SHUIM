@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 /** 사진·영상 위에 얹은 글 (backend FeedMedia.java 와 같은 규칙) */
 export type OverlayColor = "white" | "ink" | "cream" | "lavender" | "sky" | "rose" | "sage";
-export type OverlayFont = "sans" | "serif";
+export type OverlayFont = "sans" | "serif" | "song" | "hahmlet" | "pen";
 export type OverlayAlign = "left" | "center" | "right";
 export type OverlayStyle = "plain" | "dim" | "solid";
 
@@ -24,6 +24,8 @@ export const OVERLAY_MAX_CHARS = 120;
 export const OVERLAY_SIZE_MIN = 0.03;
 export const OVERLAY_SIZE_MAX = 0.2;
 export const VIDEO_MAX_SECONDS = 30;
+/** 피드 한 장의 비율 (세로 전체 화면, 릴스와 같음). 사진·영상은 올릴 때 이 비율로 자른다 */
+export const FEED_RATIO = 9 / 16;
 export const VIDEO_MIN_SECONDS = 1;
 
 /** 차분한 색 7가지. ink = solid 배경일 때 글자색 */
@@ -37,10 +39,13 @@ export const OVERLAY_COLORS: { id: OverlayColor; label: string; hex: string; ink
   { id: "sage", label: "연두", hex: "#cfe3c0", ink: "#24361a" },
 ];
 
-export const OVERLAY_FONTS: { id: OverlayFont; label: string; family: string }[] = [
-  { id: "sans", label: "기본", family: "inherit" },
-  // 안드로이드 9+ 는 Noto Serif CJK 를 기본 명조로 갖고 있다
-  { id: "serif", label: "명조", family: '"Noto Serif KR", "Noto Serif CJK KR", "Nanum Myeongjo", serif' },
+/** 무드 글꼴 (Pretendard 외에는 lib/overlay-fonts.ts 가 필요할 때만 불러온다). serif 는 예전 "명조" 글도 바탕으로 보이게 */
+export const OVERLAY_FONTS: { id: OverlayFont; label: string; family: string; weight: number }[] = [
+  { id: "sans", label: "기본", family: "inherit", weight: 700 },
+  { id: "serif", label: "바탕", family: '"Gowun Batang", "Noto Serif CJK KR", serif', weight: 700 },
+  { id: "song", label: "활자", family: '"Song Myung", "Noto Serif CJK KR", serif', weight: 400 },
+  { id: "hahmlet", label: "함렛", family: '"Hahmlet", "Noto Serif CJK KR", serif', weight: 600 },
+  { id: "pen", label: "손글씨", family: '"Nanum Pen Script", cursive', weight: 400 },
 ];
 
 export const DEFAULT_OVERLAY: Omit<TextOverlay, "text"> = { x: 0.5, y: 0.45, size: 0.07, color: "white", font: "sans", align: "center", style: "plain" };
@@ -59,7 +64,9 @@ export function overlayStyle(o: TextOverlay): CSSProperties {
     top: `${o.y * 100}%`,
     textAlign: o.align,
     fontFamily: font.family,
-    fontSize: `calc(${o.size} * 100cqw)`,
+    fontWeight: font.weight,
+    // 손글씨는 글자가 작게 보여 조금 키운다
+    fontSize: `calc(${o.size * (o.font === "pen" ? 1.25 : 1)} * 100cqw)`,
     color: o.style === "solid" ? color.ink : color.hex,
     "--ovl-bg": o.style === "solid" ? color.hex : o.style === "dim" ? "rgba(12, 10, 16, 0.5)" : "transparent",
   } as CSSProperties;

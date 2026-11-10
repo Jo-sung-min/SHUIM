@@ -21,12 +21,31 @@ export interface LookLayer {
   /** radial 의 중심 (0~1). 기본 가운데 */
   center?: [number, number];
 }
+/**
+ * 필름 단계 ("오늘의" 레트로 필터): 색 행렬·겹침 레이어 다음에 셰이더에서 계산한다.
+ * tint 는 RGB 에 더하는 값(그림자·밝은 곳 각각), 나머지는 0 이면 꺼짐.
+ */
+export interface FilmLook {
+  /** 검정 띄우기 (0~0.15, 우윳빛 검정) */
+  lift: number;
+  /** 톤 곡선: + 는 S 곡선(대비), - 는 평평하게 */
+  curve: number;
+  shadowTint: [number, number, number];
+  highlightTint: [number, number, number];
+  /** 밝은 곳 주위 따뜻한 번짐 (0~0.5) */
+  glow: number;
+  /** 필름 입자 (0~0.1), 중간 밝기에서 가장 진하다 */
+  grain: number;
+  /** 주변 어둡기 (0~0.6) */
+  vignette: number;
+}
 export interface LookPreset {
   id: string;
   label: string;
   /** CSS filter 함수 목록 (썸네일용 문자열이면서 색 행렬의 원본) */
   filter: string;
   layers: LookLayer[];
+  film?: FilmLook;
 }
 
 export interface LookAdjust {
@@ -73,6 +92,19 @@ const radial = (stops: GradientStop[], blend: BlendMode, opacity = 1, center?: [
 
 export const LOOK_PRESETS: LookPreset[] = [
   { id: "none", label: "원본", filter: "", layers: [] },
+  // 오늘의 — 레트로 필름 느낌 (소로우 자체 레시피)
+  { id: "today-sky", label: "오늘의 하늘", filter: "contrast(0.96) saturate(1.06) brightness(1.03)", layers: [],
+    film: { lift: 0.045, curve: 0.14, shadowTint: [-0.018, 0.008, 0.045], highlightTint: [0.045, 0.02, -0.012], glow: 0, grain: 0.035, vignette: 0.16 } },
+  { id: "today-space", label: "오늘의 공간", filter: "sepia(0.14) saturate(0.94) contrast(0.92)", layers: [],
+    film: { lift: 0.075, curve: 0.1, shadowTint: [0.022, 0.004, -0.022], highlightTint: [0.05, 0.026, -0.034], glow: 0.08, grain: 0.05, vignette: 0.34 } },
+  { id: "today-light", label: "오늘의 빛", filter: "brightness(1.05) contrast(0.88) saturate(1.08)", layers: [],
+    film: { lift: 0.05, curve: -0.08, shadowTint: [0.02, 0.004, -0.012], highlightTint: [0.06, 0.036, -0.024], glow: 0.36, grain: 0.03, vignette: 0.18 } },
+  { id: "today-night", label: "오늘의 밤", filter: "saturate(0.72) contrast(1.04) brightness(0.96)", layers: [],
+    film: { lift: 0.06, curve: 0.18, shadowTint: [-0.032, 0.018, 0.05], highlightTint: [0.018, 0.01, -0.02], glow: 0.06, grain: 0.07, vignette: 0.44 } },
+  { id: "today-memory", label: "오늘의 기억", filter: "sepia(0.26) saturate(0.84) contrast(0.86) brightness(1.04)", layers: [],
+    film: { lift: 0.12, curve: -0.05, shadowTint: [0.03, -0.012, 0.032], highlightTint: [0.04, 0.03, 0.002], glow: 0.1, grain: 0.05, vignette: 0.26 } },
+  { id: "today-mono", label: "오늘의 흑백", filter: "grayscale(1) contrast(1.12)", layers: [],
+    film: { lift: 0.035, curve: 0.16, shadowTint: [0, 0, 0.006], highlightTint: [0.012, 0.008, 0], glow: 0, grain: 0.08, vignette: 0.3 } },
   { id: "clarendon", label: "Clarendon", filter: "contrast(1.2) saturate(1.35)", layers: [solid(c(127, 187, 227, 0.2), "overlay")] },
   { id: "gingham", label: "Gingham", filter: "brightness(1.05) hue-rotate(-10deg)", layers: [linear("linear-right", [{ color: c(66, 10, 14, 0.2), pos: 0 }, { color: TRANSPARENT, pos: 1 }], "darken")] },
   { id: "moon", label: "Moon", filter: "grayscale(1) contrast(1.1) brightness(1.1)", layers: [solid(hex("#a0a0a0"), "soft-light"), solid(hex("#383838"), "lighten")] },
@@ -191,6 +223,40 @@ varying vec2 v_uv;
 uniform sampler2D u_tex; uniform vec2 u_texel; uniform float u_aspect;
 uniform mat3 u_mat; uniform vec3 u_off; uniform float u_presetMix;
 uniform float u_bright, u_contrast, u_sat, u_warm, u_sharp, u_fade, u_vig;
+uniform vec4 u_film; /* lift, curve, grain, vignette */
+uniform vec3 u_shTint; uniform vec3 u_hiTint; uniform float u_glow; uniform vec2 u_grainRes;
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+/* 필름: 번짐 → 톤 곡선 → 검정 띄우기 → 그림자/밝은 곳 색 → 주변 어둡기 → 입자 */
+vec3 film(vec3 c, vec2 uv) {
+  if (u_glow > 0.0) {
+    vec3 g = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * 0.7853982;
+      vec3 s = texture2D(u_tex, uv + vec2(cos(a) / u_aspect, sin(a)) * 0.012).rgb;
+      g += max(s - 0.62, 0.0);
+    }
+    c += g / 8.0 * vec3(1.0, 0.72, 0.5) * u_glow * 2.2;
+  }
+  float curve = u_film.y;
+  c = curve >= 0.0 ? mix(c, c * c * (3.0 - 2.0 * c), curve) : mix(c, 0.5 + (c - 0.5) * 0.7, -curve);
+  c = u_film.x + c * (1.0 - u_film.x * 1.25);
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c += u_shTint * (1.0 - smoothstep(0.0, 0.6, l)) + u_hiTint * smoothstep(0.42, 1.0, l);
+  if (u_film.w > 0.0) {
+    vec2 q = (uv - 0.5) * vec2(u_aspect, 1.0) / (length(vec2(u_aspect, 1.0)) * 0.5);
+    c *= 1.0 - u_film.w * smoothstep(0.32, 1.1, length(q)) * 0.62;
+  }
+  if (u_film.z > 0.0) {
+    float n = vnoise(uv * u_grainRes) * 0.65 + vnoise(uv * u_grainRes * 2.3 + 17.0) * 0.35 - 0.5;
+    float mid = 1.0 - pow(abs(l - 0.5) * 2.0, 2.0);
+    c += vec3(n) * u_film.z * (0.45 + 0.55 * mid) * 2.0;
+  }
+  return c;
+}
 float softLight(float b, float s) {
   float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
   return s <= 0.5 ? b - (1.0 - 2.0 * s) * b * (1.0 - b) : b + (2.0 * s - 1.0) * (d - b);
@@ -222,6 +288,7 @@ void main() {
   vec3 p = clamp(u_mat * src + u_off, 0.0, 1.0);
   p = applyLayer0(p, v_uv);
   p = applyLayer1(p, v_uv);
+  p = film(p, v_uv);
   vec3 c = mix(src, p, u_presetMix);
   /* 선명하게: 3x3 평균과의 차이를 더한다 */
   if (u_sharp > 0.0) {
@@ -329,6 +396,14 @@ export class LookRenderer {
       stops.forEach((s, j) => gl.uniform4f(this.u(`u_l${i}Stop${j}`), s.color[0], s.color[1], s.color[2], s.color[3]));
       gl.uniform3f(this.u(`u_l${i}Pos`), stops[0].pos, stops[1].pos, stops[2].pos);
     }
+    const f = preset.film;
+    gl.uniform4f(this.u("u_film"), f?.lift ?? 0, f?.curve ?? 0, f?.grain ?? 0, f?.vignette ?? 0);
+    gl.uniform3f(this.u("u_shTint"), ...(f?.shadowTint ?? [0, 0, 0]));
+    gl.uniform3f(this.u("u_hiTint"), ...(f?.highlightTint ?? [0, 0, 0]));
+    gl.uniform1f(this.u("u_glow"), f?.glow ?? 0);
+    // 입자 굵기: 짧은 변을 약 650칸으로 나눈다 → 미리보기와 저장본에서 사진 대비 같은 굵기
+    const short = Math.max(1, Math.min(width, height));
+    gl.uniform2f(this.u("u_grainRes"), 650 * width / short, 650 * height / short);
     const a = look.adjust;
     gl.uniform1f(this.u("u_bright"), a.brightness);
     gl.uniform1f(this.u("u_contrast"), a.contrast);

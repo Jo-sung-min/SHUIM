@@ -4,7 +4,7 @@
  * 릴스 영상 준비: 브라우저(WebCodecs)에서 고른 구간만 잘라 H.264 + AAC MP4(fastStart)로 줄인다.
  * Mediabunny 는 영상을 고를 때만 불러온다(피드·사진 흐름 번들에 넣지 않음).
  */
-import { VIDEO_MAX_SECONDS } from "./feed-media";
+import { FEED_RATIO, VIDEO_MAX_SECONDS } from "./feed-media";
 
 export const MAX_SOURCE_VIDEO_BYTES = 1024 * 1024 * 1024;
 export const MAX_UPLOAD_VIDEO_BYTES = 25 * 1024 * 1024;
@@ -82,8 +82,12 @@ export async function prepareVideo(file: File, range: { start: number; end: numb
     if (!video) throw new Error(READ_ERROR);
     const audio = range.muted ? null : await input.getPrimaryAudioTrack();
     const [w, h, stats] = await Promise.all([video.getDisplayWidth(), video.getDisplayHeight(), video.computePacketStats(90).catch(() => null)]);
-    const scale = Math.min(1, LONG_EDGE / Math.max(w, h), SHORT_EDGE / Math.min(w, h));
-    const width = even(w * scale), height = even(h * scale);
+    // 피드는 9:16 전체 화면: 가운데 기준으로 잘라 화면을 꽉 채운다
+    const cw = w / h > FEED_RATIO ? Math.round(h * FEED_RATIO) : w;
+    const ch = w / h > FEED_RATIO ? h : Math.round(w / FEED_RATIO);
+    const crop = { left: Math.floor((w - cw) / 2), top: Math.floor((h - ch) / 2), width: cw, height: ch };
+    const scale = Math.min(1, LONG_EDGE / Math.max(cw, ch), SHORT_EDGE / Math.min(cw, ch));
+    const width = even(cw * scale), height = even(ch * scale);
     if (!(await mb.canEncodeVideo("avc", { width, height }))) throw new Error("이 기기에서는 영상을 준비할 수 없어요.");
     // 원본 AAC 는 그대로 복사, 아니면 AAC → Opus 순으로 이 기기가 만들 수 있는 것
     let audioCodec: "aac" | "opus" | null = null;
@@ -99,7 +103,7 @@ export async function prepareVideo(file: File, range: { start: number; end: numb
       input, output, tracks: "primary", showWarnings: false,
       trim: { start, end },
       video: {
-        codec: "avc", width, height, fit: "fill", allowTransformationMetadata: false,
+        codec: "avc", crop, width, height, fit: "fill", allowTransformationMetadata: false,
         quality: new mb.Quality({ bitrate: VIDEO_BITRATE }),
         ...(stats && stats.averagePacketRate > 31 ? { frameRate: 30 } : {}),
       },
@@ -125,6 +129,25 @@ export async function prepareVideo(file: File, range: { start: number; end: numb
     signal?.removeEventListener("abort", abort);
     input.dispose();
   }
+}
+
+/** 사진을 가운데 기준 비율로 자른다 (편집기를 안 거친 사진도 피드 틀과 같게). GIF 는 움직임을 지키려고 그대로 */
+export async function cropPhotoToRatio(file: File, ratio: number): Promise<File> {
+  if (file.type === "image/gif") return file;
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  try {
+    const { width: w, height: h } = bitmap;
+    if (Math.abs(w / h - ratio) < 0.01) return file;
+    const cw = w / h > ratio ? Math.round(h * ratio) : w;
+    const ch = w / h > ratio ? h : Math.round(w / ratio);
+    const canvas = document.createElement("canvas");
+    canvas.width = cw; canvas.height = ch;
+    canvas.getContext("2d")?.drawImage(bitmap, Math.floor((w - cw) / 2), Math.floor((h - ch) / 2), cw, ch, 0, 0, cw, ch);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    canvas.width = 0; canvas.height = 0;
+    if (!blob?.size) return file;
+    return new File([blob], (file.name.replace(/\.[^.]+$/, "") || "photo") + ".jpg", { type: "image/jpeg" });
+  } finally { bitmap.close(); }
 }
 
 /** 구간 고르기용 필름스트립: 비디오 하나로 차례로 넘기며 작은 장면을 뜬다 */
@@ -160,7 +183,7 @@ export async function filmstrip(src: string, duration: number, count: number, he
 }
 
 /** <video> 로 한 장면을 떠서 WebP(안 되면 JPEG) 로. 표지·필름스트립에 쓴다 */
-export function grabFrame(src: string, time: number, maxEdge: number, type: "blob" | "dataUrl" = "blob"): Promise<Blob | string> {
+export function grabFrame(src: string, time: number, maxEdge: number, type: "blob" | "dataUrl" = "blob", ratio?: number): Promise<Blob | string> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     video.muted = true;
@@ -179,13 +202,17 @@ export function grabFrame(src: string, time: number, maxEdge: number, type: "blo
     video.onerror = () => finish(new Error(READ_ERROR));
     video.onloadeddata = () => { video.currentTime = Math.max(0, Math.min(time, (video.duration || time) - 0.05)); };
     video.onseeked = () => {
-      const scale = Math.min(1, maxEdge / Math.max(video.videoWidth, video.videoHeight));
+      // ratio 가 있으면 가운데 기준으로 잘라 그 비율로 (표지를 피드 틀과 같게)
+      const vw = video.videoWidth, vh = video.videoHeight;
+      const sw = ratio && vw / vh > ratio ? Math.round(vh * ratio) : vw;
+      const sh = ratio && vw / vh < ratio ? Math.round(vw / ratio) : vh;
+      const scale = Math.min(1, maxEdge / Math.max(sw, sh));
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      canvas.width = Math.max(1, Math.round(sw * scale));
+      canvas.height = Math.max(1, Math.round(sh * scale));
       const ctx = canvas.getContext("2d");
       if (!ctx) { finish(new Error(READ_ERROR)); return; }
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, Math.floor((vw - sw) / 2), Math.floor((vh - sh) / 2), sw, sh, 0, 0, canvas.width, canvas.height);
       if (type === "dataUrl") { finish(undefined, canvas.toDataURL("image/jpeg", 0.7)); canvas.width = 0; return; }
       canvas.toBlob((webp) => {
         if (webp?.size) { finish(undefined, webp); canvas.width = 0; return; }

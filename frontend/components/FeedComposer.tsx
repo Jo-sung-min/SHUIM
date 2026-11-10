@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { FEED_BG_COUNT, FEED_BG_LABELS, FEED_MAX_PAGES, type FeedPage } from "@/lib/community-core";
 import { hasCrisisSignal } from "@/lib/crisis";
-import { MAX_OVERLAYS, VIDEO_MAX_SECONDS, type TextOverlay } from "@/lib/feed-media";
+import { FEED_RATIO, MAX_OVERLAYS, VIDEO_MAX_SECONDS, type TextOverlay } from "@/lib/feed-media";
 import { uploadImage, uploadVideo } from "@/lib/upload";
 import { inspectPhotoHeader } from "@/lib/photo-edit";
-import { grabFrame, prepareVideo, probeVideo, type PreparedVideo, type VideoInfo } from "@/lib/video-prep";
+import { cropPhotoToRatio, grabFrame, prepareVideo, probeVideo, type PreparedVideo, type VideoInfo } from "@/lib/video-prep";
 import { useBackLayer } from "@/lib/use-back-layer";
 import HelpBanner from "./HelpBanner";
 import PhotoEditor from "./PhotoEditor";
@@ -277,7 +277,7 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
   async function ensureCover(r: Reel): Promise<Cover> {
     if (r.cover && r.cover.time >= r.start && r.cover.time <= r.end) return r.cover;
     const time = Math.min(r.end, r.start + 0.1);
-    const blob = await grabFrame(r.url, time, 1080) as Blob;
+    const blob = await grabFrame(r.url, time, 1280, "blob", FEED_RATIO) as Blob;
     const cover = { time, blob, url: URL.createObjectURL(blob) };
     if (r.cover) URL.revokeObjectURL(r.cover.url);
     if (reelRef.current === r || reelRef.current?.url === r.url) patchReel({ cover });
@@ -332,12 +332,13 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
           let url = photo.uploaded;
           if (!url) {
             setProgress({ label: `사진 ${index + 1}/${list.length} 올리는 중`, percent: 0 });
-            const result = await uploadImage(photo.file, { signal: controller.signal, onProgress: (percent) => setProgress({ label: `사진 ${index + 1}/${list.length} 올리는 중`, percent }) });
+            const fitted = await cropPhotoToRatio(photo.file, FEED_RATIO);
+            const result = await uploadImage(fitted, { signal: controller.signal, onProgress: (percent) => setProgress({ label: `사진 ${index + 1}/${list.length} 올리는 중`, percent }) });
             url = result.url;
             replacePhotos(photosRef.current.map((item) => item.id === photo.id ? { ...item, uploaded: url } : item));
           }
           if (controller.signal.aborted) throw new DOMException("멈춤", "AbortError");
-          pages.push({ image: url, ratio: photo.ratio, overlays: photo.overlays.length ? photo.overlays : undefined, text: index === 0 ? text : "" });
+          pages.push({ image: url, ratio: photo.file.type === "image/gif" ? photo.ratio : FEED_RATIO, overlays: photo.overlays.length ? photo.overlays : undefined, text: index === 0 ? text : "" });
         }
       }
       // 여기부터는 게시가 받아들여졌을 수 있어 멈출 수 없다
@@ -384,7 +385,7 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const dark = step === "edit";
   const canShare = textOnly ? Boolean(caption.trim()) : Boolean(reel || photos.length);
-  const firstMedia = reel ? { ratio: reel.info.ratio, src: reel.cover?.url, overlays: reel.overlays } : photos[0] ? { ratio: photos[0].ratio, src: photos[0].preview, overlays: photos[0].overlays } : null;
+  const firstMedia = reel ? { ratio: FEED_RATIO, src: reel.cover?.url, overlays: reel.overlays } : photos[0] ? { ratio: FEED_RATIO, src: photos[0].preview, overlays: photos[0].overlays } : null;
 
   return <>
     <div ref={dialog} className={`${styles.screen} ${dark ? styles.dark : ""}`} role="dialog" aria-modal="true" aria-label="새 게시물" tabIndex={-1}
@@ -420,7 +421,7 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
 
       {step === "edit" && <div className={styles.edit}>
         <div className={styles.stage}>
-          {(reel || current) && <MediaFrame ref={box} ratio={reel ? reel.info.ratio : current?.ratio}>
+          {(reel || current) && <MediaFrame ref={box} ratio={FEED_RATIO}>
             {reel
               ? <video ref={preview} src={reel.url} playsInline muted={reel.muted} preload="auto" aria-label="고른 영상 미리보기"
                   onTimeUpdate={(event) => { const v = event.currentTarget; setPlayhead(v.currentTime); if (v.currentTime >= reel.end - 0.04 || v.currentTime < reel.start - 0.3) { v.currentTime = reel.start; void v.play().catch(() => {}); } }}
@@ -497,9 +498,9 @@ export default function FeedComposer({ open, firstTime, onClose, onSubmit }: {
       </div>}
     </div>
 
-    {editPhoto && <PhotoEditor file={editPhoto.file} onSave={(file) => void saveEdit(file)} onClose={() => setEditing(null)} />}
+    {editPhoto && <PhotoEditor file={editPhoto.file} aspectRatio={FEED_RATIO} allowAspectChange={false} onSave={(file) => void saveEdit(file)} onClose={() => setEditing(null)} />}
     {textEdit && <TextEntry initial={textEdit.index === null ? undefined : overlays[textEdit.index]} boxWidth={boxWidth} onDone={finishText} onCancel={() => setTextEdit(null)} />}
-    {coverOpen && reel && <CoverPicker src={reel.url} ratio={reel.info.ratio} start={reel.start} end={reel.end} value={reel.cover?.time ?? reel.start} overlays={reel.overlays}
+    {coverOpen && reel && <CoverPicker src={reel.url} ratio={FEED_RATIO} start={reel.start} end={reel.end} value={reel.cover?.time ?? reel.start} overlays={reel.overlays}
       onCancel={() => setCoverOpen(false)}
       onDone={(time, blob) => {
         const old = reelRef.current?.cover;

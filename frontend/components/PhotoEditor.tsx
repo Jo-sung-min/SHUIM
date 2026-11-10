@@ -32,6 +32,7 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
   const [tab, setTab] = useState<Tab>("crop");
   const [look, setLook] = useState<PhotoLook>(DEFAULT_LOOK);
   const [thumb, setThumb] = useState<string | null>(null);
+  const [filmThumbs, setFilmThumbs] = useState<Record<string, string>>({});
   const [glReady, setGlReady] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -152,6 +153,23 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
     if (!context) return;
     drawPhotoCrop(context, source, crop, small.width, small.height);
     setThumb(small.toDataURL("image/jpeg", 0.8));
+    // 필름 단계(입자·색 나누기)는 CSS 로 흉내 낼 수 없어 썸네일도 실제 셰이더로 그린다
+    const gl = renderer.current;
+    const rendered: Record<string, string> = {};
+    if (gl?.usable) {
+      const out = document.createElement("canvas");
+      out.width = small.width; out.height = small.height;
+      const outContext = out.getContext("2d");
+      for (const preset of LOOK_PRESETS) {
+        if (!preset.film || !outContext) continue;
+        try {
+          outContext.drawImage(gl.render(small, { preset: preset.id, presetMix: 1, adjust: DEFAULT_ADJUST }, out.width, out.height), 0, 0);
+          rendered[preset.id] = out.toDataURL("image/jpeg", 0.82);
+        } catch { /* CSS 썸네일로 */ }
+      }
+      out.width = 0; out.height = 0;
+    }
+    setFilmThumbs(rendered);
     small.width = 0; small.height = 0;
   }, [tab, source, crop]);
 
@@ -262,11 +280,14 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
           {LOOK_PRESETS.map((preset) => {
             const on = look.preset === preset.id;
             return <button key={preset.id} type="button" role="radio" aria-checked={on} className={`${styles.filter} ${on ? styles.filterOn : ""}`} disabled={!source || busy} onClick={() => setLook((cur) => ({ ...cur, preset: preset.id, presetMix: cur.preset === preset.id ? cur.presetMix : 1 }))}>
-              <span className={styles.filterThumb} style={{ filter: preset.filter || undefined }}>
+              {filmThumbs[preset.id] ? <span className={styles.filterThumb}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- 셰이더로 그린 작은 미리보기(data URL) */}
+                <img src={filmThumbs[preset.id]} alt="" draggable={false} />
+              </span> : <span className={styles.filterThumb} style={{ filter: preset.filter || undefined }}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- 방금 자른 사진의 작은 미리보기(data URL) */}
                 {thumb && <img src={thumb} alt="" draggable={false} />}
                 {preset.layers.map((layer, i) => <span key={i} style={layerStyle(layer)} aria-hidden="true" />)}
-              </span>
+              </span>}
               <small>{preset.label}</small>
             </button>;
           })}
@@ -277,7 +298,7 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
             <input id={`${titleId}-mix`} type="range" min={0} max={100} step={1} value={Math.round(look.presetMix * 100)} disabled={!source || busy || look.preset === "none"} onChange={(event) => setLook((cur) => ({ ...cur, presetMix: Number(event.target.value) / 100 }))} aria-valuetext={`${Math.round(look.presetMix * 100)}`} />
             <output>{look.preset === "none" ? "–" : Math.round(look.presetMix * 100)}</output>
           </div>
-          <p className={styles.credit}>필터 레시피: CSSgram (MIT)</p>
+          <p className={styles.credit}>영어 이름 필터: CSSgram (MIT)</p>
         </div>
       </>}
 

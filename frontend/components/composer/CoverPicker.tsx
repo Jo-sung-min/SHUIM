@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MediaFrame, Overlays } from "../FeedMedia";
-import { formatSeconds, type TextOverlay } from "@/lib/feed-media";
+import { FEED_RATIO, formatSeconds, type TextOverlay } from "@/lib/feed-media";
 import { grabFrame } from "@/lib/video-prep";
 import styles from "./Composer.module.css";
 
@@ -23,7 +23,7 @@ export default function CoverPicker({ src, ratio, start, end, value, overlays, o
 
   const done = async () => {
     setBusy(true); setError("");
-    try { onDone(time, await grabFrame(src, time, 1080) as Blob); }
+    try { onDone(time, await grabFrame(src, time, 1280, "blob", FEED_RATIO) as Blob); }
     catch { setError("이 장면을 표지로 만들지 못했어요. 다른 장면을 골라 주세요."); }
     finally { setBusy(false); }
   };

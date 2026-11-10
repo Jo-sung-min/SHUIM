@@ -22,7 +22,7 @@ import {
 import { Sheet, fmtRelative } from "@/components/ui";
 import { CheerButton, CommentThread, LineAction, LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
 import FeedComposer from "@/components/FeedComposer";
-import { MediaFrame, Overlays, ReelVideo } from "@/components/FeedMedia";
+import { ReelVideo, ScreenPhoto } from "@/components/FeedMedia";
 import Link from "next/link";
 import { IconBookmark, IconBubble, IconFlame, IconMore, IconPen } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
@@ -364,58 +364,57 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
     </div>
   );
 
-  // 릴스: 세로 전체 화면 영상, 보이면 음소거 자동 재생
-  if (videoPage?.video) {
+  const flaggedBox = (
+    <div className="reel-body" style={{ pointerEvents: "auto", padding: "0 64px 0 18px" }}>
+      <button className="flagged-box reel-flagged" onClick={onReveal}>
+        <b>신고가 누적되어 검토 중인 글이에요</b>
+        위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 · 눌러서 보기
+      </button>
+    </div>
+  );
+
+  // 사진·영상 글: 인스타 릴스처럼 화면을 꽉 채우고, 작성자·글은 왼쪽 아래, 행동은 오른쪽 세로
+  if (videoPage?.video || anyImage) {
+    const current = pages[Math.min(idx, pages.length - 1)];
+    const caption = current.text || (idx === 0 || current.image || current.video ? post.text : "");
+    const title = current.title || (idx === 0 ? post.title : undefined);
     return (
-      <section id={`reel-${post.id}`} className={`reel ${styles.videoPost}`}>
-        {flagged ? (
-          <div className="reel-body" style={{ pointerEvents: "auto", padding: "0 84px 0 24px" }}>
-            <button className="flagged-box reel-flagged" onClick={onReveal}>
-              <b>신고가 누적되어 검토 중인 글이에요</b>
-              위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 · 눌러서 보기
-            </button>
-          </div>
+      <section id={`reel-${post.id}`} className={`reel ${styles.fullPost}`}>
+        {flagged ? flaggedBox : videoPage?.video ? (
+          <ReelVideo src={assetUrl(videoPage.video)} poster={videoPage.image ? assetUrl(videoPage.image) : undefined} ratio={videoPage.ratio}
+            silent={videoPage.muted} overlays={videoPage.overlays} label={`${author.nick}님의 영상`} />
         ) : (
-          <>
-            <ReelVideo src={assetUrl(videoPage.video)} poster={videoPage.image ? assetUrl(videoPage.image) : undefined} ratio={videoPage.ratio}
-              silent={videoPage.muted} overlays={videoPage.overlays} label={`${author.nick}님의 영상`} />
-            {(videoPage.text || post.text) && <ReelCaption text={videoPage.text || post.text} />}
-          </>
+          <div className={styles.fullSlides} ref={slides} onScroll={onSlidesScroll} aria-label={`콘텐츠 ${pages.length}개`}>
+            {pages.map((p, i) => (
+              <article key={i} className={`${styles.fullSlide} ${p.image ? "" : `bg-${post.bg}`}`} aria-label={`${i + 1}번째 콘텐츠`}>
+                {p.image
+                  ? <ScreenPhoto src={assetUrl(p.image)} ratio={p.ratio} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} overlays={p.overlays} />
+                  : <p className={`reel-text ${styles.textPage}`}><Highlighted text={p.text} /></p>}
+              </article>
+            ))}
+          </div>
         )}
-        {meta}
+        {!flagged && pages.length > 1 && (
+          <div className={`reel-dots ${styles.pageDots}`} aria-label="사진 넘기기">{pages.map((_, i) => <button type="button" key={i} aria-label={`${i + 1}번째 콘텐츠 보기`} aria-pressed={i === idx} onClick={() => slides.current?.scrollTo({ left: slides.current.clientWidth * i, behavior: "smooth" })}><i className={i === idx ? "on" : ""} /></button>)}</div>
+        )}
+        <div className={styles.fullInfo}>
+          {meta}
+          {!flagged && (title || caption) && <ReelCaption key={idx} title={title} text={caption} />}
+        </div>
         {actions}
       </section>
     );
   }
 
   return (
-    <section id={`reel-${post.id}`} className={`reel bg-${post.bg} ${anyImage ? "has-img " + styles.photoPost : ""}`}>
-      {flagged ? (
-        <div className="reel-body" style={{ pointerEvents: "auto" }}>
-          <button className="flagged-box reel-flagged" onClick={onReveal}>
-            <b>신고가 누적되어 검토 중인 글이에요</b>
-            위로가 아니라는 신고가 {REPORT_THRESHOLD}번 이상 · 눌러서 보기
-          </button>
-        </div>
-      ) : (
+    <section id={`reel-${post.id}`} className={`reel bg-${post.bg}`}>
+      {flagged ? flaggedBox : (
         <div className="reel-slides" ref={slides} onScroll={onSlidesScroll} aria-label={`콘텐츠 ${pages.length}개`}>
           {pages.map((p, i) => (
-            <article key={i} className={`slide ${p.image ? "has-img " + styles.photoSlide : ""}`} aria-label={`${i + 1}번째 콘텐츠`}>
-              {p.image && <div className={styles.photoFrame}>
-                {p.ratio ? (
-                  <MediaFrame ratio={p.ratio} className={styles.photoFit}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={assetUrl(p.image)} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
-                    <Overlays overlays={p.overlays} />
-                  </MediaFrame>
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={assetUrl(p.image)} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} loading="lazy" />
-                )}
-              </div>}
+            <article key={i} className="slide" aria-label={`${i + 1}번째 콘텐츠`}>
               <div className="slide-body">
-                {(p.title || (p.image && post.title)) && <div className="reel-title">{p.title || post.title}</div>}
-                {(p.text || (p.image && post.text)) && <p className="reel-text"><Highlighted text={p.text || post.text} /></p>}
+                {p.title && <div className="reel-title">{p.title}</div>}
+                {p.text && <p className="reel-text"><Highlighted text={p.text} /></p>}
               </div>
             </article>
           ))}
@@ -434,16 +433,23 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
 }
 
 /** 릴스 캡션: 두 줄까지, 더보기로 펼침 */
-function ReelCaption({ text }: { text: string }) {
+function ReelCaption({ title, text }: { title?: string; text: string }) {
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
+  // 글꼴·레이아웃이 늦게 잡혀도 두 줄 넘침을 다시 잰다
   useEffect(() => {
     const el = ref.current;
-    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 2);
+    if (!el || open) return;
+    const measure = () => setLong(el.scrollHeight > el.clientHeight + 2);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [text, open]);
   return (
     <div className={`${styles.videoCaption} ${open ? styles.videoCaptionOpen : ""}`}>
+      {title && <b className={styles.captionTitle}>{title}</b>}
       <p ref={ref} className={open ? undefined : styles.clamped}><Highlighted text={text} /></p>
       {(long || open) && <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}>{open ? "접기" : "더보기"}</button>}
     </div>

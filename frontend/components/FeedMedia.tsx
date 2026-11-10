@@ -2,18 +2,21 @@
 
 import { forwardRef, useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { overlayStyle, safeRatio, type TextOverlay } from "@/lib/feed-media";
+import { loadOverlayFont } from "@/lib/overlay-fonts";
 import styles from "./FeedMedia.module.css";
 
 /** 칸 안에 비율 그대로 맞춘 상자. 상자 너비가 얹은 글 크기의 기준이 된다 */
-export const MediaFrame = forwardRef<HTMLDivElement, { ratio?: number; children: ReactNode; className?: string; boxClassName?: string; onClick?: () => void }>(
-  function MediaFrame({ ratio, children, className, boxClassName, onClick }, ref) {
+export const MediaFrame = forwardRef<HTMLDivElement, { ratio?: number; children: ReactNode; className?: string; boxClassName?: string; onClick?: () => void; fit?: "contain" | "cover" }>(
+  function MediaFrame({ ratio, children, className, boxClassName, onClick, fit = "contain" }, ref) {
     return <div className={`${styles.fit} ${className ?? ""}`} onClick={onClick}>
-      <div ref={ref} className={`${styles.box} ${boxClassName ?? ""}`} style={{ "--ratio": safeRatio(ratio) } as CSSProperties}>{children}</div>
+      <div ref={ref} className={`${styles.box} ${fit === "cover" ? styles.cover : ""} ${boxClassName ?? ""}`} style={{ "--ratio": safeRatio(ratio) } as CSSProperties}>{children}</div>
     </div>;
   });
 
 /** 얹은 글 그리기 (피드·미리보기 공용) */
 export function OverlayText({ overlay, className, style, ...rest }: { overlay: TextOverlay; className?: string; style?: CSSProperties } & React.HTMLAttributes<HTMLParagraphElement>) {
+  // 무드 글꼴은 이 글이 처음 그려질 때만 불러온다
+  useEffect(() => { void loadOverlayFont(overlay.font); }, [overlay.font]);
   return <p {...rest} className={`${styles.ovl} ${className ?? ""}`} data-style={overlay.style} data-color={overlay.color} style={{ ...overlayStyle(overlay), ...style }}>
     <span>{overlay.text}</span>
   </p>;
@@ -22,6 +25,18 @@ export function OverlayText({ overlay, className, style, ...rest }: { overlay: T
 export function Overlays({ overlays }: { overlays?: TextOverlay[] }) {
   if (!overlays?.length) return null;
   return <>{overlays.map((o, i) => <OverlayText key={i} overlay={o} />)}</>;
+}
+
+/** 피드 사진 한 장: 화면을 꽉 채우고(cover) 아래쪽을 어둡게 깔아 글이 읽히게 */
+export function ScreenPhoto({ src, ratio, alt, overlays }: { src: string; ratio?: number; alt: string; overlays?: TextOverlay[] }) {
+  return <div className={styles.player}>
+    <MediaFrame ratio={ratio} fit="cover">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} loading="lazy" decoding="async" />
+      <Overlays overlays={overlays} />
+    </MediaFrame>
+    <div className={styles.shade} />
+  </div>;
 }
 
 /* ---------- 소리 켜기는 릴스끼리 이어진다 (인스타처럼 한 번 켜면 다음 영상도) ---------- */
@@ -107,7 +122,7 @@ export function ReelVideo({ src, poster, ratio, silent, overlays, label }: { src
   };
 
   return <div ref={root} className={styles.player}>
-    <MediaFrame ratio={ratio} onClick={toggle}>
+    <MediaFrame ratio={ratio} fit="cover" onClick={toggle}>
       <video
         ref={video} src={near ? src : undefined} poster={poster} playsInline loop muted preload={near ? "metadata" : "none"}
         aria-label={label} onPlay={() => setPaused(false)} onPause={() => setPaused(true)}

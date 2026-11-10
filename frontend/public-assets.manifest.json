@@ -507,6 +507,66 @@
       "contentType": "image/svg+xml"
     },
     {
+      "key": "feed/curation/sky-kanbara-snow-v1.webp",
+      "bytes": 263590,
+      "sha256": "a120db152fca23fc3b0ee4361eaab4f728724c44e1334dc51a2d2508ec6da297",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/sky-sahurs-morning-v1.webp",
+      "bytes": 730774,
+      "sha256": "ced0b5101972d9bb75cefa2d0bc526871d45c0d95d8753beb888f3cc799d5cc3",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/sky-salisbury-v1.webp",
+      "bytes": 281462,
+      "sha256": "bd925dce6c9019cfd658c9da61a9bafac3b6cfbc52b2806107c46a7ed9746cef",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/sky-two-men-moon-v1.webp",
+      "bytes": 331628,
+      "sha256": "cb09ae128eb753f8ec9262c8398b5222de7bce92e5aa81e65581ffd6626bd013",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/sky-wheat-cypresses-v1.webp",
+      "bytes": 788106,
+      "sha256": "8db5df94948b1f7bb5023f746d7f53dae1bae374101392278ea03d89cc47453a",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/space-lute-v1.webp",
+      "bytes": 160104,
+      "sha256": "2a744cc47eebdb8b3171db1c4a5d9cc1f7319a8998b1f65ba6f15eae8b8e002d",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/space-roses-v1.webp",
+      "bytes": 757794,
+      "sha256": "6705add52259f2fc24e1a6615eebad46d706ac743565968404a03bda1d69d2ef",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/space-strandgade-moonlight-v1.webp",
+      "bytes": 264620,
+      "sha256": "d39b7f7387845ff08ef67edd88c7f23ff590baa1858102e22e8c686e62e24a77",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/space-water-pitcher-v1.webp",
+      "bytes": 205654,
+      "sha256": "77efe8667481d9392b68d8e7fc2192d2d649c36ea93512997605a0e2b656164a",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/space-young-couple-v1.webp",
+      "bytes": 255806,
+      "sha256": "15c9b7ae438cdba5da9f61f0c8138ca4f4aca2eed2558e237f26501161994f19",
+      "contentType": "image/webp"
+    },
+    {
       "key": "feed/dawn-stars.svg",
       "bytes": 1426,
       "sha256": "c6c7b7e5d11452b514894a334768fe4816035308b9a1ffa5b0d1ee7506642c26",

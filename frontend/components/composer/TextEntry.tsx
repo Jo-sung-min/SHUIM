@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { DEFAULT_OVERLAY, OVERLAY_COLORS, OVERLAY_FONTS, OVERLAY_MAX_CHARS, OVERLAY_SIZE_MAX, OVERLAY_SIZE_MIN, overlayStyle, type OverlayAlign, type OverlayStyle, type TextOverlay } from "@/lib/feed-media";
+import { loadAllOverlayFonts } from "@/lib/overlay-fonts";
 import styles from "./Composer.module.css";
 
 const ALIGNS: OverlayAlign[] = ["center", "left", "right"];
@@ -30,7 +31,7 @@ export default function TextEntry({ initial, boxWidth, onDone, onCancel }: {
     vv.addEventListener("resize", sync);
     return () => vv.removeEventListener("resize", sync);
   }, []);
-  useEffect(() => { input.current?.focus({ preventScroll: true }); }, []);
+  useEffect(() => { input.current?.focus({ preventScroll: true }); void loadAllOverlayFonts(); }, []);
   // 글 길이에 맞춰 높이를 늘린다
   useEffect(() => {
     const el = input.current;
@@ -51,9 +52,6 @@ export default function TextEntry({ initial, boxWidth, onDone, onCancel }: {
     <div className={styles.textTools}>
       <button type="button" className={styles.textToolBtn} onClick={onCancel}>취소</button>
       <div className={styles.textToolGroup}>
-        <button type="button" className={styles.textToolBtn} aria-label={`글꼴: ${OVERLAY_FONTS.find((f) => f.id === draft.font)?.label}`}
-          style={{ fontFamily: OVERLAY_FONTS.find((f) => f.id === draft.font)?.family }}
-          onClick={() => setDraft((d) => ({ ...d, font: d.font === "sans" ? "serif" : "sans" }))}>{OVERLAY_FONTS.find((f) => f.id === draft.font)?.label}</button>
         <button type="button" className={styles.textToolIcon} aria-label={ALIGN_LABEL[draft.align]} onClick={() => setDraft((d) => ({ ...d, align: cycle(ALIGNS, d.align) }))}><AlignIcon align={draft.align} /></button>
         <button type="button" className={styles.textToolIcon} aria-label={STYLE_LABEL[draft.style]} onClick={() => setDraft((d) => ({ ...d, style: cycle(STYLES, d.style) }))}><StyleIcon style={draft.style} /></button>
       </div>
@@ -68,10 +66,15 @@ export default function TextEntry({ initial, boxWidth, onDone, onCancel }: {
       <div className={styles.textPreview} data-style={draft.style} style={{ "--ovl-bg": (look as Record<string, string>)["--ovl-bg"], textAlign: draft.align } as CSSProperties}>
         <textarea
           ref={input} value={draft.text} rows={1} maxLength={OVERLAY_MAX_CHARS} aria-label="얹을 글"
-          style={{ fontFamily: look.fontFamily, fontSize: draft.size * boxWidth, color: look.color, textAlign: draft.align }}
+          style={{ fontFamily: look.fontFamily, fontWeight: look.fontWeight, fontSize: draft.size * boxWidth * (draft.font === "pen" ? 1.25 : 1), color: look.color, textAlign: draft.align }}
           onChange={(event) => setDraft((d) => ({ ...d, text: event.target.value }))}
         />
       </div>
+    </div>
+    <div className={styles.fontRow} role="radiogroup" aria-label="글꼴">
+      {OVERLAY_FONTS.map((f) => <button key={f.id} type="button" role="radio" aria-checked={draft.font === f.id}
+        className={`${styles.fontChip} ${draft.font === f.id ? styles.fontOn : ""}`} style={{ fontFamily: f.family, fontWeight: f.weight }}
+        onClick={() => setDraft((d) => ({ ...d, font: f.id }))}>{f.label}</button>)}
     </div>
     <div className={styles.colorRow} role="radiogroup" aria-label="글자 색">
       {OVERLAY_COLORS.map((c) => <button key={c.id} type="button" role="radio" aria-checked={draft.color === c.id} aria-label={c.label}

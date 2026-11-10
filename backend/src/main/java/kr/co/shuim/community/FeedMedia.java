@@ -15,7 +15,8 @@ public final class FeedMedia {
     public static final int MAX_OVERLAYS = 5;
     public static final int OVERLAY_MAX_CHARS = 120;
     public static final Set<String> COLORS = Set.of("white", "ink", "cream", "lavender", "sky", "rose", "sage");
-    public static final Set<String> FONTS = Set.of("sans", "serif");
+    /** sans=Pretendard, serif=고운바탕, song=송명, hahmlet=함렛, pen=나눔손글씨 펜 (모두 OFL) */
+    public static final Set<String> FONTS = Set.of("sans", "serif", "song", "hahmlet", "pen");
     public static final Set<String> ALIGNS = Set.of("left", "center", "right");
     public static final Set<String> STYLES = Set.of("plain", "dim", "solid");
 

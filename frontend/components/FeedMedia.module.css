@@ -20,3 +20,5 @@
 .track > i { display: block; height: 100%; width: 100%; background: rgba(255, 255, 255, 0.85); transform-origin: left center; transform: scaleX(0); }
 .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 42%; background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.55)); pointer-events: none; z-index: 1; }
 @media (prefers-reduced-motion: reduce) { .track > i { transition: none; } }
+/* 화면을 꽉 채운다: 상자가 칸보다 커지고 가운데 기준으로 넘치는 부분은 잘린다 */
+.box.cover { width: max(100cqw, calc(100cqh * var(--ratio))); }
