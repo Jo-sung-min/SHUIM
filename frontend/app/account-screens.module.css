@@ -60,7 +60,7 @@
 /* 상단바 버튼과 같은 떠 있는 유리 원 (globals.css 의 .topbar .icon-btn) */
 .homeWrite:global(.icon-btn) {
   width: 44px; height: 44px; margin: 2px; color: var(--text);
-  background-color: var(--lg-fill); background-image: var(--lg-sheen); border: 1px solid var(--lg-line);
+  background-color: var(--lg-fill); background-image: none; border: 1px solid var(--lg-line);
   box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow);
 }
 .homeWrite:global(.icon-btn):active { background-color: var(--lg-fill-strong); }
@@ -68,16 +68,14 @@
 .homeHeader h1 { margin: 0; display: flex; justify-content: center; }
 /* CDN의 흰 글자 로고를 마스크로 써서 글자색(--text)으로 칠한다: 밝은·나이트 모드 모두 맞음 */
 .logoMark { display: block; height: 22px; aspect-ratio: 640 / 125; background-color: var(--text); -webkit-mask: var(--sorow-logo-image) center / contain no-repeat; mask: var(--sorow-logo-image) center / contain no-repeat; }
-/* 오늘의 기록: 글라스 버튼 하나 (나를 위한 시간 타일과 같은 유리). 왼쪽 아이콘 · 제목/진행 · 오른쪽 행동 */
+/* 오늘의 기록: 단색 버튼 하나 (나를 위한 시간 타일과 같은 바탕, 그라데이션 없음). 왼쪽 아이콘 · 제목/진행 · 오른쪽 행동 */
 .recordBtn {
   --tone: var(--tone-briefing);
   position: relative; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px;
   padding: 14px 16px; border-radius: 20px; color: var(--text); text-decoration: none;
-  background: linear-gradient(155deg, color-mix(in srgb, var(--surface) 80%, transparent), color-mix(in srgb, var(--surface) 44%, transparent));
+  background: var(--surface);
   border: 1px solid var(--glass-edge);
   box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(170%);
-  backdrop-filter: blur(18px) saturate(170%);
   transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   -webkit-tap-highlight-color: transparent;
 }
@@ -108,32 +106,20 @@
 .sectionHeading h3 small { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--text-2); }
 .sectionHeading span { font-size: 13px; color: var(--text-2); }
 /* 제목 옆 작은 "추가" 버튼 (나를 위한 시간 칸 추가) */
-.sectionAdd { display: inline-flex; flex: none; align-items: center; gap: 3px; min-height: 32px; margin-left: 12px; white-space: nowrap; padding: 4px 11px 4px 8px; border-radius: 999px; border: 1px solid var(--lg-line); background-color: var(--lg-fill); background-image: var(--lg-sheen); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow); color: var(--text-2); font-size: 13px; font-weight: 650; }
+.sectionAdd { display: inline-flex; flex: none; align-items: center; gap: 3px; min-height: 32px; margin-left: 12px; white-space: nowrap; padding: 4px 11px 4px 8px; border-radius: 999px; border: 1px solid var(--lg-line); background-color: var(--lg-fill); box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow); color: var(--text-2); font-size: 13px; font-weight: 650; }
 .sectionAdd svg { width: 15px; height: 15px; }
 .sectionAdd:active { background-color: var(--lg-fill-strong); }
-/* 나를 위한 시간: 네모난 글라스 타일 4칸. 뒤에 네 색의 흐린 빛을 깔아 유리가 비쳐 보이게 하고,
+/* 나를 위한 시간: 네모난 단색 타일 4칸 (뒤에 깔던 색 빛·그라데이션 없음). 색은 아이콘만,
    오늘 아직 안 누른 칸에는 빨간 점 */
-.care { position: relative; isolation: isolate; padding: 4px 0 2px; }
-.care::before {
-  content: ""; position: absolute; inset: 6px 2px -4px; z-index: -1; pointer-events: none;
-  background:
-    radial-gradient(28% 75% at 12% 50%, color-mix(in srgb, var(--tone-briefing) 42%, transparent), transparent 72%),
-    radial-gradient(28% 75% at 38% 50%, color-mix(in srgb, var(--tone-praise) 38%, transparent), transparent 72%),
-    radial-gradient(28% 75% at 63% 50%, color-mix(in srgb, var(--tone-love) 38%, transparent), transparent 72%),
-    radial-gradient(28% 75% at 88% 50%, color-mix(in srgb, var(--tone-review) 40%, transparent), transparent 72%);
-  filter: blur(14px);
-  opacity: .85;
-}
+.care { position: relative; padding: 4px 0 2px; }
 .careGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .careTile {
   position: relative; aspect-ratio: 1; min-width: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   padding: 10px 4px; border-radius: 20px; color: var(--text);
-  background: linear-gradient(155deg, color-mix(in srgb, var(--surface) 80%, transparent), color-mix(in srgb, var(--surface) 44%, transparent));
+  background: var(--surface);
   border: 1px solid var(--glass-edge);
   box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(170%);
-  backdrop-filter: blur(18px) saturate(170%);
   transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
   -webkit-tap-highlight-color: transparent;
 }
