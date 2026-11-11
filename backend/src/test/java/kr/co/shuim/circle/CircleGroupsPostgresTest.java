@@ -123,6 +123,17 @@ class CircleGroupsPostgresTest {
         assertEquals(List.of(), groups("가".repeat(21)));
     }
 
+    @Test void openSampleCirclesGetListedFluentIcons() {
+        List<Map<String, Object>> list = circles.browse("", "");
+        assertEquals(27, list.size(), "V21·V22 의 열린 소로우 27개");
+        for (Map<String, Object> c : list) {
+            String icon = (String) c.get("icon");
+            assertNotNull(icon, c.get("slug") + " 에 아이콘이 들어가야 한다");
+            assertEquals(icon, CircleLogic.normalizeIcon(icon), c.get("slug") + " 의 아이콘은 아이콘 찾기 목록에 있어야 한다");
+        }
+        assertEquals(27, list.stream().map(c -> c.get("icon")).distinct().count(), "소로우마다 다른 아이콘");
+    }
+
     @Test void iconsMustBeLegacyOrListedFluentNames() {
         assertNull(open(alice, "아이콘 없음", "no-icon", "enjoy", null, "fl:../../etc").get("icon"));
         Map<String, Object> c = open(bora, "아이콘", "has-icon", "enjoy", null, "fl:weather_partly_cloudy_day");

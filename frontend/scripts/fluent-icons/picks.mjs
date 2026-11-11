@@ -175,6 +175,7 @@ code|코드|개발 프로그래밍 개발자
 building|빌딩|회사 사무실 도시
 building_shop|가게|자영업 장사 사장님 가게
 building_factory|공장|생산직 현장 교대 근무
+building_government|공공기관|공무원 관공서 시청 구청 민원
 calculator|계산기|회계 숫자 가계부
 calendar|달력|일정 하루 계획
 clock|시계|시간 출퇴근 야근

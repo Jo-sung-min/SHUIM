@@ -30,6 +30,7 @@ broom
 bug
 building
 building_factory
+building_government
 building_lighthouse
 building_shop
 calculator
