@@ -112,7 +112,7 @@ export default function CirclePage() {
             <div style={{ minWidth: 0 }}>
               <h2>{c.name}{c.verified && <Verified />}{c.sample && <SampleTag />}</h2>
               <p className={styles.meta}>
-                {c.privateTest ? `비공개 · 공간별 최대 ${c.spaceCapacity ?? 4}명` : `${kindLabel(c.kind)} · 멤버 ${c.memberCount}명${c.listenerCount ? ` · 리스너 ${c.listenerCount}명` : ""}`} · 사연 {c.postCount}개
+                {c.privateTest ? `비공개 · 공간별 최대 ${c.spaceCapacity ?? 4}명` : `${kindLabel(c)} · 멤버 ${c.memberCount}명${c.listenerCount ? ` · 리스너 ${c.listenerCount}명` : ""}`} · 사연 {c.postCount}개
               </p>
             </div>
           </div>

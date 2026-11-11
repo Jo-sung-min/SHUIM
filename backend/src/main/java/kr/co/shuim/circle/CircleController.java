@@ -37,6 +37,12 @@ public class CircleController {
         return Map.of("circles", circles.browse(auth.currentUser(req).orElse(null), kind, q));
     }
 
+    /** GET /api/circles/groups?q= — 소로우 묶음: 기본 묶음 + 소로우가 있는 새 묶음, q 가 있으면 이름으로 찾기 */
+    @GetMapping("/api/circles/groups")
+    public Map<String, Object> groups(@RequestParam(required = false) String q, HttpServletRequest req) {
+        return Map.of("groups", circles.groups(auth.currentUser(req).orElse(null), q));
+    }
+
     /** GET /api/circles/warm — 이번 주 가장 따뜻한 소로우 (순위만) */
     @GetMapping("/api/circles/warm")
     public Map<String, Object> warm(HttpServletRequest req) {
@@ -49,12 +55,12 @@ public class CircleController {
         return circles.mine(auth.requireUser(req, res));
     }
 
-    /** POST /api/circles { name, slug, kind, intro, joinMode, visibility, icon? } — 소로우 열기 (누구나, 연 사람이 소로우지기) */
+    /** POST /api/circles { name, slug, kind | group, intro, joinMode, visibility, icon? } — 소로우 열기 (누구나, 연 사람이 소로우지기). group 은 새 묶음 이름 */
     @PostMapping("/api/circles")
     public Map<String, Object> create(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
         consent.requireAccepted(me);
-        return circles.create(me, new CircleService.CreateInput(s(b, "name"), s(b, "slug"), s(b, "kind"), s(b, "intro"), s(b, "joinMode"), s(b, "visibility"), s(b, "domain"), s(b, "icon")));
+        return circles.create(me, new CircleService.CreateInput(s(b, "name"), s(b, "slug"), s(b, "kind"), s(b, "intro"), s(b, "joinMode"), s(b, "visibility"), s(b, "domain"), s(b, "icon"), s(b, "group")));
     }
 
     @PostMapping("/api/circles/private-test")

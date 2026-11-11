@@ -8,11 +8,12 @@ import type { ShoutCat } from "./community";
  * 게시된 사연의 읽기·힘내요·댓글은 외침과 같은 /api/community 를 쓴다 (Post.communityId 가 있는 글).
  */
 
+/** 기본 묶음 id. 새 묶음은 소로우를 여는 사람이 만들고 id 가 "g-…" 다 (CircleGroup) */
 export type CircleKind = "enjoy" | "live" | "love" | "work" | "study" | "rest" | "care";
 export type JoinMode = "open" | "approve" | "invite" | "domain";
 export type Visibility = "public" | "members";
 
-/** 소로우 묶음 (서버 CircleLogic.KINDS 와 같은 순서) */
+/** 기본 소로우 묶음 (서버 circle_groups 의 builtin 과 같은 순서). 묶음 목록을 못 받았을 때도 이것으로 그린다 */
 export const CIRCLE_KINDS: { id: CircleKind; label: string; hint: string }[] = [
   { id: "enjoy", label: "즐기는 중", hint: "미식, 여행, 운동, 덕질, 책, 게임" },
   { id: "live", label: "살아가는 중", hint: "자취, 출퇴근, 반려생활, 새벽" },
@@ -22,7 +23,23 @@ export const CIRCLE_KINDS: { id: CircleKind; label: string; hint: string }[] = [
   { id: "rest", label: "쉬는 중", hint: "일을 쉬거나 멈춘 사람들" },
   { id: "care", label: "돌보는 중", hint: "육아, 가족 돌봄" },
 ];
-export const kindLabel = (k: string) => CIRCLE_KINDS.find((x) => x.id === k)?.label ?? "소로우";
+/** 묶음 이름: 서버가 내려 준 kindLabel → 기본 묶음 → "소로우" */
+export const kindLabel = (c: { kind: string; kindLabel?: string } | string) => {
+  const k = typeof c === "string" ? c : c.kind;
+  return (typeof c === "string" ? undefined : c.kindLabel) ?? CIRCLE_KINDS.find((x) => x.id === k)?.label ?? "소로우";
+};
+
+/** 소로우 묶음: 기본 묶음 + 소로우를 열며 새로 만든 묶음 (디시 마이너 갤러리처럼) */
+export interface CircleGroup { id: string; label: string; hint?: string; builtin: boolean; circleCount: number }
+export const BUILTIN_GROUPS: CircleGroup[] = CIRCLE_KINDS.map((k) => ({ id: k.id, label: k.label, hint: k.hint, builtin: true, circleCount: 0 }));
+/** 새 묶음 이름 규칙 (서버 CircleLogic.normalizeGroupLabel 과 같다): 2~10자 한글·영문·숫자·공백·가운뎃점·하이픈 */
+export function normalizeGroupLabel(raw: string): string | null {
+  const n = raw.trim().replace(/\s+/g, " ").replace(/[ㆍ•]/g, "·").replace(/\s*·\s*/g, "·").replace(/\s*소로우$/, "").trim();
+  if (!/^[가-힣A-Za-z0-9 ·-]{2,10}$/.test(n) || !/[가-힣A-Za-z]/.test(n) || /^[·-]|[·-]$/.test(n)) return null;
+  return n;
+}
+/** 같은 묶음 막기용 키: 공백·가운뎃점·하이픈 없애고 소문자 */
+export const groupKey = (label: string) => label.replace(/[\s·-]+/g, "").toLowerCase();
 export const JOIN_MODE_LABEL: Record<JoinMode, string> = {
   open: "누구나 가입",
   approve: "소로우지기 승인 후 가입",
@@ -37,14 +54,17 @@ export interface Circle {
   id: string;
   slug: string;
   name: string;
-  kind: CircleKind;
+  /** 묶음 id (기본 묶음 또는 "g-…") */
+  kind: string;
+  /** 묶음 이름 (서버가 circle_groups 에서 찾아 준다) */
+  kindLabel?: string;
   domain?: string;
   verified: boolean;
   joinMode: JoinMode;
   visibility: Visibility;
   intro: string;
   notice: string;
-  /** 기본 아이콘 id (components/CircleMark CIRCLE_ICONS) */
+  /** 아이콘 id: 예전 기본 아이콘(components/CircleMark CIRCLE_ICONS) 또는 "fl:<Fluent 이름>" */
   icon?: string | null;
   /** 올린 아이콘 사진 주소 (서버가 내려 준다) */
   iconUrl?: string | null;
@@ -115,7 +135,9 @@ const at = (slug: string, rest = "") => `/api/circles/${encodeURIComponent(slug)
 const get = <T,>(url: string) => fetch(url, opts("GET")).then((r) => j<T>(r));
 const post = <T,>(url: string, body: unknown = {}) => fetch(url, opts("POST", body)).then((r) => j<T>(r));
 
-export const browseCircles = (kind?: CircleKind | "", q?: string) => {
+export const fetchCircleGroups = (q?: string) =>
+  get<{ groups: CircleGroup[] }>(`/api/circles/groups${q ? `?q=${encodeURIComponent(q)}` : ""}`).then((r) => r.groups);
+export const browseCircles = (kind?: string, q?: string) => {
   const p = new URLSearchParams();
   if (kind) p.set("kind", kind);
   if (q) p.set("q", q);
@@ -132,7 +154,8 @@ export const fetchPrivateTestStatus = async (signal?: AbortSignal): Promise<{ en
   return { enabled: result.enabled };
 };
 
-export async function createCircle(input: { name: string; slug: string; kind: CircleKind; intro: string; joinMode: JoinMode; visibility: Visibility; domain?: string; icon?: string | null }) {
+/** kind: 고른 묶음 id, group: 새로 만들 묶음 이름 (있으면 서버가 kind 대신 쓴다) */
+export async function createCircle(input: { name: string; slug: string; kind?: string; group?: string; intro: string; joinMode: JoinMode; visibility: Visibility; domain?: string; icon?: string | null }) {
   await requireCommunityConsent();
   return post<CircleDetail>("/api/circles", input);
 }

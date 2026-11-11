@@ -14,9 +14,10 @@
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
   height: 44px; padding: 0 6px 0 14px;
   border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface);
-  transition: border-color var(--dur-fast) var(--ease);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
-.searchBox:focus-within { border-color: var(--text); }
+/* 전역 입력창 포커스와 같은 보라 선 + 부드러운 빛 */
+.searchBox:focus-within { border-color: var(--field-focus-line); box-shadow: var(--field-glow); }
 .searchBox > svg { flex: none; width: 18px; height: 18px; color: var(--text-2); }
 .searchBar .searchBox input[type="search"] {
   flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;

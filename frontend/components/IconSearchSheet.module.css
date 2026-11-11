@@ -1,0 +1,68 @@
+/* 아이콘 찾기: 화면 전체를 덮는 시트. 위는 뒤로·검색, 그 아래 분류 칩, 나머지는 큰 격자 */
+.sheet {
+  position: fixed; inset: 0; z-index: 300; display: flex; flex-direction: column;
+  height: var(--vvh, 100dvh); background: var(--bg); color: var(--text);
+  padding-top: env(safe-area-inset-top);
+  animation: rise var(--dur-slow) var(--ease);
+}
+.sheet:focus { outline: none; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+
+.top { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 16px 6px 8px; max-width: 640px; width: 100%; margin: 0 auto; }
+.search {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 14px;
+  border: 1px solid var(--field-line); border-radius: 999px; background: var(--field-bg);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.search:focus-within { border-color: var(--field-focus-line); box-shadow: var(--field-glow); background: var(--field-bg-focus); }
+.search > svg { flex: none; width: 18px; height: 18px; color: var(--text-3); }
+.search input {
+  flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 16px; -webkit-appearance: none; appearance: none;
+}
+/* 전역 입력창 포커스(:is(...):focus)는 바깥 알약이 대신 보여 준다 */
+.sheet .search input[type="search"], .sheet .search input[type="search"]:focus { border: 0; box-shadow: none; background: transparent; transition: none; }
+.search input::-webkit-search-cancel-button { display: none; }
+.search input::placeholder { color: var(--text-3); }
+.clear { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; color: var(--text-3); }
+.clear svg { width: 16px; height: 16px; }
+
+.cats {
+  flex: none; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 6px 16px 10px; max-width: 640px; width: 100%; margin: 0 auto;
+}
+.cats::-webkit-scrollbar { display: none; }
+.cat {
+  flex: none; min-height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  color: var(--text-2); font-size: 13px; font-weight: 650; white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.cat[aria-checked="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+
+.body {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 2px 16px calc(24px + env(safe-area-inset-bottom)); max-width: 640px; width: 100%; margin: 0 auto;
+  border-top: 1px solid var(--border);
+}
+.section { padding-top: 14px; }
+.section h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 8px; font-size: 14px; font-weight: 750; color: var(--text); }
+.section h3 small { color: var(--text-3); font-size: 12px; font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+.cell {
+  display: grid; justify-items: center; align-content: center; gap: 6px; min-width: 0; min-height: 78px; padding: 10px 4px 8px;
+  border: 1px solid transparent; border-radius: 16px; background: var(--surface); color: var(--text);
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), scale var(--dur-fast) var(--ease);
+}
+.cell svg { width: 28px; height: 28px; }
+.cell span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+.cell:active { scale: 0.96; background: var(--surface-2); }
+.cell[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.cell[aria-checked="true"] span { color: var(--accent); }
+@media (hover: hover) { .cell:hover { border-color: var(--border-strong); } }
+@media (prefers-reduced-motion: reduce) { .cell:active { scale: 1; } }
+.skeleton { display: block; min-height: 78px; border-radius: 16px; background: var(--surface-2); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+.empty { display: grid; justify-items: center; gap: 8px; padding: 56px 16px; color: var(--text-2); font-size: 15px; font-weight: 600; text-align: center; }
+.empty small { color: var(--text-3); font-size: 13px; font-weight: 500; }
+.credit { margin: 24px 0 0; color: var(--text-3); font-size: 11.5px; text-align: center; }

@@ -26,7 +26,7 @@ import java.util.*;
 
 /**
  * 커뮤니티 소로우: 미식·자취·싱글·자영업처럼 즐기는 일, 살아가는 일, 사람의 근본 고민으로 모여 힘든 점을 털어놓는 곳.
- * 소로우는 서비스(관리자)가 열고, 누구나 가입·리스닝하고 사연을 보내면 소로우지기가 검토해 '#번호'로 게시한다.
+ * 소로우는 로그인한 누구나 열고(연 사람이 소로우지기, 묶음도 그때 새로 만들 수 있다), 누구나 가입·리스닝하고 사연을 보내면 소로우지기가 검토해 '#번호'로 게시한다.
  * 게시된 사연은 shout_posts(community_id, post_no)로 들어가 외침과 같은 힘내요·댓글·신고·배지를 쓴다.
  * 보낸 사람(author_id)은 소로우지기 화면과 다른 사람의 화면 어디에도 내려가지 않는다.
  */
@@ -63,9 +63,16 @@ public class CircleService {
 
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
                          String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
-                         boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt) {
+                         boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt, String kindLabel) {
         public Circle {
             spaceCapacity = SpaceCapacity.effective(spaceCapacity);
+        }
+
+        public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
+                      String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
+                      boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt) {
+            this(id, slug, name, kind, domain, verified, joinMode, visibility, intro, notice, createdBy, postSeq,
+                createdAt, memberCount, listenerCount, sample, privateTest, pinned, spaceCapacity, icon, iconAt, null);
         }
 
         public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
@@ -95,6 +102,7 @@ public class CircleService {
         m.put("slug", c.slug());
         m.put("name", c.name());
         m.put("kind", c.kind());
+        if (c.kindLabel() != null) m.put("kindLabel", c.kindLabel());
         if (c.domain() != null) m.put("domain", c.domain());
         m.put("verified", c.verified());
         m.put("joinMode", c.joinMode());
@@ -117,14 +125,15 @@ public class CircleService {
     private static final String CIRCLE_SELECT = """
         SELECT c.*,
                (SELECT count(*) FROM community_members m WHERE m.community_id = c.id AND m.status = 'active')::int AS member_count,
-               (SELECT count(*) FROM community_follows f WHERE f.community_id = c.id)::int AS listener_count
+               (SELECT count(*) FROM community_follows f WHERE f.community_id = c.id)::int AS listener_count,
+               (SELECT g.label FROM circle_groups g WHERE g.id = c.kind) AS kind_label
           FROM communities c""";
 
     private static Circle circleRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Circle(rs.getString("id"), rs.getString("slug"), rs.getString("name"), rs.getString("kind"), rs.getString("domain"), rs.getBoolean("verified"),
             rs.getString("join_mode"), rs.getString("visibility"), rs.getString("intro"), rs.getString("notice"), rs.getString("created_by"), rs.getInt("post_seq"),
             Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"), rs.getBoolean("sample"),
-            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"), rs.getString("icon"), nullableLong(rs, "icon_at"));
+            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"), rs.getString("icon"), nullableLong(rs, "icon_at"), rs.getString("kind_label"));
     }
 
     private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
@@ -205,7 +214,7 @@ public class CircleService {
     }
 
     public List<Map<String, Object>> browse(DbUser viewer, String kind, String q) {
-        String k = kind != null && CircleLogic.KINDS.contains(kind) ? kind : null;
+        String k = CircleLogic.isGroupId(kind) ? kind : null;
         String query = q == null ? "" : q.strip();
         return jdbc.sql(CIRCLE_SELECT + " WHERE " + VISIBLE_CIRCLE + " AND (CAST(:kind AS VARCHAR) IS NULL OR c.kind = :kind) AND (:q = '' OR c.name ILIKE '%' || :q || '%') ORDER BY c.pinned DESC, c.created_at, c.slug LIMIT 60")
             .param("viewerId", viewerId(viewer)).param("kind", k).param("q", query)
@@ -291,9 +300,13 @@ public class CircleService {
 
     /* ---------- 만들기·설정 ---------- */
 
-    public record CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain, String icon) {
+    /** kind: 고른 묶음 id. group: 새로 만들 묶음 이름 (있으면 kind 대신 쓴다) */
+    public record CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain, String icon, String group) {
+        public CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain, String icon) {
+            this(name, slug, kind, intro, joinMode, visibility, domain, icon, null);
+        }
         public CreateInput(String name, String slug, String kind, String intro, String joinMode, String visibility, String domain) {
-            this(name, slug, kind, intro, joinMode, visibility, domain, null);
+            this(name, slug, kind, intro, joinMode, visibility, domain, null, null);
         }
     }
 
@@ -350,13 +363,12 @@ public class CircleService {
         assertNotBlocked(me);
         String name = CircleLogic.normalizeName(in.name());
         if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
+        if (CircleLogic.offensive(name)) throw ApiException.badRequest("이름에 쓸 수 없는 말이 들어 있어요");
         String slug = CircleLogic.normalizeSlug(in.slug());
         if (slug == null) throw ApiException.badRequest("주소는 영문 소문자·숫자·하이픈 3~40자로 해요 (예: korea-univ)");
         if (CircleLogic.PRIVATE_TEST_SLUG.equals(slug) || CircleLogic.nameKey(CircleLogic.PRIVATE_TEST_NAME).equals(CircleLogic.nameKey(name))) {
             throw ApiException.badRequest("이 이름과 주소는 비공개 테스트 소로우 전용이에요");
         }
-        String kind = in.kind() != null && CircleLogic.KINDS.contains(in.kind()) ? in.kind() : null;
-        if (kind == null) throw ApiException.badRequest("종류를 골라 주세요");
         long owned = jdbc.sql("SELECT count(*) FROM communities WHERE created_by = ?").param(me.id()).query(Long.class).single();
         if (owned >= CircleLogic.MAX_OWNED) throw ApiException.badRequest("소로우는 한 사람이 " + CircleLogic.MAX_OWNED + "개까지 열 수 있어요");
         String key = CircleLogic.nameKey(name);
@@ -367,7 +379,9 @@ public class CircleService {
         String visibility = in.visibility() != null && CircleLogic.VISIBILITIES.contains(in.visibility()) ? in.visibility() : "public";
         String intro = in.intro() == null ? "" : in.intro().strip();
         if (intro.length() > 200) intro = intro.substring(0, 200);
-        String icon = in.icon() != null && CircleLogic.ICONS.contains(in.icon()) ? in.icon() : null;
+        String icon = CircleLogic.normalizeIcon(in.icon());
+        // 묶음은 마지막에: 앞의 검사에서 막히면 새 묶음도 만들어지지 않는다 (같은 트랜잭션)
+        String kind = resolveGroup(me, in.kind(), in.group());
         String id = Ids.uid();
         jdbc.sql("""
             INSERT INTO communities (id, slug, name, name_key, kind, domain, join_mode, visibility, intro, invite_code, created_by, space_capacity, icon)
@@ -379,6 +393,69 @@ public class CircleService {
             .param(id).param(me.id()).param(!hasPrimary).update();
         badges.refresh(me.id());
         return detail(me, slug);
+    }
+
+    /* ---------- 묶음 ---------- */
+
+    /** 소로우를 열 때 고른 묶음 id, 또는 새 묶음 이름으로 묶음을 찾거나 만든다. 같은 이름(공백·가운뎃점·대소문자 무시)은 있는 묶음으로 합친다 */
+    String resolveGroup(DbUser me, String kindId, String groupLabel) {
+        if (groupLabel != null && !groupLabel.isBlank()) {
+            String label = CircleLogic.normalizeGroupLabel(groupLabel);
+            if (label == null) throw ApiException.badRequest("묶음 이름은 2~10자 한글·영문·숫자로 해요");
+            if (CircleLogic.offensive(label)) throw ApiException.badRequest("묶음 이름에 쓸 수 없는 말이 들어 있어요");
+            if (CircleLogic.affiliationLabel(label)) throw ApiException.badRequest("회사·학교 같은 소속 이름은 묶음으로 만들지 않아요");
+            String key = CircleLogic.groupKey(label);
+            Optional<String> existing = groupIdByKey(key);
+            if (existing.isPresent()) return existing.get();
+            // 동시에 같은 이름을 만들면 label_key UNIQUE 가 하나만 남기고, 나머지는 그 묶음을 쓴다
+            jdbc.sql("INSERT INTO circle_groups (id, label, label_key, created_by) VALUES (?, ?, ?, ?) ON CONFLICT (label_key) DO NOTHING")
+                .param(CircleLogic.newGroupId(RANDOM)).param(label).param(key).param(me.id()).update();
+            return groupIdByKey(key).orElseThrow(() -> ApiException.badRequest("묶음을 만들지 못했어요. 다시 시도해 주세요"));
+        }
+        if (CircleLogic.isGroupId(kindId) && jdbc.sql("SELECT count(*) FROM circle_groups WHERE id = ?").param(kindId).query(Long.class).single() > 0) return kindId;
+        throw ApiException.badRequest("묶음을 골라 주세요");
+    }
+
+    private Optional<String> groupIdByKey(String key) {
+        return jdbc.sql("SELECT id FROM circle_groups WHERE label_key = ?").param(key).query(String.class).optional();
+    }
+
+    static final int GROUPS_LIMIT = 30;
+
+    /**
+     * 묶음 목록. q 가 없으면 기본 묶음 + 소로우가 있는 새 묶음(소로우 많은 순 GROUPS_LIMIT 개),
+     * q 가 있으면 이름에 q 가 들어간 묶음(소로우가 아직 없어도) — 소로우를 열 때 같은 묶음을 먼저 보여 주려고.
+     */
+    public List<Map<String, Object>> groups(DbUser viewer, String q) {
+        String query = q == null ? "" : q.strip();
+        if (query.length() > 20) return List.of();
+        String qKey = query.isEmpty() ? "" : CircleLogic.groupKey(query);
+        record Row(String id, String label, String hint, boolean builtin, int sort, int count) {}
+        List<Row> rows = jdbc.sql("SELECT g.id, g.label, g.hint, g.builtin, g.sort_order, "
+                + "(SELECT count(*) FROM communities c WHERE c.kind = g.id AND " + VISIBLE_CIRCLE + ")::int AS circle_count "
+                + "FROM circle_groups g WHERE (:qKey = '' OR position(:qKey IN g.label_key) > 0)")
+            .param("viewerId", viewerId(viewer)).param("qKey", qKey)
+            .query((rs, i) -> new Row(rs.getString("id"), rs.getString("label"), rs.getString("hint"), rs.getBoolean("builtin"),
+                rs.getInt("sort_order"), rs.getInt("circle_count"))).list();
+        List<Row> sorted = rows.stream().sorted(Comparator.comparing((Row r) -> !r.builtin())
+            .thenComparingInt(r -> r.builtin() ? r.sort() : -r.count())
+            .thenComparing(Row::label)).toList();
+        List<Map<String, Object>> out = new ArrayList<>();
+        int free = 0;
+        for (Row r : sorted) {
+            if (!r.builtin()) {
+                if (query.isEmpty() && r.count() == 0) continue;
+                if (++free > GROUPS_LIMIT) break;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", r.id());
+            m.put("label", r.label());
+            if (!r.hint().isEmpty()) m.put("hint", r.hint());
+            m.put("builtin", r.builtin());
+            m.put("circleCount", r.count());
+            out.add(m);
+        }
+        return out;
     }
 
     private static String inviteCode() {
@@ -433,6 +510,7 @@ public class CircleService {
             if (b.get("name") instanceof String raw) {
                 String name = CircleLogic.normalizeName(raw);
                 if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
+                if (CircleLogic.offensive(name)) throw ApiException.badRequest("이름에 쓸 수 없는 말이 들어 있어요");
                 String key = CircleLogic.nameKey(name);
                 if (CircleLogic.nameKey(CircleLogic.PRIVATE_TEST_NAME).equals(key)) throw ApiException.badRequest("이 이름은 비공개 테스트 소로우 전용이에요");
                 if (jdbc.sql("SELECT count(*) FROM communities WHERE name_key = ? AND id <> ?").param(key).param(c.id()).query(Long.class).single() > 0) {
@@ -441,7 +519,7 @@ public class CircleService {
                 jdbc.sql("UPDATE communities SET name = ?, name_key = ? WHERE id = ?").param(name).param(key).param(c.id()).update();
             }
             if (b.containsKey("icon")) {
-                String picked = b.get("icon") instanceof String s && CircleLogic.ICONS.contains(s) ? s : null;
+                String picked = b.get("icon") instanceof String s ? CircleLogic.normalizeIcon(s) : null;
                 jdbc.sql("UPDATE communities SET icon = ? WHERE id = ?").param(picked).param(c.id()).update();
             }
             if (b.containsKey("iconImage")) {
