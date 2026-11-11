@@ -26,7 +26,7 @@ const layout = await load("../lib/beach/uyuni-bunker-layout.ts", hotels, [
 ]);
 const baikalLayout = await load("../lib/beach/baikal-layout.ts", {}, ["BAIKAL_CABIN", "BAIKAL_CABINS", "BAIKAL_COZY_PER_ROOM", "BAIKAL_ROOM_OCCLUSION_BOX", "baikalRoofHeight"]);
 const cozy = await load("../lib/beach/baikal-cozy.ts", baikalLayout, ["cushionGeometry", "drapeGeometry", "logGeometry", "poufGeometry", "softBoxGeometry"]);
-const bunkers = await load("../lib/beach/uyuni-bunkers.ts", { ...layout, ...cozy, createBaikalFlameMaterial: () => new THREE.MeshBasicMaterial() }, ["buildUyuniBunkers", "BED_LAYER", "LAGOON_FALLS", "cushionPose", "CUSHION_THICKNESS"]);
+const bunkers = await load("../lib/beach/uyuni-bunkers.ts", { ...layout, ...cozy, createBaikalFlameMaterial: () => new THREE.MeshBasicMaterial() }, ["buildUyuniBunkers", "BED_LAYER", "LAGOON_FALLS", "cushionPose", "CUSHION_THICKNESS", "goldfishAt", "GOLDFISH_COUNT"]);
 const { buildUyuniBunkers } = bunkers;
 const close = (actual, expected, message = `${actual} ≈ ${expected}`) => assert.ok(Math.abs(actual - expected) < 1e-5, message);
 function fixture(options = {}, prepared = true) {
@@ -174,7 +174,7 @@ test("two furnished rooms share finite mobile-bounded geometry, injected texture
       allGeometries.add(object.geometry); materials.add(object.material);
       assert.equal(object.receiveShadow, false);
     });
-    assert.equal(points, 2); assert.ok(draws <= 22, `${draws} room draws`); assert.ok(triangles < 170_000, `${triangles} room triangles`);
+    assert.equal(points, 2); assert.ok(draws <= 23, `${draws} room draws`); assert.ok(triangles < 170_000, `${triangles} room triangles`);
     t.diagnostic(`${bunker.id}: ${draws} room draws, ${triangles} triangles`);
   }
   for (const geometry of allGeometries) for (const name of ["position", "normal", "uv"]) {
@@ -344,8 +344,8 @@ test("water stays where nobody can stand, the lake is drawn clear until the sea 
       assert.ok(kind.getX(i) > 0, "every part of it is moving");
       if (kind.getY(i) > 0) { falling++; lowest = Math.min(lowest, position.getY(i)); highest = Math.max(highest, position.getY(i)); }
     }
-    assert.ok(falling > 40);
-    close(lowest, layout.BUNKER_LAGOON.level, "the fountain spills into the lake"); assert.ok(highest > layout.BUNKER_TERRACE.height - .1, "and the fall starts at the terrace");
+    assert.ok(falling >= 12, "the terrace fall is a sheet of water");
+    close(lowest, layout.BUNKER_FOUNTAIN.rim - .1, "the fall lands in its basin"); assert.ok(highest > layout.BUNKER_TERRACE.height - .1, "and the fall starts at the terrace");
     for (const [x, z, strength] of bunkers.LAGOON_FALLS) assert.ok(layout.inLagoon(x, z) && strength > 0, "water falls into the lake");
     const lake = f.scene.getObjectByName(`uyuni-bunker-lagoon-${bunker.id}`);
     assert.equal(lake.material.transparent, true, "the lake's own water is clear: the bed shows through it");
@@ -363,9 +363,9 @@ test("water stays where nobody can stand, the lake is drawn clear until the sea 
       assert.equal(leaves.material.side, THREE.DoubleSide);
     }
     assert.ok(f.scene.getObjectByName(`uyuni-bunker-petals-${bunker.id}`).geometry.instanceCount > 50, "petals drift through the hall");
-    // Spray rises only where falling water meets water: round the fountain in the lake and in the basin under the terrace fall.
+    // Spray rises only where falling water meets water: in the basin under the terrace fall.
     const spray = f.scene.getObjectByName(`uyuni-bunker-splashes-${bunker.id}`), drops = spray.geometry.attributes.aDrop;
-    assert.ok(spray.geometry.instanceCount > 150 && spray.material.transparent && !spray.material.depthWrite);
+    assert.ok(spray.geometry.instanceCount > 80 && spray.material.transparent && !spray.material.depthWrite);
     for (let i = 0; i < drops.count; i++) {
       const x = drops.getX(i), y = drops.getY(i), z = drops.getZ(i);
       const lake = layout.lagoonRadius(x, z) < 1 && Math.abs(y - layout.BUNKER_LAGOON.level) < .05, basinDrop = basin.some(collider => pointIn(bunker.x + x, bunker.z + z, collider)) && y > .3 && y < layout.BUNKER_FOUNTAIN.rim;
@@ -392,4 +392,28 @@ test("a scatter cushion rests on the seat and lies flat against what is behind i
     assert.ok(deepest < .02, "and touches it rather than floating");
     assert.ok(lowest > foot.y - .001 && lowest < foot.y + .06, `its lowest corner rests on the seat (${lowest - foot.y})`);
   }
+});
+
+test("a few goldfish swim round the lake under the water, never through its bed or out of it", () => {
+  const L = layout.BUNKER_LAGOON, bed = (x, z) => { const q = Math.hypot((x - L.x) / L.a, (z - L.z) / L.b); return L.level - (.17 + (L.depth - .17) * (1 - q * q)); };
+  assert.ok(bunkers.GOLDFISH_COUNT >= 4 && bunkers.GOLDFISH_COUNT <= 8, "a few, not a crowd");
+  for (let i = 0; i < bunkers.GOLDFISH_COUNT; i++) {
+    let travelled = 0, last = null;
+    for (let time = 0; time < 120; time += .5) {
+      const fish = bunkers.goldfishAt(i, time);
+      assert.ok(layout.inLagoon(fish.x, fish.z) && Math.hypot((fish.x - L.x) / L.a, (fish.z - L.z) / L.b) < .85, `fish ${i} keeps clear of the kerb`);
+      assert.ok(fish.y < L.level - .1 && fish.y > bed(fish.x, fish.z) + .08, `fish ${i} swims between the surface and the bed`);
+      if (last) travelled += Math.hypot(fish.x - last.x, fish.z - last.z);
+      last = fish;
+    }
+    assert.ok(travelled > 20, `fish ${i} keeps swimming (${travelled.toFixed(1)} m in two minutes)`);
+  }
+  const f = fixture();
+  f.control.setActive("dawn");
+  const school = f.scene.getObjectByName("uyuni-bunker-goldfish-dawn"), before = new THREE.Matrix4(), after = new THREE.Matrix4();
+  assert.ok(school.isInstancedMesh); assert.equal(school.count, bunkers.GOLDFISH_COUNT);
+  assert.ok(school.layers.isEnabled(bunkers.BED_LAYER), "the water that bends the bed bends the fish too");
+  f.control.update(10); school.getMatrixAt(0, before); f.control.update(11); school.getMatrixAt(0, after);
+  assert.ok(!before.equals(after), "they move while someone is in the hall");
+  cleanup(f);
 });

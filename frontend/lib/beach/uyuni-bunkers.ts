@@ -37,8 +37,8 @@ export function cushionPose(foot: { x: number; y: number; z: number }, inward: {
 }
 /** Only the lagoon bed is drawn into the picture the sea engine bends through the water. Shared with the beach, which uses the same layer for its sand. */
 export const BED_LAYER = 3;
-/** Where the fall over the terrace lands, the fountain in the middle of the lake: x and z in the room, and strength. */
-export const LAGOON_FALLS: readonly (readonly [number, number, number])[] = [[BUNKER_LAGOON.x, BUNKER_LAGOON.z, .55]];
+/** Where water falls into the lake, which sets rings spreading on it: x and z in the room, and strength. The lake is still; only goldfish move in it. */
+export const LAGOON_FALLS: readonly (readonly [number, number, number])[] = [];
 export interface UyuniBunkerOptions { renderer?: THREE.WebGLRenderer; mobile?: boolean; /** Fetches a photographic texture from the CDN, for those who go down. */ loadTexture?: (path: string) => THREE.Texture }
 
 const CREAM = 0xf1e6d2, OATMEAL = 0xdccbb0, CAMEL = 0xb98a58, RUST = 0xa5502b, CHOCOLATE = 0x7a5a44, MUSTARD = 0xc9983a, FOREST = 0x56603f, WALNUT = 0xa27a5a, HONEY = 0xf2c595;
@@ -410,7 +410,7 @@ void main() {
 const LEAF_CELLS = 3, FLOWER_CELL = 3;
 /**
  * Still water for a phone or a device without float render targets: clear over the pale bed, deeper blue-green towards the middle,
- * stirred by a draught and by rings from the fountain, with the warm hall and the bright dome caught in it at a glancing angle.
+ * stirred by a draught, with the warm hall and the bright dome caught in it at a glancing angle.
  */
 const LAKE_VERT = `
 attribute vec3 color;
@@ -429,11 +429,9 @@ varying vec3 vWorld;
 varying vec2 vSpot;
 varying float vDepth;
 void main() {
-  vec2 p = vSpot, from = p - ${`vec2(${BUNKER_LAGOON.x.toFixed(2)}, ${BUNKER_LAGOON.z.toFixed(2)})`};
+  vec2 p = vSpot;
   vec2 g = vec2(cos(p.x * 2.1 + uTime * 0.8 + sin(p.y * 1.3)), cos(p.y * 2.7 - uTime * 0.6 + sin(p.x * 1.1))) * 0.5
     + vec2(cos((p.x + p.y) * 4.3 - uTime * 1.4), cos((p.x - p.y) * 3.9 + uTime * 1.2)) * 0.22;
-  float ring = length(from);
-  g += from / max(ring, 0.001) * cos(ring * 8.0 - uTime * 2.6) * 0.7 * exp(-ring * 0.55);
   vec3 n = normalize(vec3(-g.x * 0.05, 1.0, -g.y * 0.05)), v = normalize(cameraPosition - vWorld);
   float fresnel = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
   vec3 r = reflect(-v, n);
@@ -481,6 +479,55 @@ varying float vShade;
 void main() { gl_FragColor = vec4(vec3(1.0, 0.8, 0.86) * vShade, 1.0); }`;
 
 /** One cupped leaf, a metre long, growing up from its stalk. Lighter along the midrib and towards the tip. */
+/**
+ * A goldfish a little over a hand long with its head towards +z: a plump body, a forked tail and a fin along its back.
+ * Darker on the back and paler on the belly; its own colour comes from the school it swims in.
+ */
+function goldfishGeometry(around: number): THREE.BufferGeometry {
+  const profile = [[0, -.12], [.016, -.105], [.03, -.07], [.043, -.02], [.048, .03], [.042, .08], [.026, .118], [.008, .135], [0, .14]];
+  const body = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), around).toNonIndexed();
+  body.rotateX(Math.PI / 2); body.scale(.72, 1.1, 1);
+  const fin = (corners: readonly (readonly [number, number, number])[]) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(corners.flat(), 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(new Array(corners.length * 2).fill(0), 2));
+    geometry.computeVertexNormals(); return geometry;
+  };
+  const tail = fin([[0, 0, -.1], [0, .075, -.205], [0, .008, -.165], [0, 0, -.1], [0, -.008, -.165], [0, -.075, -.205]]);
+  const dorsal = fin([[0, .035, .05], [0, .072, -.015], [0, .03, -.07]]);
+  for (const [piece, paler] of [[body, false], [tail, true], [dorsal, true]] as const) {
+    const position = piece.getAttribute("position"), shade: number[] = [];
+    for (let i = 0; i < position.count; i++) {
+      const y = position.getY(i), tone = paler ? 1.2 : .74 + .56 * THREE.MathUtils.smoothstep(-y, -.04, .05);
+      shade.push(tone, tone, tone);
+    }
+    piece.setAttribute("color", new THREE.Float32BufferAttribute(shade, 3));
+  }
+  const geometry = mergeGeometries([body, tail, dorsal], false)!;
+  body.dispose(); tail.dispose(); dorsal.dispose();
+  geometry.name = "uyuni-bunker-goldfish-geometry"; geometry.computeBoundingSphere();
+  return geometry;
+}
+/** The goldfish in the lake: colour, length, how wide a loop each swims and how fast, and how deep. */
+const GOLDFISH: readonly { color: number; size: number; across: number; along: number; speed: number; depth: number }[] = [
+  { color: 0xff6a1a, size: 1.7, across: .62, along: .55, speed: .16, depth: .17 },
+  { color: 0xff4320, size: 1.5, across: .45, along: .62, speed: -.21, depth: .2 },
+  { color: 0xffa53a, size: 1.4, across: .68, along: .42, speed: .19, depth: .15 },
+  { color: 0xfff0e2, size: 1.6, across: .38, along: .5, speed: -.14, depth: .22 },
+  { color: 0xff5a26, size: 1.35, across: .55, along: .35, speed: .25, depth: .18 },
+  { color: 0x2b2420, size: 1.45, across: .3, along: .58, speed: .17, depth: .21 },
+];
+/** Where a goldfish is at a time, in room coordinates: a slow loop round the lake that wanders in and out, never near the kerb. */
+export function goldfishAt(index: number, time: number): { x: number; y: number; z: number } {
+  const fish = GOLDFISH[index % GOLDFISH.length], L = BUNKER_LAGOON, turn = time * fish.speed + index * 1.9, wander = index * 2.3;
+  return {
+    x: L.x + L.a * (fish.across * Math.cos(turn) + .07 * Math.sin(turn * 2.3 + wander)),
+    y: L.level - fish.depth - .03 * Math.sin(time * .7 + index),
+    z: L.z + L.b * (fish.along * Math.sin(turn) + .08 * Math.sin(turn * 1.7 + wander)),
+  };
+}
+export const GOLDFISH_COUNT = GOLDFISH.length;
+
 function leafGeometry(rows: number): THREE.BufferGeometry {
   const points: number[] = [], uv: number[] = [], shade: number[] = [], indices: number[] = [];
   for (let row = 0; row <= rows; row++) for (let side = -1; side <= 1; side++) {
@@ -519,15 +566,21 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     float w = sin(c.x + uRoomSway * 1.3 + sin(c.y * 1.7 + uRoomSway)) + sin(c.y * 1.3 - uRoomSway * 1.1 + sin(c.x * 1.9 - uRoomSway * 0.7));
     reflectedLight.directDiffuse += material.diffuseColor * vec3(0.86, 0.95, 1.0) * pow(1.0 - abs(w) * 0.5, 6.0) * under * 0.55;
   }`;
-  const indoor = (name: string, parameters: THREE.MeshStandardMaterialParameters, flags: { fabric?: boolean; cavity?: number; leafy?: boolean; gloss?: boolean; caustic?: boolean } = {}) => {
+  // A fish bends from head to tail as it swims, the tail sweeping furthest; each fish keeps its own beat.
+  const FISH_SWIM = `
+  {
+    float tail = clamp((0.15 - position.z) / 0.3, 0.0, 1.0);
+    transformed.x += sin(uRoomSway * 9.0 + float(gl_InstanceID) * 1.7 - position.z * 13.0) * (0.004 + 0.05 * tail * tail);
+  }`;
+  const indoor = (name: string, parameters: THREE.MeshStandardMaterialParameters, flags: { fabric?: boolean; cavity?: number; leafy?: boolean; gloss?: boolean; caustic?: boolean; fishy?: boolean } = {}) => {
     const material = new THREE.MeshStandardMaterial({ roughness: .86, ...parameters, fog: false });
     material.name = `uyuni-bunker-${name}`; materials.add(material);
-    const gloss = flags.gloss ? GLOSS_LIGHTS : 0, leafy = flags.leafy === true, caustic = flags.caustic === true;
+    const gloss = flags.gloss ? GLOSS_LIGHTS : 0, leafy = flags.leafy === true, caustic = flags.caustic === true, fishy = flags.fishy === true;
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, { uRoomLight, uRoomTint, uRoomFire, uRoomSway: flameTime });
       shader.vertexShader = (leafy ? "#define ROOM_SWAY\n" : "") + shader.vertexShader
-        .replace("#include <common>", `#include <common>\n${ROOM_PARS}${leafy ? "\nuniform float uRoomSway;\nattribute float aSway;" : ""}`)
-        .replace("#include <begin_vertex>", `#include <begin_vertex>\n${roomVertex(PIXEL_LIGHTS, leafy)}`);
+        .replace("#include <common>", `#include <common>\n${ROOM_PARS}${leafy ? "\nuniform float uRoomSway;\nattribute float aSway;" : fishy ? "\nuniform float uRoomSway;" : ""}`)
+        .replace("#include <begin_vertex>", `#include <begin_vertex>${fishy ? FISH_SWIM : ""}\n${roomVertex(PIXEL_LIGHTS, leafy)}`);
       let fragment = (flags.fabric ? "#define ROOM_FABRIC\n" : "") + shader.fragmentShader;
       fragment = fragment.replace("#include <common>", `#include <common>\n${ROOM_PARS}${caustic ? "\nuniform float uRoomSway;" : ""}`)
         .replace("#include <lights_fragment_begin>", WARM_LIGHT_BEGIN)
@@ -535,7 +588,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       if (flags.cavity !== undefined) fragment = fragment.replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n#ifdef USE_NORMALMAP\ndiffuseColor.rgb *= mix(${flags.cavity.toFixed(2)}, 1.0, texture2D(normalMap, vNormalMapUv).a);\n#endif`);
       shader.fragmentShader = fragment;
     };
-    material.customProgramCacheKey = () => `uyuni-bunker-room-${PIXEL_LIGHTS}-${gloss}-${flags.fabric ? 1 : 0}-${leafy ? 1 : 0}-${flags.cavity ?? "n"}-${caustic ? 1 : 0}`;
+    material.customProgramCacheKey = () => `uyuni-bunker-room-${PIXEL_LIGHTS}-${gloss}-${flags.fabric ? 1 : 0}-${leafy ? 1 : 0}-${flags.cavity ?? "n"}-${caustic ? 1 : 0}-${fishy ? 1 : 0}`;
     return material;
   };
 
@@ -560,6 +613,20 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
   }
 
   const instanced: THREE.InstancedMesh[] = [], roomStones = new Map<UyuniBunkerId, THREE.InstancedMesh>(), lagoons = new Map<UyuniBunkerId, THREE.Mesh>();
+  const schools = new Map<UyuniBunkerId, THREE.InstancedMesh>(), fishPlace = new THREE.Object3D();
+  /** Moves every goldfish along its loop, head first, leaning a little into its turn. */
+  const swim = (school: THREE.InstancedMesh, time: number) => {
+    for (let i = 0; i < GOLDFISH_COUNT; i++) {
+      const now = goldfishAt(i, time), ahead = goldfishAt(i, time + .25), behind = goldfishAt(i, time - .25);
+      const heading = Math.atan2(ahead.x - now.x, ahead.z - now.z), before = Math.atan2(now.x - behind.x, now.z - behind.z);
+      const turning = Math.atan2(Math.sin(heading - before), Math.cos(heading - before));
+      fishPlace.position.set(now.x, now.y, now.z);
+      fishPlace.rotation.set(0, heading, -turning * 1.5, "YXZ");
+      fishPlace.scale.setScalar(GOLDFISH[i].size);
+      fishPlace.updateMatrix(); school.setMatrixAt(i, fishPlace.matrix);
+    }
+    school.instanceMatrix.needsUpdate = true;
+  };
   let sprays: THREE.WebGLRenderTarget | null = null, marble: THREE.WebGLRenderTarget | null = null, rockPhoto: THREE.Texture | null = null;
   const placement = new THREE.Object3D(), blackStone = new THREE.Color(0x15130f), whiteStone = new THREE.Color(0xf3eddf);
   let lagoonDrawn = true, disposed = false, built = false, baked: CozySurfaces | null = null, activeRoom: UyuniBunkerId | null = null, shownBoards = "";
@@ -584,6 +651,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     const foliage = indoor("garden-leaves", { vertexColors: true, roughness: .78, side: THREE.DoubleSide }, { leafy: true });
     const brass = indoor("brushed-brass", { color: 0xc79a55, metalness: .4, roughness: .38 }, { gloss: true });
     const stoneMaterial = indoor("board-stones", { roughness: .26 }, { gloss: true });
+    const goldfishMaterial = indoor("goldfish", { vertexColors: true, roughness: .3, side: THREE.DoubleSide }, { gloss: true, fishy: true });
     const glow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, fog: false });
     glow.name = "uyuni-bunker-lamp-glow"; materials.add(glow);
     const shadow = new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, opacity: .62, depthWrite: false, toneMapped: false, fog: false });
@@ -967,17 +1035,6 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
           if (i === 0) for (let p = 0; p < 3; p++) flower(LAKE.x + LAKE.a * r * Math.sin(a), LAKE.level + .15, LAKE.z + LAKE.b * r * Math.cos(a), .22, p * 1.05 + k, -1.25, k % 2 ? ROSE[p % ROSE.length] : IVORY[p % IVORY.length], .1);
         }
       }
-      // The fountain: a marble bowl on a stem, brimming over all round into the lake.
-      place(floor, drum, LAKE.x, (bedY(0) + .5) / 2, LAKE.z, .22, .5 - bedY(0), .22, 0, 0, 0, CREAMY);
-      place(floor, once("fountain-bowl", () => new THREE.LatheGeometry([[0, 0], [.3, .02], [.7, .14], [.92, .3], [.95, .36], [.9, .36], [.66, .2], [0, .14]].map(([x, y]) => new THREE.Vector2(x, y)), pick(32, 18))), LAKE.x, .3, LAKE.z, 1, 1, 1, 0, 0, 0, CREAMY);
-      place(painted, cylinder, LAKE.x, .64, LAKE.z, .88, .02, .88, 0, 0, 0, 0x93c9ee);
-      const spill = pick(20, 14);
-      for (let i = 0; i < spill; i++) {
-        const a = i / spill * TAU, s = Math.sin(a), c = Math.cos(a);
-        ribbon([LAKE.x + s * .95, .66, LAKE.z + c * .95], [LAKE.x + s * 1.12, LAKE.level, LAKE.z + c * 1.12], [c, 0, -s], 2 * Math.PI * 1.12 / spill + .05, pick(5, 3), i * .7, 1.6, 1, [0, 1]);
-        splash(LAKE.x + s * 1.12, LAKE.level + .01, LAKE.z + c * 1.12, s, c, .55, pick(14, 9), .18, .2);
-      }
-      halo(LAKE.x, .7, LAKE.z, 2.6, .1, .14, .19);
       // The still water: deeper towards the middle; a desktop swaps it for the sea engine from the beach.
       const rings2 = pick(10, 6), positions: number[] = [], normals: number[] = [], uvs: number[] = [], kinds: number[] = [], indices: number[] = [];
       for (let j = 0; j <= rings2; j++) for (let i = 0; i <= segs; i++) {
@@ -1463,6 +1520,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       const haloMaterial = new THREE.ShaderMaterial({ vertexShader: HALO_VERT, fragmentShader: HALO_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false });
       haloMaterial.name = "uyuni-bunker-halos"; materials.add(haloMaterial);
       const stoneGeometry = new THREE.SphereGeometry(1, 14, 8); geometries.add(stoneGeometry);
+      const fishGeometry = goldfishGeometry(pick(12, 8)); geometries.add(fishGeometry);
       const splashGeometry = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1) as unknown as THREE.InstancedBufferGeometry);
       splashGeometry.instanceCount = splashes.length;
       splashGeometry.setAttribute("aDrop", new THREE.InstancedBufferAttribute(new Float32Array(splashes.flatMap(drop => drop.slice(0, 4))), 4));
@@ -1495,6 +1553,11 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
         fire.name = `uyuni-bunker-flames-${bunker.id}`; fire.frustumCulled = false; fire.renderOrder = 6; room.add(fire); instanced.push(fire);
         const stones = new THREE.InstancedMesh(stoneGeometry, stoneMaterial, MAX_STONES);
         stones.name = `uyuni-bunker-stones-${bunker.id}`; stones.frustumCulled = false; stones.count = 0; stones.setColorAt(0, whiteStone); room.add(stones); roomStones.set(bunker.id, stones); instanced.push(stones);
+        // Goldfish under the water. They are drawn with the lake bed, so the water that bends the bed bends them too.
+        const school = new THREE.InstancedMesh(fishGeometry, goldfishMaterial, GOLDFISH_COUNT);
+        school.name = `uyuni-bunker-goldfish-${bunker.id}`; school.frustumCulled = false; school.layers.enable(BED_LAYER);
+        GOLDFISH.forEach((fish, i) => school.setColorAt(i, new THREE.Color(fish.color)));
+        room.add(school); schools.set(bunker.id, school); instanced.push(school); swim(school, 0);
         const glows = new THREE.Mesh(haloGeometry, haloMaterial); glows.name = `uyuni-bunker-halos-${bunker.id}`; glows.frustumCulled = false; glows.renderOrder = 7; room.add(glows);
         // These three light only the visitors; every surface of the room has its own lighting above.
         placement.rotation.set(0, 0, 0);
@@ -1555,6 +1618,8 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     update(time) {
       if (disposed) return;
       awaitRock?.(); awaitWillow?.();
+      const school = activeRoom ? schools.get(activeRoom) : undefined;
+      if (school) swim(school, time);
       flameTime.value = time;
       // Slow breathing with a small quick flicker: the room pulses, it never strobes.
       uRoomFire.value = (1 + Math.sin(time * .65) * .05 + Math.sin(time * 1.7 + .6) * .03) * (1 + (Math.sin(time * 9.3) * Math.sin(time * 5.1 + 1.3) + Math.sin(time * 13.7)) * .035);
