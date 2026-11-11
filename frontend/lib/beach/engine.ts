@@ -20,7 +20,7 @@ import { findClearApproach, findWalkingPath, resolveWalls } from "./navigation";
 import { CoastalFire } from "./fire";
 import { HORIZON_MELT, SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
-import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerCeilingAt, bunkerFloorAt, bunkerForSpot, bunkerColliders, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, type UyuniBunkerId } from "./uyuni-bunker-layout";
+import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerCeilingAt, bunkerFloorAt, bunkerForSpot, bunkerCameraBlocked, bunkerColliders, bunkerInside, bunkerStepClear, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, resolveBunkerWalk, type UyuniBunkerId } from "./uyuni-bunker-layout";
 import type { BoardGame } from "./net";
 import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
@@ -486,6 +486,19 @@ export class BeachEngine {
   private skin: number;
   private followCam = new THREE.Vector3();
   private followSnap = true;
+  /**
+   * The third-person camera rides with the character and only its offset from the character is smoothed. Smoothing the
+   * camera's own position instead lets it trail by an amount that changes with every uneven frame, which shakes the view.
+   */
+  private followOffset = new THREE.Vector3();
+  private followFocus = new THREE.Vector3();
+  private followAim = new THREE.Vector3();
+  /** A sudden change of floor height under the walker, eased out over a moment; sloping floors are followed exactly. */
+  private floorJump = 0;
+  private lastFloor: { x: number; z: number; y: number } | null = null;
+  /** Eye height above the floor in first person, eased between standing and sitting, and the floor it was last measured from. */
+  private eyeLift = EYE;
+  private eyeFloor = 0;
   /** Third-person orbit is independent of the body yaw sent to other visitors. */
   private orbitYaw: number;
 
@@ -2176,10 +2189,11 @@ export class BeachEngine {
     this.running = true;
     this.clock.reset();
     this.lastRender = performance.now();
-    const loop = () => {
+    // The frame's own timestamp is aligned to the screen's refresh, so pacing by it never wobbles the way the moment the callback happens to run does.
+    const loop = (time: number) => {
       if (!this.running) return;
       this.raf = requestAnimationFrame(loop);
-      this.frame();
+      this.frame(time);
     };
     this.raf = requestAnimationFrame(loop);
   }
@@ -2236,13 +2250,15 @@ export class BeachEngine {
     this.handlers.onQuality?.(level);
   }
 
-  private frame() {
-    const now = performance.now();
-    if (this.quality === "low" && now - this.lastRender < 31) return; // 30fps 제한
+  private frame(time?: number) {
+    const now = typeof time === "number" && Number.isFinite(time) ? time : performance.now();
+    // 30fps 제한: 60Hz 화면의 두 프레임마다 한 번씩 고르게. 시각이 조금만 흔들려도 33ms·50ms 가 섞이면 움직일 때 화면이 떤다
+    const beat = 1000 / 30;
+    if (this.quality === "low" && now - this.lastRender < beat - 7) return;
     this.clock.update(now);
-    const dt = Math.min(0.05, this.clock.getDelta());
+    const dt = Math.max(0, Math.min(0.05, this.clock.getDelta()));
     const elapsed = now - this.lastRender;
-    this.lastRender = now;
+    this.lastRender = this.quality === "low" && elapsed < beat + 7 ? this.lastRender + beat : now;
     // 프레임 시간 평균이 3초 넘게 느리면 화질을 낮춘다 (한 번 낮추면 이 방문 동안 유지). 탭 전환 같은 긴 멈춤은 세지 않는다
     if (now >= this.qualityWarmupUntil && document.visibilityState !== "hidden" && elapsed > 0 && elapsed < 120) {
       this.frameAvg += (elapsed - this.frameAvg) * 0.06;
@@ -2278,7 +2294,7 @@ export class BeachEngine {
       trimSmallPropShadows(this.scene);
     }
     if (this.ultraSea?.enabled && !this.activeBunkerId) this.ultraSea.prepare(dt, this.camera);
-    if (this.activeBunkerId) this.uyuni?.prepareWater?.(dt, this.camera, this.quality === "high");
+    if (this.activeBunkerId) this.uyuni?.prepareWater?.(dt, this.camera, this.quality === "high", !this.self.moving && !this.bunkerTransition);
     this.drawScene();
   }
 
@@ -2396,8 +2412,13 @@ export class BeachEngine {
       if (Math.abs(dYaw) < 0.01 && (this.view === "third" || Math.abs(g.pitch - this.self.pitch) < 0.01)) this.faceGoal = null;
     }
     const bob = this.self.moving ? Math.sin(this.self.bobT) * 0.035 : 0;
-    const targetEye = this.deckHeight(this.self.x, this.self.z) + (this.restSeat ? 1.30 : EYE);
-    this.eyeHeight += (targetEye - this.eyeHeight) * Math.min(1, dt * 9);
+    this.trackFloor(dt);
+    // The eye rides on the floor exactly, so a stair or a slope never makes it lag by a different amount each frame.
+    // Only its height above the floor is eased; anything that set the eye elsewhere (a seat, the boat, a ladder) is eased back from there.
+    const floor = this.selfFloorY();
+    if (!(Math.abs(this.eyeHeight - (this.eyeFloor + this.eyeLift)) <= 1e-3)) this.eyeLift = this.eyeHeight - floor;
+    this.eyeLift += ((this.restSeat ? 1.30 : EYE) - this.eyeLift) * Math.min(1, dt * 9);
+    this.eyeHeight = floor + this.eyeLift; this.eyeFloor = floor;
     if (this.view === "third") {
       this.placeFollowCamera(dt);
     } else {
@@ -2587,28 +2608,44 @@ export class BeachEngine {
   /** Follow the standing character, shortening the orbit near shelter walls. */
   private placeFollowCamera(dt: number) {
     const x = this.self.x, z = this.self.z;
-    const focusY = this.deckHeight(x, z) + (this.restSeat ? 1.0 : 1.25);
+    const focusY = this.selfFloorY() + (this.restSeat ? 1.0 : 1.25);
     const elev = Math.max(0.08, Math.min(1.0, 0.4 - this.self.pitch * 0.8));
     const f = this.facing(this.orbitYaw);
     const reach = this.activeBunkerId ? 4.6 : this.restSeat ? FOLLOW_DISTANCE_SEATED : FOLLOW_DISTANCE;
     const ceiling = this.baikal ? baikalCeilingHeight(x, z) : this.cloudSpa ? cloudSpaCeilingHeight(x, z) : this.activeBunkerId ? bunkerCeilingAt(this.activeBunkerId, x, z) : this.uyuni ? uyuniHotelCeilingHeight(x, z) : this.bamboo ? bambooCeilingHeight(x, z) : this.garden ? gardenCeilingHeight(x, z) : hotSpringCeilingHeight(x, z);
     const cosE = Math.cos(elev), sinE = Math.sin(elev);
     const wanted = new THREE.Vector3();
-    for (let k = 1; k >= 0.06; k -= 0.06) {
+    const place = (k: number) => {
       wanted.set(x - f.x * reach * k * cosE, focusY + reach * k * sinE, z - f.z * reach * k * cosE);
       if (this.uyuni && this.restSeat) wanted.y = Math.max(2.05, wanted.y);
       if (ceiling !== null) wanted.y = Math.min(wanted.y, ceiling - 0.18);
-      if (this.cameraFree(wanted) && (!this.uyuni || this.hotelCameraSightClear(wanted, focusY)) && (!(this.cloudSpa || this.baikal) || this.cloudSpaCameraSightClear(wanted, focusY))) break;
+    };
+    const clear = () => this.cameraFree(wanted) && (!this.uyuni || this.hotelCameraSightClear(wanted, focusY)) && (!(this.cloudSpa || this.baikal) || this.cloudSpaCameraSightClear(wanted, focusY));
+    if (this.activeBunkerId) {
+      // Indoors the orbit shortens by exactly as much as a wall, a balcony or the stair needs, so walking past one never makes it jump.
+      place(1);
+      if (!clear()) {
+        let near = 0.06, far = 1;
+        for (let i = 0; i < 12; i++) { const k = (near + far) / 2; place(k); if (clear()) near = k; else far = k; }
+        place(near);
+      }
+    } else {
+      for (let k = 1; k >= 0.06; k -= 0.06) { place(k); if (clear()) break; }
     }
     this.bamboo?.clipGuestbookCamera(x, focusY, z, wanted);
-    if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
+    const focus = (this.followFocus ??= new THREE.Vector3()).set(x, focusY, z), aim = (this.followAim ??= new THREE.Vector3()).copy(wanted).sub(focus);
+    const offset = this.followOffset ??= new THREE.Vector3();
+    if (this.followSnap) { offset.copy(aim); this.followSnap = false; }
     else {
-      this.followCam.lerp(wanted, Math.min(1, dt * 10));
-      this.bamboo?.clipGuestbookCamera(x, focusY, z, this.followCam);
+      offset.lerp(aim, Math.min(1, dt * 10));
+      // Pull in at once when something comes between, ease back out when it has gone.
+      if (this.activeBunkerId && offset.length() > aim.length()) offset.setLength(aim.length());
     }
-    if ((this.cloudSpa || this.baikal) && (!this.cameraFree(this.followCam) || !this.cloudSpaCameraSightClear(this.followCam, focusY))) this.followCam.copy(wanted);
+    this.followCam.copy(focus).add(offset);
+    this.bamboo?.clipGuestbookCamera(x, focusY, z, this.followCam);
+    if ((this.cloudSpa || this.baikal) && (!this.cameraFree(this.followCam) || !this.cloudSpaCameraSightClear(this.followCam, focusY))) { this.followCam.copy(wanted); this.followOffset.copy(aim); }
     // An interpolated orbit must not cut through the curved roof between two valid positions.
-    if (this.uyuni && (!this.cameraFree(this.followCam) || !this.hotelCameraSightClear(this.followCam, focusY))) this.followCam.copy(wanted);
+    if (this.uyuni && (!this.cameraFree(this.followCam) || !this.hotelCameraSightClear(this.followCam, focusY))) { this.followCam.copy(wanted); this.followOffset.copy(aim); }
     this.camera.position.copy(this.followCam);
     // 캐릭터 머리 조금 위를 바라봐서 캐릭터는 화면 아래쪽, 앞 풍경은 위쪽에 넉넉히 들어온다
     this.camera.lookAt(x, focusY + (ceiling !== null ? 0.45 : this.mobile ? 1.1 : 0.7), z);
@@ -2652,8 +2689,8 @@ export class BeachEngine {
   private cameraFree(p: THREE.Vector3) {
     const bunker = bunkerById(this.activeBunkerId);
     if (bunker) {
-      const b = bunker.bounds;
-      if (p.x < b.minX + .25 || p.x > b.maxX - .25 || p.z < b.minZ + .25 || p.z > b.maxZ - .25 || p.y < bunkerFloorAt(bunker.id, p.x, p.z) + .25 || p.y > bunkerCeilingAt(bunker.id, p.x, p.z) - .25) return false;
+      if (!bunkerInside(p.x - bunker.x, p.z - bunker.z, .25) || p.y < bunkerFloorAt(bunker.id, p.x, p.z) + .25 || p.y > bunkerCeilingAt(bunker.id, p.x, p.z) - .25
+        || bunkerCameraBlocked(p.x - bunker.x, p.y - bunker.floorY, p.z - bunker.z)) return false;
       return !bunkerColliders(bunker.id).some(wall => (wall.kind === "wall" || wall.kind === "shelf" || wall.kind === "ladder")
         && p.x > wall.minX - .2 && p.x < wall.maxX + .2 && p.z > wall.minZ - .2 && p.z < wall.maxZ + .2);
     }
@@ -2717,7 +2754,7 @@ export class BeachEngine {
     if (n.avatar) n.avatar.root.visible = false;
     n.sprite.visible = false;
     n.shadow.visible = false;
-    const y = this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0);
+    const y = this.selfFloorY() + (this.bunkerClimbOffset ?? 0);
     // 바닷가의 yaw 는 (-sin, -cos) 을 보고, 치비는 (sin, cos) 을 본다
     chibi.follow(dt, this.self.x, y, this.self.z, this.self.yaw + Math.PI, this.self.moving);
     this.markWading(chibi.object, this.self.z);
@@ -2734,7 +2771,7 @@ export class BeachEngine {
     this.markWading(avatar?.root, this.self.z);
     const lying = this.floatingPose(this.skyRest);
     avatar?.update(dt, {
-      ...this.self, y: this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0), visible: shown, lying,
+      ...this.self, y: this.selfFloorY() + (this.bunkerClimbOffset ?? 0), visible: shown, lying,
       seated: this.fixedSeat ?? (this.restSeat ? { ...this.restSeat, avatarY: this.deckHeight(this.restSeat.x, this.restSeat.z) + 0.52 } : null),
     });
     n.sprite.visible = shown && !avatar;
@@ -2760,7 +2797,7 @@ export class BeachEngine {
       this.setFrameOn(n.tex, CHAR_VIEW.front, CHAR_ANIM.idle.from, this.skin);
       return;
     }
-    const deck = this.deckHeight(this.self.x, this.self.z) + (this.bunkerClimbOffset ?? 0);
+    const deck = this.selfFloorY() + (this.bunkerClimbOffset ?? 0);
     const cam = this.camera.position;
     n.sprite.position.set(this.self.x, deck, this.self.z);
     n.sprite.rotation.set(0, Math.atan2(cam.x - this.self.x, cam.z - this.self.z), 0, "YXZ");
@@ -2790,9 +2827,27 @@ export class BeachEngine {
     }
     const bunker = bunkerById(this.activeBunkerId);
     if (bunker) {
-      const b = bunker.bounds;
-      [x, z] = resolveWalls(x, z, bunkerColliders(bunker.id));
-      return [THREE.MathUtils.clamp(x, b.minX + .4, b.maxX - .4), THREE.MathUtils.clamp(z, b.minZ + .4, b.maxZ - .4)];
+      // Furniture, then the oval wall and the lake.
+      const colliders = bunkerColliders(bunker.id);
+      const project = (px: number, pz: number): [number, number] => {
+        const [wx, wz] = resolveWalls(px, pz, colliders);
+        const [lx, lz] = resolveBunkerWalk(wx - bunker.x, wz - bunker.z);
+        return [bunker.x + lx, bunker.z + lz];
+      };
+      const target = project(x, z);
+      const fromX = this.self.x - bunker.x, fromZ = this.self.z - bunker.z;
+      const level = (p: [number, number]) => bunkerStepClear(fromX, fromZ, p[0] - bunker.x, p[1] - bunker.z);
+      if (!walking || level(target)) return target;
+      // The edge of the terrace and the open side of a stair: slide along them rather than stop dead or drop a floor.
+      const dx = x - this.self.x, dz = z - this.self.z;
+      let best: [number, number] | null = null, bestGap = Infinity;
+      for (const turn of [.3, -.3, .6, -.6, .9, -.9, 1.2, -1.2]) {
+        const c = Math.cos(turn), s = Math.sin(turn);
+        const p = project(this.self.x + (dx * c - dz * s) * c, this.self.z + (dx * s + dz * c) * c);
+        const gap = Math.hypot(p[0] - x, p[1] - z);
+        if (gap < bestGap && level(p)) { best = p; bestGap = gap; }
+      }
+      return best ?? [this.self.x, this.self.z];
     }
     if (this.uyuni) return resolveWalls(x, z, UYUNI_HOTEL_COLLIDERS);
     for (const o of this.obstacles) {
@@ -2827,6 +2882,23 @@ export class BeachEngine {
     }
     return true;
   }
+
+  /** Follows the floor under the walker: slopes exactly, and a sudden step or ledge eased out over about a sixth of a second. */
+  private trackFloor(dt: number) {
+    const x = this.self.x, z = this.self.z, y = this.deckHeight(x, z), last = this.lastFloor;
+    if (this.followSnap || !last || !Number.isFinite(this.floorJump)) this.floorJump = 0;
+    else {
+      const moved = Math.hypot(x - last.x, z - last.z), change = y - last.y;
+      if (moved > 2) this.floorJump = 0;
+      else if (Math.abs(change) > moved * .7 + .02) this.floorJump -= change;
+    }
+    this.floorJump *= Math.exp(-dt * 12);
+    if (Math.abs(this.floorJump) < 1e-4) this.floorJump = 0;
+    if (last) { last.x = x; last.z = z; last.y = y; } else this.lastFloor = { x, z, y };
+  }
+
+  /** The floor the walker is shown standing on. */
+  private selfFloorY() { return this.deckHeight(this.self.x, this.self.z) + (this.floorJump || 0); }
 
   private deckHeight(x: number, z: number) {
     if (this.baikal) return baikalFloorHeight(x, z);

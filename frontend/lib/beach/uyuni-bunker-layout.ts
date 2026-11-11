@@ -5,37 +5,134 @@ import { UYUNI_HOTELS } from "./uyuni-hotel-layout";
 export type UyuniBunkerId = "dawn" | "dusk";
 export const BUNKER_FLOOR_Y = -8.6;
 export const BUNKER_CEILING_Y = 3.4;
-/** The hall around the hotel's centre. The ladder stays under the deck hatch, so the hall grows sideways and far to the back. */
+/** What the server allows a visitor's position to be, around the hotel's centre. The oval hall lies inside it. */
 export const BUNKER_EXTENT = { minX: -18, maxX: 18, minZ: -9, maxZ: 27 } as const;
 export const BUNKER_WIDTH = BUNKER_EXTENT.maxX - BUNKER_EXTENT.minX;
 export const BUNKER_DEPTH = BUNKER_EXTENT.maxZ - BUNKER_EXTENT.minZ;
-/** A gallery crosses the front of the hall: the ladder comes down under it, and the room opens to full height past its edge. */
-export const BUNKER_ENTRY = { z: -5.2, ceiling: 5.6 } as const;
-/** The upper floor is a terrace across the back, reached by a stair against each side of the lagoon. */
-/** The side galleries: how far from the middle of the hall their inner edge is, and the clear height under them. */
-export const BUNKER_GALLERY = { inner: 15.4, under: 4 } as const;
-export const BUNKER_TERRACE = { height: 4.4, z: 17, stairZ: 8.6, stairInner: 10.5, stairOuter: 16.5 } as const;
-/** The lagoon lies between the stairs, below the cliff the terrace stands on. `level` is its surface against the hall floor. */
-export const BUNKER_LAGOON = { minX: -9.5, maxX: 9.5, minZ: 9.6, maxZ: 15.2, level: -.28, depth: 1.1 } as const;
-/** Where the tallest fall lands, and where the fire burns. Shared by the hall's light and water. */
-export const BUNKER_SPRING_LOCAL = { x: 0, z: 14.9 } as const;
-export const BUNKER_HEARTH_LOCAL = { x: -17.25, z: 2 } as const;
+/**
+ * The hall is an oval room: `a` across and `b` front to back are the half-widths of its wall, around `cz`.
+ * Points in it are described by an oval radius (0 in the middle, 1 at the wall) and an angle (0 straight back, ±π at the ladder).
+ */
+export const BUNKER_HALL = { cz: 9, a: 15, b: 18, wall: 8 } as const;
+/**
+ * The upper floor: a crescent across the back of the oval, `height` above the hall floor, whose front edge is the oval radius `edge`.
+ * A stair climbs against each side wall, in the band of radii from `stair` to the wall, from the angle `foot` up to `top`.
+ */
+export const BUNKER_TERRACE = { height: 4.4, edge: .55, stair: .8, top: .9, foot: 2.05, steps: 30 } as const;
+/** A balcony runs round the front of the oval over the ladder: everything past the angle `from` and the radius `edge` has `ceiling` overhead. */
+export const BUNKER_ENTRY = { from: 2.45, edge: .84, ceiling: 4 } as const;
+/** The angles of the slender columns under the front edge of the balcony, on each side of the ladder. */
+export const BUNKER_ENTRY_COLUMNS = [-2.92, -2.62, 2.62, 2.92] as const;
+/** The lake in the middle of the hall: an oval around x, z. `level` is its surface against the hall floor; a marble kerb `kerb` wide rings it. */
+export const BUNKER_LAGOON = { x: 0, z: 10.6, a: 6.6, b: 3.2, level: -.28, depth: .9, kerb: .35 } as const;
+/** A marble basin at the foot of the terrace wall catches the water that falls over its middle. */
+export const BUNKER_FOUNTAIN = { x: 0, z: 18.45, halfX: 2.1, halfZ: .45, rim: .55 } as const;
+/** Where the fall lands, and where the fire burns. Shared by the hall's light and water. */
+export const BUNKER_SPRING_LOCAL = { x: BUNKER_FOUNTAIN.x, z: BUNKER_FOUNTAIN.z } as const;
+export const BUNKER_HEARTH_ANGLE = -2.25;
+export const BUNKER_HEARTH_LOCAL = hallPoint(1, BUNKER_HEARTH_ANGLE);
 
-/** How far the walkable floor stands above the hall floor, in room coordinates. Every point has one answer: nothing is walkable under the terrace. */
+/** A point of the hall at an oval radius and angle. */
+export function hallPoint(radius: number, angle: number): { x: number; z: number } {
+  return { x: BUNKER_HALL.a * radius * Math.sin(angle), z: BUNKER_HALL.cz + BUNKER_HALL.b * radius * Math.cos(angle) };
+}
+/** 0 in the middle of the hall, 1 on its wall. */
+export function hallRadius(x: number, z: number): number { return Math.hypot(x / BUNKER_HALL.a, (z - BUNKER_HALL.cz) / BUNKER_HALL.b); }
+/** 0 straight to the back of the hall, ±π towards the ladder; positive on the east side. */
+export function hallAngle(x: number, z: number): number { return Math.atan2(x / BUNKER_HALL.a, (z - BUNKER_HALL.cz) / BUNKER_HALL.b); }
+/** Metres from the middle of the hall to its wall along the direction of `angle`. */
+export function hallReach(angle: number): number { return Math.hypot(BUNKER_HALL.a * Math.sin(angle), BUNKER_HALL.b * Math.cos(angle)); }
+/** The direction into the room, square to the wall, at `angle`. */
+export function hallInward(angle: number): { x: number; z: number } {
+  const x = -Math.sin(angle) / BUNKER_HALL.a, z = -Math.cos(angle) / BUNKER_HALL.b, length = Math.hypot(x, z);
+  return { x: x / length, z: z / length };
+}
+
+/**
+ * How far up a stair a point is, from 0 at its foot to 1 at the terrace. The climb starts and ends gently, so neither the feet
+ * nor the camera meet a sudden change of slope: the steepest part is the straight middle of the flight.
+ */
+export function stairClimb(t: number): number {
+  const e = .1, m = 1 / (1 - e), u = Math.min(1, Math.max(0, t));
+  if (u < e) return m * u * u / (2 * e);
+  if (u > 1 - e) return 1 - m * (1 - u) * (1 - u) / (2 * e);
+  return m * (u - e / 2);
+}
+/** Progress along a stair at an angle: 0 at the foot, 1 at the head. */
+export function stairProgress(angle: number): number {
+  const T = BUNKER_TERRACE;
+  return (T.foot - Math.abs(angle)) / (T.foot - T.top);
+}
+/** How far the walkable floor stands above the hall floor, in room coordinates. Every point has one answer: nothing is walkable under the terrace or a stair. */
 export function bunkerFloorRise(x: number, z: number): number {
-  const T = BUNKER_TERRACE, side = Math.abs(x);
-  if (z >= T.z) return T.height;
-  if (z > T.stairZ && side >= T.stairInner && side <= T.stairOuter) return T.height * (z - T.stairZ) / (T.z - T.stairZ);
+  const T = BUNKER_TERRACE, r = hallRadius(x, z), angle = Math.abs(hallAngle(x, z));
+  if (angle <= T.top && r >= T.edge) return T.height;
+  if (r >= T.stair && angle < T.foot) return T.height * stairClimb(stairProgress(angle));
   return 0;
 }
-/** Clear height above the hall floor: low under the front gallery and the two side galleries, the full vault everywhere else. */
+/** Clear height above the hall floor: low under the front balcony and the pavilion roof, and an oval dome rising from the top of the wall everywhere else. */
 export function bunkerCeilingRise(x: number, z: number): number {
-  if (z < BUNKER_ENTRY.z) return BUNKER_ENTRY.ceiling;
-  if (Math.abs(x) > BUNKER_GALLERY.inner && z < BUNKER_TERRACE.stairZ) return BUNKER_GALLERY.under;
-  return BUNKER_CEILING_Y - BUNKER_FLOOR_Y;
+  const r = hallRadius(x, z), P = BUNKER_PAVILION_LOCAL;
+  if (Math.abs(hallAngle(x, z)) >= BUNKER_ENTRY.from && r >= BUNKER_ENTRY.edge) return BUNKER_ENTRY.ceiling;
+  if (Math.abs(x - P.x) < 3.4 && Math.abs(z - P.z) < 1.9) return BUNKER_TERRACE.height + 2.95;
+  return BUNKER_HALL.wall + (BUNKER_CEILING_Y - BUNKER_FLOOR_Y - BUNKER_HALL.wall) * Math.sqrt(Math.max(0, 1 - r * r));
+}
+/** True when a point is inside the oval wall with `inset` metres to spare. */
+export function bunkerInside(x: number, z: number, inset = 0): boolean {
+  return hallRadius(x, z) * hallReach(hallAngle(x, z)) <= hallReach(hallAngle(x, z)) - inset;
+}
+/** The lake and its kerb, grown by `inset`: the oval radius of a point around the lake's middle. Below 1 is in the water. */
+export function lagoonRadius(x: number, z: number, inset = 0): number {
+  const L = BUNKER_LAGOON;
+  return Math.hypot((x - L.x) / (L.a + L.kerb + inset), (z - L.z) / (L.b + L.kerb + inset));
+}
+/** True inside the water of the lake itself, without its kerb. */
+export function inLagoon(x: number, z: number): boolean {
+  const L = BUNKER_LAGOON;
+  return Math.hypot((x - L.x) / L.a, (z - L.z) / L.b) < 1;
 }
 
 export const BUNKER_PLAYER_INSET = .4;
+/**
+ * Keeps a walker on the floor of the hall, in room coordinates: inside the oval wall and out of the lake.
+ * Steps between levels are left to the caller, which knows where the walker came from.
+ */
+export function resolveBunkerWalk(x: number, z: number, inset = BUNKER_PLAYER_INSET): [number, number] {
+  const L = BUNKER_LAGOON, H = BUNKER_HALL;
+  const q = lagoonRadius(x, z, inset - .05);
+  if (q < 1) {
+    if (q < 1e-6) { z = L.z - (L.b + L.kerb + inset); }
+    else { x = L.x + (x - L.x) / q; z = L.z + (z - L.z) / q; }
+  }
+  const angle = hallAngle(x, z), reach = hallReach(angle), r = hallRadius(x, z), most = Math.max(0, 1 - inset / reach - 1e-9);
+  if (r > most) { x *= most / r; z = H.cz + (z - H.cz) * most / r; }
+  return [x, z];
+}
+/** True when nothing within a walker's reach of a point stands or drops more than `step` from the floor under it. */
+export function bunkerFootingClear(x: number, z: number, step = .3, reach = BUNKER_PLAYER_INSET - .05): boolean {
+  const here = bunkerFloorRise(x, z);
+  for (let k = 0; k < 8; k++) {
+    const a = k / 8 * Math.PI * 2;
+    if (Math.abs(bunkerFloorRise(x + Math.sin(a) * reach, z + Math.cos(a) * reach) - here) > step) return false;
+  }
+  return true;
+}
+/**
+ * True when walking straight from one point to another never meets a step higher than `step`, and the walker ends with a
+ * body's width between them and the edge of the terrace or the open side of a stair: they stand behind its rail, never out on the ledge.
+ */
+export function bunkerStepClear(x0: number, z0: number, x1: number, z1: number, step = .3): boolean {
+  const count = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / .08));
+  let previous = bunkerFloorRise(x0, z0);
+  for (let i = 1; i <= count; i++) {
+    const t = i / count, height = bunkerFloorRise(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t);
+    if (Math.abs(height - previous) > step) return false;
+    previous = height;
+  }
+  // Somebody already too near an edge (put there by a resumed visit) can still walk away from it.
+  return bunkerFootingClear(x1, z1, step) || !bunkerFootingClear(x0, z0, step);
+}
+
 export const BUNKER_INTERACTION_REACH = 1.8;
 export const BUNKER_SEAT_REACH = 2.2;
 export const BUNKER_SEAT_CAPACITY = 6;
@@ -82,6 +179,20 @@ export const BUNKER_GAME_TABLES: readonly BunkerGameTable[] = UYUNI_BUNKERS.flat
   id: `bunker-${bunker.id}-${table.game}`, bunkerId: bunker.id, game: table.game, name: table.name, x: bunker.x + table.x, z: bunker.z + table.z,
 })));
 
+/** Furniture against the wall, placed by the angle of the wall behind it: the fire to the west, the daybed to the east. */
+export const BUNKER_DAYBED_ANGLE = 2.25;
+/** The two trees that stand at either end of the lake, and the two on the terrace. */
+export const BUNKER_TREES_LOCAL: readonly { x: number; z: number; upstairs: boolean }[] = [
+  { x: -9.6, z: 11.2, upstairs: false }, { x: 9.6, z: 11.2, upstairs: false },
+  { ...hallPoint(.8, -.5), upstairs: true }, { ...hallPoint(.8, .5), upstairs: true },
+];
+/** The reading pavilion on the terrace. */
+export const BUNKER_PAVILION_LOCAL = { x: 0, z: 23.4 } as const;
+/** Where a following camera may not go, in room coordinates: into the crown of a tree, where it would see nothing but leaves. */
+export function bunkerCameraBlocked(x: number, y: number, z: number): boolean {
+  return BUNKER_TREES_LOCAL.some(tree => Math.hypot(x - tree.x, z - tree.z, (y - (tree.upstairs ? BUNKER_TERRACE.height : 0) - 3.6) * .8) < 2.2);
+}
+
 export type BunkerColliderKind = "wall" | "sofa" | "table" | "shelf" | "plant" | "ladder";
 export interface BunkerCollider extends ShelterCollider { bunkerId: UyuniBunkerId; kind: BunkerColliderKind }
 export const BUNKER_COLLIDERS: readonly BunkerCollider[] = UYUNI_BUNKERS.flatMap(bunker => {
@@ -89,29 +200,28 @@ export const BUNKER_COLLIDERS: readonly BunkerCollider[] = UYUNI_BUNKERS.flatMap
     bunkerId: bunker.id, kind, minX: bunker.x + x - halfX, maxX: bunker.x + x + halfX,
     minZ: bunker.z + z - halfZ, maxZ: bunker.z + z + halfZ,
   });
-  const E = BUNKER_EXTENT, T = BUNKER_TERRACE, midZ = (E.minZ + E.maxZ) / 2, halfZ = BUNKER_DEPTH / 2 + .32;
+  const hearth = BUNKER_HEARTH_LOCAL, inHearth = hallInward(BUNKER_HEARTH_ANGLE), bed = hallPoint(1, BUNKER_DAYBED_ANGLE), inBed = hallInward(BUNKER_DAYBED_ANGLE);
+  const along = (from: { x: number; z: number }, inward: { x: number; z: number }, out: number, side: number) =>
+    ({ x: from.x + inward.x * out + inward.z * side, z: from.z + inward.z * out - inward.x * side });
+  const chairs = [-1.05, 1.05].map(side => along(hearth, inHearth, 2.6, side));
+  const daybed = along(bed, inBed, 1.25, 0), F = BUNKER_FOUNTAIN, P = BUNKER_PAVILION_LOCAL;
   return [
-    rect("wall", E.minX - .16, midZ, .16, halfZ), rect("wall", E.maxX + .16, midZ, .16, halfZ),
-    rect("wall", 0, E.minZ - .16, BUNKER_WIDTH / 2, .16), rect("wall", 0, E.maxZ + .16, BUNKER_WIDTH / 2, .16),
-    // The lounge under the vault: two sofas, the coffee table and their end tables. The ladder stands under the front gallery.
-    rect("sofa", -5.4, 0, 1.02, 2.98), rect("sofa", 5.4, 0, 1.02, 2.98),
+    // The lounge under the dome: two sofas, the coffee table and their end tables. The ladder stands under the front balcony.
+    rect("sofa", -5.45, 0, 1.1, 2.98), rect("sofa", 5.45, 0, 1.1, 2.98),
     rect("table", 0, .25, 1.65, 1.1),
     rect("table", -5.3, -3.85, .51, .51), rect("table", 5.3, 3.85, .51, .51),
     rect("ladder", 0, -6.85, .62, .6),
-    ...[-13, -4.5, 4.5, 13].map(x => rect("wall", x, BUNKER_ENTRY.z, .32, .32)),
+    ...BUNKER_ENTRY_COLUMNS.map(angle => { const at = hallPoint(BUNKER_ENTRY.edge + .01, angle); return rect("wall", at.x, at.z, .24, .24); }),
     ...BUNKER_GAMES_LOCAL.flatMap(table => [rect("table", table.x, table.z, .7, .7), rect("plant", table.x - 1.15, table.z, .42, .42), rect("plant", table.x + 1.15, table.z, .42, .42)]),
-    // Two trees in marble planters, the library and hearth along the west wall, the daybed and a tea table along the east.
-    rect("plant", -12.6, -3.2, .95, .95), rect("plant", 12.6, -3.2, .95, .95),
-    rect("shelf", -17.45, 2, .55, 6.4), rect("sofa", -14.3, .2, .7, .7), rect("sofa", -14.3, 3.8, .7, .7), rect("table", -14.5, 2, .42, .42),
-    rect("sofa", 16.3, 1.2, 1.7, 2.3), rect("table", 16.9, -1.9, .5, .5), rect("table", 16.9, 4.3, .5, .5), rect("table", 12.6, 6.1, 1.25, 1.1),
-    // The lagoon and its cliff fill the space between the stairs, up to the terrace rail. Planted steps close the outside of each stair.
-    rect("plant", 0, (T.stairZ + .7 + T.z + .4) / 2, T.stairInner, (T.z + .4 - T.stairZ - .7) / 2),
-    rect("wall", -(T.stairOuter + E.maxX) / 2, (T.stairZ + T.z) / 2, (E.maxX - T.stairOuter) / 2, (T.z - T.stairZ) / 2),
-    rect("wall", (T.stairOuter + E.maxX) / 2, (T.stairZ + T.z) / 2, (E.maxX - T.stairOuter) / 2, (T.z - T.stairZ) / 2),
-    // Upstairs: the stream that feeds the falls, two trees, a reading pavilion, and books and beds along the walls.
-    rect("plant", 0, 18.35, 8.4, .5), rect("plant", -10.6, 22.6, .9, .9), rect("plant", 10.8, 22.2, .9, .9),
-    rect("sofa", -2.3, 24.4, .55, 1.3), rect("sofa", 2.3, 24.4, .55, 1.3), rect("table", 0, 24.4, .7, .7),
-    rect("shelf", 0, 26.5, 17.9, .5), rect("plant", -17.3, 21.6, .7, 3.6), rect("plant", 17.3, 21.6, .7, 3.6),
+    // The fire stands out from the west wall with two chairs drawn up to it; the daybed lies along the east wall.
+    rect("wall", hearth.x + inHearth.x * .45, hearth.z + inHearth.z * .45, .8, .95),
+    ...chairs.map(chair => rect("sofa", chair.x, chair.z, .62, .62)),
+    rect("sofa", daybed.x, daybed.z, 1.45, 1.35),
+    // Trees in marble planters at the ends of the lake and on the terrace, and the basin the terrace's fall lands in.
+    ...BUNKER_TREES_LOCAL.map(tree => rect("plant", tree.x, tree.z, .95, .95)),
+    rect("plant", F.x, F.z, F.halfX, F.halfZ),
+    // The reading pavilion upstairs.
+    rect("sofa", P.x - 2.3, P.z, .55, 1.3), rect("sofa", P.x + 2.3, P.z, .55, 1.3), rect("table", P.x, P.z, .7, .7),
   ];
 });
 

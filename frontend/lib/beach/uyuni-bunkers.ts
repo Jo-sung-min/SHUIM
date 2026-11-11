@@ -4,7 +4,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type CozySurfaces, bakeCozySurfaces } from "./baikal-bake";
 import { type SoftBoxOptions, cushionGeometry, drapeGeometry, logGeometry, poufGeometry, softBoxGeometry } from "./baikal-cozy";
 import { createBaikalFlameMaterial } from "./baikal-materials";
-import { BUNKER_CEILING_Y, BUNKER_ENTRY, BUNKER_EXTENT, BUNKER_FLOOR_Y, BUNKER_GAMES_LOCAL, BUNKER_HEARTH_LOCAL, BUNKER_LADDER_LOCAL, BUNKER_LAGOON, BUNKER_SOFA_LOCAL, BUNKER_SPRING_LOCAL, BUNKER_TERRACE, UYUNI_BUNKERS, type UyuniBunkerId } from "./uyuni-bunker-layout";
+import { BUNKER_CEILING_Y, BUNKER_DAYBED_ANGLE, BUNKER_ENTRY, BUNKER_ENTRY_COLUMNS, BUNKER_FLOOR_Y, BUNKER_FOUNTAIN, BUNKER_GAMES_LOCAL, BUNKER_HALL, BUNKER_HEARTH_ANGLE, BUNKER_HEARTH_LOCAL, BUNKER_LADDER_LOCAL, BUNKER_LAGOON, BUNKER_PAVILION_LOCAL, BUNKER_SOFA_LOCAL, BUNKER_SPRING_LOCAL, BUNKER_TERRACE, BUNKER_TREES_LOCAL, UYUNI_BUNKERS, bunkerCeilingRise, bunkerFloorRise, hallInward, hallPoint, hallReach, stairClimb, type UyuniBunkerId } from "./uyuni-bunker-layout";
 import type { BoardGame } from "./net";
 
 export interface UyuniBunkers {
@@ -18,47 +18,67 @@ export interface UyuniBunkers {
   setLagoonDrawn(drawn: boolean): void;
   dispose(): void;
 }
+/** How thick a scatter cushion is through its middle. */
+export const CUSHION_THICKNESS = .2;
+/**
+ * Where a scatter cushion goes so that it rests on a seat and lies flat against what is behind it, never sinking into it.
+ * `foot` is where the face it leans on meets the seat, `inward` the level direction out of that face, and `lean` how far the
+ * face leans back from upright. `along` slides the cushion sideways, `twist` turns it a little in its own plane, and `out`
+ * stands it in front of another cushion. The cushion's width runs along local x, its thickness along y and its height along z.
+ */
+export function cushionPose(foot: { x: number; y: number; z: number }, inward: { x: number; z: number }, lean: number, along: number, size: number, twist = 0, out = 0): THREE.Matrix4 {
+  const c = Math.cos(lean), s = Math.sin(lean), side = new THREE.Vector3(inward.z, 0, -inward.x);
+  const face = new THREE.Vector3(inward.x * c, s, inward.z * c), up = new THREE.Vector3(-inward.x * s, c, -inward.z * s);
+  const rise = up.clone().multiplyScalar(Math.cos(twist)).addScaledVector(side, -Math.sin(twist)), across = new THREE.Vector3().crossVectors(face, rise);
+  // Turned in its own plane a square reaches lower at one corner, so it is lifted until that corner, not its middle, meets the seat.
+  const reach = size / 2 * (Math.cos(twist) + Math.abs(Math.sin(twist)));
+  const centre = new THREE.Vector3(foot.x, foot.y, foot.z).addScaledVector(side, along).addScaledVector(up, reach + .01).addScaledVector(face, CUSHION_THICKNESS / 2 + .005 + out);
+  return new THREE.Matrix4().makeBasis(across, face, rise).setPosition(centre);
+}
 /** Only the lagoon bed is drawn into the picture the sea engine bends through the water. Shared with the beach, which uses the same layer for its sand. */
 export const BED_LAYER = 3;
-/** Where water comes down the cliff into the lagoon: x across the hall, how far out from the cliff it lands, and its strength. */
-export const LAGOON_FALLS: readonly (readonly [number, number, number])[] = [[0, .8, 1], [-6.3, 1.3, .6], [6.3, 1.3, .6]];
+/** Where the fall over the terrace lands, the fountain in the middle of the lake: x and z in the room, and strength. */
+export const LAGOON_FALLS: readonly (readonly [number, number, number])[] = [[BUNKER_LAGOON.x, BUNKER_LAGOON.z, .55]];
 export interface UyuniBunkerOptions { renderer?: THREE.WebGLRenderer; mobile?: boolean; /** Fetches a photographic texture from the CDN, for those who go down. */ loadTexture?: (path: string) => THREE.Texture }
 
 const CREAM = 0xf1e6d2, OATMEAL = 0xdccbb0, CAMEL = 0xb98a58, RUST = 0xa5502b, CHOCOLATE = 0x7a5a44, MUSTARD = 0xc9983a, FOREST = 0x56603f, WALNUT = 0xa27a5a, HONEY = 0xf2c595;
-const IRON = 0x1d1815, STEEL = 0x59605c, OLIVE = 0x5d6548, ENAMEL = 0x9db3ad, SOIL = 0x3a2a1e;
+const IRON = 0x1d1815, ENAMEL = 0x9db3ad, SOIL = 0x3a2a1e;
 type Tint = readonly [number, number, number];
-const LAMP_TINT: Tint = [1, .69, .4], FIRE_TINT: Tint = [1, .54, .22], GROW_TINT: Tint = [1, .68, .62], WATER_TINT: Tint = [.5, .86, .8], SEAT_TOP = .52;
-const E = BUNKER_EXTENT, HEARTH = BUNKER_HEARTH_LOCAL, SPRING = BUNKER_SPRING_LOCAL, UP = BUNKER_TERRACE.height;
+const LAMP_TINT: Tint = [1, .69, .4], FIRE_TINT: Tint = [1, .54, .22], WATER_TINT: Tint = [.56, .8, 1], SEAT_TOP = .52;
+const HALL = BUNKER_HALL, LAKE = BUNKER_LAGOON, SPRING = BUNKER_SPRING_LOCAL, UP = BUNKER_TERRACE.height;
 const DAYLIT: Tint = [1, .9, .76], ROSY: Tint = [1, .76, .8];
+/** The fire burns in a surround on the west wall; this is the middle of its flames. */
+const HEARTH_IN = hallInward(BUNKER_HEARTH_ANGLE), HEARTH = { x: BUNKER_HEARTH_LOCAL.x + HEARTH_IN.x * .32, z: BUNKER_HEARTH_LOCAL.z + HEARTH_IN.z * .32 };
+const BED_IN = hallInward(BUNKER_DAYBED_ANGLE), BED_WALL = hallPoint(1, BUNKER_DAYBED_ANGLE);
+const stairLamp = (side: number) => { const at = hallPoint(.78, side * 1.45); return [at.x, 4.3, at.z] as const; };
+const sconce = (angle: number) => { const at = hallPoint(.94, angle); return [at.x, 2.9, at.z] as const; };
 /**
  * Every source of light in the hall: position in room coordinates, power, tint. The first is the fire and breathes.
  * They are ordered by how much of the hall they shape: a desktop shades the first few per pixel, and everything else per vertex.
  */
 const ROOM_LIGHTS: readonly (readonly [number, number, number, number, Tint])[] = [
-  [HEARTH.x + 1.3, 1.0, HEARTH.z, 10, FIRE_TINT],
-  [0, 10.7, 6, 150, DAYLIT],
-  [0, 8.3, 6, 30, LAMP_TINT],
-  [0, 3.4, 12.2, 24, [1, .9, .8]],
-  [0, UP + 2.6, 24.4, 22, LAMP_TINT],
+  [HEARTH.x + HEARTH_IN.x, 1.0, HEARTH.z + HEARTH_IN.z, 10, FIRE_TINT],
+  [0, 11.2, HALL.cz, 170, DAYLIT],
+  [LAKE.x, 8.0, LAKE.z, 34, LAMP_TINT],
+  [LAKE.x, .4, LAKE.z, 8, WATER_TINT],
+  [BUNKER_PAVILION_LOCAL.x, UP + 2.6, BUNKER_PAVILION_LOCAL.z, 22, LAMP_TINT],
   [0, 3.4, .25, 12, LAMP_TINT],
   [-5.3, 1.34, -3.85, 3.4, LAMP_TINT],
   [5.3, 1.34, 3.85, 3.4, LAMP_TINT],
-  [SPRING.x, .5, SPRING.z - 2, 7, WATER_TINT],
-  [-13.5, 3.5, 12.8, 10, LAMP_TINT],
-  [13.5, 3.5, 12.8, 10, LAMP_TINT],
-  [16.6, 1.2, -1.9, 4, [1, .88, .72]],
-  [12.6, 2.4, 6.1, 6, LAMP_TINT],
-  [0, 3.8, -7.3, 9, LAMP_TINT],
-  [-12.6, 1.4, -3.2, 5, ROSY],
-  [12.6, 1.4, -3.2, 5, [.92, .96, .78]],
-  [-10.6, UP + 1.6, 22.6, 7, ROSY],
-  [10.8, UP + 1.6, 22.2, 6, LAMP_TINT],
-  [-15.6, 3.2, 1.6, 9, LAMP_TINT],
-  [15.6, 3.2, 1.6, 9, LAMP_TINT],
-  [-14.5, 1.5, 2, 4, LAMP_TINT],
-  [0, 8.6, 21.5, 34, DAYLIT],
-  [-12.5, 8.4, 8, 30, DAYLIT],
-  [12.5, 8.4, 8, 30, DAYLIT],
+  [SPRING.x, 1.0, SPRING.z - 1.2, 7, WATER_TINT],
+  [...stairLamp(-1), 10, LAMP_TINT],
+  [...stairLamp(1), 10, LAMP_TINT],
+  [BED_WALL.x + BED_IN.x * .7 + BED_IN.z * 2.1, 1.0, BED_WALL.z + BED_IN.z * .7 - BED_IN.x * 2.1, 4, [1, .88, .72]],
+  [0, 3.6, -7.3, 9, LAMP_TINT],
+  [BUNKER_TREES_LOCAL[0].x, 1.4, BUNKER_TREES_LOCAL[0].z, 5, ROSY],
+  [BUNKER_TREES_LOCAL[1].x, 1.4, BUNKER_TREES_LOCAL[1].z, 5, [.92, .96, .78]],
+  [BUNKER_TREES_LOCAL[2].x, UP + 1.6, BUNKER_TREES_LOCAL[2].z, 7, ROSY],
+  [BUNKER_TREES_LOCAL[3].x, UP + 1.6, BUNKER_TREES_LOCAL[3].z, 6, LAMP_TINT],
+  [...sconce(-2.75), 9, LAMP_TINT],
+  [...sconce(2.75), 9, LAMP_TINT],
+  [0, 9.4, 22.5, 30, DAYLIT],
+  [-10.5, 8.6, 6, 30, DAYLIT],
+  [10.5, 8.6, 6, 30, DAYLIT],
 ];
 const LIGHT_COUNT = ROOM_LIGHTS.length;
 
@@ -97,10 +117,12 @@ for (int i = ${pixel}; i < ${LIGHT_COUNT}; i++) {
 }
 // Light that has bounced around pale stone: soft and even, a little warmer by the fire and a breath of green by the water.
 vec3 roomFill = mix(vec3(0.36, 0.3, 0.24), vec3(0.3, 0.27, 0.24), roomNormal.y * 0.5 + 0.5) * (0.9 + 0.35 * exp(-distance(vRoomLocal.xz, ${point(HEARTH.x, HEARTH.z)}) * 0.2) * uRoomFire);
-roomFill += vec3(0.012, 0.05, 0.04) * exp(-distance(vRoomLocal.xz, ${point(SPRING.x, SPRING.z - 2)}) * 0.14);
-// The room is a known box, so its corners can be darkened exactly. A surface ignores the plane it lies on.
-vec3 roomEdge = min(vRoomLocal - vec3(${E.minX.toFixed(1)}, 0.0, ${E.minZ.toFixed(1)}), vec3(${E.maxX.toFixed(1)}, ${(BUNKER_CEILING_Y - BUNKER_FLOOR_Y).toFixed(1)}, ${E.maxZ.toFixed(1)}) - vRoomLocal) + abs(roomNormal) * 8.0;
-vRoomShell = mix(0.4, 1.0, smoothstep(0.0, 1.5, min(roomEdge.x, min(roomEdge.y, roomEdge.z))));
+roomFill += vec3(0.01, 0.035, 0.06) * exp(-distance(vRoomLocal.xz, ${point(LAKE.x, LAKE.z)}) * 0.14);
+// The room is a known oval under a dome, so its edges can be darkened exactly. A surface ignores the wall or floor it lies on.
+float roomRadius = length(vec2(vRoomLocal.x / ${HALL.a.toFixed(1)}, (vRoomLocal.z - ${HALL.cz.toFixed(1)}) / ${HALL.b.toFixed(1)}));
+float roomSide = (1.0 - roomRadius) * 16.0 + (1.0 - abs(roomNormal.y)) * 8.0;
+float roomUp = min(vRoomLocal.y, ${HALL.wall.toFixed(1)} + ${(BUNKER_CEILING_Y - BUNKER_FLOOR_Y - HALL.wall).toFixed(1)} * sqrt(max(0.0, 1.0 - roomRadius * roomRadius)) - vRoomLocal.y) + abs(roomNormal.y) * 8.0;
+vRoomShell = mix(0.4, 1.0, smoothstep(0.0, 1.5, min(roomSide, roomUp)));
 vRoomLit = roomLit * mix(1.0, vRoomShell, 0.45);
 vRoomFill = roomFill * vRoomShell;`;
 /** Scene lights are for the visitors. Only the first `pixel` room lights, and the glints of the first `gloss`, are worked out per pixel. */
@@ -155,37 +177,93 @@ void main() {
   gl_FragColor = vec4(vTint * glow, 1.0);
 }`;
 /**
- * Running water without a texture or a second pass. `uv.x` counts metres downstream and `uv.y` runs bank to bank;
- * the colour attribute carries the speed, how much of it is falling white water, and foam where it lands.
+ * Running and falling water without a texture or a second pass. `uv.x` counts metres downstream and `uv.y` runs bank to bank;
+ * the colour attribute carries the speed, how much of it is falling, and foam where it lands. `aFall` is how far this sheet of
+ * water has already fallen, and a seed that keeps neighbouring sheets from moving in step.
  */
 const WATER_VERT = `
 attribute vec3 color;
+attribute vec2 aFall;
 varying vec2 vFlow;
 varying vec3 vKind;
-void main() { vFlow = uv; vKind = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+varying vec2 vFall;
+void main() { vFlow = uv; vKind = color; vFall = aFall; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const WATER_FRAG = `
 uniform float uTime;
 uniform float uRoomFire;
 varying vec2 vFlow;
 varying vec3 vKind;
+varying vec2 vFall;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 float ripple(vec2 p) { return sin(p.x * 3.1 + sin(p.y * 4.7 + p.x * 0.9) * 1.3) * sin(p.y * 6.3 + sin(p.x * 2.3) * 1.7); }
 void main() {
+  // Level water: a clear blue run with glints from the lamps.
   float travel = uTime * vKind.r;
   vec2 p = vec2(vFlow.x - travel, vFlow.y);
   float middle = smoothstep(0.0, 0.24, vFlow.y) * smoothstep(0.0, 0.24, 1.0 - vFlow.y);
   float a = ripple(p * vec2(1.0, 2.2)), b = ripple(p * vec2(2.3, 3.7) + vec2(7.3 - travel * 0.6, 2.1));
   float glint = smoothstep(0.45, 1.0, a * 0.6 + b * 0.5 + 0.25);
-  vec3 color = mix(vec3(0.42, 0.76, 0.68), vec3(0.15, 0.58, 0.54), middle);
-  color += vec3(1.0, 0.74, 0.44) * glint * (0.05 + 0.13 * middle) * (0.9 + 0.1 * uRoomFire);
-  color += vec3(0.6, 0.85, 0.8) * (sin(vFlow.x * 9.0 - uTime * 2.6) * 0.5 + 0.5) * vKind.b * 0.22;
-  // Falling water is white where it is thick and glassy between the strands, and it frays at both edges.
-  float strands = ripple(vec2(p.x * 0.5, vFlow.y * 9.0)) * 0.5 + ripple(vec2(p.x * 0.85 + 3.0, vFlow.y * 21.0)) * 0.35 + sin(vFlow.y * 47.0 + sin(p.x * 1.7) * 2.5) * 0.15;
-  float thick = smoothstep(-0.45, 0.55, strands), frayed = strands * 0.05;
-  float rim = smoothstep(0.0, 0.17, vFlow.y + frayed) * smoothstep(0.0, 0.17, 1.0 - vFlow.y + frayed);
-  color = mix(color, mix(vec3(0.5, 0.74, 0.76), vec3(0.96, 0.99, 0.98), thick), vKind.g);
-  color += vec3(0.7, 0.86, 0.8) * vKind.b * smoothstep(0.35, 0.95, b * 0.5 + 0.5) * 0.5;
-  color = mix(color, vec3(0.97, 1.0, 0.99), vKind.g * vKind.b * 0.8);
-  gl_FragColor = vec4(color, mix(1.0, rim * mix(0.42, 0.96, max(thick, vKind.b)), vKind.g));
+  vec3 level = mix(vec3(0.52, 0.78, 0.95), vec3(0.2, 0.52, 0.86), middle);
+  level += vec3(1.0, 0.86, 0.66) * glint * (0.06 + 0.14 * middle) * (0.9 + 0.1 * uRoomFire);
+  // Falling water: gravity speeds it up, so the further it has fallen the faster its strands run and the longer they draw out.
+  // Measured in equal steps of falling time rather than of distance, the pattern does exactly that.
+  float fallen = max(vFall.x, 0.0), seed = vFall.y, drop = sqrt(fallen + 0.03) * 3.4 - uTime * 2.1;
+  float across = vFlow.y * 20.0 + seed * 5.3 + sin(drop * 0.9 + seed * 3.0) * 0.35;
+  float along = drop + fallen * 0.7;
+  float strands = noise(vec2(across, along * 0.45)) * 0.5 + noise(vec2(across * 2.3 + 7.0, along * 1.0)) * 0.32 + noise(vec2(across * 5.1 + 3.0, along * 2.0)) * 0.18;
+  strands += 0.08 * sin(across * 9.0 + noise(vec2(across * 0.5, along * 0.3)) * 5.0);
+  float sheen = pow(noise(vec2(across * 0.6 + 13.0, drop * 0.3)), 4.0);
+  // The sheet is whole at the lip and thins into separate strands as it falls; at the foot it is all white water.
+  float breakup = smoothstep(0.15, 1.8, fallen) * 0.5;
+  float body = smoothstep(breakup + 0.05, breakup + 0.22, strands);
+  float lip = 1.0 - smoothstep(0.0, 0.22, fallen);
+  vec3 sheet = mix(vec3(0.62, 0.82, 0.97), vec3(0.9, 0.97, 1.0), strands) + sheen * 0.45;
+  sheet = mix(sheet, vec3(0.97, 0.99, 1.0), clamp(max(lip * 0.55, vKind.b * 0.9), 0.0, 1.0));
+  float fray = (strands - 0.5) * 0.12;
+  float rim = smoothstep(0.0, 0.12, vFlow.y + fray) * smoothstep(0.0, 0.12, 1.0 - vFlow.y + fray);
+  float clear = rim * mix(0.3, 0.9, max(body, vKind.b)) * mix(1.0, 0.75, breakup);
+  gl_FragColor = vec4(mix(level, sheet, vKind.g), mix(1.0, clear, vKind.g));
+}`;
+/**
+ * Spray where falling water meets water: droplets thrown up and out that fall back in, and a faint mist that lifts and fades.
+ * One draw; every drop is placed in the vertex shader from where it starts, which way it is thrown, and how hard.
+ */
+const SPLASH_VERT = `
+attribute vec4 aDrop;
+attribute vec4 aKick;
+uniform float uTime;
+varying float vFade;
+varying vec2 vSpot;
+varying float vMist;
+void main() {
+  float mist = step(0.85, aKick.w), n1 = fract(aDrop.w * 91.7), n2 = fract(aDrop.w * 47.3), n3 = fract(aDrop.w * 13.1);
+  float life = mix(0.45 + 0.3 * n3, 1.6 + n3, mist);
+  float age = fract(uTime / life + aDrop.w), t = age * life;
+  vec2 out2 = aKick.xy * mix(0.4 + 1.1 * n1, 0.25 + 0.2 * n1, mist);
+  float rise = mix((0.7 + 1.2 * n2) * aKick.z, 0.22 + 0.12 * n2, mist);
+  vec3 centre = aDrop.xyz + vec3(out2.x * t, rise * t - mix(4.9, 0.05, mist) * t * t, out2.y * t);
+  centre.y = max(centre.y, aDrop.y);
+  vFade = (1.0 - age) * smoothstep(0.0, 0.1, age) * mix(1.0, 0.42, mist);
+  vMist = mist;
+  float size = mix((0.026 + 0.03 * n3) * (1.0 - 0.4 * age), (0.16 + 0.2 * n3) * (0.6 + 0.8 * age), mist);
+  vec4 view = modelViewMatrix * vec4(centre, 1.0);
+  view.xy += position.xy * size;
+  vSpot = position.xy * 2.0;
+  gl_Position = projectionMatrix * view;
+}`;
+const SPLASH_FRAG = `
+varying float vFade;
+varying vec2 vSpot;
+varying float vMist;
+void main() {
+  float d = dot(vSpot, vSpot);
+  if (d > 1.0) discard;
+  float edge = mix(1.0 - d * d, pow(1.0 - d, 2.0), vMist);
+  gl_FragColor = vec4(mix(vec3(0.93, 0.98, 1.0), vec3(0.88, 0.95, 1.0), vMist), edge * vFade * 0.9);
 }`;
 
 /** A static contact shade gives furniture weight without any shadow map or additional light. */
@@ -243,21 +321,126 @@ function marbleTexture(size: number): THREE.DataTexture {
   texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true; texture.needsUpdate = true; return texture;
 }
 
-const SPRAY_FRAG = `
+/**
+ * Four kinds of greenery drawn once on the GPU, in the quarters of one texture: broad glossy leaves, fern fronds, trailing ivy
+ * and a cluster of five-petalled flowers. Each is drawn in grey and white with its veins and shading, and takes its colour from the card it is on.
+ */
+const FOLIAGE_FRAG = `
 varying vec2 vUv;
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+float blade(float y, float w) { return w * pow(max(sin(3.14159 * clamp(y, 0.0, 1.0)), 0.0), 0.7) * (1.0 - 0.3 * y); }
+vec2 frame(vec2 d, float a, float len) { return vec2(d.x * cos(a) - d.y * sin(a), d.x * sin(a) + d.y * cos(a)) / len; }
+vec4 broad(vec2 p, float seed) {
+  vec4 o = vec4(0.0);
+  for (int i = 0; i < 12; i++) {
+    float n = seed + float(i) * 7.31, a = (hash(n) - 0.5) * 2.6, len = 0.26 + hash(n + 1.0) * 0.18;
+    vec2 q = frame(p - vec2((hash(n + 2.0) - 0.5) * 0.24, -0.44 + hash(n + 3.0) * 0.1), a, len);
+    q.x -= q.y * q.y * (hash(n + 4.0) - 0.5) * 0.5;
+    float y = q.y, hw = blade(y, 0.3 + hash(n + 5.0) * 0.1);
+    if (y <= 0.0 || y >= 1.0 || abs(q.x) >= hw) continue;
+    float edge = (hw - abs(q.x)) / max(hw, 0.001), rib = 1.0 - smoothstep(0.0, 0.03, abs(q.x));
+    float f = fract(y * 8.0 - abs(q.x) * 5.0), vein = 1.0 - smoothstep(0.0, 0.1, min(f, 1.0 - f));
+    float light = 0.6 + 0.18 * y + 0.14 * smoothstep(0.0, 0.5, edge) * step(0.0, q.x) - 0.14 * (1.0 - smoothstep(0.0, 0.22, edge));
+    vec3 hue = mix(vec3(0.9, 1.0, 0.78), vec3(0.78, 1.0, 0.88), hash(n + 6.0));
+    o = vec4(vec3(light) * hue + vec3(0.12, 0.12, 0.04) * (rib * 0.8 + vein * 0.3), 1.0);
+  }
+  return o;
+}
+vec4 fern(vec2 p, float seed) {
+  vec4 o = vec4(0.0);
+  for (int j = 0; j < 7; j++) {
+    float n = seed + float(j) * 3.7, len = 0.42 + hash(n + 1.0) * 0.12, bend = (hash(n + 2.0) - 0.5) * 0.9;
+    vec2 q = frame(p - vec2(0.0, -0.46), (hash(n) - 0.5) * 2.4, len);
+    float y = q.y;
+    if (y <= 0.0 || y >= 1.0) continue;
+    float x = abs(q.x - bend * y * y), reach = 0.17 * (1.0 - y) * (0.4 + 0.6 * sin(3.14159 * min(1.0, y * 1.2)));
+    if (x < 0.012 * (1.0 - y) + 0.003) { o = vec4(0.58, 0.62, 0.44, 1.0); continue; }
+    if (x > reach) continue;
+    float f = fract((y - x * 0.7) / 0.055), width = 0.38 * (1.0 - x / reach);
+    if (abs(f - 0.5) < width) o = vec4(vec3(0.62 + 0.24 * (1.0 - x / reach) + 0.1 * y - 0.16 * abs(f - 0.5) / max(width, 0.001)) * vec3(0.92, 1.0, 0.82), 1.0);
+  }
+  return o;
+}
+vec4 ivy(vec2 p, float seed) {
+  vec4 o = vec4(0.0);
+  for (int j = 0; j < 4; j++) {
+    float n = seed + float(j) * 5.1, sx = (hash(n) - 0.5) * 0.56, sway = (hash(n + 1.0) - 0.5) * 0.3;
+    for (int i = 0; i < 8; i++) {
+      float m = n + float(i) * 1.7, t = float(i) / 7.0;
+      vec2 c = vec2(sx + sin(t * 3.0 + n) * sway, 0.44 - t * 0.86), c2 = vec2(sx + sin((t + 0.14) * 3.0 + n) * sway, 0.44 - (t + 0.14) * 0.86);
+      vec2 s = c2 - c, w = p - c;
+      float along = clamp(dot(w, s) / dot(s, s), 0.0, 1.0);
+      if (i < 7 && length(w - s * along) < 0.006) o = vec4(0.5, 0.52, 0.38, 1.0);
+      float side = hash(m + 3.0) > 0.5 ? 1.0 : -1.0;
+      vec2 q = frame(w, side * (0.9 + hash(m) * 0.7) + 3.14159, 0.11 + hash(m + 1.0) * 0.05);
+      q.y = -q.y;
+      float hw = blade(q.y, 0.5) * (1.0 + 0.4 * (1.0 - q.y));
+      if (q.y > 0.0 && q.y < 1.0 && abs(q.x) < hw) {
+        float edge = (hw - abs(q.x)) / max(hw, 0.001), rib = 1.0 - smoothstep(0.0, 0.05, abs(q.x));
+        o = vec4(vec3(0.6 + 0.2 * smoothstep(0.0, 0.6, edge) + 0.08 * q.y) * mix(vec3(0.88, 1.0, 0.8), vec3(0.95, 1.0, 0.86), hash(m + 2.0)) + 0.1 * rib, 1.0);
+      }
+    }
+  }
+  return o;
+}
+vec4 blossom(vec2 p, float seed) {
+  vec4 o = vec4(0.0);
+  for (int i = 0; i < 24; i++) {
+    float n = seed + float(i) * 2.9, r = sqrt(hash(n)) * 0.34, a = hash(n + 1.0) * 6.2832, size = 0.07 + hash(n + 2.0) * 0.045;
+    vec2 d = frame(p - vec2(cos(a), sin(a)) * r, hash(n + 3.0) * 6.2832, 1.0);
+    d.y /= 0.7 + 0.3 * hash(n + 4.0);
+    float rr = length(d) / size, th = atan(d.y, d.x), petal = 0.62 + 0.38 * pow(abs(cos(th * 2.5)), 0.6);
+    if (rr >= petal) continue;
+    vec3 col = vec3(0.8 + 0.2 * rr - 0.14 * smoothstep(0.85, 1.0, rr / petal));
+    col *= mix(vec3(0.86, 0.78, 0.84), vec3(1.0), smoothstep(0.1, 0.45, rr));
+    col *= 1.0 - 0.07 * (1.0 - smoothstep(0.0, 0.1, abs(sin(th * 2.5))));
+    if (rr < 0.17) col = vec3(1.0, 0.86, 0.46);
+    o = vec4(col, 1.0);
+  }
+  return o;
+}
 void main() {
   vec2 cell = floor(vUv * 2.0), p = fract(vUv * 2.0) - 0.5;
-  float seed = cell.x * 7.0 + cell.y * 13.0 + 1.0, cover = 0.0, tone = 0.0;
-  for (int i = 0; i < 26; i++) {
-    float n = seed + float(i) * 3.7, angle = hash(n) * 6.2832, reach = sqrt(hash(n + 1.0)) * 0.36;
-    vec2 d = p - vec2(cos(angle), sin(angle)) * reach;
-    float turn = hash(n + 2.0) * 6.2832, c = cos(turn), s = sin(turn), size = 0.07 + hash(n + 3.0) * 0.05;
-    d = vec2(d.x * c + d.y * s, d.y * c - d.x * s);
-    float leaf = 1.0 - length(d / vec2(size, size * 0.52)) - abs(d.x) / size * 0.25;
-    if (leaf > 0.0) { cover = 1.0; tone = max(tone, 0.74 + 0.26 * smoothstep(0.0, 0.5, leaf) - 0.1 * step(abs(d.y), size * 0.03)); }
-  }
-  gl_FragColor = vec4(vec3(max(tone, 0.8)), cover);
+  float seed = cell.x * 7.0 + cell.y * 13.0 + 1.0;
+  vec4 o = cell.y < 0.5 ? (cell.x < 0.5 ? broad(p, seed) : fern(p, seed)) : (cell.x < 0.5 ? ivy(p, seed) : blossom(p, seed));
+  if (max(abs(p.x), abs(p.y)) > 0.485) o = vec4(0.0);
+  gl_FragColor = o;
+}`;
+/** Leaves, fronds and trailing stems use the first three quarters; flowers the fourth. */
+const LEAF_CELLS = 3, FLOWER_CELL = 3;
+/**
+ * Still water for a phone or a device without float render targets: clear over the pale bed, deeper blue-green towards the middle,
+ * stirred by a draught and by rings from the fountain, with the warm hall and the bright dome caught in it at a glancing angle.
+ */
+const LAKE_VERT = `
+attribute vec3 color;
+varying vec3 vWorld;
+varying vec2 vSpot;
+varying float vDepth;
+void main() {
+  vSpot = position.xz; vDepth = color.r;
+  vec4 world = modelMatrix * vec4(position, 1.0); vWorld = world.xyz;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+const LAKE_FRAG = `
+uniform float uTime;
+uniform float uRoomFire;
+varying vec3 vWorld;
+varying vec2 vSpot;
+varying float vDepth;
+void main() {
+  vec2 p = vSpot, from = p - ${`vec2(${BUNKER_LAGOON.x.toFixed(2)}, ${BUNKER_LAGOON.z.toFixed(2)})`};
+  vec2 g = vec2(cos(p.x * 2.1 + uTime * 0.8 + sin(p.y * 1.3)), cos(p.y * 2.7 - uTime * 0.6 + sin(p.x * 1.1))) * 0.5
+    + vec2(cos((p.x + p.y) * 4.3 - uTime * 1.4), cos((p.x - p.y) * 3.9 + uTime * 1.2)) * 0.22;
+  float ring = length(from);
+  g += from / max(ring, 0.001) * cos(ring * 8.0 - uTime * 2.6) * 0.7 * exp(-ring * 0.55);
+  vec3 n = normalize(vec3(-g.x * 0.05, 1.0, -g.y * 0.05)), v = normalize(cameraPosition - vWorld);
+  float fresnel = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+  vec3 r = reflect(-v, n);
+  vec3 hall = mix(vec3(0.6, 0.48, 0.36), vec3(1.0, 0.95, 0.84), smoothstep(-0.1, 0.8, r.y)) * (0.92 + 0.08 * uRoomFire);
+  float glint = pow(max(dot(r, normalize(vec3(0.0, 1.0, 0.15))), 0.0), 240.0) * 1.5;
+  vec3 body = mix(vec3(0.64, 0.86, 0.98), vec3(0.06, 0.32, 0.62), smoothstep(0.0, 1.0, vDepth));
+  gl_FragColor = vec4(mix(body, hall, fresnel) + vec3(1.0, 0.93, 0.8) * glint, clamp(mix(0.22, 0.7, smoothstep(0.0, 1.0, vDepth)) + fresnel * 0.6, 0.0, 0.94));
 }`;
 const MARBLE_FRAG = `
 varying vec2 vUv;
@@ -328,23 +511,31 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
   const uRoomFire = { value: 1 }, flameTime = { value: 0 };
   // A phone sums every light per vertex and keeps only two glints per pixel; a desktop shades the six that shape the room per pixel.
   const PIXEL_LIGHTS = pick(6, 0), GLOSS_LIGHTS = pick(4, 2);
-  const indoor = (name: string, parameters: THREE.MeshStandardMaterialParameters, flags: { fabric?: boolean; cavity?: number; leafy?: boolean; gloss?: boolean } = {}) => {
+  // Light through moving water, drawn on whatever lies below the lake's surface.
+  const CAUSTIC = `
+  {
+    float under = smoothstep(${LAKE.level.toFixed(2)}, ${(LAKE.level - .15).toFixed(2)}, vRoomLocal.y);
+    vec2 c = vRoomLocal.xz * 2.4;
+    float w = sin(c.x + uRoomSway * 1.3 + sin(c.y * 1.7 + uRoomSway)) + sin(c.y * 1.3 - uRoomSway * 1.1 + sin(c.x * 1.9 - uRoomSway * 0.7));
+    reflectedLight.directDiffuse += material.diffuseColor * vec3(0.86, 0.95, 1.0) * pow(1.0 - abs(w) * 0.5, 6.0) * under * 0.55;
+  }`;
+  const indoor = (name: string, parameters: THREE.MeshStandardMaterialParameters, flags: { fabric?: boolean; cavity?: number; leafy?: boolean; gloss?: boolean; caustic?: boolean } = {}) => {
     const material = new THREE.MeshStandardMaterial({ roughness: .86, ...parameters, fog: false });
     material.name = `uyuni-bunker-${name}`; materials.add(material);
-    const gloss = flags.gloss ? GLOSS_LIGHTS : 0, leafy = flags.leafy === true;
+    const gloss = flags.gloss ? GLOSS_LIGHTS : 0, leafy = flags.leafy === true, caustic = flags.caustic === true;
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, { uRoomLight, uRoomTint, uRoomFire, uRoomSway: flameTime });
       shader.vertexShader = (leafy ? "#define ROOM_SWAY\n" : "") + shader.vertexShader
         .replace("#include <common>", `#include <common>\n${ROOM_PARS}${leafy ? "\nuniform float uRoomSway;\nattribute float aSway;" : ""}`)
         .replace("#include <begin_vertex>", `#include <begin_vertex>\n${roomVertex(PIXEL_LIGHTS, leafy)}`);
       let fragment = (flags.fabric ? "#define ROOM_FABRIC\n" : "") + shader.fragmentShader;
-      fragment = fragment.replace("#include <common>", `#include <common>\n${ROOM_PARS}`)
+      fragment = fragment.replace("#include <common>", `#include <common>\n${ROOM_PARS}${caustic ? "\nuniform float uRoomSway;" : ""}`)
         .replace("#include <lights_fragment_begin>", WARM_LIGHT_BEGIN)
-        .replace("#include <aomap_fragment>", `${roomFragment(PIXEL_LIGHTS, gloss, leafy)}\n#include <aomap_fragment>`);
+        .replace("#include <aomap_fragment>", `${roomFragment(PIXEL_LIGHTS, gloss, leafy)}${caustic ? CAUSTIC : ""}\n#include <aomap_fragment>`);
       if (flags.cavity !== undefined) fragment = fragment.replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n#ifdef USE_NORMALMAP\ndiffuseColor.rgb *= mix(${flags.cavity.toFixed(2)}, 1.0, texture2D(normalMap, vNormalMapUv).a);\n#endif`);
       shader.fragmentShader = fragment;
     };
-    material.customProgramCacheKey = () => `uyuni-bunker-room-${PIXEL_LIGHTS}-${gloss}-${flags.fabric ? 1 : 0}-${leafy ? 1 : 0}-${flags.cavity ?? "n"}`;
+    material.customProgramCacheKey = () => `uyuni-bunker-room-${PIXEL_LIGHTS}-${gloss}-${flags.fabric ? 1 : 0}-${leafy ? 1 : 0}-${flags.cavity ?? "n"}-${caustic ? 1 : 0}`;
     return material;
   };
 
@@ -372,7 +563,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
   let sprays: THREE.WebGLRenderTarget | null = null, marble: THREE.WebGLRenderTarget | null = null, rockPhoto: THREE.Texture | null = null;
   const placement = new THREE.Object3D(), blackStone = new THREE.Color(0x15130f), whiteStone = new THREE.Color(0xf3eddf);
   let lagoonDrawn = true, disposed = false, built = false, baked: CozySurfaces | null = null, activeRoom: UyuniBunkerId | null = null, shownBoards = "";
-  let steps: (() => void)[] | null = null, bakeSurfaces: (() => void) | null = null, awaitRock: (() => void) | null = null;
+  let steps: (() => void)[] | null = null, bakeSurfaces: (() => void) | null = null, awaitRock: (() => void) | null = null, awaitWillow: (() => void) | null = null, willowPhoto: THREE.Texture | null = null;
 
   /** Everything below runs only once somebody is on their way down. Each returned step is small enough to fit between two frames. */
   const plan = (): (() => void)[] => {
@@ -384,8 +575,11 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     const knit = indoor("knit-throws", { map: textures.cotton, vertexColors: true, roughness: 1, side: THREE.DoubleSide }, { fabric: true, cavity: .5 });
     const rug = indoor("wool-rug", { vertexColors: true, roughness: 1 }, { fabric: true, cavity: .76 });
     const stone = indoor("cliff-rock", { vertexColors: true, roughness: .92 }); stone.color.setRGB(1.25, 1.18, 1.08);
-    const basin = indoor("lagoon-bed", { vertexColors: true, roughness: .9 });
+    const basin = indoor("lagoon-bed", { vertexColors: true, roughness: .9 }, { caustic: true });
     const canopy = indoor("leaf-sprays", { vertexColors: true, roughness: .8, side: THREE.DoubleSide, alphaTest: .5 }, { leafy: true });
+    // Trailing greenery from a photograph of a real willow; it stays hidden until the photograph has arrived.
+    const willow = indoor("trailing-willow", { vertexColors: true, roughness: .82, side: THREE.DoubleSide, alphaTest: .5 }, { leafy: true });
+    willow.color.setRGB(.86, 1, .8); willow.visible = false;
     const painted = indoor("painted-goods", { vertexColors: true, roughness: .7 }, { gloss: true });
     const foliage = indoor("garden-leaves", { vertexColors: true, roughness: .78, side: THREE.DoubleSide }, { leafy: true });
     const brass = indoor("brushed-brass", { color: 0xc79a55, metalness: .4, roughness: .38 }, { gloss: true });
@@ -396,6 +590,8 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     shadow.name = "uyuni-bunker-contact-shadows"; materials.add(shadow);
     const water = new THREE.ShaderMaterial({ uniforms: { uTime: flameTime, uRoomFire }, vertexShader: WATER_VERT, fragmentShader: WATER_FRAG, transparent: true, toneMapped: false, fog: false });
     water.name = "uyuni-bunker-spring-water"; materials.add(water);
+    const lake = new THREE.ShaderMaterial({ uniforms: { uTime: flameTime, uRoomFire }, vertexShader: LAKE_VERT, fragmentShader: LAKE_FRAG, transparent: true, toneMapped: false, fog: false });
+    lake.name = "uyuni-bunker-lake-water"; materials.add(lake);
 
     const box = new THREE.BoxGeometry(1, 1, 1), sphere = new THREE.SphereGeometry(1, pick(14, 8), pick(10, 6));
     const smallSphere = new THREE.SphereGeometry(1, 8, 6), bulb = new THREE.OctahedronGeometry(1, 0), smallCylinder = new THREE.CylinderGeometry(1, 1, 1, 10), tin = new THREE.CylinderGeometry(1, 1, 1, pick(8, 6));
@@ -420,10 +616,14 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     const transform = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), euler = new THREE.Euler();
     const MARBLE_TILE = 1 / 4.2, FURNITURE_TILE = 1 / 1.1, PLASTER_TILE = 1 / 3, STONE_TILE = .34, tint = new THREE.Color();
     const place = (material: THREE.Material, geometry: THREE.BufferGeometry, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0, color = 0xffffff) => {
-      const piece = geometry.clone();
       transform.compose(new THREE.Vector3(x, y, z), quaternion.setFromEuler(euler.set(rx, ry, rz, "YXZ")), new THREE.Vector3(sx, sy, sz));
-      piece.applyMatrix4(transform);
-      if (material === floor || material === oak || material === concrete || material === stone || material === basin) {
+      return placeAt(material, geometry, transform, color);
+    };
+    /** Puts a copy of `geometry` into the room through `matrix`. A shape that already carries its own texture coordinates can keep them. */
+    const placeAt = (material: THREE.Material, geometry: THREE.BufferGeometry, matrix: THREE.Matrix4, color = 0xffffff, keepUv = false) => {
+      const piece = geometry.clone();
+      piece.applyMatrix4(matrix);
+      if (!keepUv && (material === floor || material === oak || material === concrete || material === stone || material === basin)) {
         const position = piece.getAttribute("position"), normal = piece.getAttribute("normal"), uv = piece.getAttribute("uv");
         const scale = material === oak ? FURNITURE_TILE : material === concrete ? PLASTER_TILE : material === floor ? MARBLE_TILE : STONE_TILE, upright = material !== oak;
         for (let i = 0; i < position.count; i++) {
@@ -444,7 +644,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
         }
         piece.setAttribute("color", new THREE.Float32BufferAttribute(values, 3));
       } else if (existing) piece.deleteAttribute("color");
-      if (material === foliage || material === canopy) piece.setAttribute("aSway", new THREE.Float32BufferAttribute(new Array(count).fill(0), 1));
+      if (material === foliage || material === canopy || material === willow) piece.setAttribute("aSway", new THREE.Float32BufferAttribute(new Array(count).fill(0), 1));
       if (!batches.has(material)) batches.set(material, []);
       batches.get(material)!.push(piece);
       return piece;
@@ -472,11 +672,14 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       const cut = { tile: FABRIC_TILE, ...shape, ...(mobile && shape.seg ? { seg: Math.max(2, Math.round(shape.seg * .6)) } : {}), ...(mobile && shape.seed !== undefined ? { seed: Math.abs(Math.round(shape.seed)) % 2 } : {}) }, key = `s${width},${height},${depth},${JSON.stringify(cut)}`;
       place(material, once(key, () => softBoxGeometry(width, height, depth, cut)), x, y, z, 1, 1, 1, rx, ry, rz, color);
     };
-    /** A scatter cushion stood up against whatever is behind it, leaning back by `lean`. */
-    const pillow = (material: THREE.Material, x: number, y: number, z: number, size: number, seed: number, color: number, facing: number, lean = 1.22) => {
-      const key = `c${size},${seed}`;
-      place(material, once(key, () => cushionGeometry(size, size, .2, seed, pick(10, 6), KNIT_TILE)), x, y, z, 1, 1, 1, lean, facing, seed * .13 - .2, color);
-    };
+    /**
+     * A scatter cushion resting on a seat and lying flat against what is behind it, so it never sinks into a back or an arm.
+     * `foot` is where the face it leans on meets the seat, `inward` the level direction out of that face, and `lean` how far the
+     * face leans back from upright. `along` slides the cushion sideways, `twist` turns it a little in its own plane, and `out`
+     * stands it in front of another cushion instead of against the face itself.
+     */
+    const pillow = (material: THREE.Material, foot: { x: number; y: number; z: number }, inward: { x: number; z: number }, lean: number, along: number, size: number, seed: number, color: number, twist = 0, out = 0) =>
+      placeAt(material, once(`c${size},${seed}`, () => cushionGeometry(size, size, CUSHION_THICKNESS, seed, pick(10, 6), KNIT_TILE)), cushionPose(foot, inward, lean, along, size, twist, out), color);
     const tube = (material: THREE.Material, x: number, y: number, z: number, radius: number, length: number, axis: "x" | "y" | "z", color = 0xffffff) =>
       place(material, pipe, x, y, z, radius, length, radius, axis === "z" ? Math.PI / 2 : 0, 0, axis === "x" ? Math.PI / 2 : 0, color);
     const up = new THREE.Vector3(0, 1, 0), span = new THREE.Vector3(), turn = new THREE.Quaternion(), lean = new THREE.Euler();
@@ -523,31 +726,50 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     };
     /** A ribbon of water from one point to another. `from` is how far downstream it starts; `foam` gives white water at its start and end. */
     const ribbon = (a: readonly [number, number, number], b: readonly [number, number, number], side: readonly [number, number, number], width: number, cells: number, from: number, speed: number, fall: number, foam: readonly [number, number]) => {
-      const positions: number[] = [], normals: number[] = [], uvs: number[] = [], kinds: number[] = [], indices: number[] = [], length = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const positions: number[] = [], normals: number[] = [], uvs: number[] = [], kinds: number[] = [], falls: number[] = [], indices: number[] = [], length = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
       for (let i = 0; i <= cells; i++) for (let bank = 0; bank <= 1; bank++) {
         const t = i / cells, across = (bank - .5) * width, thrown = fall ? Math.sqrt(t) : t;
         positions.push(a[0] + (b[0] - a[0]) * thrown + side[0] * across, a[1] + (b[1] - a[1]) * t + side[1] * across, a[2] + (b[2] - a[2]) * thrown + side[2] * across);
         normals.push(0, 1, 0); uvs.push(from + length * t, bank); kinds.push(speed, fall, foam[0] * Math.max(0, 1 - t * 5) + foam[1] * Math.max(0, t * 5 - 4));
+        falls.push(length * t, from);
       }
       for (let i = 0; i < cells; i++) { const k = i * 2; indices.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
       geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geometry.setAttribute("color", new THREE.Float32BufferAttribute(kinds, 3));
+      geometry.setAttribute("aFall", new THREE.Float32BufferAttribute(falls, 2));
       geometry.setIndex(indices); waterPieces.push(geometry);
     };
-    const h = BUNKER_CEILING_Y - BUNKER_FLOOR_Y, W = E.maxX - E.minX, D = E.maxZ - E.minZ, midZ = (E.minZ + E.maxZ) / 2;
+    /** Spray where falling water lands: `count` drops thrown mostly along (ox, oz), and a share of them a slow mist instead. */
+    const splashes: number[][] = [];
+    const splash = (x: number, y: number, z: number, ox: number, oz: number, strength: number, count: number, spread: number, mist: number) => {
+      for (let i = 0; i < count; i++) {
+        const n = x * 3.7 + z * 5.1 + splashes.length * 1.618, a = rnd(n) * Math.PI * 2, r = Math.sqrt(rnd(n + 1)) * spread, sway = (rnd(n + 2) - .5) * 1.4;
+        const dx = ox - oz * sway, dz = oz + ox * sway, length = Math.hypot(dx, dz) || 1;
+        splashes.push([x + Math.cos(a) * r, y, z + Math.sin(a) * r, rnd(n + 3), dx / length, dz / length, strength, rnd(n + 4) < mist ? .9 : rnd(n + 5) * .8]);
+      }
+    };
+    const H = BUNKER_HALL, T = BUNKER_TERRACE, EN = BUNKER_ENTRY, F = BUNKER_FOUNTAIN, h = BUNKER_CEILING_Y - BUNKER_FLOOR_Y, TAU = Math.PI * 2;
     const FIRE_FLOOR = .1, PALETTE = [0x9c4a2c, 0xc69a54, 0x6a3f2a, 0x56603f, 0xdac6a4, 0x7c5a40, 0xad6e3f];
-    const T = BUNKER_TERRACE, LG = BUNKER_LAGOON, EN = BUNKER_ENTRY, CREAMY = 0xf6efe2, BARK = 0x6a5442, CORD = 0xa08a68;
+    const CREAMY = 0xf6efe2, BARK = 0x6a5442, CORD = 0xa08a68, MOSS = 0x41573a;
     const BLUSH = [0xf7c6d4, 0xf2a9c0, 0xfbe1e8, 0xf6b8cc], LILAC = [0xcdb4e6, 0xb79adb, 0xe3d3f2, 0xf2d6ea], LEAFY = [0x7fa04c, 0x6f8f45, 0x94b45c, 0x5f7a3a];
+    const ROSE = [0xf29bb0, 0xf7c6d4, 0xe7849d, 0xfbe1e8], HYDRANGEA = [0xaec4f0, 0xc9b6ea, 0x9fb9ea, 0xe0d2f4], IVORY = [0xfbf6ee, 0xf6ead8, 0xfff4e6];
     const rnd = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
     const wire = once("wire", () => new THREE.CylinderGeometry(1, 1, 1, 3, 1, true));
-    /** A spray of leaves or blossom on a card. The atlas holds four different sprays; each card takes one, and moves in the air as a whole. */
-    const card = (x: number, y: number, z: number, size: number, yaw: number, tilt: number, color: number, sway = 1) => {
-      const piece = place(canopy, plane, x, y, z, size, size, 1, tilt, yaw, 0, color), uv = piece.getAttribute("uv"), wave = piece.getAttribute("aSway"), cell = Math.floor(rnd(x * 3.1 + y * 7.7 + z * 5.3) * 4);
+    const segs = pick(96, 60);
+    /** A spray of leaves or flowers on a card, from one quarter of the drawn texture. Each card moves in the air as a whole. */
+    const card = (x: number, y: number, z: number, size: number, yaw: number, tilt: number, color: number, sway = 1, cell = Math.floor(rnd(x * 3.1 + y * 7.7 + z * 5.3) * LEAF_CELLS)) => {
+      const piece = place(canopy, plane, x, y, z, size, size, 1, tilt, yaw, 0, color), uv = piece.getAttribute("uv"), wave = piece.getAttribute("aSway");
       for (let i = 0; i < uv.count; i++) { wave.setX(i, sway * (.6 + .4 * uv.getY(i))); uv.setXY(i, (uv.getX(i) + cell % 2) * .5, (uv.getY(i) + Math.floor(cell / 2)) * .5); }
     };
+    const flower = (x: number, y: number, z: number, size: number, yaw: number, tilt: number, color: number, sway = .4) => card(x, y, z, size, yaw, tilt, color, sway, FLOWER_CELL);
+    /** Trailing greenery photographed from a real willow, let down from `y` so its top is there. */
+    const trail = (x: number, y: number, z: number, length: number, yaw: number, seed: number) => {
+      const piece = place(willow, plane, x, y - length / 2, z, length * .95, length, 1, (rnd(seed) - .5) * .25, yaw, (rnd(seed + 1) - .5) * .12, 0xffffff), uv = piece.getAttribute("uv"), wave = piece.getAttribute("aSway");
+      for (let i = 0; i < uv.count; i++) { wave.setX(i, (1 - uv.getY(i)) * .9); if (rnd(seed + 2) > .5) uv.setX(i, 1 - uv.getX(i)); }
+    };
     /** A real tree in outline: a leaning trunk in bark, boughs reaching out, and a crown built from hundreds of sprays. */
-    const tree = (x: number, y: number, z: number, height: number, spread: number, palette: readonly number[], seed: number) => {
+    const tree = (x: number, y: number, z: number, height: number, spread: number, palette: readonly number[], seed: number, blooming: boolean) => {
       let px = x, py = y, pz = z;
       for (let i = 0; i < 3; i++) {
         const nx = x + (rnd(seed + i) - .5) * .28 * (i + 1), ny = y + height * .5 * (i + 1) / 3, nz = z + (rnd(seed + i + 9) - .5) * .28 * (i + 1);
@@ -555,17 +777,14 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       }
       const tips: [number, number, number][] = [[px, py + height * .42, pz]];
       for (let b = 0; b < 6; b++) {
-        const a = b / 6 * Math.PI * 2 + seed, reach = spread * (.55 + rnd(seed + b * 3.3) * .35), bx = px + Math.sin(a) * reach, by = py + height * (.2 + rnd(seed + b) * .24), bz = pz + Math.cos(a) * reach;
+        const a = b / 6 * TAU + seed, reach = spread * (.55 + rnd(seed + b * 3.3) * .35), bx = px + Math.sin(a) * reach, by = py + height * (.2 + rnd(seed + b) * .24), bz = pz + Math.cos(a) * reach;
         rod(stone, px, py - .1, pz, bx, by, bz, .07, BARK);
         tips.push([bx, by, bz]);
       }
       for (const [bx, by, bz] of tips) for (let i = 0; i < pick(56, 22); i++) {
-        const n = seed * 13.7 + bx * 3.1 + i * 1.618, r = spread * .44 * Math.cbrt(rnd(n)), a = rnd(n + 1) * Math.PI * 2, e = (rnd(n + 2) - .35) * 1.6;
-        card(bx + Math.sin(a) * Math.cos(e) * r, by + Math.sin(e) * r * .7, bz + Math.cos(a) * Math.cos(e) * r, .85 + rnd(n + 3) * .65, rnd(n + 4) * Math.PI, (rnd(n + 5) - .5) * 1.2, palette[Math.floor(rnd(n + 6) * palette.length)], .5 + rnd(n + 7));
-      }
-      for (let i = 0; i < pick(10, 0); i++) {
-        const n = seed * 3.3 + i * 2.1;
-        hangVine(px + (rnd(n) - .5) * spread * 1.5, py + height * (.18 + rnd(n + 1) * .12), pz + (rnd(n + 2) - .5) * spread * 1.5, .6 + rnd(n + 3) * .9, n, palette);
+        const n = seed * 13.7 + bx * 3.1 + i * 1.618, r = spread * .44 * Math.cbrt(rnd(n)), a = rnd(n + 1) * TAU, e = (rnd(n + 2) - .35) * 1.6;
+        const color = palette[Math.floor(rnd(n + 6) * palette.length)], bloom = blooming && rnd(n + 8) < .7;
+        card(bx + Math.sin(a) * Math.cos(e) * r, by + Math.sin(e) * r * .7, bz + Math.cos(a) * Math.cos(e) * r, (bloom ? .7 : .85) + rnd(n + 3) * .6, rnd(n + 4) * Math.PI, (rnd(n + 5) - .5) * 1.2, bloom ? color : LEAFY[Math.floor(rnd(n + 7) * LEAFY.length)], .5 + rnd(n + 7), bloom ? FLOWER_CELL : undefined);
       }
     };
     /** A vine let down from above. With `blossom` its lower third flowers, like wisteria. */
@@ -574,95 +793,52 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       if (!mobile) rod(painted, x, y, z, x, y - length, z, .006, 0x4a5a30, wire);
       for (let i = 0; i < count; i++) {
         const t = (i + .5) / count, n = seed * 9.1 + i * 2.7, tip = blossom !== undefined && t > .6;
-        card(x + (rnd(n) - .5) * .2, y - length * t, z + (rnd(n + 1) - .5) * .2, tip ? .56 : .46, rnd(n + 2) * Math.PI, (rnd(n + 3) - .5) * .5, tip ? blossom[i % blossom.length] : LEAFY[i % LEAFY.length], .4 + t * 1.8);
+        card(x + (rnd(n) - .5) * .2, y - length * t, z + (rnd(n + 1) - .5) * .2, tip ? .5 : .46, rnd(n + 2) * Math.PI, (rnd(n + 3) - .5) * .5, tip ? blossom[i % blossom.length] : LEAFY[i % LEAFY.length], .4 + t * 1.8, tip ? FLOWER_CELL : undefined);
       }
     };
-    /** Round heads of flowers over a few leaves: in beds, in pots and in vases. */
+    /** Heads of flowers over a few leaves: in beds, in pots and in vases. */
     const bouquet = (x: number, y: number, z: number, scale: number, colors: readonly number[], seed: number) => {
       for (let i = 0; i < pick(9, 5); i++) {
-        const n = seed * 5.3 + i * 1.9, a = rnd(n) * Math.PI * 2, r = Math.sqrt(rnd(n + 1)) * .2 * scale;
-        card(x + Math.sin(a) * r, y + (.3 + rnd(n + 2) * .16) * scale, z + Math.cos(a) * r, (.36 + rnd(n + 3) * .16) * scale, a, -.25 - rnd(n + 4) * .9, colors[i % colors.length], .3);
+        const n = seed * 5.3 + i * 1.9, a = rnd(n) * TAU, r = Math.sqrt(rnd(n + 1)) * .2 * scale;
+        flower(x + Math.sin(a) * r, y + (.3 + rnd(n + 2) * .16) * scale, z + Math.cos(a) * r, (.34 + rnd(n + 3) * .14) * scale, a, -.25 - rnd(n + 4) * .9, colors[i % colors.length], .3);
       }
       for (let i = 0; i < pick(3, 2); i++) {
-        const n = seed * 3.9 + i * 2.3, a = rnd(n) * Math.PI * 2, size = (.05 + rnd(n + 3) * .025) * scale;
-        place(painted, blossom, x + Math.sin(a) * .1 * scale, y + (.34 + rnd(n + 2) * .12) * scale, z + Math.cos(a) * .1 * scale, size, size * .85, size, 0, n, 0, colors[(i + 1) % colors.length]);
+        const n = seed * 3.9 + i * 2.3, a = rnd(n) * TAU;
+        card(x + Math.sin(a) * .1 * scale, y + (.12 + rnd(n + 2) * .1) * scale, z + Math.cos(a) * .1 * scale, .4 * scale, a, -.6, LEAFY[i % LEAFY.length], .3);
       }
       rosette(x, y, z, pick(6, 4), .36 * scale, 1.0, Math.abs(seed), 1.1);
     };
-    /** Marble posts under a timber handrail, level or climbing a stair. */
-    const balustrade = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
-      const posts = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.35));
-      for (let i = 0; i <= posts; i++) { const t = i / posts; place(floor, box, ax + (bx - ax) * t, ay + (by - ay) * t + .45, az + (bz - az) * t, .13, .9, .13, 0, 0, 0, CREAMY); }
-      rod(oak, ax, ay + .94, az, bx, by + .94, bz, .055, WALNUT, pipe);
-      rod(brass, ax, ay + .5, az, bx, by + .5, bz, .016, 0xffffff, pipe);
-    };
     const column = (x: number, z: number, height: number) => {
-      place(floor, drum, x, height / 2, z, .26, height, .26);
-      for (const y of [.12, height - .12]) place(floor, box, x, y, z, .7, .24, .7, 0, 0, 0, CREAMY);
+      place(floor, drum, x, height / 2, z, .2, height, .2);
+      for (const y of [.1, height - .1]) place(floor, box, x, y, z, .52, .2, .52, 0, 0, 0, CREAMY);
     };
     const lantern = (x: number, y: number, z: number, scale = 1) => {
       for (const dy of [-.2, .2]) place(oak, box, x, y + dy * scale, z, .2 * scale, .03 * scale, .2 * scale, 0, 0, 0, WALNUT);
       place(glow, box, x, y, z, .15 * scale, .36 * scale, .15 * scale, 0, 0, 0, 0xffdca0);
       halo(x, y, z, 1.5 * scale, .3, .17, .06);
     };
-    const armchair = (x: number, z: number, color: number, back: number, seed: number) => {
-      place(shadow, plane, x, .06, z, 2.0, 2.0, 1, -Math.PI / 2);
-      soft(boucle, x, .42, z, .95, .32, .95, { radius: .13, crown: .04, bulge: .03, seg: 6, seed }, color);
-      soft(boucle, x + back * .44, .95, z, .32, .95, 1.0, { radius: .15, bulge: .05, seg: 6, seed: seed + 2 }, color, 0, 0, back * .12);
-      for (const dz of [-.56, .56]) soft(boucle, x, .62, z + dz, .95, .52, .22, { radius: .1, bulge: .03, seg: 6, seed: seed + dz }, color);
+    /** A rail of marble posts under a timber handrail along a path of points: level, climbing a stair, or round a curve. */
+    const railing = (path: readonly (readonly [number, number, number])[], every = 1.25) => {
+      let since = every;
+      for (let i = 0; i < path.length; i++) {
+        const [x, y, z] = path[i];
+        if (i > 0) {
+          const [px, py, pz] = path[i - 1];
+          rod(oak, px, py + .94, pz, x, y + .94, z, .05, WALNUT);
+          rod(brass, px, py + .5, pz, x, y + .5, z, .014);
+          since += Math.hypot(x - px, z - pz);
+        }
+        if (since >= every || i === path.length - 1) { place(floor, box, x, y + .45, z, .12, .9, .12, 0, 0, 0, CREAMY); since = 0; }
+      }
     };
     /** An arched niche of lit alabaster in a timber frame: the hall has no windows, and these stand in for them. */
     const niche = (x: number, y: number, z: number, ry: number) => {
       const sx = Math.sin(ry), sz = Math.cos(ry);
-      place(glow, plane, x + sx * .03, y, z + sz * .03, 1.5, 3.2, 1, 0, ry, 0, 0xffe6bd);
-      place(glow, cylinder, x + sx * .03, y + 1.6, z + sz * .03, .75, .02, .75, Math.PI / 2, ry, 0, 0xffe6bd);
-      for (const side of [-1, 1]) place(oak, box, x + sz * side * .8, y, z - sx * side * .8, .12, 3.3, .12, 0, ry, 0, WALNUT);
-      place(oak, box, x, y - 1.64, z, 1.8, .12, .16, 0, ry, 0, WALNUT);
-      halo(x + sx * .4, y + .4, z + sz * .4, 4.2, .2, .15, .09);
-    };
-    /**
-     * A rock face cut from one sheet: beds of stone about a metre thick, each broken into blocks that stand proud or sit back,
-     * with moss wherever a ledge catches the light. `wet` lists where water comes down it: the rock there is worn smooth and dark,
-     * and beside the middle a buttress up to `shelf` catches the smaller falls. Returns how far the face stands out at a point.
-     */
-    const crag = (x0: number, x1: number, y0: number, y1: number, z: number, seed: number, wet: readonly number[], shelf: number) => {
-      const ease = (v: number) => { const t = Math.min(1, Math.max(0, v)); return t * t * (3 - 2 * t); };
-      const worn = (x: number) => { let most = 0; for (const at of wet) most = Math.max(most, Math.exp(-(((x - at) / (at ? 1 : 1.9)) ** 2))); return most; };
-      const relief = (x: number, y: number) => {
-        const bed = (y - y0) / 1.05 + Math.sin(x * .31 + seed) * .22, course = Math.floor(bed), width = 1.5 + rnd(course * 3.7 + seed) * 1.7;
-        const run = x / width + rnd(course * 9.1 + seed) * 7, block = Math.floor(run), smooth = worn(x);
-        const joint = Math.min(run - block, 1 - run + block) * width, parting = Math.min(bed - course, 1 - bed + course) * 1.05;
-        const proud = (rnd(block * 12.9 + course * 78.2 + seed) * .5 + rnd(course * 5.3 + seed) * .22) * (1 - smooth * .85);
-        let out = proud * ease(Math.min(joint, parting) / .2) + .07 * Math.sin(x * 2.3 + y * 1.7 + seed) * Math.sin(y * 3.1 - x * .7) + (1 - (y - y0) / (y1 - y0)) * .3 * (1 - smooth * .6);
-        for (const at of wet) if (at && y < shelf) out = Math.max(out, .95 * ease((1.15 - Math.abs(x - at)) / .3) * ease((shelf - y) / .12));
-        return out * ease((y1 - y) / .25) * ease(Math.min(x - x0, x1 - x) / .4);
-      };
-      const nx = pick(88, 44), ny = pick(26, 14), positions: number[] = [], uvs: number[] = [], indices: number[] = [];
-      for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
-        const x = x0 + (x1 - x0) * i / nx, y = y0 + (y1 - y0) * j / ny;
-        positions.push(x, y, z - relief(x, y)); uvs.push(0, 0);
-      }
-      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i; indices.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2); }
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-      geometry.setIndex(indices); geometry.computeVertexNormals();
-      const normal = geometry.getAttribute("normal"), shades: number[] = [], rock = new THREE.Color(), dim = new THREE.Color(0x8f887c), moss = new THREE.Color(), deep = new THREE.Color(0x4a6332), fresh = new THREE.Color(0x7d9a4a);
-      for (let k = 0; k < normal.count; k++) {
-        const x = positions[k * 3], y = positions[k * 3 + 1], grain = rnd(Math.floor(x / 1.7) * 3.3 + Math.floor(y / 1.05) * 7.1 + seed), smooth = worn(x);
-        // Faces turned away from the hall are the sides of blocks and the joints between them, where little light gets in.
-        const side = 1 - ease((-normal.getZ(k) - .5) / .4), ledge = ease((normal.getY(k) - .22) / .4);
-        const patch = ease((Math.sin(x * 1.3 + seed) * Math.sin(y * 1.9 + x * .4) - .3) / .35), tide = ease((LG.level + .4 - y) / .3);
-        rock.set(0xd6d0c4).lerp(dim, grain * .55).multiplyScalar((1 - side * .32) * (1 - smooth * .34) * (1 - tide * .3));
-        moss.copy(deep).lerp(fresh, rnd(k * .37 + seed));
-        rock.lerp(moss, Math.min(.92, ledge * .9 + patch * .4 * (1 - smooth) + tide * .35));
-        shades.push(rock.r, rock.g, rock.b);
-      }
-      geometry.setAttribute("color", new THREE.Float32BufferAttribute(shades, 3));
-      const piece = place(stone, geometry, 0, 0, 0), position = piece.getAttribute("position"), uv = piece.getAttribute("uv");
-      // One projection for the whole face, leaning back so ledge tops are not smeared: the photograph never tears at a block's edge.
-      for (let k = 0; k < uv.count; k++) uv.setXY(k, position.getX(k) * STONE_TILE, (position.getY(k) - position.getZ(k) * .8) * STONE_TILE);
-      geometry.dispose();
-      return relief;
+      place(glow, plane, x + sx * .03, y, z + sz * .03, 1.3, 2.6, 1, 0, ry, 0, 0xffe6bd);
+      place(glow, cylinder, x + sx * .03, y + 1.3, z + sz * .03, .65, .02, .65, Math.PI / 2, ry, 0, 0xffe6bd);
+      for (const side of [-1, 1]) place(oak, box, x + sz * side * .7, y, z - sx * side * .7, .1, 2.7, .1, 0, ry, 0, WALNUT);
+      place(oak, box, x, y - 1.34, z, 1.6, .1, .14, 0, ry, 0, WALNUT);
+      halo(x + sx * .4, y + .3, z + sz * .4, 3.6, .2, .15, .09);
     };
     /** A boulder: a ball knocked out of round. Three shapes turned and squashed differently are enough that no two look alike. */
     const boulder = (material: THREE.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number, seed: number, color: number) => {
@@ -670,7 +846,6 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       place(material, once(`boulder${shape}`, () => {
         const ball = new THREE.SphereGeometry(1, pick(8, 6), pick(6, 4)), position = ball.getAttribute("position");
         for (let i = 0; i < position.count; i++) {
-          // Rounded first, so the two ends of the seam get the same knock and stay closed.
           const px = Math.round(position.getX(i) * 100), py = Math.round(position.getY(i) * 100), pz = Math.round(position.getZ(i) * 100), knock = .78 + rnd(px * .123 + py * .456 + pz * .789 + shape) * .44;
           position.setXYZ(i, position.getX(i) * knock, position.getY(i) * knock, position.getZ(i) * knock);
         }
@@ -678,6 +853,73 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
         return ball;
       }), x, y, z, sx, sy, sz, rnd(seed + 5) * .5 - .25, rnd(seed + 6) * 6.28, rnd(seed + 7) * .5 - .25, color);
     };
+
+    /** A surface from a grid of points; `keep` leaves quads out. It is turned so the normal at vertex `probe` points along `want`. */
+    const grid = (columns: number, rows: number, at: (i: number, j: number) => readonly [number, number, number], want: (p: THREE.Vector3) => THREE.Vector3,
+      uvAt?: (i: number, j: number) => readonly [number, number], keep?: (i: number, j: number) => boolean, probe = (columns + 1) + 1) => {
+      const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+      for (let j = 0; j <= rows; j++) for (let i = 0; i <= columns; i++) { positions.push(...at(i, j)); uvs.push(...(uvAt ? uvAt(i, j) : [i / columns, j / rows])); }
+      for (let j = 0; j < rows; j++) for (let i = 0; i < columns; i++) {
+        if (keep && !keep(i, j)) continue;
+        const a = j * (columns + 1) + i, b = a + 1, c = a + columns + 1, d = c + 1;
+        indices.push(a, c, b, b, c, d);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices); geometry.computeVertexNormals();
+      const p = new THREE.Vector3().fromBufferAttribute(geometry.getAttribute("position") as THREE.BufferAttribute, probe), n = new THREE.Vector3().fromBufferAttribute(geometry.getAttribute("normal") as THREE.BufferAttribute, probe);
+      if (n.dot(want(p)) < 0) {
+        for (let k = 0; k < indices.length; k += 3) { const swap = indices[k + 1]; indices[k + 1] = indices[k + 2]; indices[k + 2] = swap; }
+        geometry.setIndex(indices); geometry.computeVertexNormals();
+      }
+      return geometry;
+    };
+    const surface = (material: THREE.Material, geometry: THREE.BufferGeometry, color = 0xffffff, keepUv = false) => { placeAt(material, geometry, transform.identity(), color, keepUv); geometry.dispose(); };
+    /** Flat-shaded quads, each turned to face `want`, for the crisp edges of steps and slabs. */
+    const facets = () => {
+      const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+      const add = (corners: readonly (readonly [number, number, number])[], want: THREE.Vector3, uv?: readonly (readonly [number, number])[]) => {
+        const [a, b, c] = corners.map(p => new THREE.Vector3(...p)), base = positions.length / 3;
+        corners.forEach((p, k) => { positions.push(...p); uvs.push(...(uv?.[k] ?? [0, 0])); });
+        if (b.clone().sub(a).cross(c.clone().sub(a)).dot(want) >= 0) indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        else indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      };
+      const done = () => {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
+      };
+      return { add, done };
+    };
+    const facingUp = () => new THREE.Vector3(0, 1, 0), facingDown = () => new THREE.Vector3(0, -1, 0);
+    /** Towards the middle of the hall, level. */
+    const inwards = (p: THREE.Vector3) => new THREE.Vector3(-p.x / (H.a * H.a), 0, -(p.z - H.cz) / (H.b * H.b));
+    const at3 = (radius: number, angle: number, y: number): [number, number, number] => { const p = hallPoint(radius, angle); return [p.x, y, p.z]; };
+    /** A point `out` metres into the room from the oval of radius `radius` at `angle`. */
+    const off = (radius: number, angle: number, out: number) => { const p = hallPoint(radius, angle), n = hallInward(angle); return { x: p.x + n.x * out, z: p.z + n.z * out }; };
+    /** Distance along the wall from the back of the hall to `angle`, so a texture can run round it without a seam. */
+    const arc = (angle: number, radius = 1) => { let s = 0; const steps = 48; for (let k = 0; k < steps; k++) s += hallReach(angle * (k + .5) / steps) * Math.abs(angle) / steps; return s * radius * Math.sign(angle); };
+    /** A frame standing on the wall at `angle`: u runs along the wall, v out into the room. Boxes turned by `yaw` follow it. */
+    const wallFrame = (angle: number) => {
+      const at = hallPoint(1, angle), n = hallInward(angle);
+      return { yaw: Math.atan2(n.x, n.z), n, p: (u: number, v: number) => ({ x: at.x + n.z * u + n.x * v, z: at.z - n.x * u + n.z * v }) };
+    };
+    /**
+     * A living wall: a mossy backing with leaves set close over it and flowers among them, on the oval of radius `radius`
+     * between two angles and between heights that may climb with a stair.
+     */
+    const livingWall = (radius: number, from: number, to: number, low: (angle: number) => number, high: (angle: number) => number, flowers: readonly number[], seed: number, density = pick(12, 6), backed = true) => {
+      const columns = Math.max(2, Math.ceil(Math.abs(to - from) * 14)), rows = 4;
+      if (backed) surface(painted, grid(columns, rows, (i, j) => { const a = from + (to - from) * i / columns, p = off(radius, a, .012); return [p.x, low(a) + (high(a) - low(a)) * j / rows, p.z]; }, inwards), MOSS);
+      const span = Math.abs(arc(to, radius) - arc(from, radius)), count = Math.round(span * (high((from + to) / 2) - low((from + to) / 2)) * density);
+      for (let i = 0; i < count; i++) {
+        const n = seed * 17.3 + i * 1.37, a = from + (to - from) * rnd(n), y = low(a) + .1 + (high(a) - low(a) - .2) * rnd(n + 1), p = off(radius, a, .05 + rnd(n + 2) * .16);
+        const yaw = Math.atan2(hallInward(a).x, hallInward(a).z) + (rnd(n + 3) - .5) * 1.1, bloom = rnd(n + 4) < .18;
+        if (bloom) flower(p.x, y, p.z, .3 + rnd(n + 5) * .16, yaw, (rnd(n + 6) - .5) * .9, flowers[Math.floor(rnd(n + 7) * flowers.length)], .25);
+        else card(p.x, y, p.z, .55 + rnd(n + 5) * .45, yaw, (rnd(n + 6) - .5) * 1.1, LEAFY[Math.floor(rnd(n + 7) * LEAFY.length)], .25);
+      }
+    };
+
     const build: (() => void)[] = [];
     build.push(() => { const weave = rugTexture(128); ownTextures.add(weave); rug.map = weave; });
     build.push(() => { const skim = plasterTexture(128); ownTextures.add(skim); concrete.map = skim; });
@@ -686,108 +928,296 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       else { const veined = marbleTexture(64); ownTextures.add(veined); floor.map = veined; }
     });
 
-    // The shell: polished marble underfoot, warm timber to shoulder height and above, cream plaster up to a coffered vault.
+    // The floor: polished marble from the kerb of the lake out to the oval wall, wherever the hall floor is not raised.
     build.push(() => {
-      sheet(floor, 0, 0, (E.minZ + LG.minZ) / 2, W, LG.minZ - E.minZ, -Math.PI / 2, 0);
-      for (const side of [-1, 1]) sheet(floor, side * (LG.maxX + T.stairInner) / 2, 0, (LG.minZ + T.z) / 2, T.stairInner - LG.maxX, T.z - LG.minZ, -Math.PI / 2, 0);
-      sheet(floor, 0, T.height, (T.z + E.maxZ) / 2, W, E.maxZ - T.z, -Math.PI / 2, 0, 0xfbf6ee);
-      sheet(concrete, 0, h, midZ, W, D, Math.PI / 2, 0, CREAMY);
-      const low = T.z - E.minZ;
-      for (const side of [-1, 1]) {
-        sheet(oak, side * E.maxX, T.height / 2, E.minZ + low / 2, low, T.height, 0, -side * Math.PI / 2, 0xe2bd94);
-        sheet(concrete, side * E.maxX, (T.height + h) / 2, midZ, D, h - T.height, 0, -side * Math.PI / 2, CREAMY);
-        slab(oak, side * (E.maxX - .06), T.height + .06, E.minZ + low / 2, .12, .2, low, WALNUT);
-      }
-      sheet(oak, 0, T.height / 2, E.minZ, W, T.height, 0, 0, 0xe2bd94);
-      sheet(concrete, 0, (T.height + h) / 2, E.minZ, W, h - T.height, 0, 0, CREAMY);
-      sheet(concrete, 0, (T.height + h) / 2, E.maxZ, W, h - T.height, 0, Math.PI, CREAMY);
-      for (const z of [-4, 1, 11, 16, 21, 26]) slab(oak, 0, h - .2, z, W, .4, .34, WALNUT);
-      for (const x of [-12, -6, 6, 12]) slab(oak, x, h - .15, midZ, .3, .3, D, WALNUT);
-      // Lit niches high on the walls where windows would be.
-      for (const z of [-2, 3.5, 13, 19.5, 24]) for (const side of [-1, 1]) niche(side * (E.maxX - .02), 8.1, z, -side * Math.PI / 2);
-      for (const x of [-12, -6, 0, 6, 12]) niche(x, 8.3, E.maxZ - .02, Math.PI);
+      const rings = pick(22, 14), kerb = LAKE.kerb + .02;
+      const ox = LAKE.x, oz = LAKE.z - H.cz;
+      const wall = (dx: number, dz: number) => {
+        const qa = dx * dx / (H.a * H.a) + dz * dz / (H.b * H.b), qb = 2 * (ox * dx / (H.a * H.a) + oz * dz / (H.b * H.b)), qc = ox * ox / (H.a * H.a) + oz * oz / (H.b * H.b) - 1;
+        const s = (-qb + Math.sqrt(qb * qb - 4 * qa * qc)) / (2 * qa) * 1.01;
+        return [LAKE.x + dx * s, LAKE.z + dz * s] as const;
+      };
+      const point = (i: number, j: number): [number, number, number] => {
+        const t = i / segs * TAU, ix = LAKE.x + (LAKE.a + kerb) * Math.sin(t), iz = LAKE.z + (LAKE.b + kerb) * Math.cos(t), [wx, wz] = wall(ix - LAKE.x, iz - LAKE.z), f = Math.pow(j / rings, 1.25);
+        return [ix + (wx - ix) * f, 0, iz + (wz - iz) * f];
+      };
+      const raised = (i: number, j: number) => { const [x, , z] = point(i, j); return bunkerFloorRise(x, z) > .01; };
+      surface(floor, grid(segs, rings, point, facingUp, undefined, (i, j) => !(raised(i, j) && raised(i + 1, j) && raised(i, j + 1) && raised(i + 1, j + 1))));
     });
 
-    // The front gallery, which the ladder comes down under, and the two side galleries it runs into.
+    // The lake: a pale bed shelving to the middle, a marble kerb to stand at, lilies on the water and a bowl of water in the middle.
     build.push(() => {
-      slab(floor, 0, EN.ceiling + .2, (E.minZ + EN.z) / 2, W, .4, EN.z - E.minZ, CREAMY);
-      sheet(oak, 0, EN.ceiling - .01, (E.minZ + EN.z) / 2, W, EN.z - E.minZ, Math.PI / 2, 0, HONEY);
-      slab(oak, 0, EN.ceiling + .2, EN.z + .03, W, .5, .08, WALNUT);
-      for (const x of [-13, -4.5, 4.5, 13]) column(x, EN.z, EN.ceiling);
-      balustrade(E.minX + .2, EN.ceiling + .4, EN.z + .1, E.maxX - .2, EN.ceiling + .4, EN.z + .1);
-      for (let i = 0; i < pick(30, 16); i++) {
-        const x = E.minX + .8 + i * (W - 1.6) / (pick(30, 16) - 1), centre = Math.abs(x) < 2.6;
-        hangVine(x, EN.ceiling + .1, EN.z + .16, centre ? .9 : 1.3 + rnd(i) * 1.5, i + 3, i % 3 === 0 ? LILAC : undefined);
+      const bedY = (q: number) => LAKE.level - (.17 + (LAKE.depth - .17) * (1 - Math.min(1, q) * Math.min(1, q)));
+      const rings = pick(7, 5);
+      surface(basin, grid(segs, rings, (i, j) => { const t = i / segs * TAU, q = 1.04 * j / rings; return [LAKE.x + LAKE.a * q * Math.sin(t), bedY(q), LAKE.z + LAKE.b * q * Math.cos(t)]; }, facingUp), 0xeee3cc);
+      // The kerb: in from the water, over a rounded top and down to the floor.
+      const profile: readonly (readonly [number, number])[] = [[-.02, bedY(1) - .06], [0, .1], [.04, .16], [LAKE.kerb - .04, .16], [LAKE.kerb, .1], [LAKE.kerb, 0]];
+      surface(floor, grid(segs, profile.length - 1, (i, j) => { const t = i / segs * TAU, [grow, y] = profile[j]; return [LAKE.x + (LAKE.a + grow) * Math.sin(t), y, LAKE.z + (LAKE.b + grow) * Math.cos(t)]; }, facingUp, undefined, undefined, (segs + 1) * 2 + 3), CREAMY);
+      for (let i = 0; i < pick(18, 9); i++) {
+        const t = rnd(i * 2.3 + 7) * TAU, q = .45 + rnd(i + 4) * .45, size = .1 + rnd(i + 1) * .18;
+        boulder(basin, LAKE.x + LAKE.a * q * Math.sin(t), bedY(q) + size * .25, LAKE.z + LAKE.b * q * Math.cos(t), size, size * .5, size * (.7 + rnd(i + 2) * .5), i, i % 3 ? 0xe2d8c4 : 0xc9bfaa);
       }
-      for (const side of [-1, 1]) {
-        const x = side * 16.7, z0 = EN.z, z1 = T.stairZ;
-        slab(floor, x, T.height - .2, (z0 + z1) / 2, 2.6, .4, z1 - z0, CREAMY);
-        for (let z = z0 + 1.2; z < z1; z += 3.2) { slab(oak, x, T.height - .56, z, 2.6, .32, .2, WALNUT); lantern(side * 15.8, T.height - 1.0, z, .9); }
-        balustrade(side * 15.5, T.height, z0 + .2, side * 15.5, T.height, z1);
-        for (let i = 0; i < pick(12, 7); i++) hangVine(side * 15.36, T.height - .1, z0 + .8 + i * (z1 - z0 - 1.2) / (pick(12, 7) - 1), 1.0 + rnd(i + side * 7 + 20) * 1.6, i + 40 + side, i % 2 ? LILAC : undefined);
-        for (let i = 0; i < 4; i++) { place(painted, pot, side * 17.1, T.height, z0 + 1.6 + i * 3.4, .5, .5, .5, 0, 0, 0, 0xb9744a); bouquet(side * 17.1, T.height + .36, z0 + 1.6 + i * 3.4, 1.1, i % 2 ? BLUSH : LILAC, i + side * 3 + 5); }
+      // Water lilies in loose drifts near the kerb.
+      const pad = once("lily-pad", () => { const g = new THREE.CircleGeometry(1, pick(14, 9), .35, TAU - .35); g.rotateX(-Math.PI / 2); return g; });
+      for (let k = 0; k < 6; k++) {
+        const t = k / 6 * TAU + .4, q = .78 + rnd(k + 30) * .12;
+        for (let i = 0; i < 3; i++) {
+          const n = k * 7 + i, a = t + (rnd(n + 31) - .5) * .25, r = q - rnd(n + 32) * .12, size = .22 + rnd(n + 33) * .14;
+          place(foliage, pad, LAKE.x + LAKE.a * r * Math.sin(a), LAKE.level + .07, LAKE.z + LAKE.b * r * Math.cos(a), size, 1, size, 0, rnd(n + 34) * TAU, 0, [0x4f7a3a, 0x5e8a40, 0x456f34][i]);
+          if (i === 0) for (let p = 0; p < 3; p++) flower(LAKE.x + LAKE.a * r * Math.sin(a), LAKE.level + .15, LAKE.z + LAKE.b * r * Math.cos(a), .22, p * 1.05 + k, -1.25, k % 2 ? ROSE[p % ROSE.length] : IVORY[p % IVORY.length], .1);
+        }
+      }
+      // The fountain: a marble bowl on a stem, brimming over all round into the lake.
+      place(floor, drum, LAKE.x, (bedY(0) + .5) / 2, LAKE.z, .22, .5 - bedY(0), .22, 0, 0, 0, CREAMY);
+      place(floor, once("fountain-bowl", () => new THREE.LatheGeometry([[0, 0], [.3, .02], [.7, .14], [.92, .3], [.95, .36], [.9, .36], [.66, .2], [0, .14]].map(([x, y]) => new THREE.Vector2(x, y)), pick(32, 18))), LAKE.x, .3, LAKE.z, 1, 1, 1, 0, 0, 0, CREAMY);
+      place(painted, cylinder, LAKE.x, .64, LAKE.z, .88, .02, .88, 0, 0, 0, 0x93c9ee);
+      const spill = pick(20, 14);
+      for (let i = 0; i < spill; i++) {
+        const a = i / spill * TAU, s = Math.sin(a), c = Math.cos(a);
+        ribbon([LAKE.x + s * .95, .66, LAKE.z + c * .95], [LAKE.x + s * 1.12, LAKE.level, LAKE.z + c * 1.12], [c, 0, -s], 2 * Math.PI * 1.12 / spill + .05, pick(5, 3), i * .7, 1.6, 1, [0, 1]);
+        splash(LAKE.x + s * 1.12, LAKE.level + .01, LAKE.z + c * 1.12, s, c, .55, pick(14, 9), .18, .2);
+      }
+      halo(LAKE.x, .7, LAKE.z, 2.6, .1, .14, .19);
+      // The still water: deeper towards the middle; a desktop swaps it for the sea engine from the beach.
+      const rings2 = pick(10, 6), positions: number[] = [], normals: number[] = [], uvs: number[] = [], kinds: number[] = [], indices: number[] = [];
+      for (let j = 0; j <= rings2; j++) for (let i = 0; i <= segs; i++) {
+        const t = i / segs * TAU, q = 1.02 * j / rings2;
+        positions.push(LAKE.x + LAKE.a * q * Math.sin(t), LAKE.level, LAKE.z + LAKE.b * q * Math.cos(t)); normals.push(0, 1, 0); uvs.push(i / segs, j / rings2); kinds.push(1 - Math.min(1, q) * Math.min(1, q), 0, 0);
+      }
+      for (let j = 0; j < rings2; j++) for (let i = 0; i < segs; i++) { const a = j * (segs + 1) + i; indices.push(a, a + segs + 1, a + 1, a + 1, a + segs + 1, a + segs + 2); }
+      const still = new THREE.BufferGeometry();
+      still.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); still.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+      still.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); still.setAttribute("color", new THREE.Float32BufferAttribute(kinds, 3));
+      still.setIndex(indices); lagoonPieces.push(still);
+    });
+
+    // The oval wall: cream plaster to the cornice, a timber wainscot, marble pilasters and lit niches high up where windows would be.
+    build.push(() => {
+      const rows = Math.ceil(H.wall / .65);
+      const around = (i: number) => -Math.PI + i / segs * TAU;
+      surface(concrete, grid(segs, rows, (i, j) => at3(1, around(i), H.wall * j / rows), inwards, (i, j) => [arc(around(i)) * PLASTER_TILE, H.wall * j / rows * PLASTER_TILE]), CREAMY, true);
+      for (const [from, to, y0] of [[-Math.PI, Math.PI, 0], [-T.top - .1, T.top + .1, UP]] as const) {
+        const columns = Math.ceil((to - from) / TAU * segs);
+        surface(oak, grid(columns, 2, (i, j) => { const a = from + (to - from) * i / columns, p = off(1, a, .03); return [p.x, y0 + 1.05 * j / 2, p.z]; }, inwards, (i, j) => [(y0 + 1.05 * j / 2) * FURNITURE_TILE, arc(from + (to - from) * i / columns) * FURNITURE_TILE]), 0xe2bd94, true);
+        surface(oak, grid(columns, 1, (i, j) => { const a = from + (to - from) * i / columns, p = off(1, a, .05); return [p.x, y0 + 1.03 + .1 * j, p.z]; }, inwards, (i, j) => [j * .1, arc(from + (to - from) * i / columns) * FURNITURE_TILE]), WALNUT, true);
+      }
+      for (let k = 0; k < 20; k++) {
+        if (k === 10) continue;
+        const a = k / 20 * TAU, frame = wallFrame(a), base = Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) <= T.top + .05 ? UP : 0, p = frame.p(0, .05);
+        place(floor, box, p.x, (base + H.wall) / 2, p.z, .46, H.wall - base, .1, 0, frame.yaw, 0, CREAMY);
+        for (const [y, w, d] of [[base + .12, .6, .18], [H.wall - .2, .66, .22]] as const) { const q = frame.p(0, d / 2); place(floor, box, q.x, y, q.z, w, .24, d, 0, frame.yaw, 0, CREAMY); }
+        const mid = a + Math.PI / 20;
+        if (k % 2 === 0) { const nf = wallFrame(mid), q = nf.p(0, .01); niche(q.x, 6.3, q.z, nf.yaw); }
+      }
+      // A cornice of stepped marble at the top of the wall, where the dome springs.
+      const profile: readonly (readonly [number, number])[] = [[0, H.wall - .4], [.08, H.wall - .32], [.12, H.wall - .05], [.24, H.wall + .02], [0, H.wall + .08]];
+      surface(floor, grid(segs, profile.length - 1, (i, j) => { const a = -Math.PI + i / segs * TAU, p = off(1, a, profile[j][0]); return [p.x, profile[j][1], p.z]; }, facingDown, undefined, undefined, (segs + 1) * 2 + 2), CREAMY);
+    });
+
+    // The dome: plaster rising from the cornice to an open oculus of lit alabaster, crossed by timber ribs.
+    build.push(() => {
+      const rows = pick(10, 7), eye = .2, rise = h - H.wall;
+      const domeY = (r: number) => H.wall + rise * Math.sqrt(Math.max(0, 1 - r * r));
+      const point = (i: number, j: number): [number, number, number] => { const r = 1 - (1 - eye) * j / rows; return at3(r, -Math.PI + i / segs * TAU, domeY(r)); };
+      surface(concrete, grid(segs, rows, point, p => new THREE.Vector3(0, 4, H.cz).sub(p), (i, j) => { const [x, , z] = point(i, j); return [x * PLASTER_TILE, z * PLASTER_TILE]; }), CREAMY, true);
+      surface(glow, grid(segs, 1, (i, j) => at3(eye * (1 - j), -Math.PI + i / segs * TAU, domeY(eye) - .02), facingDown), 0xfff2d8);
+      place(brass, ring, 0, domeY(eye) - .03, H.cz, H.a * eye, H.b * eye, 3, Math.PI / 2);
+      halo(0, domeY(eye) - .6, H.cz, 9, .22, .18, .13);
+      for (let k = 0; k < 16; k++) {
+        const a = k / 16 * TAU;
+        for (let j = 0; j < 6; j++) {
+          const r0 = 1 - (1 - eye) * j / 6, r1 = 1 - (1 - eye) * (j + 1) / 6, p0 = off(r0, a, .05), p1 = off(r1, a, .05);
+          rod(oak, p0.x, domeY(r0) - .06, p0.z, p1.x, domeY(r1) - .06, p1.z, .07, WALNUT);
+        }
       }
     });
 
-    // Under the hatch: the ladder, a console with flowers, and lanterns hung low so the hall beyond looks all the higher.
+    // The front balcony the ladder comes down through, on slender columns, with greenery let down from its edge.
+    build.push(() => {
+      const from = EN.from, to = TAU - EN.from, columns = pick(36, 22), rows = 3, top = UP, under = EN.ceiling;
+      const angle = (i: number) => from + (to - from) * i / columns, radius = (j: number) => EN.edge + (1.01 - EN.edge) * j / rows;
+      const hole = (i: number, j: number) => { const p = hallPoint((radius(j) + radius(j + 1)) / 2, (angle(i) + angle(i + 1)) / 2); return Math.abs(p.x - BUNKER_LADDER_LOCAL.x) > .8 || Math.abs(p.z - BUNKER_LADDER_LOCAL.z - .1) > .75; };
+      surface(oak, grid(columns, rows, (i, j) => at3(radius(j), angle(i), under), facingDown, undefined, hole), HONEY);
+      surface(floor, grid(columns, rows, (i, j) => at3(radius(j), angle(i), top), facingUp, undefined, hole), 0xfbf6ee);
+      surface(oak, grid(columns, 1, (i, j) => at3(EN.edge, angle(i), under + (top - under) * j), inwards), WALNUT);
+      const ends = facets();
+      for (const a of [from, to]) {
+        const outward = new THREE.Vector3(Math.cos(a) * H.a, 0, -Math.sin(a) * H.b).multiplyScalar(a === from ? -1 : 1);
+        ends.add([at3(EN.edge, a, under), at3(1.01, a, under), at3(1.01, a, top), at3(EN.edge, a, top)], outward);
+      }
+      surface(oak, ends.done(), WALNUT);
+      const path: [number, number, number][] = [];
+      for (let i = 0; i <= columns; i++) path.push(at3(EN.edge + .012, angle(i), top));
+      railing(path);
+      for (const a of BUNKER_ENTRY_COLUMNS) { const p = hallPoint(EN.edge + .01, a); column(p.x, p.z, under); }
+      // The trapdoor the ladder rises through.
+      for (const [dx, dz, w, d] of [[0, -.65, 1.7, .1], [0, .85, 1.7, .1], [-.85, .1, .1, 1.6], [.85, .1, .1, 1.6]] as const) wood(BUNKER_LADDER_LOCAL.x + dx, under - .05, BUNKER_LADDER_LOCAL.z + dz, w, .12, d, WALNUT, .02);
+      place(painted, box, BUNKER_LADDER_LOCAL.x, top + .4, BUNKER_LADDER_LOCAL.z + .1, 1.6, .02, 1.5, 0, 0, 0, 0x1a1410);
+      for (let i = 0; i < pick(26, 14); i++) {
+        const a = from + .08 + (to - from - .16) * (i + rnd(i + 3) * .6) / pick(26, 14), p = off(EN.edge, a, .08);
+        if (Math.abs(p.x) < 1.2) continue;
+        trail(p.x, top - .02, p.z, 1.3 + rnd(i + 5) * 1.1, Math.atan2(hallInward(a).x, hallInward(a).z), i + 11);
+      }
+    });
+
+    // Under the balcony: the ladder, consoles with flowers either side, and green walls between the pilasters.
     build.push(() => {
       const ladderZ = BUNKER_LADDER_LOCAL.z, top = EN.ceiling;
       for (const x of [-.52, .52]) place(oak, cylinder, x, top / 2, ladderZ, .05, top, .05, -.09, 0, 0, WALNUT);
-      for (let rung = 0; rung < 14; rung++) {
+      for (let rung = 0; rung < 10; rung++) {
         const y = .35 + rung * .36, z = ladderZ - (y - top / 2) * .09;
         place(oak, cylinder, 0, y, z, .045, 1.12, .045, 0, 0, Math.PI / 2, HONEY);
       }
-      wood(0, top - .032, ladderZ - .25, 1.55, .045, 1.5, HONEY, .02);
-      place(brass, torus, 0, top - .067, ladderZ - .25, 1, 1, 1, Math.PI / 2);
       place(shadow, plane, 0, .012, ladderZ, 2.4, 1.8, 1, -Math.PI / 2);
       soft(rug, 0, .035, -4.2, 3.2, .06, 1.8, { radius: .025, seg: 4, tile: 2 }, 0xead9c6);
-      for (const x of [-3.2, 3.2]) { rod(painted, x, top, -7.2, x, 4.3, -7.2, .006, IRON); lantern(x, 4.05, -7.2, 1.2); }
       for (const side of [-1, 1]) {
-        wood(side * 7.6, .8, E.minZ + .34, 2.6, .07, .6, 0xe6b27c, .03);
-        for (const dx of [-1.1, 1.1]) wood(side * 7.6 + dx, .39, E.minZ + .34, .08, .78, .5, CHOCOLATE, .02);
-        place(painted, vase, side * 7.6, .835, E.minZ + .34, 1.1, 1.0, 1.1, 0, 0, 0, 0xf1e6d2);
-        bouquet(side * 7.6, 1.2, E.minZ + .34, 1.5, side < 0 ? BLUSH : LILAC, side + 2);
-        for (const dx of [-.8, .85]) { place(painted, tin, side * 7.6 + dx, .93, E.minZ + .4, .05, .18, .05, 0, 0, 0, 0xf3e7cf); place(glow, bulb, side * 7.6 + dx, 1.07, E.minZ + .4, .02, .05, .02, 0, 0, 0, 0xffd28a); halo(side * 7.6 + dx, 1.08, E.minZ + .4, .4, .42, .22, .07); }
+        const frame = wallFrame(side * 2.78), c = frame.p(0, .34);
+        wood(c.x, .8, c.z, 2.4, .07, .6, 0xe6b27c, .03, frame.yaw);
+        for (const u of [-1, 1]) { const leg = frame.p(u, .34); wood(leg.x, .39, leg.z, .08, .78, .5, CHOCOLATE, .02, frame.yaw); }
+        place(painted, vase, c.x, .835, c.z, 1.1, 1.0, 1.1, 0, 0, 0, 0xf1e6d2);
+        bouquet(c.x, 1.2, c.z, 1.5, side < 0 ? ROSE : HYDRANGEA, side + 2);
+        for (const u of [-.75, .8]) { const q = frame.p(u, .4); place(painted, tin, q.x, .93, q.z, .05, .18, .05, 0, 0, 0, 0xf3e7cf); place(glow, bulb, q.x, 1.07, q.z, .02, .05, .02, 0, 0, 0, 0xffd28a); halo(q.x, 1.08, q.z, .4, .42, .22, .07); }
+      }
+      for (const side of [-1, 1]) {
+        livingWall(1, side * EN.from + side * .04, side * 2.98, () => 1.12, () => EN.ceiling - .2, side < 0 ? ROSE : HYDRANGEA, side + 5);
+        const s = hallPoint(.94, side * 2.75); lantern(s.x, 2.9, s.z, 1.0);
       }
     });
 
-    // Two trees in marble planters either side of the lounge: one in blossom, one in leaf.
+    // The terrace across the back: its marble floor, the green wall it shows the lake, and the rail along its edge.
+    build.push(() => {
+      const columns = pick(40, 26), rows = 6;
+      const angle = (i: number) => -T.top + 2 * T.top * i / columns;
+      surface(floor, grid(columns, rows, (i, j) => at3(T.edge + (1.01 - T.edge) * j / rows, angle(i), UP), facingUp), 0xfbf6ee);
+      const face = (i: number, j: number) => at3(T.edge, angle(i), UP * j / 6);
+      surface(floor, grid(columns, 6, face, inwards, (i, j) => [arc(angle(i), T.edge) * MARBLE_TILE, UP * j / 6 * MARBLE_TILE]), CREAMY, true);
+      const sides = facets();
+      for (const side of [-1, 1]) {
+        const a = side * T.top, outward = new THREE.Vector3(Math.cos(a) * H.a, 0, -Math.sin(a) * H.b).multiplyScalar(side);
+        sides.add([at3(T.edge, a, 0), at3(T.stair, a, 0), at3(T.stair, a, UP), at3(T.edge, a, UP)], outward);
+      }
+      surface(floor, sides.done(), CREAMY);
+      // Coping along the edge, and the rail on it from stair to stair.
+      surface(floor, grid(columns, 1, (i, j) => { const p = off(T.edge, angle(i), -.02 + .3 * j); return [p.x, UP + .04, p.z]; }, facingUp), CREAMY);
+      const path: [number, number, number][] = [];
+      for (let i = 0; i <= 6; i++) { const r = T.stair - (T.stair - T.edge) * i / 6; path.push(at3(r - .01, -T.top - .012, UP)); }
+      for (let i = 1; i <= columns; i++) { const p = off(T.edge, angle(i), -.1); path.push([p.x, UP, p.z]); }
+      for (let i = 1; i <= 6; i++) { const r = T.edge + (T.stair - T.edge) * i / 6; path.push(at3(r - .01, T.top + .012, UP)); }
+      railing(path);
+    });
     build.push(() => {
       for (const side of [-1, 1]) {
-        const x = side * 12.6, z = -3.2;
-        place(floor, drum, x, .3, z, .95, .6, .95, 0, 0, 0, CREAMY);
-        place(painted, cylinder, x, .6, z, .85, .04, .85, 0, 0, 0, SOIL);
-        place(shadow, plane, x, .012, z, 3.0, 3.0, 1, -Math.PI / 2);
-        tree(x, .6, z, side < 0 ? 4.6 : 4.2, 2.3, side < 0 ? BLUSH : LEAFY, side < 0 ? 3 : 8);
-        for (let i = 0; i < 5; i++) rosette(x + Math.sin(i * 1.26) * .6, .62, z + Math.cos(i * 1.26) * .6, pick(6, 4), .4, 1.0, i + 2);
+        livingWall(T.edge, side * .2, side * (T.top - .02), () => .25, () => UP - .25, side < 0 ? HYDRANGEA : ROSE, side + 9);
+        for (let i = 0; i < pick(9, 5); i++) {
+          const a = side * (.24 + (T.top - .3) * (i + rnd(i + side * 4) * .5) / pick(9, 5)), p = off(T.edge, a, .06);
+          trail(p.x, UP + .02, p.z, 1.2 + rnd(i + side * 9) * 1.4, Math.atan2(hallInward(a).x, hallInward(a).z), i + 40 + side);
+        }
+        // Planters of flowers just inside the rail.
+        for (let i = 0; i < 4; i++) {
+          const a = side * (.3 + i * .15), p = off(T.edge, a, -.45), yaw = Math.atan2(hallInward(a).x, hallInward(a).z);
+          wood(p.x, UP + .2, p.z, 1.1, .4, .42, 0xd9a676, .03, yaw); place(painted, box, p.x, UP + .41, p.z, 1.0, .03, .34, 0, yaw, 0, SOIL);
+          bouquet(p.x, UP + .42, p.z, 1.1, i % 2 ? ROSE : IVORY, i + side * 3 + 60);
+        }
+      }
+      // The wall fountain: a sheet of water over a dark stone panel, falling from the terrace edge into a marble basin.
+      const panel = grid(10, 6, (i, j) => { const a = -.2 + .4 * i / 10; return at3(T.edge - .002, a, .5 + (UP - .5) * j / 6); }, inwards);
+      surface(painted, panel, 0x37403c);
+      // A marble basin open at the top, filled to a hand below its rim.
+      const front = F.z - F.halfZ + .06, surfaceY = F.rim - .1;
+      slab(floor, F.x, F.rim / 2, front, F.halfX * 2, F.rim, .12, CREAMY);
+      for (const side of [-1, 1]) slab(floor, F.x + side * (F.halfX - .06), F.rim / 2, F.z, .12, F.rim, F.halfZ * 2, CREAMY);
+      slab(floor, F.x, F.rim + .02, front, F.halfX * 2 + .08, .05, .2, CREAMY);
+      for (const side of [-1, 1]) slab(floor, F.x + side * (F.halfX - .06), F.rim + .02, F.z, .2, .05, F.halfZ * 2, CREAMY);
+      place(basin, box, F.x, .1, F.z, F.halfX * 2 - .2, .2, F.halfZ * 2 - .1, 0, 0, 0, 0xdfe6ea);
+      ribbon([F.x - F.halfX + .12, surfaceY, F.z + .04], [F.x + F.halfX - .12, surfaceY, F.z + .04], [0, 0, 1], F.halfZ * 2 - .2, pick(8, 5), 0, .25, 0, [0, 0]);
+      const edge = hallPoint(T.edge, 0);
+      ribbon([F.x, UP + .02, edge.z - .06], [F.x, surfaceY, F.z + .14], [1, 0, 0], 3.2, pick(10, 6), 0, 2.4, 1, [0, 1]);
+      for (let i = 0; i < 9; i++) splash(F.x - 1.45 + i * 2.9 / 8, surfaceY + .01, F.z + .12, 0, -1, .85, pick(16, 10), .14, .25);
+      slab(floor, F.x, UP + .06, edge.z - .08, 3.6, .1, .3, CREAMY);
+      halo(F.x, 1.2, F.z - .4, 3.2, .1, .13, .18);
+    });
+
+    // A marble stair against each side wall, curving up from the hall floor to the terrace, with a rail on its open side.
+    build.push(() => {
+      const N = T.steps, rise = UP / N, top = (i: number) => (i + .5) * rise;
+      // Where each step starts, by how far up the climb it is.
+      const starts: number[] = [];
+      for (let i = 0; i <= N; i++) { let lo = 0, hi = 1; for (let k = 0; k < 30; k++) { const mid = (lo + hi) / 2; if (stairClimb(mid) < i / N) lo = mid; else hi = mid; } starts.push(lo); }
+      const angleOf = (t: number) => T.foot - t * (T.foot - T.top);
+      for (const side of [-1, 1]) {
+        const steps = facets(), radii = [T.stair, T.stair + .07, .9, 1.01];
+        for (let i = 0; i < N; i++) {
+          const a0 = side * angleOf(starts[i]), a1 = side * angleOf(starts[i + 1]), y = top(i), below = i ? top(i - 1) : 0;
+          for (let r = 0; r < radii.length - 1; r++) {
+            steps.add([at3(radii[r], a0, y), at3(radii[r + 1], a0, y), at3(radii[r + 1], a1, y), at3(radii[r], a1, y)], facingUp());
+            const riser = new THREE.Vector3(Math.cos(a0) * H.a, 0, -Math.sin(a0) * H.b).multiplyScalar(side);
+            steps.add([at3(radii[r], a0, below), at3(radii[r + 1], a0, below), at3(radii[r + 1], a0, y), at3(radii[r], a0, y)], riser);
+          }
+        }
+        surface(floor, steps.done(), 0xfbf7f0);
+        // The stringer on the open side follows the climb, a hand above the treads.
+        const columns = pick(40, 24), stringer = (i: number) => starts[0] + (1 - starts[0]) * i / columns;
+        surface(floor, grid(columns, 2, (i, j) => { const t = stringer(i), a = side * angleOf(t), p = off(T.stair, a, .015); return [p.x, j === 0 ? 0 : UP * stairClimb(t) + (j === 2 ? .16 : .12), p.z]; }, inwards), CREAMY);
+        surface(floor, grid(columns, 1, (i, j) => { const t = stringer(i), a = side * angleOf(t), p = off(T.stair, a, .015 - .12 * j); return [p.x, UP * stairClimb(t) + .16, p.z]; }, facingUp), CREAMY);
+        // The rail starts a little way facingUp, where the open side first stands higher than a step.
+        const path: [number, number, number][] = [];
+        for (let i = 0; i <= columns; i++) { const t = .12 + .88 * i / columns, a = side * angleOf(t), p = off(T.stair, a, -.04); path.push([p.x, UP * stairClimb(t) + .16, p.z]); }
+        railing(path, 1.1);
+        const newel = off(T.stair, side * angleOf(.12), -.04); place(floor, box, newel.x, UP * stairClimb(.12) + .7, newel.z, .2, 1.1, .2, 0, 0, 0, CREAMY); lantern(newel.x, UP * stairClimb(.12) + 1.4, newel.z, .9);
+        // Greenery up the wall beside the climb, and a lantern hung over its middle.
+        // Beside the climb the wall is left pale, with ivy and flowers scattered over it and willow let down from above.
+        const climbAt = (a: number) => UP * stairClimb((T.foot - Math.abs(a)) / (T.foot - T.top));
+        livingWall(1, side * (T.foot - .02), side * (T.top + .02), a => climbAt(a) + 1.3, a => climbAt(a) + 2.9, side < 0 ? ROSE : HYDRANGEA, side + 20, pick(6, 3), false);
+        for (let i = 0; i < pick(16, 10); i++) {
+          const a = side * (T.foot - .06 - (T.foot - T.top - .1) * (i + rnd(i + side * 13) * .7) / pick(16, 10)), p = off(1, a, .1);
+          trail(p.x, climbAt(a) + 3.6 + rnd(i + 3) * .4, p.z, 1.4 + rnd(i + side * 5) * 1.0, Math.atan2(hallInward(a).x, hallInward(a).z), i + 70 + side * 20);
+        }
+        const lamp = hallPoint(.78, side * 1.45); rod(painted, lamp.x, bunkerCeilingRise(lamp.x, lamp.z) - .05, lamp.z, lamp.x, 4.6, lamp.z, .006, CORD, wire); lantern(lamp.x, 4.3, lamp.z, 1.5);
+      }
+    });
+
+    // Trees in marble planters at the ends of the lake and on the terrace: blossom to the west, leaf to the east.
+    build.push(() => {
+      for (const [index, spot] of BUNKER_TREES_LOCAL.entries()) {
+        const y = spot.upstairs ? UP : 0, west = spot.x < 0;
+        place(floor, drum, spot.x, y + .3, spot.z, .92, .6, .92, 0, 0, 0, CREAMY);
+        place(painted, cylinder, spot.x, y + .6, spot.z, .82, .04, .82, 0, 0, 0, SOIL);
+        place(shadow, plane, spot.x, y + .012, spot.z, 3.0, 3.0, 1, -Math.PI / 2);
+        tree(spot.x, y + .6, spot.z, spot.upstairs ? 4.6 : 4.2, spot.upstairs ? 2.6 : 2.3, west ? BLUSH : LEAFY, index * 5 + 3, west);
+        for (let i = 0; i < 5; i++) bouquet(spot.x + Math.sin(i * 1.26) * .55, y + .62, spot.z + Math.cos(i * 1.26) * .55, .8, west ? ROSE : HYDRANGEA, i + index * 7);
       }
     });
 
     // The lounge: a deep white rug, two sofas facing each other over a slab table, and three lanterns hung low over it.
     build.push(() => soft(rug, 0, .05, .1, 12.9, .1, 7.5, { radius: .04, seg: 10, tile: 1 / .5 }, 0xf6f0e6));
+    const BACK_LEAN = .17;
     for (const side of [-1, 1]) {
-      const facing = -side * Math.PI / 2;
+      // The sofa's back and its cushions lean back together; everything is worked out for the east sofa and mirrored.
+      const lean = BACK_LEAN, tan = Math.tan(lean), frameFront = (y: number) => 5.913 + (y - .152) * tan;
+      const cushionBack = frameFront(.54), cushionFront = (y: number) => cushionBack - .28 * Math.cos(lean) + (y - .54 - .28 * Math.sin(lean)) * tan;
       build.push(() => {
-        place(shadow, plane, side * 5.5, .112, 0, 3.6, 7.3, 1, -Math.PI / 2);
-        wood(side * 5.4, .14, 0, 1.72, .18, 5.6, CHOCOLATE, .05);
-        soft(boucle, side * 6.16, .62, 0, .46, 1.04, 5.9, { radius: .16, bulge: .02, seg: 8, seed: 4 }, OATMEAL);
-        for (const z of [-2.78, 2.78]) soft(boucle, side * 5.4, .54, z, 1.98, .72, .4, { radius: .17, bulge: .03, crown: .03, seg: 8, seed: z }, CREAM);
+        place(shadow, plane, side * 5.6, .112, 0, 3.8, 7.3, 1, -Math.PI / 2);
+        wood(side * 5.45, .14, 0, 1.9, .18, 5.6, CHOCOLATE, .05);
+        soft(boucle, side * 6.2, .64, 0, .4, 1.06, 5.9, { radius: .16, bulge: .02, seg: 8, seed: 4 }, OATMEAL, 0, 0, -side * lean);
+        for (const z of [-2.78, 2.78]) soft(boucle, side * 5.45, .54, z, 2.0, .72, .4, { radius: .17, bulge: .03, crown: .03, seg: 8, seed: z }, CREAM);
       });
       BUNKER_SOFA_LOCAL.filter(seat => Math.sign(seat.x) === side).forEach((seat, index) => build.push(() => {
-          const crown = .05, sag = .03, thickness = .26, seed = index;
-          // The crown of each cushion sits exactly where a seated visitor's hips land.
-          soft(boucle, seat.x, SEAT_TOP - thickness / 2 - crown + sag, seat.z, 1.5, thickness, 1.72, { radius: .1, crown, bulge: .024, sag, wrinkle: .006, seed, seg: fine }, CREAM);
-          soft(boucle, side * 5.93, .9, seat.z, .36, .74, 1.68, { radius: .15, crown: .03, bulge: .07, wrinkle: .007, seed: seed + 11, seg: fine }, CREAM, 0, 0, side * .17);
+        const crown = .05, sag = .03, thickness = .26, seed = index;
+        // The crown of each cushion sits exactly where a seated visitor's hips land.
+        soft(boucle, seat.x, SEAT_TOP - thickness / 2 - crown + sag, seat.z, 1.5, thickness, 1.72, { radius: .1, crown, bulge: .024, sag, wrinkle: .006, seed, seg: fine }, CREAM);
+        const cx = cushionBack - .14 * Math.cos(lean) + .35 * Math.sin(lean), cy = .54 + .14 * Math.sin(lean) + .35 * Math.cos(lean);
+        soft(boucle, side * cx, cy, seat.z, .28, .7, 1.68, { radius: .13, crown: .03, bulge: .06, wrinkle: .007, seed: seed + 11, seg: fine }, CREAM, 0, 0, -side * lean);
       }));
       build.push(() => {
-        // Loose cushions gather at the ends and between places, never where someone sits.
-        pillow(knit, side * 5.72, .88, 2.42 * side, .54, 1.1, side < 0 ? RUST : FOREST, facing);
-        pillow(boucle, side * 5.5, .84, 2.2 * side, .46, 2.4, CAMEL, facing + .3);
-        pillow(knit, side * 5.72, .88, -2.42 * side, .52, 3.1, side < 0 ? MUSTARD : RUST, facing);
-        pillow(boucle, side * 5.5, .84, -2.18 * side, .44, 4.7, CREAM, facing - .25);
-        pillow(boucle, side * 5.74, .9, .9 * side, .46, 5.2, CHOCOLATE, facing);
+        // Loose cushions gather at the ends and between places, never where someone sits, and lie against the back cushions.
+        const foot = (z: number) => ({ x: side * cushionFront(.55), y: .55, z }), inward = { x: -side, z: 0 };
+        pillow(knit, foot(0), inward, lean, side * 2.24, .54, 1.1, side < 0 ? RUST : FOREST, .08);
+        pillow(boucle, foot(0), inward, lean, side * 2.12, .44, 2.4, CAMEL, -.1, .21);
+        pillow(knit, foot(0), inward, lean, -side * 2.24, .52, 3.1, side < 0 ? MUSTARD : RUST, -.06);
+        pillow(boucle, foot(0), inward, lean, -side * 2.12, .42, 4.7, CREAM, .1, .21);
+        pillow(boucle, foot(0), inward, lean, side * .9, .44, 5.2, CHOCOLATE, .05);
         // A chunky throw over one arm of each sofa.
-        const armZ = 2.78 * side, path = [[4.3, .3], [4.34, .8], [4.68, 1], [5.4, 1.03], [6.12, 1], [6.46, .8], [6.5, .42]].map(([x, y]) => new THREE.Vector3(side * x, y, 0));
+        const armZ = 2.78 * side, path = [[4.35, .3], [4.39, .82], [4.72, 1.0], [5.45, 1.03], [6.18, 1.0], [6.5, .82], [6.54, .42]].map(([x, y]) => new THREE.Vector3(side * x, y, 0));
         place(knit, once(`throw${side}`, () => drapeGeometry(path, .64, { across: new THREE.Vector3(0, 0, 1), folds: 3, depth: .016, seed: side + 2, columns: pick(16, 8), rows: pick(28, 14), tile: KNIT_TILE })), 0, 0, armZ, 1, 1, 1, 0, 0, 0, side < 0 ? 0xcf8f58 : 0xd8c29c);
       });
     }
@@ -805,7 +1235,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
         halo(x, .69 + tall + .06, z, .36, .42, .22, .07);
       }
       place(painted, vase, -.95, .66, .3, 1.25, 1.1, 1.25, 0, 0, 0, 0xf1e6d2);
-      bouquet(-.95, 1.14, .3, 1.5, BLUSH, 4);
+      bouquet(-.95, 1.14, .3, 1.5, ROSE, 4);
       for (const [x, z] of [[-5.3, -3.85], [5.3, 3.85]] as const) {
         place(shadow, plane, x, .112, z, 1.7, 1.7, 1, -Math.PI / 2);
         for (const a of [.8, 2.4, 3.9, 5.5]) wood(x + Math.sin(a) * .3, .27, z + Math.cos(a) * .3, .06, .54, .06, CHOCOLATE, .02);
@@ -813,7 +1243,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
         place(painted, lampBase, x, .615, z, .78, .8, .78, 0, 0, 0, 0xb5754a);
         lampshade(x, 1.34, z, .52, 1.9);
       }
-      for (const [x, y] of [[0, 4.3], [-1.6, 4.7], [1.6, 4.9]] as const) { rod(painted, x, h, .25, x, y + .26, .25, .006, CORD, wire); lantern(x, y, .25, 1.15); }
+      for (const [x, y] of [[0, 4.3], [-1.6, 4.7], [1.6, 4.9]] as const) { rod(painted, x, bunkerCeilingRise(x, .25) - .05, .25, x, y + .26, .25, .006, CORD, wire); lantern(x, y, .25, 1.15); }
     });
 
     // Two fireside game tables with a pouf at each side. The boards are set out here; their stones come from the live game.
@@ -836,179 +1266,64 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       });
     }));
 
-    // West wall: books to the gallery either side of a marble fireplace with a timber mantel, and two chairs drawn up to it.
+    /** A deep chair turned to face `yaw`, with a cushion against its back. */
+    const armchair = (cx: number, cz: number, yaw: number, color: number, seed: number) => {
+      const c = Math.cos(yaw), s = Math.sin(yaw), at = (u: number, v: number) => ({ x: cx + c * u + s * v, z: cz - s * u + c * v });
+      place(shadow, plane, cx, .06, cz, 2.0, 2.0, 1, -Math.PI / 2);
+      soft(boucle, cx, .42, cz, .95, .32, .95, { radius: .13, crown: .04, bulge: .03, seg: 6, seed }, color, 0, yaw);
+      const back = at(0, -.44); soft(boucle, back.x, .95, back.z, .95, .95, .32, { radius: .15, bulge: .05, seg: 6, seed: seed + 2 }, color, -.12, yaw);
+      for (const u of [-.56, .56]) { const arm = at(u, 0); soft(boucle, arm.x, .62, arm.z, .22, .52, .95, { radius: .1, bulge: .03, seg: 6, seed: seed + u }, color, 0, yaw); }
+      const foot = at(0, -.28 + (.95 - .6) * Math.tan(.12));
+      pillow(knit, { x: foot.x, y: .6, z: foot.z }, { x: s, z: c }, .12, 0, .44, seed + 3.3, MUSTARD);
+    };
+
+    // West wall: the fireplace, a marble surround under a timber mantel, with two chairs drawn up to it.
+    build.push(() => {
+      const fire = wallFrame(BUNKER_HEARTH_ANGLE), P = fire.p, yaw = fire.yaw;
+      for (const u of [-1.25, 1.25]) { const q = P(u, .28); slab(floor, q.x, .8, q.z, .5, 1.6, .5, CREAMY, yaw); }
+      let q = P(0, .3); slab(floor, q.x, 1.82, q.z, 3.0, .44, .6, CREAMY, yaw);
+      q = P(0, .45); wood(q.x, 2.1, q.z, 3.4, .1, .5, WALNUT, .03, yaw);
+      q = P(0, .22); slab(floor, q.x, 3.3, q.z, 2.6, 2.2, .44, CREAMY, yaw);
+      q = P(0, .06); place(painted, box, q.x, .8, q.z, 1.9, 1.6, .1, 0, yaw, 0, 0x140e0a);
+      q = P(0, 1.0); slab(floor, q.x, .04, q.z, 3.6, .08, 1.5, CREAMY, yaw);
+      for (let i = 0; i < 4; i++) { const l = P((i - 1.5) * .05, .32 + (i % 2 ? .1 : -.06)); place(painted, once(`fire-log${i % 3}`, () => logGeometry(.08, .9, i % 3 + 1)), l.x, .17 + (i > 1 ? .14 : 0), l.z, 1, 1, 1, Math.PI / 2, yaw - Math.PI / 2 + i * .25, 0, 0x6e5140); }
+      q = P(0, .32); place(glow, smallSphere, q.x, .12, q.z, .5, .05, .3, 0, yaw, 0, 0xff6a1e);
+      q = P(0, .9); halo(q.x, .8, q.z, 2.8, .32, .13, .03);
+      for (const [u, tall] of [[-1.3, .3], [-1.05, .2], [1.2, .26]]) {
+        const c = P(u, .45); place(painted, tin, c.x, 2.15 + tall / 2, c.z, .06, tall, .06, 0, 0, 0, 0xf1e4cb);
+        place(glow, bulb, c.x, 2.2 + tall, c.z, .02, .05, .02, 0, 0, 0, 0xffd28a); halo(c.x, 2.2 + tall, c.z, .4, .4, .2, .06);
+      }
+      q = P(.5, .45); place(painted, vase, q.x, 2.15, q.z, 1.0, .9, 1.0, 0, 0, 0, 0xf1e6d2); bouquet(q.x, 2.5, q.z, 1.1, LILAC, 6);
+      q = P(0, .46); place(oak, ring, q.x, 3.4, q.z, .6, .6, 1.4, 0, yaw, 0, WALNUT);
+      for (let i = 0; i < 12; i++) { const w = P(Math.sin(i * .524) * .6, .5); card(w.x, 3.4 + Math.cos(i * .524) * .6, w.z, .42, yaw, 0, LEAFY[i % LEAFY.length], .2, i % 3); }
+      for (const u of [-1.05, 1.05]) { const chair = P(u, 2.6); armchair(chair.x, chair.z, yaw + Math.PI + u * .25, CAMEL, 4 + u); }
+      const rugAt = P(0, 2.2); place(rug, cylinder, rugAt.x, .035, rugAt.z, 2.6, .07, 2.6, 0, 0, 0, 0xf3e9da);
+    });
+
+    // East wall: a daybed along the wall under a lilac throw, with a moon lamp at one end and flowers at the other.
+    build.push(() => {
+      const bed = wallFrame(BUNKER_DAYBED_ANGLE), P = bed.p, yaw = bed.yaw;
+      let q = P(0, 1.2);
+      place(shadow, plane, q.x, .012, q.z, 4.2, 4.2, 1, -Math.PI / 2);
+      wood(q.x, .22, q.z, 3.2, .44, 1.9, WALNUT, .05, yaw);
+      soft(boucle, q.x, .62, q.z, 3.0, .36, 1.8, { radius: .12, crown: .03, seg: 8, seed: 1 }, 0xfbf6ee, 0, yaw);
+      q = P(.45, 1.25); soft(knit, q.x, .84, q.z, 2.0, .12, 1.86, { radius: .05, bulge: .03, wrinkle: .02, seed: 2, seg: 8, tile: KNIT_TILE }, 0xd9c3ea, 0, yaw);
+      q = P(0, .22); wood(q.x, 1.05, q.z, 3.3, 1.5, .12, HONEY, .04, yaw);
+      // Pillows stand on the mattress and lean back on the board behind them.
+      const lean = .22, foot = (u: number) => { const f = P(u, .28 + .62 * Math.sin(lean)); return { x: f.x, y: .8, z: f.z }; };
+      for (const [u, color, seed] of [[-1.0, 0xfbf6ee, 1], [0, 0xe6d6f2, 2], [1.0, 0xfbf6ee, 3]] as const) pillow(boucle, foot(u), bed.n, lean, 0, .62, seed + 20, color, (seed - 2) * .06);
+      pillow(knit, foot(-.45), bed.n, lean, 0, .44, 31, 0xcdb4e6, .12, .21);
+      for (const [u, moon] of [[-2.15, true], [2.15, false]] as const) {
+        q = P(u, .6); wood(q.x, .3, q.z, .9, .6, .9, HONEY, .04, yaw);
+        if (moon) { place(glow, sphere, q.x, .9, q.z, .28, .28, .28, 0, 0, 0, 0xfff1d0); place(brass, tin, q.x, .62, q.z, .16, .04, .16); halo(q.x, .9, q.z, 1.9, .3, .24, .15); }
+        else { place(painted, vase, q.x, .6, q.z, 1.2, 1.1, 1.2, 0, 0, 0, 0xf1e6d2); bouquet(q.x, 1.02, q.z, 1.5, HYDRANGEA, 9); }
+      }
+      q = P(0, 2.8); soft(rug, q.x, .04, q.z, 3.6, .08, 2.0, { radius: .03, seg: 6, tile: 2 }, 0xfaf4ea, 0, yaw);
+    });
+
+    // Upstairs: a timber pavilion to read in, books along the back wall, and greenery either side of them.
     {
-      const HX = BUNKER_HEARTH_LOCAL.x, HZ = BUNKER_HEARTH_LOCAL.z, wallX = E.minX;
-    build.push(() => {
-      for (const z0 of [-4.4, 4.6]) {
-        const zc = z0 + 1.9, books = pick(11, 6);
-        for (const dz of [-1.9, 0, 1.9]) wood(wallX + .3, 2.1, zc + dz, .5, 4.2, .08, HONEY, .012);
-        for (let shelf = 0; shelf < 7; shelf++) {
-          const y = .12 + shelf * .66;
-          wood(wallX + .3, y, zc, .5, .07, 3.8, HONEY, .012);
-          if (shelf < 6) for (let bay = 0; bay < 2; bay++) for (let book = 0; book < books; book++) {
-            if ((shelf * 3 + bay + book) % 11 === 0) continue;
-            const thick = 1.7 / books - .015, tall = .36 + ((book * 3 + shelf * 2 + bay) % 5) * .04;
-            place(painted, box, wallX + .34, y + .04 + tall / 2, zc - 1.75 + bay * 1.9 + book * 1.7 / books, .34, tall, thick, 0, 0, 0, PALETTE[(bay + shelf + book) % PALETTE.length]);
-          }
-        }
-      }
-    });
-    build.push(() => {
-      for (const dz of [-.22, .22]) rod(oak, wallX + 1.3, 0, 6.5 + dz, wallX + .55, 4.0, 6.5 + dz, .03, WALNUT);
-      for (let i = 1; i < 9; i++) rod(oak, wallX + 1.3 - .75 * i / 9.5, 4.0 * i / 9.5, 6.28, wallX + 1.3 - .75 * i / 9.5, 4.0 * i / 9.5, 6.72, .02, HONEY);
-      for (const dz of [-1.2, 1.2]) slab(floor, HX + .15, .8, HZ + dz, .8, 1.6, .5, CREAMY);
-      slab(floor, HX + .15, 1.82, HZ, .8, .44, 2.9, CREAMY);
-      wood(HX + .3, 2.1, HZ, 1.0, .1, 3.3, WALNUT, .03);
-      slab(floor, HX - .1, 3.3, HZ, .5, 2.2, 2.5);
-      place(painted, box, HX - .3, .8, HZ, .1, 1.6, 1.9, 0, 0, 0, 0x140e0a);
-      slab(floor, HX + 1.0, .04, HZ, 1.7, .08, 3.6, CREAMY);
-      for (let i = 0; i < 4; i++) place(painted, once(`fire-log${i % 3}`, () => logGeometry(.08, .9, i % 3 + 1)), HX + .15 + (i % 2 ? .1 : -.08), .17 + (i > 1 ? .14 : 0), HZ + (i - 1.5) * .05, 1, 1, 1, Math.PI / 2, i * .25, 0, 0x6e5140);
-      place(glow, smallSphere, HX + .15, .12, HZ, .3, .05, .5, 0, 0, 0, 0xff6a1e);
-      halo(HX + .8, .8, HZ, 2.8, .32, .13, .03);
-      for (const [dz, tall] of [[-1.3, .3], [-1.05, .2], [1.2, .26]]) {
-        place(painted, tin, HX + .3, 2.15 + tall / 2, HZ + dz, .06, tall, .06, 0, 0, 0, 0xf1e4cb);
-        place(glow, bulb, HX + .3, 2.2 + tall, HZ + dz, .02, .05, .02, 0, 0, 0, 0xffd28a); halo(HX + .36, 2.2 + tall, HZ + dz, .4, .4, .2, .06);
-      }
-      place(painted, vase, HX + .3, 2.15, HZ + .5, 1.0, .9, 1.0, 0, 0, 0, 0xf1e6d2); bouquet(HX + .3, 2.5, HZ + .5, 1.1, LILAC, 6);
-      place(oak, ring, HX + .18, 3.4, HZ, .6, .6, 1.4, 0, Math.PI / 2, 0, WALNUT);
-      for (let i = 0; i < 12; i++) card(HX + .22, 3.4 + Math.cos(i * .524) * .6, HZ + Math.sin(i * .524) * .6, .42, Math.PI / 2, 0, LEAFY[i % LEAFY.length], .2);
-    });
-    build.push(() => {
-      place(rug, cylinder, -14.9, .035, HZ, 2.7, .07, 2.7, 0, 0, 0, 0xf3e9da);
-      armchair(-14.3, .2, CAMEL, 1, 4); armchair(-14.3, 3.8, CAMEL, 1, 4);
-      pillow(knit, -14.1, .82, .2, .46, 3.3, MUSTARD, -Math.PI / 2); pillow(knit, -14.1, .82, 3.8, .46, 5.1, 0xcdb4e6, -Math.PI / 2);
-      place(oak, tin, -14.5, .56, HZ, .4, .05, .4, 0, 0, 0, 0xe6b27c); place(oak, tin, -14.5, .28, HZ, .06, .54, .06, 0, 0, 0, CHOCOLATE);
-      place(painted, lampBase, -14.5, .585, HZ, .6, .62, .6, 0, 0, 0, 0xb5754a); lampshade(-14.5, 1.2, HZ, .42, 1.7);
-    });
-    }
-
-    // East wall: a wide daybed under a lilac blanket with a moon lamp beside it, and a round table set for tea.
-    {
-      const bx = 16.3, bz = 1.2, tx = 12.6, tz = 6.1;
-    build.push(() => {
-      place(shadow, plane, bx - .2, .012, bz, 4.2, 5.4, 1, -Math.PI / 2);
-      wood(bx, .22, bz, 3.2, .44, 4.4, WALNUT, .05);
-      wood(bx, 1.05, bz - 2.26, 3.3, 1.5, .12, HONEY, .04);
-      soft(boucle, bx, .62, bz, 3.0, .36, 4.2, { radius: .12, crown: .03, seg: 8, seed: 1 }, 0xfbf6ee);
-      soft(knit, bx, .84, bz + .9, 3.08, .12, 2.5, { radius: .05, bulge: .03, wrinkle: .02, seed: 2, seg: 8, tile: KNIT_TILE }, 0xd9c3ea);
-      for (const [dx, color, seed] of [[-1.0, 0xfbf6ee, 1], [0, 0xe6d6f2, 2], [1.0, 0xfbf6ee, 3]] as const) pillow(boucle, bx + dx, 1.05, bz - 1.85, .62, seed + 20, color, 0, 1.0);
-      pillow(knit, bx - .4, .98, bz - 1.4, .46, 31, 0xcdb4e6, .3, 1.1);
-      for (const [nz, moon] of [[-1.9, true], [4.3, false]] as const) {
-        wood(16.9, .3, nz, .9, .6, .9, HONEY, .04);
-        if (moon) { place(glow, sphere, 16.9, .9, nz, .28, .28, .28, 0, 0, 0, 0xfff1d0); place(brass, tin, 16.9, .62, nz, .16, .04, .16); halo(16.9, .9, nz, 1.9, .3, .24, .15); }
-        else { place(painted, vase, 16.9, .6, nz, 1.2, 1.1, 1.2, 0, 0, 0, 0xf1e6d2); bouquet(16.9, 1.02, nz, 1.5, LILAC, 9); }
-      }
-      soft(rug, 13.7, .04, bz, 2.2, .08, 3.8, { radius: .03, seg: 6, tile: 2 }, 0xfaf4ea);
-    });
-    build.push(() => {
-      place(shadow, plane, tx, .012, tz, 3.4, 2.6, 1, -Math.PI / 2);
-      place(oak, cylinder, tx, .72, tz, .78, .06, .78, 0, 0, 0, 0xe6b27c); place(oak, cylinder, tx, .36, tz, .09, .7, .09, 0, 0, 0, CHOCOLATE); place(oak, cylinder, tx, .03, tz, .4, .06, .4, 0, 0, 0, CHOCOLATE);
-      armchair(tx - 1.0, tz, 0xf1e6d2, -1, 4); armchair(tx + 1.0, tz, 0xf1e6d2, 1, 4);
-      place(painted, vase, tx + .1, .75, tz - .28, 1.0, .55, 1.0, 0, 0, 0, 0xc2794a);
-      [ENAMEL, 0xe8dcc8].forEach((color, i) => place(painted, cup, tx - .32 + i * .5, .75, tz + .26, 1, 1, 1, 0, 0, 0, color));
-      place(painted, vase, tx - .18, .75, tz - .1, .7, .6, .7, 0, 0, 0, 0xf1e6d2); bouquet(tx - .18, .98, tz - .1, .8, BLUSH, 12);
-      rod(painted, tx, T.height - .2, tz, tx, 2.84, tz, .006, CORD, wire); lantern(tx, 2.5, tz, 1.3);
-    });
-    }
-
-    // The cliff the terrace stands on, with three falls down its face into the lagoon.
-    build.push(() => {
-      const top = T.height, face = LG.maxZ, foot = LG.level - LG.depth, falls = LAGOON_FALLS.map(fall => fall[0]);
-      const relief = crag(-10.4, 10.4, foot, top, face, 3, falls, 2.05);
-      slab(stone, 0, top - .2, face + 1.15, 20.8, .4, 2.3, 0xbfb7a8);
-      const dry = (x: number, clear: number) => falls.every(at => Math.abs(x - at) > (at ? clear : clear + .8));
-      // What lives on a wet rock face: ivy over the blocks, ferns on the ledges, vines let down from the terrace above.
-      for (let i = 0; i < pick(22, 9); i++) {
-        const cx = -9.6 + rnd(i * 3.1 + 2) * 19.2, cy = LG.level + .6 + rnd(i * 5.7 + 1) * (top - LG.level - .9);
-        if (dry(cx, 1)) for (let leafy = 0; leafy < 4; leafy++) {
-          const x = cx + (rnd(i * 7 + leafy) - .5) * 1.1, y = cy + (rnd(i * 11 + leafy) - .5) * .8;
-          card(x, y, face - relief(x, y) - .07, .4 + rnd(i + leafy * 3 + 40) * .3, (rnd(i + leafy + 41) - .5) * .6, -.1 - rnd(i + leafy + 42) * .3, GREENS[(i + leafy) % GREENS.length], .35);
-        }
-      }
-      for (let i = 0; i < pick(12, 6); i++) {
-        const x = -9.4 + (i + rnd(i + 60) * .6) * 18.8 / pick(12, 6);
-        if (!dry(x, .9)) continue;
-        hangVine(x, top - .05, face - relief(x, top - .5) - .22, 1.1 + rnd(i + 61) * 1.5, i + 70, i % 3 ? undefined : LILAC);
-        if (i % 2) rosette(x + .5, top - .02, face - .1, pick(7, 5), .5, 1.0, i + 1);
-      }
-      // Boulders that came down long ago and sit half in the water.
-      for (let i = 0; i < pick(6, 4); i++) {
-        const x = -8.4 + i * 16.8 / (pick(6, 4) - 1) + (rnd(i + 80) - .5) * 1.2, size = .7 + rnd(i + 81) * .7;
-        if (dry(x, 1.3)) boulder(stone, x, LG.level - .04, face - relief(x, LG.level) - .45, size * .55, size * .34, size * .45, i, i % 2 ? 0xb9b1a3 : 0x9d968a);
-      }
-      for (const [x, reach, strength] of LAGOON_FALLS) {
-        if (x === 0) {
-          ribbon([x, top - .02, face - relief(x, top - .1) - .05], [x, LG.level, face - reach], [1, 0, 0], 3.0, pick(10, 6), 0, 2.6, 1, [0, 1]);
-        } else {
-          ribbon([x, top - .02, face - relief(x, top - .1) - .05], [x, 2.1, face - relief(x, 2.6) - .4], [1, 0, 0], 1.3, pick(6, 4), 0, 2.4, 1, [0, 0]);
-          ribbon([x, 2.08, face - relief(x, 1.5) - .04], [x, LG.level, face - reach], [1, 0, 0], 1.7, pick(6, 4), 2.2, 2.4, 1, [0, 1]);
-          halo(x, 2.3, face - .7, 1.5, .08, .1, .1);
-        }
-        halo(x, LG.level + .32, face - reach, 2.4 + strength * 2, .1 + strength * .06, .13 + strength * .07, .13 + strength * .07);
-      }
-      // The lagoon bed, a marble kerb to stand at, and beds of flowers where it meets the stairs.
-      sheet(basin, 0, LG.level - LG.depth, (LG.minZ + face + 1) / 2, LG.maxX - LG.minX, face + 1 - LG.minZ, -Math.PI / 2, 0, 0xe9dfc8);
-      sheet(basin, 0, (LG.level - LG.depth + .16) / 2, LG.minZ, LG.maxX - LG.minX, LG.depth - LG.level + .16, 0, 0, 0xdcd2bc);
-      for (const side of [-1, 1]) sheet(basin, side * LG.maxX, (LG.level - LG.depth + .16) / 2, (LG.minZ + face) / 2, face - LG.minZ, LG.depth - LG.level + .16, 0, -side * Math.PI / 2, 0xdcd2bc);
-      for (let i = 0; i < pick(22, 10); i++) { const size = .22 + rnd(i + 1) * .34; boulder(basin, -8.8 + rnd(i * 2.3 + 7) * 17.6, LG.level - LG.depth + size * .3, LG.minZ + .5 + rnd(i + 4) * 4.4, size, size * .55, size * (.7 + rnd(i + 2) * .5), i, i % 3 ? 0xcfc6b2 : 0xa9a08d); }
-      slab(floor, 0, .08, LG.minZ - .25, LG.maxX - LG.minX + 1, .16, .5, CREAMY);
-      for (const side of [-1, 1]) {
-        slab(floor, side * (LG.maxX + .25), .08, (LG.minZ + face) / 2, .5, .16, face - LG.minZ, CREAMY);
-        for (let i = 0; i < 3; i++) bouquet(side * (LG.maxX + .26), .16, LG.minZ + .7 + i * 1.9, 1.3, i % 2 ? LILAC : BLUSH, i + side * 5 + 30);
-      }
-      // Still water for a phone, in the same hand as the falls. A desktop swaps it for the sea engine from the beach.
-      const positions: number[] = [], normals: number[] = [], uvs: number[] = [], kinds: number[] = [], indices: number[] = [], nx = 24, nz = 8;
-      for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
-        const x = LG.minX + (LG.maxX - LG.minX) * i / nx, z = LG.minZ + (face - LG.minZ) * j / nz, reach = Math.min(Math.hypot(x, z - face + .5), Math.hypot(Math.abs(x) - 6.3, z - face + 1)), bank = Math.min(x - LG.minX, LG.maxX - x, z - LG.minZ);
-        positions.push(x, LG.level, z); normals.push(0, 1, 0); uvs.push(reach, Math.min(.5, bank * .7)); kinds.push(.4, 0, Math.exp(-reach * 1.3));
-      }
-      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i; indices.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2); }
-      const still = new THREE.BufferGeometry();
-      still.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3)); still.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-      still.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); still.setAttribute("color", new THREE.Float32BufferAttribute(kinds, 3));
-      still.setIndex(indices); lagoonPieces.push(still);
-    });
-
-    // A marble stair up each side of the lagoon, with planted steps against the wall beside it.
-    build.push(() => {
-      const steps = 22, run = (T.z - T.stairZ) / steps, rise = T.height / steps, width = T.stairOuter - T.stairInner, mid = (T.stairInner + T.stairOuter) / 2;
-      for (const side of [-1, 1]) {
-        for (let i = 0; i < steps; i++) place(floor, box, side * mid, (i + 1) * rise / 2, T.stairZ + (i + .5) * run, width, (i + 1) * rise, run, 0, 0, 0, i % 2 ? 0xffffff : 0xf7f1e6);
-        soft(rug, side * mid, T.height / 2 + .03, (T.stairZ + T.z) / 2, 2.2, .04, Math.hypot(T.z - T.stairZ, T.height) + .1, { radius: .015, seg: 8, tile: 2 }, 0xb9744a, Math.atan2(T.height, T.z - T.stairZ) * -1);
-        for (const x of [T.stairInner + .08, T.stairOuter - .08]) balustrade(side * x, 0, T.stairZ, side * x, T.height, T.z);
-        for (const x of [T.stairInner + .08, T.stairOuter - .08]) { place(floor, box, side * x, .7, T.stairZ - .1, .3, 1.4, .3, 0, 0, 0, CREAMY); lantern(side * x, 1.66, T.stairZ - .1, 1.1); }
-        for (let k = 0; k < 4; k++) {
-          const z = T.stairZ + 1.05 + k * 2.1, high = 1.1 * (k + 1), x = side * (T.stairOuter + E.maxX) / 2;
-          slab(floor, x, high / 2, z, E.maxX - T.stairOuter, high, 2.1, CREAMY);
-          place(painted, box, x, high + .02, z, 1.2, .04, 1.8, 0, 0, 0, SOIL);
-          bouquet(x, high + .04, z - .5, 1.4, k % 2 ? BLUSH : LILAC, k + side * 3 + 50); rosette(x, high + .04, z + .4, pick(9, 6), .7, .9, k + 2);
-          hangVine(side * (T.stairOuter + .1), high, z + .7, .7 + rnd(k) * .5, k + 80 + side);
-        }
-        rod(painted, side * 13.5, h, 12.8, side * 13.5, 4.0, 12.8, .006, CORD, wire); lantern(side * 13.5, 3.6, 12.8, 1.7);
-      }
-    });
-
-    // Upstairs: the stream that feeds the falls, a rail to lean on, two trees, a timber pavilion to read in, books and flowers along the walls.
-    {
-      const y = T.height, face = LG.maxZ, pz = 24.4, wallZ = E.maxZ, books = pick(20, 9);
-    build.push(() => {
-      balustrade(-T.stairInner, y, T.z + .25, T.stairInner, y, T.z + .25);
-      for (const side of [-1, 1]) balustrade(side * T.stairOuter, y, T.z + .05, side * (E.maxX - .1), y, T.z + .05);
-      for (const dz of [-.42, .42]) slab(floor, 0, y + .12, 18.35 + dz, 16.6, .24, .16, CREAMY);
-      place(painted, box, 0, y + .04, 18.35, 16.4, .08, .7, 0, 0, 0, 0x1c2a26);
-      for (const side of [-1, 1]) ribbon([side * 8.1, y + .16, 18.35], [side * .2, y + .16, 18.35], [0, 0, 1], .66, pick(10, 6), 0, .6, 0, [0, 0]);
-      for (const [x, width] of [[0, 3.0], [-6.3, 1.2], [6.3, 1.2]]) ribbon([x, y + .15, 18.0], [x, y - .03, face - .08], [1, 0, 0], width, 4, 0, 1.4, 0, [0, .7]);
-      for (let i = 0; i < 6; i++) bouquet(-7.5 + i * 3, y + .24, 18.9, 1.0, i % 2 ? BLUSH : LILAC, i + 60);
-    });
-    build.push(() => {
-      for (const [x, z, palette, seed, height] of [[-10.6, 22.6, BLUSH, 5, 5.2], [10.8, 22.2, LEAFY, 11, 4.8]] as const) {
-        place(floor, drum, x, y + .28, z, .9, .56, .9, 0, 0, 0, CREAMY); place(painted, cylinder, x, y + .56, z, .8, .04, .8, 0, 0, 0, SOIL);
-        tree(x, y + .56, z, height, 2.9, palette, seed);
-        for (let i = 0; i < 5; i++) bouquet(x + Math.sin(i * 1.26) * .55, y + .58, z + Math.cos(i * 1.26) * .55, .8, palette === BLUSH ? BLUSH : LILAC, i + seed);
-      }
-    });
-    // The pavilion.
+      const y = UP, pz = BUNKER_PAVILION_LOCAL.z;
     build.push(() => {
       for (const x of [-3.2, 3.2]) for (const z of [pz - 1.7, pz + 1.7]) wood(x, y + 1.5, z, .18, 3.0, .18, WALNUT, .03);
       for (const z of [pz - 1.7, pz + 1.7]) wood(0, y + 3.06, z, 6.9, .16, .2, WALNUT, .03);
@@ -1019,56 +1334,55 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
         wood(side * 2.3, y + .24, pz, .9, .48, 2.6, 0xd9a676, .04);
         soft(boucle, side * 2.3, y + .56, pz, .86, .18, 2.5, { radius: .07, crown: .02, seg: 5, seed: side }, 0xfbf6ee);
         wood(side * 2.72, y + .86, pz, .1, .7, 2.6, 0xd9a676, .03);
-        for (let i = 0; i < 3; i++) pillow(i % 2 ? knit : boucle, side * 2.52, y + .92, pz - .9 + i * .9, .5, i + 7 + side, [0xcdb4e6, 0xfbf6ee, 0xf2a9c0][i], -side * Math.PI / 2);
+        const lean = .2, foot = { x: side * (2.67 - .5 * Math.sin(lean)), y: y + .66, z: pz };
+        for (let i = 0; i < 3; i++) pillow(i % 2 ? knit : boucle, foot, { x: -side, z: 0 }, lean, side * (-.85 + i * .85), .48, i + 7 + side, [0xcdb4e6, 0xfbf6ee, 0xf2a9c0][i], (i - 1) * .07);
         lantern(side * 3.2, y + 2.4, pz, 1.2);
       }
       wood(0, y + .4, pz, 1.3, .08, 1.3, 0xe6b27c, .04); for (const dx of [-.5, .5]) for (const dz of [-.5, .5]) wood(dx, y + .19, pz + dz, .1, .36, .1, CHOCOLATE, .02);
-      place(painted, vase, 0, y + .44, pz, 1.2, 1.0, 1.2, 0, 0, 0, 0xf1e6d2); bouquet(0, y + .84, pz, 1.4, BLUSH, 15);
-      rod(painted, 0, h, pz, 0, y + 2.9, pz, .006, CORD, wire); lantern(0, y + 2.56, pz, 1.6);
+      place(painted, vase, 0, y + .44, pz, 1.2, 1.0, 1.2, 0, 0, 0, 0xf1e6d2); bouquet(0, y + .84, pz, 1.4, ROSE, 15);
+      rod(painted, 0, bunkerCeilingRise(0, pz) - .05, pz, 0, y + 2.9, pz, .006, CORD, wire); lantern(0, y + 2.56, pz, 1.6);
     });
-    // Books along the back wall, with planted beds either side and down both flanks.
     build.push(() => {
-      sheet(oak, 0, y + 1.6, wallZ - .06, 18, 3.2, 0, Math.PI, 0xc9a27a);
-      for (const dx of [-9, -4.5, 0, 4.5, 9]) wood(dx, y + 1.6, wallZ - .3, .08, 3.2, .5, HONEY, .012);
-      for (let shelf = 0; shelf < 6; shelf++) {
-        wood(0, y + .1 + shelf * .62, wallZ - .3, 18, .07, .5, HONEY, .012);
-        if (shelf < 5) for (let bay = 0; bay < 4; bay++) for (let book = 0; book < books; book++) {
-          if ((shelf * 2 + bay + book) % 13 === 0) continue;
-          const thick = 4.0 / books - .02, tall = .34 + ((book * 3 + shelf * 2 + bay) % 5) * .04;
-          place(painted, box, -8.7 + bay * 4.5 + book * 4.0 / books, y + .14 + shelf * .62 + tall / 2, wallZ - .34, thick, tall, .34, 0, 0, 0, PALETTE[(bay + shelf + book) % PALETTE.length]);
+      // Bays of shelves following the curve of the back wall, shallow enough to stand within a visitor's reach of the wall.
+      const bays = pick(12, 9), span = .62, books = pick(9, 5);
+      for (let b = 0; b < bays; b++) {
+        const a = -span + 2 * span * (b + .5) / bays, frame = wallFrame(a), width = arc(-span + 2 * span * (b + 1) / bays) - arc(-span + 2 * span * b / bays) - .06;
+        const back = frame.p(0, .03); place(oak, box, back.x, y + 1.6, back.z, width, 3.2, .04, 0, frame.yaw, 0, 0xc9a27a);
+        for (const u of [-width / 2, width / 2]) { const post = frame.p(u, .2); wood(post.x, y + 1.6, post.z, .06, 3.2, .34, HONEY, .012, frame.yaw); }
+        for (let shelf = 0; shelf < 6; shelf++) {
+          const board = frame.p(0, .2); wood(board.x, y + .1 + shelf * .6, board.z, width, .06, .34, HONEY, .012, frame.yaw);
+          if (shelf < 5) for (let book = 0; book < books; book++) {
+            if ((shelf * 2 + b + book) % 11 === 0) continue;
+            const thick = (width - .1) / books - .015, tall = .32 + ((book * 3 + shelf * 2 + b) % 5) * .04, at = frame.p(-width / 2 + .05 + (book + .5) * (width - .1) / books, .2);
+            place(painted, box, at.x, y + .14 + shelf * .6 + tall / 2, at.z, thick, tall, .28, 0, frame.yaw, 0, PALETTE[(b + shelf + book) % PALETTE.length]);
+          }
         }
       }
-    });
-    build.push(() => {
       for (const side of [-1, 1]) {
-        slab(floor, side * 13.6, y + .26, wallZ - .5, 8.2, .52, .9, CREAMY); place(painted, box, side * 13.6, y + .53, wallZ - .5, 7.9, .04, .7, 0, 0, 0, SOIL);
-        slab(floor, side * 17.3, y + .26, 21.6, 1.1, .52, 7.0, CREAMY); place(painted, box, side * 17.3, y + .53, 21.6, .9, .04, 6.8, 0, 0, 0, SOIL);
-        for (let i = 0; i < 6; i++) { bouquet(side * (10 + i * 1.4), y + .55, wallZ - .5, 1.3, i % 2 ? BLUSH : LILAC, i + 100 + side); if (i % 2) rosette(side * (10.7 + i * 1.4), y + .55, wallZ - .45, pick(8, 5), .8, .8, i + 3); }
-        for (let i = 0; i < 5; i++) { bouquet(side * 17.3, y + .55, 18.8 + i * 1.4, 1.2, i % 2 ? LILAC : BLUSH, i + 120 + side); rosette(side * 17.35, y + .55, 19.5 + i * 1.4, pick(8, 5), .7, .9, i + 9); }
-        for (let i = 0; i < pick(8, 5); i++) hangVine(side * (9.8 + i * 1.05), y + 5.6, wallZ - .12, 1.6 + rnd(i + 50) * 1.6, i + 140 + side, i % 2 ? LILAC : undefined);
+        livingWall(1, side * (span + .02), side * (T.top + .05), () => y + 1.15, () => y + 3.6, side < 0 ? ROSE : HYDRANGEA, side + 30);
+        for (let i = 0; i < 4; i++) {
+          const a = side * (span + .06 + i * .07), p = off(1, a, .5);
+          place(painted, pot, p.x, y, p.z, .5, .5, .5, 0, 0, 0, 0xb9744a); bouquet(p.x, y + .36, p.z, 1.1, i % 2 ? IVORY : side < 0 ? ROSE : HYDRANGEA, i + side * 3 + 5);
+        }
       }
     });
     }
 
-    // Overhead: a rosette of lit alabaster in timber rings where a dome would be, a ring of candles under it, and wisteria let down all round.
+    // Overhead: a brass chandelier of candles over the lake, and wisteria let down from the cornice all round.
     build.push(() => {
-      const cz = 6, top = h;
-      place(glow, cylinder, 0, top - .05, cz, 4.5, .04, 4.5, 0, 0, 0, 0xfff0d2);
-      for (const r of [4.62, 2.3]) place(oak, ring, 0, top - .14, cz, r, r, 4.2, Math.PI / 2, 0, 0, WALNUT);
-      for (let i = 0; i < 12; i++) place(oak, box, Math.sin(i * .5236) * 2.3, top - .1, cz + Math.cos(i * .5236) * 2.3, .12, .1, 4.6, 0, i * .5236, 0, WALNUT);
-      halo(0, top - .5, cz, 11, .2, .16, .11);
-      for (const [radius, y, bulbs] of [[2.7, 8.5, 16], [1.4, 9.3, 8]] as const) {
-        place(brass, ring, 0, y, cz, radius, radius, 2.4, Math.PI / 2);
-        for (let i = 0; i < 6; i++) rod(painted, Math.sin(i * 1.047) * radius, y, cz + Math.cos(i * 1.047) * radius, Math.sin(i * 1.047) * radius * .5, top - .1, cz + Math.cos(i * 1.047) * radius * .5, .008, CORD, wire);
+      for (const [radius, y, bulbs] of [[2.2, 8.0, 16], [1.2, 8.7, 8]] as const) {
+        place(brass, ring, LAKE.x, y, LAKE.z, radius, radius, 2.4, Math.PI / 2);
+        for (let i = 0; i < 6; i++) rod(painted, LAKE.x + Math.sin(i * 1.047) * radius, y, LAKE.z + Math.cos(i * 1.047) * radius, LAKE.x + Math.sin(i * 1.047) * radius * .3, bunkerCeilingRise(LAKE.x, LAKE.z) - .1, LAKE.z + Math.cos(i * 1.047) * radius * .3, .008, CORD, wire);
         for (let i = 0; i < bulbs; i++) {
-          const a = i / bulbs * Math.PI * 2, x = Math.sin(a) * radius, z = cz + Math.cos(a) * radius;
+          const a = i / bulbs * TAU, x = LAKE.x + Math.sin(a) * radius, z = LAKE.z + Math.cos(a) * radius;
           place(painted, tin, x, y + .1, z, .05, .16, .05, 0, 0, 0, 0xf1e6d0);
           place(glow, bulb, x, y + .25, z, .05, .09, .05, 0, 0, 0, 0xffe0a8); halo(x, y + .26, z, .9, .34, .18, .06);
         }
       }
-      for (let i = 0; i < pick(26, 14); i++) {
-        const a = i / pick(26, 14) * Math.PI * 2, r = 4.75 + (i % 3) * .5;
-        hangVine(Math.sin(a) * r, top - .2, cz + Math.cos(a) * r, 2.2 + rnd(i + 200) * 3.2, i + 200, LILAC);
+      for (let i = 0; i < pick(30, 16); i++) {
+        const a = (i + .5) / pick(30, 16) * TAU - Math.PI, p = off(1, a, .35);
+        if (Math.abs(p.x) < 1.5 && p.z < 0) continue;
+        hangVine(p.x, H.wall - .1, p.z, 1.6 + rnd(i + 200) * 2.2, i + 200, i % 3 ? LILAC : undefined);
       }
     });
 
@@ -1093,15 +1407,22 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       boucle.map = null; boucle.normalMap = baked.boucle; boucle.normalScale = new THREE.Vector2(.9, .9);
       knit.map = null; knit.normalMap = baked.knit; knit.normalScale = new THREE.Vector2(1.1, 1.1);
       rug.normalMap = baked.boucle; rug.normalScale = new THREE.Vector2(.9, .9);
-      // The cliff and the lagoon bed wear a photograph of real rock; if it cannot be fetched they fall back to drawn stone.
+      // Bark and boulders wear a photograph of real rock; if it cannot be fetched they fall back to drawn stone.
+      // The lake is lined with the same pale marble as the floor, so its water reads clear and clean.
       const rock = options.loadTexture?.("/beach/real/rock.jpg");
-      stone.map = basin.map = baked.stone;
+      stone.map = baked.stone; basin.map = floor.map;
       if (rock) {
         rock.wrapS = rock.wrapT = THREE.RepeatWrapping; rockPhoto = rock;
-        awaitRock = () => { if (!rock.image) return; stone.map = basin.map = rock; awaitRock = null; };
+        awaitRock = () => { if (!rock.image) return; stone.map = rock; awaitRock = null; };
       }
-      sprays = bakeDrawn(options.renderer, pick(1024, 512), SPRAY_FRAG, "leaf-sprays", false);
+      sprays = bakeDrawn(options.renderer, pick(1024, 512), FOLIAGE_FRAG, "leaf-sprays", false);
       canopy.map = sprays.texture;
+      // Trailing greenery is a photograph of a real willow; until it has arrived nothing of it is drawn.
+      const photo = options.loadTexture?.("/garden/art/willow-canopy-v1.webp");
+      if (photo) {
+        willowPhoto = photo; willow.map = photo;
+        awaitWillow = () => { if (!photo.image) return; willow.visible = true; willow.needsUpdate = true; awaitWillow = null; };
+      }
       // Relief only shows where light is worked out per pixel, so a phone does not pay for it.
       if (!mobile) { stone.normalMap = baked.stoneNormal; stone.normalScale = new THREE.Vector2(.9, .9); }
       for (const material of [oak, boucle, knit, rug, stone, basin, canopy]) material.needsUpdate = true;
@@ -1122,7 +1443,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       petalGeometry.instanceCount = petalCount;
       petalGeometry.setAttribute("aPetal", new THREE.InstancedBufferAttribute(new Float32Array(Array.from({ length: petalCount }, (_, i) => {
         const r = (n: number) => { const v = Math.sin((i * 4 + n) * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
-        return [E.minX + 2 + r(0) * (E.maxX - E.minX - 6), r(1), E.minZ + 5 + r(2) * (E.maxZ - E.minZ - 7), r(3)];
+        return [-11 + r(0) * 22, r(1), -3 + r(2) * 25, r(3)];
       }).flat()), 4));
       geometries.add(petalGeometry);
       const petalMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: flameTime }, vertexShader: PETAL_VERT, fragmentShader: PETAL_FRAG, side: THREE.DoubleSide, toneMapped: false, fog: false });
@@ -1142,6 +1463,13 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       const haloMaterial = new THREE.ShaderMaterial({ vertexShader: HALO_VERT, fragmentShader: HALO_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false });
       haloMaterial.name = "uyuni-bunker-halos"; materials.add(haloMaterial);
       const stoneGeometry = new THREE.SphereGeometry(1, 14, 8); geometries.add(stoneGeometry);
+      const splashGeometry = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1) as unknown as THREE.InstancedBufferGeometry);
+      splashGeometry.instanceCount = splashes.length;
+      splashGeometry.setAttribute("aDrop", new THREE.InstancedBufferAttribute(new Float32Array(splashes.flatMap(drop => drop.slice(0, 4))), 4));
+      splashGeometry.setAttribute("aKick", new THREE.InstancedBufferAttribute(new Float32Array(splashes.flatMap(drop => drop.slice(4))), 4));
+      geometries.add(splashGeometry);
+      const splashMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: flameTime }, vertexShader: SPLASH_VERT, fragmentShader: SPLASH_FRAG, transparent: true, depthWrite: false, toneMapped: false, fog: false });
+      splashMaterial.name = "uyuni-bunker-splashes"; materials.add(splashMaterial);
       for (const bunker of UYUNI_BUNKERS) {
         const room = rooms.get(bunker.id);
         if (!room) continue;
@@ -1151,14 +1479,16 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
           room.add(mesh);
         }
         for (const mesh of room.children) if ((mesh as THREE.Mesh).material === basin || (mesh as THREE.Mesh).material === stone) mesh.layers.enable(BED_LAYER);
-        const lagoon = new THREE.Mesh(still, water); lagoon.name = `uyuni-bunker-lagoon-${bunker.id}`; lagoon.visible = lagoonDrawn; room.add(lagoon); lagoons.set(bunker.id, lagoon);
+        const lagoon = new THREE.Mesh(still, lake); lagoon.name = `uyuni-bunker-lagoon-${bunker.id}`; lagoon.visible = lagoonDrawn; room.add(lagoon); lagoons.set(bunker.id, lagoon);
         const petals = new THREE.Mesh(petalGeometry, petalMaterial); petals.name = `uyuni-bunker-petals-${bunker.id}`; petals.frustumCulled = false; room.add(petals);
+        const spray = new THREE.Mesh(splashGeometry, splashMaterial); spray.name = `uyuni-bunker-splashes-${bunker.id}`; spray.frustumCulled = false; spray.renderOrder = 8; room.add(spray);
         const fire = new THREE.InstancedMesh(flameGeometry, flameMaterial, flameCount);
         for (let i = 0; i < flameCount; i++) {
           const outer = i > 3;
           // The fire faces out of the west wall, so the flames stand across the hearth.
-          placement.position.set(HEARTH.x + .15 + Math.cos(i * 2.4) * .1, FIRE_FLOOR + .1, HEARTH.z + (i / (flameCount - 1) - .5) * 1.3 + Math.sin(i * 2.4) * .05);
-          placement.rotation.set(0, Math.PI / 2, 0);
+          const u = (i / (flameCount - 1) - .5) * 1.3 + Math.sin(i * 2.4) * .05, v = Math.cos(i * 2.4) * .1;
+          placement.position.set(HEARTH.x + HEARTH_IN.z * u + HEARTH_IN.x * v, FIRE_FLOOR + .1, HEARTH.z - HEARTH_IN.x * u + HEARTH_IN.z * v);
+          placement.rotation.set(0, Math.atan2(HEARTH_IN.x, HEARTH_IN.z), 0);
           placement.scale.set(outer ? .36 + (i % 3) * .07 : .5, outer ? .5 + (i % 4) * .1 : .8, 1);
           placement.updateMatrix(); fire.setMatrixAt(i, placement.matrix);
         }
@@ -1224,7 +1554,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
     },
     update(time) {
       if (disposed) return;
-      awaitRock?.();
+      awaitRock?.(); awaitWillow?.();
       flameTime.value = time;
       // Slow breathing with a small quick flicker: the room pulses, it never strobes.
       uRoomFire.value = (1 + Math.sin(time * .65) * .05 + Math.sin(time * 1.7 + .6) * .03) * (1 + (Math.sin(time * 9.3) * Math.sin(time * 5.1 + 1.3) + Math.sin(time * 13.7)) * .035);
@@ -1236,7 +1566,7 @@ export function buildUyuniBunkers(parent: THREE.Object3D, textures: { wood: THRE
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
       for (const texture of ownTextures) texture.dispose();
-      baked?.dispose(); sprays?.dispose(); marble?.dispose(); rockPhoto?.dispose();
+      baked?.dispose(); sprays?.dispose(); marble?.dispose(); rockPhoto?.dispose(); willowPhoto?.dispose();
     },
   };
 }

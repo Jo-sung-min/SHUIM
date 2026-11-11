@@ -6,7 +6,8 @@
  * wave simulation, the stone bed bent through the surface, colour that deepens with depth, and the hall itself
  * mirrored in the water. That mirror is a picture of the hall taken once from over the lagoon.
  *
- * A phone, or any device the engine has turned its quality down on, keeps the light drawn water from the hall itself.
+ * A phone draws the same water on a coarser mesh with a smaller reflection and refraction, as it does at the beach.
+ * Any device the engine has turned its quality down on keeps the light drawn water from the hall itself.
  */
 import * as THREE from "three";
 import { OceanSim, defaultOceanParams } from "../ultra-water/water/OceanSim.js";
@@ -24,13 +25,15 @@ export interface LagoonOptions {
   extent: number;
   /** Layer that holds only the lagoon bed, which is all the water needs to see through itself. */
   bedLayer: number;
+  /** A phone: a coarser mesh, a smaller picture of the hall and a smaller view of the bed. */
+  mobile?: boolean;
 }
 
-/** The basin the water is in, in world metres, and where water falls into it: x, z and strength of each fall. */
+/** The basin the water is in, in world metres, and where water falls into it: x, z and strength of each fall. A fall spills all round its point, a little over a metre out. */
 export interface LagoonPool { minX: number; maxX: number; minZ: number; maxZ: number; falls: readonly (readonly [number, number, number])[] }
 
-/** Side of one cell of the water's mesh. Ripples indoors are a hand wide, so this is fine enough to carry them. */
-const CELL = .16;
+/** Side of one cell of the water's mesh. Ripples indoors are a hand wide, so this is fine enough to carry them; a phone takes a coarser one. */
+const CELL = .16, PHONE_CELL = .24;
 /** Seconds a ring from a fall lasts before the next one starts. */
 const RING_LIFE = 2.4;
 
@@ -102,7 +105,7 @@ export class BunkerLagoonWater {
     // The water shader reads seventeen textures across both stages; lift the unit limit to the combined one, as the beach does.
     const gl = renderer.getContext() as WebGL2RenderingContext;
     renderer.capabilities.maxTextures = Math.max(renderer.capabilities.maxTextures, gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS));
-    const size = 256;
+    const size = options.mobile ? 128 : 256;
     this.cubeRT = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
     this.cubeCam = new THREE.CubeCamera(.2, 90, this.cubeRT);
     const sky = { cube: this.cubeRT.texture, cubeSize: size, sunDir: this.sunDir, sunColor: new THREE.Vector3(.7, .58, .42) };
@@ -118,9 +121,10 @@ export class BunkerLagoonWater {
     u.uFoamTex.value = this.foam.foam;
     (u.uShoreWave.value as THREE.Vector4).set(0, 12, .9, 0);
     (u.uFoam.value as THREE.Vector4).set(.01, 1, .1, .72);
-    // A shallow pool has to turn turquoise within a metre, so light is taken up far faster than in open sea.
-    (u.uAbsorption.value as THREE.Vector3).set(1.5, .2, .16);
-    (u.uScatterColor.value as THREE.Color).setRGB(.01, .2, .2);
+    // A shallow pool has to show its colour within a metre, so light is taken up far faster than in open sea. Green is taken up
+    // well ahead of blue, so over the pale marble bed the water reads a clear sky blue rather than turquoise.
+    (u.uAbsorption.value as THREE.Vector3).set(1.1, .42, .1);
+    (u.uScatterColor.value as THREE.Color).setRGB(.01, .08, .26);
     u.uGlint.value = .3;
     this.reflection = new THREE.DataTexture(new Uint8Array(4), 1, 1); this.reflection.needsUpdate = true;
     u.uReflection.value = this.reflection;
@@ -128,7 +132,7 @@ export class BunkerLagoonWater {
     patchLagoonMaterial(this.surface.material);
     for (const grid of this.surface.grids) grid.dispose();
     this.mesh = this.surface.mesh;
-    u.uCellStep.value = CELL;
+    u.uCellStep.value = this.cell;
     this.mesh.name = "uyuni-bunker-lagoon-sea";
     this.mesh.renderOrder = 1;
     this.mesh.visible = false;
@@ -139,8 +143,10 @@ export class BunkerLagoonWater {
   set enabled(value: boolean) { this.mesh.visible = value; }
 
   /** Says which basin the water lies in, and lays one small mesh over it. */
+  private get cell() { return this.options.mobile ? PHONE_CELL : CELL; }
+
   setPool(pool: LagoonPool) {
-    const nx = Math.ceil((pool.maxX - pool.minX) / CELL), nz = Math.ceil((pool.maxZ - pool.minZ) / CELL);
+    const nx = Math.ceil((pool.maxX - pool.minX) / this.cell), nz = Math.ceil((pool.maxZ - pool.minZ) / this.cell);
     const positions = new Float32Array((nx + 1) * (nz + 1) * 3), index = new Uint16Array(nx * nz * 6);
     for (let j = 0, k = 0; j <= nz; j++) for (let i = 0; i <= nx; i++, k += 3) {
       positions[k] = pool.minX + (pool.maxX - pool.minX) * i / nx; positions[k + 2] = pool.minZ + (pool.maxZ - pool.minZ) * j / nz;
@@ -167,11 +173,12 @@ export class BunkerLagoonWater {
   }
 
   /** Every frame before the main render: the waves, then the lagoon bed as the water will see it. */
-  prepare(dt: number, camera: THREE.PerspectiveCamera, from: THREE.Vector3) {
+  prepare(dt: number, camera: THREE.PerspectiveCamera, from: THREE.Vector3, settled = true) {
     if (!this.mesh.visible || !this.grid) return;
-    // The hall's photographs may still be arriving when the first picture is taken, so one more is taken a little later.
+    // The hall's photographs may still be arriving when the first picture is taken, so one more is taken a little later,
+    // once the visitor stands still: the picture is the one heavy step, and taken mid-stride it would show as a jolt.
     if (!this.pictured) { this.picture(from); this.retake = 3; }
-    else if (this.retake > 0 && (this.retake -= dt) <= 0) this.picture(from);
+    else if (this.retake >= 0) { this.retake = Math.max(0, this.retake - dt); if (this.retake === 0 && settled) { this.picture(from); this.retake = -1; } }
     const r = this.renderer, u = this.surface.uniforms as Record<string, THREE.IUniform>;
     this.time += dt;
     const previous = r.getRenderTarget(), autoClear = r.autoClear, shadowAuto = r.shadowMap.autoUpdate, clearAlpha = r.getClearAlpha();
@@ -185,7 +192,7 @@ export class BunkerLagoonWater {
     this.proxy.updateMatrixWorld(true);
     this.surface.update(this.proxy, this.time % 3600);
     this.mesh.geometry = this.grid;
-    u.uCellStep.value = CELL;
+    u.uCellStep.value = this.cell;
     u.uCamSide.value = -1;
     // Rings spread from where each fall lands. A fall owns two of the engine's eight rings, half a life apart.
     const rings = u.uImpact.value as THREE.Vector4[], sizes = u.uImpactSize.value as number[];
@@ -194,12 +201,13 @@ export class BunkerLagoonWater {
       if (!fall) { rings[i].w = 0; continue; }
       const beat = this.time / RING_LIFE + (i & 1) * .5 + (i >> 1) * .37, turn = Math.floor(beat), age = beat - turn;
       const chance = Math.sin(turn * 12.9898 + i * 78.233) * 43758.5453, where = chance - Math.floor(chance) - .5;
-      rings[i].set(fall[0] + where * fall[2] * 2.2, fall[1] + where * .3, age * RING_LIFE + .12, fall[2] * .028 * (1 - age) * (1 - age));
+      const round = (where + .5) * Math.PI * 2 + i;
+      rings[i].set(fall[0] + Math.sin(round) * 1.12, fall[1] + Math.cos(round) * 1.12, age * RING_LIFE + .12, fall[2] * .028 * (1 - age) * (1 - age));
       sizes[i] = .3;
     }
     (u.uSunDir.value as THREE.Vector3).copy(this.sunDir);
     const size = r.getDrawingBufferSize(new THREE.Vector2());
-    const w = Math.max(1, Math.round(size.x * .6)), h = Math.max(1, Math.round(size.y * .6));
+    const scale = this.options.mobile ? .5 : .6, w = Math.max(1, Math.round(size.x * scale)), h = Math.max(1, Math.round(size.y * scale));
     if (!this.refractRT || this.refractRT.width !== w || this.refractRT.height !== h) {
       this.refractRT?.dispose();
       this.refractRT = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(w, h, THREE.FloatType), generateMipmaps: false });

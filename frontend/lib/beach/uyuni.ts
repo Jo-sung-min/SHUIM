@@ -11,12 +11,12 @@ import type { BoardGame } from "./net";
 export interface UyuniWalker { x: number; z: number; moving: boolean }
 export type UyuniSkyUniforms = Record<string, THREE.IUniform>;
 
-/** Ground against the lagoon's water level anywhere in the world: the basins shelve in from their kerbs, and everything else is land. */
+/** Ground against the lake's water level anywhere in the world: the bed shelves from its kerb to the middle, and everything else is land. Matches the hall's drawn bed. */
 function lagoonShore(x: number, z: number): number {
   const L = BUNKER_LAGOON;
   for (const bunker of UYUNI_BUNKERS) {
-    const lx = x - bunker.x, lz = z - bunker.z, back = L.maxZ + 1;
-    if (lx > L.minX && lx < L.maxX && lz > L.minZ && lz < back) return -Math.min(L.depth, .3 + Math.min(lx - L.minX, L.maxX - lx, lz - L.minZ, back - lz) * .9);
+    const q = Math.hypot((x - bunker.x - L.x) / L.a, (z - bunker.z - L.z) / L.b);
+    if (q < 1) return -(.17 + (L.depth - .17) * (1 - q * q));
   }
   return .6;
 }
@@ -75,26 +75,31 @@ export class UyuniWorld {
 
   setBoardGames(games: readonly BoardGame[]) { this.bunkers?.setBoardGames(games); }
 
-  /** Runs the beach's sea engine for the lagoon while someone is underground, on a device that can afford it. Everyone else keeps the hall's own drawn water. */
-  prepareWater(dt: number, camera: THREE.PerspectiveCamera, fine: boolean) {
+  /**
+   * Runs the beach's sea engine for the lake while someone is underground: clear water over a pale bed, the hall caught in it.
+   * A phone runs a lighter cut of it, as it does at the beach. A device that has turned its quality down, or cannot draw into
+   * float targets, keeps the hall's own clear water instead. `settled` is false while the visitor is moving, so the one heavy
+   * step, photographing the hall for the water to reflect, never lands in the middle of a walk.
+   */
+  prepareWater(dt: number, camera: THREE.PerspectiveCamera, fine: boolean, settled = true) {
     const options = this.bunkerOptions, bunker = UYUNI_BUNKERS.find(item => item.id === this.activeBunker);
-    if (!bunker || !this.bunkers || !options?.renderer || options.mobile || this.lagoonFailed) return;
+    if (!bunker || !this.bunkers || !options?.renderer || this.lagoonFailed) return;
     if (!fine) { if (this.lagoon?.enabled) { this.lagoon.enabled = false; this.bunkers.setLagoonDrawn(true); } return; }
     if (!this.bunkers.prepare(0)) return;
     if (!this.lagoon) {
       try {
         if (!BunkerLagoonWater.supported(options.renderer)) throw new Error("no float render targets");
-        this.lagoon = new BunkerLagoonWater(options.renderer, this.scene, { level: BUNKER_FLOOR_Y + BUNKER_LAGOON.level, shore: lagoonShore, extent: 100, bedLayer: BED_LAYER });
+        this.lagoon = new BunkerLagoonWater(options.renderer, this.scene, { level: BUNKER_FLOOR_Y + BUNKER_LAGOON.level, shore: lagoonShore, extent: 100, bedLayer: BED_LAYER, mobile: options.mobile === true });
       } catch { this.lagoonFailed = true; return; }
     }
     if (!this.lagoon.enabled) { this.lagoon.enabled = true; this.bunkers.setLagoonDrawn(false); }
     if (this.lagoonRoom !== bunker.id) {
-      const L = BUNKER_LAGOON, lap = .3;
+      const L = BUNKER_LAGOON, lap = .45;
       this.lagoonRoom = bunker.id;
-      this.lagoon.setPool({ minX: bunker.x + L.minX - lap, maxX: bunker.x + L.maxX + lap, minZ: bunker.z + L.minZ - lap, maxZ: bunker.z + L.maxZ + lap, falls: LAGOON_FALLS.map(([x, reach, strength]) => [bunker.x + x, bunker.z + L.maxZ - reach, strength] as const) });
+      this.lagoon.setPool({ minX: bunker.x + L.x - L.a - lap, maxX: bunker.x + L.x + L.a + lap, minZ: bunker.z + L.z - L.b - lap, maxZ: bunker.z + L.z + L.b + lap, falls: LAGOON_FALLS.map(([x, z, strength]) => [bunker.x + x, bunker.z + z, strength] as const) });
     }
-    this.lagoonEye.set(bunker.x, BUNKER_FLOOR_Y + 1.7, bunker.z + (BUNKER_LAGOON.minZ + BUNKER_LAGOON.maxZ) / 2 - 1);
-    this.lagoon.prepare(dt, camera, this.lagoonEye);
+    this.lagoonEye.set(bunker.x + BUNKER_LAGOON.x, BUNKER_FLOOR_Y + 1.7, bunker.z + BUNKER_LAGOON.z);
+    this.lagoon.prepare(dt, camera, this.lagoonEye, settled);
   }
 
   /** Puts the shelters together a few milliseconds at a time. True once they are ready to walk into. */
