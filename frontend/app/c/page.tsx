@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CIRCLE_KINDS, Circle, CircleKind, browseCircles, fetchWarmCircles } from "@/lib/circles";
+import { BUILTIN_GROUPS, Circle, CircleGroup, browseCircles, fetchCircleGroups, fetchWarmCircles } from "@/lib/circles";
 import ShoutTabs from "@/components/ShoutTabs";
 import { CircleRow } from "@/components/CircleRow";
 import { LoadError } from "@/components/CommunityUI";
@@ -11,9 +11,10 @@ import { IconClose, IconLeaf, IconPlus, IconSearch } from "@/components/Icons";
 import shout from "../shout/shout.module.css";
 import styles from "./circle.module.css";
 
-/** 소로우 둘러보기: 묶음(즐기는 중·살아가는 중·사랑·혼자·일하는 중…)·이름으로 찾기, 이번 주 가장 따뜻한 소로우 */
+/** 소로우 둘러보기: 묶음(기본 묶음 + 사람들이 만든 묶음)·이름으로 찾기, 이번 주 가장 따뜻한 소로우 */
 export default function CircleBrowsePage() {
-  const [kind, setKind] = useState<CircleKind | "">("");
+  const [kind, setKind] = useState<string>("");
+  const [groups, setGroups] = useState<CircleGroup[]>(BUILTIN_GROUPS);
   const [query, setQuery] = useState("");
   const [list, setList] = useState<Circle[] | null>(null);
   const [warm, setWarm] = useState<Circle[]>([]);
@@ -34,7 +35,9 @@ export default function CircleBrowsePage() {
   }, [kind, query, reload]);
   useEffect(() => {
     fetchWarmCircles().then(setWarm).catch(() => setWarm([]));
+    fetchCircleGroups().then((g) => g.length && setGroups(g)).catch(() => setGroups(BUILTIN_GROUPS));
   }, []);
+  const group = groups.find((g) => g.id === kind);
 
   return (
     <>
@@ -54,8 +57,8 @@ export default function CircleBrowsePage() {
 
         <div className={styles.kinds} role="radiogroup" aria-label="소로우 묶음">
           <button type="button" role="radio" aria-checked={kind === ""} className={styles.kind} onClick={() => setKind("")}>전체</button>
-          {CIRCLE_KINDS.map((k) => (
-            <button key={k.id} type="button" role="radio" aria-checked={kind === k.id} className={styles.kind} onClick={() => setKind(k.id)}>{k.label}</button>
+          {groups.map((g) => (
+            <button key={g.id} type="button" role="radio" aria-checked={kind === g.id} className={styles.kind} onClick={() => setKind(g.id)}>{g.label}</button>
           ))}
         </div>
 
@@ -69,10 +72,10 @@ export default function CircleBrowsePage() {
         )}
 
         <div className={styles.head}>
-          <h2>{query ? `‘${query.trim()}’ 소로우` : kind ? CIRCLE_KINDS.find((k) => k.id === kind)?.label : "모든 소로우"}</h2>
+          <h2>{query ? `‘${query.trim()}’ 소로우` : kind ? group?.label : "모든 소로우"}</h2>
           <Link href="/c/new"><IconPlus aria-hidden="true" />소로우 열기</Link>
         </div>
-        {kind && <p className={styles.sub}>{CIRCLE_KINDS.find((k) => k.id === kind)?.hint}</p>}
+        {kind && group?.hint && <p className={styles.sub}>{group.hint}</p>}
         {loadError ? (
           <LoadError message={loadError} onRetry={() => setReload((n) => n + 1)} />
         ) : list === null ? (

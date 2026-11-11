@@ -30,6 +30,15 @@
   --danger-soft: #fbe9ec;
   --ring: color-mix(in srgb, var(--accent) 30%, transparent);
   --ring-border: var(--accent);
+  /* 입력창 한 벌 (전역 .field·.inline-input·소로우 폼·검색창): 둥근 모서리, 은은한 바탕, 얇은 선.
+     포커스 때는 보라 선 + 부드러운 빛이 번진다 (딱딱한 링 대신). 나이트에서도 같은 토큰이 따라 바뀐다 */
+  --field-bg: var(--surface-2);
+  --field-bg-focus: var(--surface);
+  --field-line: color-mix(in srgb, var(--border-strong) 55%, transparent);
+  --field-line-hover: var(--border-strong);
+  --field-focus-line: color-mix(in srgb, var(--accent) 75%, var(--border-strong));
+  --field-glow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--accent) 45%, transparent);
+  --field-radius: 14px;
   /* 기록 흐름 색: 올라간 날은 먹색, 내려간 날은 회색 */
   --up: #1b1b20;
   --down: #8b8b96;
@@ -455,7 +464,7 @@ svg.cat-ico { width: 16px; height: 16px; flex: none; vertical-align: -3px; }
   position: fixed; bottom: var(--tabbar-space); left: 50%; transform: translateX(-50%); width: 100%; max-width: var(--app-w); z-index: 25;
   display: flex; gap: var(--sp-1); align-items: flex-end; padding: 8px var(--gutter); background: var(--surface); border-top: 1px solid var(--border);
 }
-.thread-composer textarea { flex: 1; min-height: 44px; max-height: 120px; padding: 11px 14px; border-radius: var(--radius-btn); border: 1px solid var(--border); background: var(--surface-2); resize: none; line-height: 1.5; font-size: 16px; }
+.thread-composer textarea { flex: 1; min-height: 44px; max-height: 120px; padding: 11px 14px; border-radius: var(--field-radius); border: 1px solid var(--field-line); background: var(--field-bg); resize: none; line-height: 1.5; font-size: 16px; }
 .thread-composer .btn { min-width: 48px; padding: 0 14px; }
 html[data-keyboard="open"] .thread-composer { bottom: var(--kb); }
 
@@ -677,24 +686,26 @@ html[data-keyboard="open"] .fab { display: none; }
 /* ---------- 포커스: 키보드·입력창에만 링 ---------- */
 :focus { outline: none; }
 :is(button, a, [role="button"], input[type="checkbox"], input[type="radio"]):focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
-input, textarea, select { transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }
-:is(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus {
-  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); background: var(--surface);
+input, textarea, select { transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur) var(--ease); }
+:is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select):focus {
+  outline: none; border-color: var(--field-focus-line); box-shadow: var(--field-glow); background-color: var(--field-bg-focus);
 }
+:is(input, textarea)::placeholder { color: var(--text-3); opacity: 1; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: 20px; height: 20px; flex-shrink: 0; cursor: pointer; margin: 0; }
 
 /* ---------- 폼 ---------- */
 .field { display: grid; gap: 6px; }
 .field label { font-size: 13px; font-weight: 700; color: var(--text-2); }
 .field input, .field textarea, .field select {
-  width: 100%; min-height: 48px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: var(--surface-2); color: var(--text); font-size: 16px;
+  width: 100%; min-height: 48px; padding: 12px 14px; border-radius: var(--field-radius); border: 1px solid var(--field-line);
+  background: var(--field-bg); color: var(--text); font-size: 16px;
 }
+@media (hover: hover) { .field :is(input, textarea, select):hover:not(:focus):not(:disabled) { border-color: var(--field-line-hover); } }
 .field textarea { resize: none; min-height: 96px; line-height: 1.55; }
 .field input[type="checkbox"], .field input[type="radio"] { width: 20px; min-height: 20px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-1); }
 .inline-input { display: flex; gap: var(--sp-1); }
-.inline-input input { flex: 1; min-width: 0; min-height: 44px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); font-size: 16px; }
+.inline-input input { flex: 1; min-width: 0; min-height: 44px; padding: 10px 12px; border-radius: var(--field-radius); border: 1px solid var(--field-line); background: var(--field-bg); font-size: 16px; }
 .inline-input .btn.sm { min-height: 44px; }
 .inline-error { padding: 12px 14px; border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: 14px; line-height: 1.6; }
 .inline-error p { margin: 0 0 6px; }

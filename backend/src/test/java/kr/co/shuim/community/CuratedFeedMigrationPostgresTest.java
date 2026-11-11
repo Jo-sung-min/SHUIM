@@ -35,7 +35,8 @@ class CuratedFeedMigrationPostgresTest {
             long sampleBefore = jdbc.sql("SELECT count(*) FROM " + p + "feed_posts WHERE author_id IN ('u1','u2','u3','u4','u5','u6','u7')").query(Long.class).single();
             assertTrue(sampleBefore > 0);
 
-            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load().migrate();
+            // V35 만 검증한다. 뒤 마이그레이션(V39 curated_feed_more)이 큐레이션 글을 더 넣는다
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("35").load().migrate();
 
             assertEquals(0L, jdbc.sql("SELECT count(*) FROM " + p + "feed_posts WHERE author_id IN ('u1','u2','u3','u4','u5','u6','u7')").query(Long.class).single());
             assertEquals(1L, jdbc.sql("SELECT count(*) FROM " + p + "feed_posts WHERE id = 'real-post'").query(Long.class).single());

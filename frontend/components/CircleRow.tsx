@@ -26,7 +26,7 @@ export function CircleRow({ c, rank }: { c: Circle; rank?: number }) {
       {rank ? <span className={styles.mark} data-rank="" aria-hidden="true">{rank}</span> : <CircleMark c={c} />}
       <span className={styles.circleMain}>
         <b>{c.name}{c.pinned && <span className={styles.pill}>고정</span>}{c.privateTest && <span className={styles.pill}>비공개</span>}{c.verified && <Verified />}{c.sample && <SampleTag />}</b>
-        <p>{kindLabel(c.kind)} · 멤버 {c.memberCount}명{c.postCount ? ` · 사연 ${c.postCount}개` : ""}{c.intro ? ` · ${c.intro}` : ""}</p>
+        <p>{kindLabel(c)} · 멤버 {c.memberCount}명{c.postCount ? ` · 사연 ${c.postCount}개` : ""}{c.intro ? ` · ${c.intro}` : ""}</p>
       </span>
       <IconChevronR aria-hidden="true" />
     </Link>

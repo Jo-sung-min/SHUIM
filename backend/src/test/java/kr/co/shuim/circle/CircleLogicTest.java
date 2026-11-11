@@ -18,6 +18,62 @@ class CircleLogicTest {
     }
 
     @Test
+    void groupLabelsAreShortPlainAndMergeBySpacing() {
+        assertEquals("캠핑하는 중", CircleLogic.normalizeGroupLabel("  캠핑하는   중 "));
+        assertEquals("사랑·혼자", CircleLogic.normalizeGroupLabel("사랑 ㆍ 혼자"));
+        assertEquals("캠핑", CircleLogic.normalizeGroupLabel("캠핑 소로우"));
+        assertEquals("K-POP", CircleLogic.normalizeGroupLabel("K-POP"));
+        assertEquals(CircleLogic.groupKey("K-POP"), CircleLogic.groupKey("kpop"));
+        assertNull(CircleLogic.normalizeGroupLabel("-캠핑"));
+        assertNull(CircleLogic.normalizeGroupLabel("가"));
+        assertNull(CircleLogic.normalizeGroupLabel("가".repeat(11)));
+        assertNull(CircleLogic.normalizeGroupLabel("123"));
+        assertNull(CircleLogic.normalizeGroupLabel("·캠핑"));
+        assertNull(CircleLogic.normalizeGroupLabel("캠핑!!"));
+        assertEquals(CircleLogic.groupKey("사랑·혼자"), CircleLogic.groupKey("사랑 혼자"));
+        assertEquals("즐기는중", CircleLogic.groupKey("즐기는 중"));
+        assertEquals(CircleLogic.groupKey("K pop"), CircleLogic.groupKey("kpop"));
+        assertTrue(CircleLogic.isGroupId("enjoy"));
+        assertTrue(CircleLogic.isGroupId(CircleLogic.newGroupId(new Random(1))));
+        assertFalse(CircleLogic.isGroupId("캠핑"));
+        assertFalse(CircleLogic.isGroupId("a".repeat(13)));
+    }
+
+    @Test
+    void offensiveAndAffiliationNamesAreRefused() {
+        assertTrue(CircleLogic.offensive("시 1 발"));
+        assertTrue(CircleLogic.offensive("ㅅㅂ 모임"));
+        assertTrue(CircleLogic.offensive("Fuck"));
+        assertFalse(CircleLogic.offensive("새끼 고양이"));
+        assertFalse(CircleLogic.offensive("시바견 산책"));
+        assertFalse(CircleLogic.offensive("보지 않아도 돼"));
+        assertFalse(CircleLogic.offensive("메갈로돈"));
+        assertFalse(CircleLogic.offensive(null));
+        assertTrue(CircleLogic.affiliationLabel("고려 대학교"));
+        assertTrue(CircleLogic.affiliationLabel("한빛 초등학교"));
+        assertFalse(CircleLogic.affiliationLabel("대학원생"));
+        assertFalse(CircleLogic.affiliationLabel("자취하는 중"));
+    }
+
+    @Test
+    void iconsAcceptLegacyIdsAndListedFluentNamesOnly() {
+        assertEquals("coffee", CircleLogic.normalizeIcon("coffee"));
+        assertEquals("fl:food_cake", CircleLogic.normalizeIcon("fl:food_cake"));
+        assertNull(CircleLogic.normalizeIcon("fl:not_a_real_icon"));
+        assertNull(CircleLogic.normalizeIcon("fl:../../etc"));
+        assertNull(CircleLogic.normalizeIcon("food_cake"));
+        assertNull(CircleLogic.normalizeIcon(null));
+    }
+
+    @Test
+    void reservedSlugsCollideWithRoutes() {
+        assertNull(CircleLogic.normalizeSlug("groups"));
+        assertNull(CircleLogic.normalizeSlug("Warm"));
+        assertNull(CircleLogic.normalizeSlug("new"));
+        assertEquals("groups-2", CircleLogic.normalizeSlug("groups-2"));
+    }
+
+    @Test
     void slugsAndDomainsAreStrict() {
         assertEquals("korea-univ", CircleLogic.normalizeSlug("Korea-Univ"));
         assertNull(CircleLogic.normalizeSlug("-bad"));

@@ -6,9 +6,11 @@ import {
   IconMoon, IconMusic, IconPalette, IconPaw, IconPlane, IconRun, IconStar, IconSun,
 } from "@/components/Icons";
 import type { Circle } from "@/lib/circles";
+import { fluentName } from "@/lib/fluent-icons";
+import { FluentSvg, useFluentIcon } from "./FluentIcon";
 import styles from "@/app/c/circle.module.css";
 
-/** 소로우를 열 때 고를 수 있는 기본 아이콘. id 가 서버의 Circle.icon 에 그대로 저장된다 */
+/** 예전 기본 아이콘 18개. 이미 고른 소로우가 있어 계속 그린다 (새로 고르는 건 Fluent 아이콘 찾기: "fl:<이름>") */
 export const CIRCLE_ICONS: { id: string; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
   { id: "coffee", label: "미식", Icon: IconCoffee },
   { id: "leaf", label: "쉼", Icon: IconLeaf },
@@ -34,13 +36,23 @@ export const circleIconOf = (id?: string | null) => CIRCLE_ICONS.find((icon) => 
 /** 소로우 머리글자 (이름의 첫 글자) — 아이콘이 없을 때 */
 export const circleInitial = (name: string) => name.replace(/\s*소로우$/, "").slice(0, 1);
 
-/** 소로우 마크: 올린 사진 → 기본 아이콘 → 머리글자 순으로 보여 준다. 목록과 소로우 머리에서 같이 쓴다 */
+/** Fluent 아이콘: 그 분류 조각을 받는 동안은 빈 마크(머리글자가 번쩍였다 바뀌지 않게), 없는 이름이면 머리글자 */
+function FluentMarkIcon({ name, fallback }: { name: string; fallback: string }) {
+  const row = useFluentIcon(name);
+  if (row === "missing") return <>{fallback}</>;
+  return row ? <FluentSvg row={row} /> : null;
+}
+
+/** 소로우 마크: 올린 사진 → 아이콘(Fluent·예전 기본) → 머리글자 순으로 보여 준다. 목록과 소로우 머리에서 같이 쓴다 */
 export function CircleMark({ c, preview }: { c: Pick<Circle, "name" | "icon" | "iconUrl">; preview?: string | null }) {
   const image = preview ?? c.iconUrl;
-  const icon = circleIconOf(c.icon);
+  const fluent = fluentName(c.icon);
+  const icon = fluent ? null : circleIconOf(c.icon);
   return (
     <span className={styles.mark} data-image={image ? "" : undefined} aria-hidden="true">
-      {image ? <img src={image} alt="" /> : icon ? <icon.Icon /> : circleInitial(c.name)}
+      {image ? <img src={image} alt="" />
+        : fluent ? <FluentMarkIcon name={fluent} fallback={circleInitial(c.name)} />
+        : icon ? <icon.Icon /> : circleInitial(c.name)}
     </span>
   );
 }

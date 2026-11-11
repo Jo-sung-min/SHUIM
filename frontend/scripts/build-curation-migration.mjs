@@ -38,11 +38,11 @@ INSERT INTO feed_posts (id, author_id, title, text, bg, image, images, pages, cr
 ${rows.join(',\n')}
 ON CONFLICT (id) DO NOTHING;
 `;
-const destination = new URL('../../backend/src/main/resources/db/migration/V37__curated_feed_more.sql', import.meta.url);
+const destination = new URL('../../backend/src/main/resources/db/migration/V39__curated_feed_more.sql', import.meta.url);
 if (process.argv.includes('--check')) {
   assert.equal(await readFile(destination, 'utf8'), sql, 'Migration does not match the preview data');
   console.log('10 unique posts validated; SQL and preview match. No DB connection made.');
 } else {
   await writeFile(destination, sql);
-  console.log('Generated V37__curated_feed_more.sql. No DB connection made.');
+  console.log('Generated V39__curated_feed_more.sql. No DB connection made.');
 }

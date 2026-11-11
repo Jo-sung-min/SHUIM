@@ -17,6 +17,7 @@
     "test:media": "node --test scripts/photo-edit.test.mjs scripts/upload.test.mjs",
     "test:assets": "node --test scripts/assets.test.mjs scripts/asset-bytes.test.mjs",
     "test:quotes": "node --test scripts/daily-quote.test.mjs",
+    "test:icons": "node --test scripts/fluent-icons.test.mjs",
     "test:admin-quotes": "node --test scripts/admin-quotes.test.mjs",
     "test:admin-users": "node --test scripts/admin-users.test.mjs",
     "test:today": "node --test scripts/today-context.test.mjs",

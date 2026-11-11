@@ -24,7 +24,7 @@
 
 ## API와 저장
 
-Flyway `V36__moru_pet.sql` 적용이 필요하다. 새 백엔드 실행 시 기존 Flyway 설정으로 반영한다. 운영 배포/운영 DB 변경은 이 구현 작업에 포함되지 않는다.
+Flyway `V38__moru_pet.sql` 적용이 필요하다. 새 백엔드 실행 시 기존 Flyway 설정으로 반영한다. 운영 배포/운영 DB 변경은 이 구현 작업에 포함되지 않는다.
 
 | API | 역할 |
 |---|---|
@@ -69,7 +69,7 @@ cd backend
 - Backend sources recompiled; 17 pet/records unit tests passed. Frontend records sync tests: 13 passed.
 - Reopening a partial journal now selects its first unanswered step rather than using the answer count.
 - The existing application configuration targets hosted Supabase, not local PostgreSQL. No DB connection configuration was changed.
-- Hosted backend startup was attempted, but DNS resolution failed with UnknownHostException before Flyway could run. V36 application and live persistence remain unverified.
+- Hosted backend startup was attempted, but DNS resolution failed with UnknownHostException before Flyway could run. V38 (moru_pet) application and live persistence remain unverified.
 - The separate disposable PostgreSQL integration suite could not connect due to the execution environment socket restriction; its four tests did not pass.
 - Production build compiled and passed TypeScript, then failed during static page output with EPERM creating .next/server/app/memo.segments/memo and goals.segments/goals. Full production build is not verified.
 
@@ -102,18 +102,18 @@ See [MORU_HOME_PROGRESSION.md](MORU_HOME_PROGRESSION.md) for the proposed cave-t
 
 ## Applied: home progression and guest window
 
-- Implemented V38__moru_homes.sql for visit points, point ledger, home ownership and active home. Existing pets start in the cave with their food/XP preserved.
+- Implemented V40__moru_homes.sql for visit points, point ledger, home ownership and active home. Existing pets start in the cave with their food/XP preserved.
 - GET /api/pet awards 10 P once per Korea calendar date; newly rewarded journal stages award 4 P each, maximum 20 P/day. Previously rewarded stages do not receive retroactive points.
 - PUT /api/pet/home validates the server catalog, level, funds and preceding home under the pet row lock. Purchase, ledger, balance and active home change are atomic. Owned homes are free to reselect.
 - Cave, shack and old house are available. Six later spaces are marked coming soon and cannot be bought. Existing Lv.10 cap is retained for this first stage; Lv.50 and later homes remain planned.
 - Home shows current mood, points, food and a space shop. No automatic greeting smile: only interaction brightens Moru.
 - Guests and expired sessions see closed shutters with a login link. The authenticated profile name, falling back to account nickname, is used in petting and journal messages.
-- Java compilation passed; 20 backend unit tests passed, 5 database integration tests skipped (no usable test database connection in this execution environment). Four pet API client tests passed. Browser verified the cave and personalized petting reaction; live point/purchase persistence remains unverified until backend restart applies V38.
+- Java compilation passed; 20 backend unit tests passed, 5 database integration tests skipped (no usable test database connection in this execution environment). Four pet API client tests passed. Browser verified the cave and personalized petting reaction; live point/purchase persistence remains unverified until backend restart applies V40.
 
 ## Companion appearances
 
 Added three original human-shaped pixel companions: Noa (dark hair/ribbon), Leo (blond/cape), Lumi (lavender/beret), alongside the original Moru. The home header opens a four-character gallery. Preview selection is local; the explicit apply button saves through PUT /api/pet/appearance. Name, food, XP, points and home remain unchanged.
 
-V39__moru_appearance.sql stores the validated appearance ID, defaulting existing users to moru. Unknown IDs are rejected by the server. The client renders Moru as fallback for missing/unknown IDs. All human appearances share idle/blink, interaction smile, eating, sleeping and reduced-motion handling.
+V41__moru_appearance.sql stores the validated appearance ID, defaulting existing users to moru. Unknown IDs are rejected by the server. The client renders Moru as fallback for missing/unknown IDs. All human appearances share idle/blink, interaction smile, eating, sleeping and reduced-motion handling.
 
-Browser verified all three gallery previews. Actual appearance persistence remains unverified because the running pet API is unavailable; apply stays disabled until pet state is loaded. Restarting the backend applies V39 through Flyway.
+Browser verified all three gallery previews. Actual appearance persistence remains unverified because the running pet API is unavailable; apply stays disabled until pet state is loaded. Restarting the backend applies V41 through Flyway.

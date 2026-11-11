@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CIRCLE_KINDS, CircleKind, JoinMode, Visibility, createCircle, updateCircle } from "@/lib/circles";
+import { JoinMode, Visibility, createCircle, normalizeGroupLabel, updateCircle } from "@/lib/circles";
 import { fetchMe } from "@/lib/auth";
 import { TopBar } from "@/components/ui";
 import { IconChevronL } from "@/components/Icons";
 import CircleIconPicker, { type IconChoice } from "@/components/CircleIconPicker";
+import CircleGroupPicker, { type GroupChoice } from "@/components/CircleGroupPicker";
 import { showToast, toastSuccess } from "@/lib/toast";
 import styles from "../circle.module.css";
 import { route } from "@/lib/routes";
@@ -24,6 +25,7 @@ const withSuffix = (name: string) => `${name.trim().replace(/\s*소로우$/, "")
 /**
  * 소로우 열기. 카카오톡 오픈채팅방처럼 누구나 열고, 연 사람이 소로우지기가 되어 이름·아이콘·가입 방식·멤버를 관리한다.
  * 회사·학교 같은 소속 이름이 아니라 "미식", "자취", "싱글"처럼 즐기는 일·살아가는 일로 연다.
+ * 묶음은 기본 묶음이나 다른 사람이 만든 묶음을 고르거나, 디시 마이너 갤러리처럼 새로 만든다 (서버 circle_groups).
  */
 export default function NewCirclePage() {
   const router = useRouter();
@@ -31,7 +33,7 @@ export default function NewCirclePage() {
   const [choice, setChoice] = useState<IconChoice>({ icon: null, image: null });
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [kind, setKind] = useState<CircleKind>("enjoy");
+  const [group, setGroup] = useState<GroupChoice>({ mode: "pick", id: "enjoy" });
   const [intro, setIntro] = useState("");
   const [joinMode, setJoinMode] = useState<JoinMode>("open");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -46,10 +48,16 @@ export default function NewCirclePage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
+    const newGroup = group.mode === "new" ? normalizeGroupLabel(group.label) : null;
+    if (group.mode === "new" && !newGroup) {
+      setError("새 묶음 이름을 2~10자 한글·영문·숫자로 써 주세요");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const c = await createCircle({ name, slug: slug.trim() || randomSlug(), kind, intro, joinMode, visibility, icon: choice.icon });
+      const where = group.mode === "pick" ? { kind: group.id } : { group: newGroup ?? "" };
+      const c = await createCircle({ name, slug: slug.trim() || randomSlug(), ...where, intro, joinMode, visibility, icon: choice.icon });
       if (choice.image) {
         // 사진은 소로우가 생긴 뒤에 붙는다. 실패해도 소로우는 열렸으니 설정에서 다시 올리면 된다
         try { await updateCircle(c.slug, { iconImage: choice.image }); }
@@ -89,19 +97,13 @@ export default function NewCirclePage() {
 
             <div className={styles.field}>
               <span>묶음</span>
-              <div className={styles.seg} role="radiogroup" aria-label="소로우 묶음">
-                {CIRCLE_KINDS.map((k) => (
-                  <button key={k.id} type="button" role="radio" aria-checked={kind === k.id} className={styles.opt} onClick={() => setKind(k.id)}>
-                    {k.label}
-                    <small>{k.hint}</small>
-                  </button>
-                ))}
-              </div>
+              <CircleGroupPicker value={group} onChange={setGroup} disabled={busy} />
             </div>
 
             <label className={styles.field}>
               <span>소개</span>
-              <textarea value={intro} onChange={(e) => setIntro(e.target.value)} placeholder="어떤 이야기를 나누는 곳인지 한 줄로" maxLength={200} style={{ minHeight: 80 }} />
+              <textarea className={styles.introBox} value={intro} onChange={(e) => setIntro(e.target.value)} placeholder="어떤 이야기를 나누는 곳인지 한 줄로" maxLength={200} rows={2} />
+              <small className={styles.count} aria-hidden="true">{intro.length}/200</small>
             </label>
 
             <div className={styles.field}>
