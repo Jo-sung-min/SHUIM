@@ -13,6 +13,7 @@ import { GARDEN_GLASS_FRAG, GARDEN_GLASS_VERT } from "./garden-shader";
 import { latticeTexture, plasterTexture } from "./garden-ink";
 import { BAMBOO_GLOW_FRAG, BAMBOO_GLOW_VERT } from "./bamboo-shader";
 import { buildGardenPhotoZone } from "./garden-photo-zone";
+import { buildGardenCastle } from "./garden-castle";
 
 /** 3단 셀 음영: 먹그림의 평면적인 면 느낌. 모든 토운 재질이 같은 램프를 쓴다. */
 export function toonGradient(): THREE.DataTexture {
@@ -52,30 +53,6 @@ function gardenTimberTexture(): THREE.Texture {
   texture.repeat.set(3, 1);
   texture.anisotropy = 4;
   return texture;
-}
-
-/** 직사각 팔작 느낌의 모임지붕: 처마는 모서리로 갈수록 들리고 면은 살짝 오목하다. */
-function rectHipRoofGeometry(halfX: number, halfZ: number, rise: number, lift: number, sag: number, nx = 40, nz = 22): THREE.BufferGeometry {
-  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
-  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
-    const x = (i / nx * 2 - 1) * halfX, z = (j / nz * 2 - 1) * halfZ;
-    const inset = Math.min(halfX - Math.abs(x), halfZ - Math.abs(z));
-    const t = Math.min(1, inset / halfZ);
-    const corner = Math.pow(Math.abs(x) / halfX, 2.4) * Math.pow(Math.abs(z) / halfZ, 2.4);
-    const y = rise * t - sag * Math.sin(t * Math.PI) * (1 - corner * 0.5) + lift * corner * (1 - t);
-    positions.push(x, y, z);
-    uvs.push(i / nx * 14, j / nz * 7);
-  }
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
-    indices.push(a, c, b, b, c, d);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
 }
 
 /** 현판: 캔버스에 글자를 써서 나무판에 붙인다 (시스템 글꼴, 외부 이미지 없음). */
@@ -135,6 +112,38 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   const crystal = surface("champagne-glass", 0xf2e9d5, { roughness: 0.22, emissive: 0x000000, transparent: true, opacity: 0.72, depthWrite: false });
   const brass = surface("aged-brass", 0x9c885d, { roughness: 0.42, metalness: 0.42 });
   const plaque = new THREE.MeshBasicMaterial({ map: plaqueTexture("聽雨軒 · 청우헌"), toneMapped: true });
+  // Approximate the chandeliers' soft reflected light on indoor surfaces. A bounded material
+  // fill keeps the chairs readable under the dark night sky without extra light/shadow passes.
+  // Some timber materials also appear on the piers, so the world-position mask is essential.
+  const hallBounce = { value: 0 }, hallBounceColor = { value: new THREE.Color(0xffd7ae) };
+  const addHallBounce = (material: THREE.MeshStandardMaterial, strength: number) => {
+    material.onBeforeCompile = shader => {
+      shader.uniforms.uHallBounce = hallBounce;
+      shader.uniforms.uHallBounceColor = hallBounceColor;
+      shader.uniforms.uHallBounceStrength = { value: strength };
+      shader.vertexShader = `varying vec3 vHallBouncePosition; varying vec3 vHallBounceNormal;\n${shader.vertexShader}`.replace(
+        "#include <project_vertex>",
+        `#include <project_vertex>
+        vHallBouncePosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vHallBounceNormal = normalize(mat3(modelMatrix) * objectNormal);`,
+      );
+      shader.fragmentShader = `uniform float uHallBounce; uniform float uHallBounceStrength; uniform vec3 uHallBounceColor;
+        varying vec3 vHallBouncePosition; varying vec3 vHallBounceNormal;\n${shader.fragmentShader}`.replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+        float hallBounceMask = (1.0 - smoothstep(${(HALL.halfX - .5).toFixed(2)}, ${(HALL.halfX + .2).toFixed(2)}, abs(vHallBouncePosition.x - ${HALL.x.toFixed(2)})))
+          * smoothstep(${(HALL.glassZ - .2).toFixed(2)}, ${(HALL.glassZ + .35).toFixed(2)}, vHallBouncePosition.z)
+          * (1.0 - smoothstep(${(HALL.backZ - .15).toFixed(2)}, ${(HALL.backZ + .2).toFixed(2)}, vHallBouncePosition.z));
+        float hallBounceFacing = 0.45 + 0.55 * max(dot(normalize(vHallBounceNormal), normalize(vec3(-0.28, 0.74, -0.61))), 0.0);
+        totalEmissiveRadiance += diffuseColor.rgb * uHallBounceColor * (uHallBounce * uHallBounceStrength * hallBounceMask * hallBounceFacing);`,
+      );
+    };
+    material.customProgramCacheKey = () => "garden-hall-warm-bounce-v1";
+  };
+  for (const [material, strength] of [
+    [linen, .17], [sageLinen, .2], [wood, .09], [darkWood, .055], [floorWood, .085],
+    [ceiling, .05], [plasterMat, .045], [ceramic, .065], [brass, .045],
+  ] as const) addHallBounce(material, strength);
   const materials: THREE.Material[] = [stone, darkStone, plinth, wood, darkWood, floorWood, pavilionWood, tile, ridge, frame, plasterMat, underside, ceiling, linen, sageLinen, ceramic, deskShade, latticeMat, paper, crystal, brass, plaque];
   const owned: THREE.BufferGeometry[] = [];
   const parts: Part[] = [];
@@ -183,17 +192,41 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       // Vertical fascia abuts the riser and ends below the walking surface.
       place("floor-edge", box, darkWood, floorX, tier.y - 0.045, from - 0.02, floorWidth, 0.06, 0.04);
     }
-    // 벤치 두 줄과 낮은 책상: 가운데 계단은 비워 둔다.
+    // Upholstered reading chairs retain the exact seat anchors and leave the central stair open.
     for (const side of [-1, 1]) {
       const x0 = side * (HALL_STAIR_HALF + 0.6), x1 = side * (hx - 1.4);
       const centre = (x0 + x1) / 2, width = Math.abs(x1 - x0);
       const row = HALL.glassZ + (tier.from + tier.to) / 2;
-      // The linen top ends at the server's existing seat height; avatars still sit on the surface.
-      place("bench", softWood, wood, HALL.x + centre, tier.y + HALL_BENCH_HEIGHT - 0.13, row, width, 0.08, 0.5);
-      for (const lx of HALL_SEAT_LX) if (Math.sign(lx) === side) place("bench-leg", box, darkWood, HALL.x + lx, tier.y + HALL_BENCH_HEIGHT / 2 - 0.04, row, 0.1, HALL_BENCH_HEIGHT - 0.08, 0.42);
+      const rear = tierIndex === HALL_TIERS.length - 1;
+      const upholstery = tierIndex % 2 ? sageLinen : linen;
       for (const lx of HALL_SEAT_LX) if (Math.sign(lx) === side) {
-        place("linen-seat", cushion, tier === HALL_TIERS[1] || tier === HALL_TIERS[3] ? sageLinen : linen,
-          HALL.x + lx, tier.y + HALL_BENCH_HEIGHT - 0.045, row);
+        const x = HALL.x + lx, paired = rear && Math.abs(lx) > 6;
+        place("chair-base", softWood, wood, x, tier.y + HALL_BENCH_HEIGHT - .16, row + .02, 1.4, .2, .88);
+        for (const dx of [-.52, .52]) for (const dz of [-.3, .32]) place("chair-foot", box, darkWood, x + dx, tier.y + .13, row + dz, .09, .26, .09);
+        // The horizontal cushion still finishes at the original 0.45 m seat height.
+        place("linen-seat", cushion, upholstery, x, tier.y + HALL_BENCH_HEIGHT - .045, row, 1.13, 1, 1.55);
+        place("chair-back", softWood, upholstery, x, tier.y + .97, row + .55, 1.4, 1.04, .23, 0, .075);
+        place("chair-back-pillow", softWood, linen, x, tier.y + .82, row + .395, 1.05, .48, .16, 0, .06);
+        if (!paired) for (const edge of [-1, 1]) {
+          place("chair-arm", softWood, upholstery, x + edge * .69, tier.y + .67, row + .07, .18, .5, .94);
+          place("chair-wing", softWood, upholstery, x + edge * .65, tier.y + 1.09, row + .37, .19, .72, .48, 0, 0, edge * .08);
+        }
+        // A soft head cushion and rear timber shell make a sheltered pocket without blocking the view.
+        place("chair-head-cushion", softWood, upholstery, x, tier.y + 1.4, row + .49, 1.13, .22, .25);
+        place("chair-rear-shell", softWood, wood, x, tier.y + .92, row + .69, 1.43, .99, .1, 0, .075);
+      }
+      if (rear) {
+        const sofaX = HALL.x + side * 9;
+        // The two outer server seats share a cushioned settle; the inner seat stays beside the aisle.
+        place("loveseat-plinth", softWood, wood, sofaX, tier.y + .28, row + .03, 5.12, .22, 1.02);
+        place("loveseat-shared-back", softWood, sageLinen, sofaX, tier.y + .97, row + .76, 5.12, 1.12, .22);
+        place("loveseat-centre-cushion", cushion, sageLinen, sofaX, tier.y + HALL_BENCH_HEIGHT - .045, row + .02, 1.65, 1, 1.6);
+        place("loveseat-centre-pillow", softWood, linen, sofaX, tier.y + .76, row + .56, 1.56, .5, .24, 0, .12);
+        for (const edge of [-1, 1]) {
+          place("loveseat-arm", softWood, sageLinen, sofaX + edge * 2.55, tier.y + .73, row + .1, .22, .62, 1.1);
+          place("loveseat-privacy-wing", softWood, sageLinen, sofaX + edge * 2.51, tier.y + 1.09, row + .44, .23, .85, .66);
+          place("loveseat-outer-shell", softWood, wood, sofaX + edge * 2.66, tier.y + .86, row + .38, .09, 1.2, .86);
+        }
       }
       place("desk", softWood, wood, HALL.x + centre, tier.y + 0.7, row - 0.95, width, 0.05, 0.55);
       for (const lx of [x0 + side * 0.2, x1 - side * 0.2]) place("desk-leg", box, darkWood, HALL.x + lx, tier.y + 0.35, row - 0.95, 0.08, 0.7, 0.45);
@@ -282,16 +315,8 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   for (let c = 0; c <= 7; c++) place("mullion", box, frame, HALL.x - hx + paneW * c, (glassY0 + eaveY) / 2, HALL.glassZ, 0.08, eaveY - glassY0, 0.12);
   for (let r = 0; r <= 4; r++) place("mullion", box, frame, HALL.x, glassY0 + paneH * r - (r === 4 ? 0.1 : 0), HALL.glassZ, hx * 2 + 0.2, 0.065, 0.12);
   place("sill", box, darkStone, HALL.x, glassY0 - 0.08, HALL.glassZ, hx * 2 + 0.4, 0.16, 0.5);
-  // 지붕·천장·용마루
-  const roofGeometry = rectHipRoofGeometry(hx + 1.8, depth / 2 + 1.8, HALL.roofRise, 0.9, 0.4);
-  const roofUnder = rectHipRoofGeometry(hx + 1.75, depth / 2 + 1.75, HALL.roofRise - 0.1, 0.9, 0.4);
-  owned.push(roofGeometry, roofUnder);
-  place("roof", roofGeometry, tile, HALL.x, eaveY + 0.25, cz);
-  place("roof-underside", roofUnder, underside, HALL.x, eaveY + 0.2, cz);
-  place("eave-beam", box, darkWood, HALL.x, eaveY + 0.08, HALL.glassZ - 0.2, hx * 2 + 1.2, 0.3, 0.4);
-  place("eave-beam", box, darkWood, HALL.x, eaveY + 0.08, HALL.backZ + 0.2, hx * 2 + 1.2, 0.3, 0.4);
-  place("ridge", box, ridge, HALL.x, eaveY + 0.25 + HALL.roofRise + 0.05, cz, (hx - depth / 2) * 2 + 1.2, 0.34, 0.5);
-  for (const side of [-1, 1]) place("ridge-end", cylinder, ridge, HALL.x + side * (hx - depth / 2 + 0.6), eaveY + 0.25 + HALL.roofRise + 0.35, cz, 0.32, 0.5, 0.32);
+  // The castle owns exterior masonry and roofs; the original warm timber ceiling stays inside.
+  const castle = buildGardenCastle(root, { stone: plaster, slate: tiles }, mobile);
   place("ceiling", box, ceiling, HALL.x, eaveY - 0.05, cz, hx * 2, 0.1, depth);
   for (let i = 0; i < 6; i++) place("rafter", box, darkWood, HALL.x - 12.5 + i * 5, eaveY - 0.35, cz, 0.3, 0.5, depth);
   // Fine ceiling slats read as crafted wood without additional materials or lights.
@@ -479,6 +504,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       if (disposed) return;
       const lamps = THREE.MathUtils.clamp(d.lanterns, 0, 1);
       const indoor = Math.max(lamps, rain * 0.55);
+      hallBounce.value = indoor;
       photoZone.applyDaylight(lamps);
       night.value = indoor;
       glow.visible = indoor > 0.02;
@@ -494,6 +520,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       if (disposed) return;
       disposed = true;
       photoZone.dispose();
+      castle.dispose();
       beads.dispose(); lanterns.dispose(); windows.dispose();
       root.removeFromParent(); root.clear();
       for (const geometry of [...owned, ...merged]) geometry.dispose();

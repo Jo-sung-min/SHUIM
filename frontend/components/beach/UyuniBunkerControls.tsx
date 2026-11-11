@@ -17,9 +17,10 @@ function BoardIcon() {
 }
 
 /** Uses the shared nearby-actions column, leaving the fixed left thumb pad clear. */
-export default function UyuniBunkerControls({ state, enabled, busy, disabled, gameLabel, onGame, onAction }: {
+export default function UyuniBunkerControls({ state, enabled, busy, disabled, gameLabel, onGame, onAction, onRead }: {
   state: BunkerState; enabled: boolean; busy: BunkerAction | null; disabled: boolean; gameLabel: string | null; onGame: () => void;
   onAction: (action: BunkerAction) => void;
+  onRead: () => void;
 }) {
   const ladder = !state.inside ? state.nearId !== null : state.ladderNear && !state.seated;
   const sofa = state.inside && (state.sofaNear || state.seated);
@@ -41,10 +42,13 @@ export default function UyuniBunkerControls({ state, enabled, busy, disabled, ga
       aria-pressed={state.seated} aria-keyshortcuts={ladder ? undefined : "E"} onClick={() => onAction(state.seated ? "stand" : "sit")}>
       <span className={styles.contextIcon}><IconSmile /></span>
       <span className={styles.contextCopy}>
-        <strong>{busy === "stand" ? "일어나는 중…" : busy === "sit" ? "자리 잡는 중…" : state.seated ? "소파에서 일어나기" : state.available ? "소파에 앉기" : "소파 자리가 찼어요"}</strong>
-        <small>{state.seated ? "포근한 소파에 기대어 쉬는 중" : "함께 앉아 잠시 쉬어가요"}</small>
+        <strong>{busy === "stand" ? "일어나는 중…" : busy === "sit" ? "자리 잡는 중…" : state.seated ? "일어나기" : state.available ? "앉기" : "자리 없음"}</strong>
       </span>
-      <span className={styles.contextCount} aria-label={`소파 ${state.capacity}석 중 ${state.occupied}석 사용 중`}>{state.occupied}/{state.capacity}</span>
+      <span className={styles.contextCount} aria-label={`좌석 ${state.capacity}석 중 ${state.occupied}석 사용 중`}>{state.occupied}/{state.capacity}</span>
+    </button>}
+    {state.inside && state.bookNear && <button type="button" className={styles.contextButton} disabled={disabled || busy !== null} onClick={onRead} aria-haspopup="dialog">
+      <span className={styles.contextIcon}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" aria-hidden="true"><path d="M12 6c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1ZM12 6v15" /></svg></span>
+      <span className={styles.contextCopy}><strong>책보기</strong></span>
     </button>}
   </>;
 }

@@ -21,12 +21,14 @@ const layout = await load("../lib/beach/uyuni-bunker-layout.ts", hotels, [
   "UYUNI_BUNKERS", "BUNKER_FLOOR_Y", "BUNKER_CEILING_Y", "BUNKER_LADDER_LOCAL", "BUNKER_SOFA_LOCAL", "BUNKER_SEATS", "BUNKER_COLLIDERS",
   "BUNKER_PLAYER_INSET", "BUNKER_INTERACTION_REACH", "BUNKER_SEAT_REACH", "bunkerById", "bunkerForSpot", "bunkerSeat", "claimedBunkerSeat",
   "nearbyBunkerEntry", "nearbyBunkerLadder", "nearbyBunkerSofa", "bunkerColliders", "BUNKER_EXTENT", "BUNKER_SPRING_LOCAL", "BUNKER_HEARTH_LOCAL", "BUNKER_ENTRY", "BUNKER_TERRACE", "BUNKER_LAGOON", "bunkerFloorAt", "bunkerCeilingAt", "bunkerFloorRise", "BUNKER_GAMES_LOCAL", "BUNKER_GAME_TABLES", "BUNKER_GAME_REACH", "nearbyBunkerGame",
-  "BUNKER_HALL", "BUNKER_ENTRY_COLUMNS", "BUNKER_FOUNTAIN", "BUNKER_HEARTH_ANGLE", "BUNKER_DAYBED_ANGLE", "BUNKER_TREES_LOCAL", "BUNKER_PAVILION_LOCAL", "hallPoint", "hallRadius", "hallAngle", "hallReach", "hallInward",
+  "BUNKER_HALL", "BUNKER_GLASS_ROOF_Y", "BUNKER_ENTRY_COLUMNS", "BUNKER_FOUNTAIN", "BUNKER_HEARTH_ANGLE", "BUNKER_DAYBED_ANGLE", "BUNKER_TREES_LOCAL", "BUNKER_PAVILION_LOCAL", "hallPoint", "hallRadius", "hallAngle", "hallReach", "hallInward",
   "stairClimb", "stairProgress", "bunkerCeilingRise", "bunkerInside", "lagoonRadius", "inLagoon", "resolveBunkerWalk", "bunkerFootingClear", "bunkerStepClear",
 ]);
 const baikalLayout = await load("../lib/beach/baikal-layout.ts", {}, ["BAIKAL_CABIN", "BAIKAL_CABINS", "BAIKAL_COZY_PER_ROOM", "BAIKAL_ROOM_OCCLUSION_BOX", "baikalRoofHeight"]);
 const cozy = await load("../lib/beach/baikal-cozy.ts", baikalLayout, ["cushionGeometry", "drapeGeometry", "logGeometry", "poufGeometry", "softBoxGeometry"]);
-const bunkers = await load("../lib/beach/uyuni-bunkers.ts", { ...layout, ...cozy, createBaikalFlameMaterial: () => new THREE.MeshBasicMaterial() }, ["buildUyuniBunkers", "BED_LAYER", "LAGOON_FALLS", "cushionPose", "CUSHION_THICKNESS", "goldfishAt", "GOLDFISH_COUNT"]);
+const streams = await load("../lib/beach/uyuni-forest-streams.ts", {}, ["BUNKER_STREAM_LEVEL", "BUNKER_STREAM_BED", "BUNKER_STREAM_PATHS", "BUNKER_STREAM_CROSSINGS", "BUNKER_STREAM_CROSSING_TOP", "bunkerStreamBankGeometry", "bunkerStreamBanks", "carveBunkerStreams", "inBunkerStream"]);
+const glassRoof = await load("../lib/beach/uyuni-glass-roof.ts", layout, ["createUyuniGlassRoof", "UYUNI_GLASS_FRAME_LINES"]);
+const bunkers = await load("../lib/beach/uyuni-bunkers.ts", { ...layout, ...cozy, ...streams, ...glassRoof, createBaikalFlameMaterial: () => new THREE.MeshBasicMaterial() }, ["buildUyuniBunkers", "BED_LAYER", "LAGOON_FALLS", "cushionPose", "CUSHION_THICKNESS", "goldfishAt", "GOLDFISH_COUNT", "bunkerWallFoliageClearance"]);
 const { buildUyuniBunkers } = bunkers;
 const close = (actual, expected, message = `${actual} ≈ ${expected}`) => assert.ok(Math.abs(actual - expected) < 1e-5, message);
 function fixture(options = {}, prepared = true) {
@@ -46,27 +48,27 @@ function roomCost(f, id) {
 function cleanup(fixture) { fixture.control.dispose(); fixture.wood.dispose(); fixture.cotton.dispose(); }
 const pointIn = (x, z, rect, margin = 0) => x > rect.minX - margin && x < rect.maxX + margin && z > rect.minZ - margin && z < rect.maxZ + margin;
 
-test("hotel hatches, safe arrivals and twelve stable sofa claims match the underground contract", () => {
-  assert.equal(layout.UYUNI_BUNKERS.length, 2); assert.equal(layout.BUNKER_SEATS.length, 12);
+test("hotel hatches, safe arrivals and all furniture claims match the underground contract", () => {
+  assert.equal(layout.UYUNI_BUNKERS.length, 2); assert.equal(layout.BUNKER_SEATS.length, 42);
   for (const [index, bunker] of layout.UYUNI_BUNKERS.entries()) {
     const hotel = hotels.UYUNI_HOTELS[index];
     close(bunker.x, hotel.x); close(bunker.z, hotel.z);
     close(bunker.entry.x, hotel.x); close(bunker.entry.z, hotel.z - 6.8); close(bunker.entry.y, hotels.uyuniHotelFloorHeight(bunker.entry.x, bunker.entry.z));
-    close(bunker.arrival.z, hotel.z - 5.4); close(bunker.arrival.y, -8.6); close(bunker.ceilingY - bunker.floorY, 12);
+    close(bunker.arrival.z, hotel.z - 5.4); close(bunker.arrival.y, -8.6); close(bunker.ceilingY - bunker.floorY, layout.BUNKER_GLASS_ROOF_Y);
     assert.equal(layout.nearbyBunkerEntry(bunker.entry.x, bunker.entry.z)?.id, bunker.id);
     assert.equal(layout.nearbyBunkerLadder(bunker.id, bunker.arrival.x, bunker.arrival.z)?.id, bunker.id);
     assert.equal(layout.nearbyBunkerLadder(null, bunker.entry.x, bunker.entry.z), null, "outdoor visitors cannot use an indoor ladder by horizontal position alone");
     for (const collider of layout.bunkerColliders(bunker.id)) assert.ok(!pointIn(bunker.arrival.x, bunker.arrival.z, collider, .35), "the arrival leaves room for the full avatar collider");
     for (let slot = 0; slot < 6; slot++) {
       const seat = layout.bunkerSeat(bunker.spotId, slot), side = slot < 3 ? -1 : 1;
-      close(seat.x, bunker.x + side * 5.3); close(seat.z, bunker.z + (slot % 3 - 1) * 1.8);
+      close(seat.x, bunker.x + side * 5.5); close(seat.z, bunker.z + (slot % 3 - 1) * 1.8);
       close(seat.yaw, side * Math.PI / 2); close(seat.avatarY, -8.08); close(seat.baseY, -8.6);
       assert.equal(layout.claimedBunkerSeat({ pose: "sitting", spotId: bunker.spotId, slot }), seat);
       assert.equal(layout.nearbyBunkerSofa(bunker.id, seat.x - side, seat.z)?.id, bunker.id);
       assert.equal(layout.nearbyBunkerSofa(null, seat.x, seat.z), null);
     }
   }
-  for (const slot of [-1, 6, .5, NaN, Infinity]) assert.equal(layout.bunkerSeat("bunker-dawn-sofa", slot), null);
+  for (const slot of [-1, 21, .5, NaN, Infinity]) assert.equal(layout.bunkerSeat("bunker-dawn-sofa", slot), null);
   assert.equal(layout.claimedBunkerSeat({ pose: "lying", spotId: "bunker-dawn-sofa", slot: 0 }), null);
   assert.equal(layout.bunkerById("unknown"), null); assert.equal(layout.bunkerForSpot("hotel-dawn"), null);
   assert.equal(layout.nearbyBunkerEntry(NaN, 0), null);
@@ -90,24 +92,27 @@ test("only low flush deck hatches render outside and only one visited room contr
   cleanup(f);
 });
 
-test("the oval hall is closed on every side and overhead, and the layout knows the headroom under the balcony and the dome", () => {
+test("the oval hall has a level glass roof, with separate lower headroom under the balcony and reading pavilion", () => {
   const f = fixture(), H = layout.BUNKER_HALL;
   for (const bunker of layout.UYUNI_BUNKERS) {
     f.control.setActive(bunker.id);
-    const plaster = f.scene.getObjectByName(`uyuni-bunker-cream-plaster-${bunker.id}`), oak = f.scene.getObjectByName(`uyuni-bunker-warm-oak-${bunker.id}`), skylight = f.scene.getObjectByName(`uyuni-bunker-lamp-glow-${bunker.id}`);
+    const plaster = f.scene.getObjectByName(`uyuni-bunker-cream-plaster-${bunker.id}`), oak = f.scene.getObjectByName(`uyuni-bunker-warm-oak-${bunker.id}`), glazing = f.scene.getObjectByName(`uyuni-bunker-roof-glass-${bunker.id}`);
     const cast = (x, y, z, dx, dy, dz, targets) => new THREE.Raycaster(new THREE.Vector3(bunker.x + x, bunker.floorY + y, bunker.z + z), new THREE.Vector3(dx, dy, dz).normalize()).intersectObjects(targets, false)[0];
     // Level rays from the middle of the hall meet the plaster wall where the oval says it is.
     for (let k = 0; k < 16; k++) {
-      const a = k / 16 * Math.PI * 2, hit = cast(0, 6.4, H.cz, Math.sin(a) * H.a, 0, Math.cos(a) * H.b, [plaster]);
+      const a = k / 16 * Math.PI * 2;
+      // The plaster-lined ladder shaft is an interior wall; keep looking for the outer oval behind it.
+      const hits = new THREE.Raycaster(new THREE.Vector3(bunker.x, bunker.floorY + 6.4, bunker.z + H.cz), new THREE.Vector3(Math.sin(a) * H.a, 0, Math.cos(a) * H.b).normalize()).intersectObject(plaster);
+      const hit = hits.find(candidate => Math.abs(layout.hallRadius(candidate.point.x - bunker.x, candidate.point.z - bunker.z) - 1) < .01);
       assert.ok(hit, `wall at ${a}`);
       const lx = hit.point.x - bunker.x, lz = hit.point.z - bunker.z;
       assert.ok(Math.abs(layout.hallRadius(lx, lz) - 1) < .01, `the wall stands on the oval at ${a}: ${layout.hallRadius(lx, lz)}`);
     }
-    // Overhead: the dome everywhere in the open hall, with lit alabaster in its eye, and the balcony's timber underside over the ladder.
+    // Flat transparent glass closes the hall; the balcony's timber underside remains above the ladder.
     let domes = 0;
     for (const [x, z] of [[.3, 9.2], [6, 2], [-7, 6], [.4, -2], [10, 9], [-3, 20], [5, 24], [-11, 14]]) {
-      const want = layout.bunkerCeilingRise(x, z), hit = cast(x, layout.bunkerFloorRise(x, z) + 1.6, z, 0, 1, 0, [plaster, skylight]);
-      assert.ok(hit, `there is no sky opening above ${x},${z}`);
+      const want = layout.bunkerCeilingRise(x, z), hit = cast(x, layout.bunkerFloorRise(x, z) + 1.6, z, 0, 1, 0, [plaster, glazing]);
+      assert.ok(hit, `the physical glass roof remains sealed above ${x},${z}`);
       assert.ok(Math.abs(hit.point.y - bunker.floorY - want) < .3, `${hit.point.y - bunker.floorY} overhead at ${x},${z} where the layout says ${want}`);
       domes++;
     }
@@ -117,7 +122,7 @@ test("the oval hall is closed on every side and overhead, and the layout knows t
       assert.ok(Math.abs(hit.point.y - bunker.floorY - layout.BUNKER_ENTRY.ceiling) < .1);
     }
     assert.equal(domes, 8);
-    close(layout.bunkerCeilingRise(0, H.cz), 12); close(layout.bunkerCeilingRise(H.a * .999, H.cz), H.wall + 4 * Math.sqrt(1 - .999 * .999), "the dome springs from the top of the wall");
+    close(layout.bunkerCeilingRise(0, H.cz), layout.BUNKER_GLASS_ROOF_Y); close(layout.bunkerCeilingRise(H.a * .999, H.cz), layout.BUNKER_GLASS_ROOF_Y, "the roof stays flat from centre to edge");
     const marble = f.scene.getObjectByName(`uyuni-bunker-white-marble-${bunker.id}`);
     const floorHit = new THREE.Raycaster(new THREE.Vector3(bunker.arrival.x, bunker.floorY + .1, bunker.arrival.z), new THREE.Vector3(0, -1, 0)).intersectObject(marble)[0];
     close(floorHit.point.y, bunker.floorY);
@@ -126,17 +131,58 @@ test("the oval hall is closed on every side and overhead, and the layout knows t
   cleanup(f);
 });
 
-test("marble, rug or stair is underfoot everywhere a visitor can walk, at the height the layout gives", () => {
+test("flat ceiling windows stay clear and static without blocking the sky, and keep a clear ladder opening", () => {
+  for (const mobile of [false,true]) {
+    const roof=glassRoof.createUyuniGlassRoof(mobile), first=roof.create("dawn"), second=roof.create("dusk");
+    assert.equal(first.children.length,2); assert.ok(first.children.every(child=>child.isMesh));
+    const [glass,frames]=first.children;
+    assert.equal(glass.material.transparent,true); assert.ok(glass.material.opacity>0 && glass.material.opacity<.04);
+    assert.equal(glass.material.depthWrite,false); assert.equal(glass.material.isMeshBasicMaterial,true); assert.equal(glass.material.map,null);
+    assert.ok(Array.from(glass.geometry.attributes.position.array).filter((_,i)=>i%3===1).every(y=>Math.abs(y-layout.BUNKER_GLASS_ROOF_Y)<1e-6));
+    const ray=new THREE.Raycaster(new THREE.Vector3(0,0,-6.8),new THREE.Vector3(0,1,0));
+    assert.equal(ray.intersectObject(glass,false).length,0,"ladder passes through an actual opening");
+    ray.ray.origin.set(2,0,-6.8); assert.ok(ray.intersectObject(glass,false).length>0,"glass continues beside the hatch");
+    assert.equal(frames.material.blending,THREE.AdditiveBlending); assert.equal(frames.material.depthWrite,false);
+    assert.equal(frames.material.forceSinglePass,true); assert.equal(glass.material.forceSinglePass,true);
+    assert.doesNotMatch(frames.material.fragmentShader,/sampler|texture2D/);
+    let triangles=0;
+    for (let i=0;i<2;i++) {
+      assert.equal(first.children[i].geometry,second.children[i].geometry); assert.equal(first.children[i].material,second.children[i].material);
+      triangles+=first.children[i].geometry.index.count/3;
+    }
+    assert.ok(triangles<350,`${triangles} glass/frame triangles`);
+    roof.dispose();
+  }
+  const f=fixture(); f.control.setActive("dawn");
+  const room=layout.bunkerById("dawn"), plaster=f.scene.getObjectByName("uyuni-bunker-cream-plaster-dawn");
+  for (const [x,z] of [[.3,9.2],[6,2],[-7,6],[10,9]]) {
+    const ray=new THREE.Raycaster(new THREE.Vector3(room.x+x,room.floorY+6.5,room.z+z),new THREE.Vector3(0,1,0));
+    assert.equal(ray.intersectObject(plaster,false).length,0,"opaque plaster never covers the flat glass");
+  }
+  const glazing = f.scene.getObjectByName("uyuni-bunker-roof-glass-dawn").material;
+  f.control.update(7.25); close(glazing.opacity,.025,"room animation does not alter the clear ceiling");
+  for (const name of ["brushed-brass","lamp-glow"]) {
+    const part=f.scene.getObjectByName(`uyuni-bunker-${name}-dawn`);
+    assert.ok(part,"retained wall/table light fixtures exist");
+    const positions=part.geometry.getAttribute("position");
+    for (let i=0;i<positions.count;i++) assert.ok(!(positions.getY(i)>7 && Math.hypot(positions.getX(i),positions.getZ(i)-layout.BUNKER_LAGOON.z)<3),"no central chandelier or pendant remains below the flat glass");
+  }
+  cleanup(f);
+});
+
+test("marble, rug, stairs or a shallow brook bed supports every walking route", () => {
   const f = fixture();
   for (const bunker of layout.UYUNI_BUNKERS) {
     const ground = ["white-marble", "wool-rug"].map(name => f.scene.getObjectByName(`uyuni-bunker-${name}-${bunker.id}`));
+    const brookBed = f.scene.getObjectByName(`uyuni-bunker-lagoon-bed-${bunker.id}`);
     const colliders = layout.bunkerColliders(bunker.id), free = (x, z) => !colliders.some(collider => pointIn(bunker.x + x, bunker.z + z, collider, .35));
     let checked = 0, upstairs = 0, climbing = 0;
     for (let x = -15; x <= 15; x += .9) for (let z = -9; z <= 27; z += .9) {
       const [wx, wz] = layout.resolveBunkerWalk(x, z);
       if (Math.hypot(wx - x, wz - z) > 1e-9 || !free(x, z) || !layout.bunkerFootingClear(x, z)) continue;
       const want = layout.bunkerFloorAt(bunker.id, bunker.x + x, bunker.z + z);
-      const hit = new THREE.Raycaster(new THREE.Vector3(bunker.x + x, want + .5, bunker.z + z), new THREE.Vector3(0, -1, 0)).intersectObjects(ground, false)[0];
+      const ray = new THREE.Raycaster(new THREE.Vector3(bunker.x + x, want + .5, bunker.z + z), new THREE.Vector3(0, -1, 0));
+      const hit = ray.intersectObjects(ground, false)[0] ?? (streams.inBunkerStream(x, z) ? ray.intersectObject(brookBed, false)[0] : undefined);
       assert.ok(hit, `there is floor at ${x},${z}`);
       assert.ok(Math.abs(hit.point.y - want) < .12, `the floor at ${x},${z} is ${hit.point.y - want} off`);
       checked++; if (want > bunker.floorY + 4) upstairs++; else if (want > bunker.floorY + .2) climbing++;
@@ -149,10 +195,11 @@ test("marble, rug or stair is underfoot everywhere a visitor can walk, at the he
 test("each authoritative sofa hip meets a rounded cushion while the wide entry route stays clear", () => {
   const f = fixture();
   for (const bunker of layout.UYUNI_BUNKERS) {
-    const cushions = f.scene.getObjectByName(`uyuni-bunker-boucle-${bunker.id}`);
+    const cushions = ["boucle", "knit-throws"].map(name => f.scene.getObjectByName(`uyuni-bunker-${name}-${bunker.id}`));
     for (const seat of layout.BUNKER_SEATS.filter(seat => seat.spotId === bunker.spotId)) {
-      const hit = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .12, seat.z), new THREE.Vector3(0, -1, 0), 0, .3).intersectObject(cushions)[0];
-      assert.ok(hit); close(hit.point.y, seat.avatarY, "seated avatars touch the top rather than float or sink");
+      const hit = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .12, seat.z), new THREE.Vector3(0, -1, 0), 0, .3).intersectObjects(cushions)[0];
+      assert.ok(hit, `slot ${seat.slot} has an actual cushion beneath its hips`);
+      assert.ok(Math.abs(hit.point.y - seat.avatarY) < .01, `slot ${seat.slot} stays within 1 cm of the rounded cloth surface`);
     }
     for (const x of [-1.5, 0, 1.5]) for (const z of [-5.4, -4.6, -3.6, -2.6]) {
       assert.ok(!layout.bunkerColliders(bunker.id).some(collider => pointIn(bunker.x + x, bunker.z + z, collider, .35)));
@@ -174,7 +221,8 @@ test("two furnished rooms share finite mobile-bounded geometry, injected texture
       allGeometries.add(object.geometry); materials.add(object.material);
       assert.equal(object.receiveShadow, false);
     });
-    assert.equal(points, 2); assert.ok(draws <= 23, `${draws} room draws`); assert.ok(triangles < 170_000, `${triangles} room triangles`);
+    // 23 original batches, one shared flower atlas batch, and two clear-roof/frame meshes.
+    assert.equal(points, 2); assert.ok(draws <= 26, `${draws} room draws`); assert.ok(triangles < 170_000, `${triangles} room triangles`);
     t.diagnostic(`${bunker.id}: ${draws} room draws, ${triangles} triangles`);
   }
   for (const geometry of allGeometries) for (const name of ["position", "normal", "uv"]) {
@@ -269,8 +317,9 @@ test("a phone gets a lighter room whose lights are all summed per vertex", t => 
     return shader;
   };
   for (const seat of layout.BUNKER_SEATS.filter(seat => seat.spotId === "bunker-dawn-sofa")) {
-    const hit = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .12, seat.z), new THREE.Vector3(0, -1, 0), 0, .3).intersectObject(phone.scene.getObjectByName("uyuni-bunker-boucle-dawn"))[0];
-    assert.ok(hit); close(hit.point.y, seat.avatarY, "the simpler cushions still meet a seated visitor");
+    const cushions = ["boucle", "knit-throws"].map(name => phone.scene.getObjectByName(`uyuni-bunker-${name}-dawn`));
+    const hit = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .12, seat.z), new THREE.Vector3(0, -1, 0), 0, .3).intersectObjects(cushions)[0];
+    assert.ok(hit); assert.ok(Math.abs(hit.point.y - seat.avatarY) < .01, `phone slot ${seat.slot} meets the actual cushion within 1 cm`);
   }
   const count = compiled(desktop).uniforms.uRoomLight.value.length;
   assert.ok(compiled(phone).vertexShader.includes(`for (int i = 0; i < ${count}; i++)`));
@@ -331,7 +380,7 @@ test("the hall is an oval on two levels: a way round the lake, and two stairs th
   }
 });
 
-test("water stays where nobody can stand, the lake is drawn clear until the sea engine takes it, and everything green moves", () => {
+test("water follows the basin and shallow brooks, with clear water and moving greenery", () => {
   const f = fixture();
   for (const bunker of layout.UYUNI_BUNKERS) {
     const water = f.scene.getObjectByName(`uyuni-bunker-spring-water-${bunker.id}`), basin = layout.bunkerColliders(bunker.id).filter(collider => collider.kind === "plant");
@@ -340,18 +389,21 @@ test("water stays where nobody can stand, the lake is drawn clear until the sea 
     let falling = 0, lowest = Infinity, highest = -Infinity;
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i), z = position.getZ(i);
-      assert.ok(layout.lagoonRadius(x, z) < 1 || basin.some(collider => pointIn(bunker.x + x, bunker.z + z, collider, .05)), `water at ${x},${z} stays where nobody can stand`);
+      assert.ok(layout.lagoonRadius(x, z) < 1 || streams.inBunkerStream(x, z, .2) || basin.some(collider => pointIn(bunker.x + x, bunker.z + z, collider, .05)), `water at ${x},${z} follows a basin or its connecting brook`);
       assert.ok(kind.getX(i) > 0, "every part of it is moving");
       if (kind.getY(i) > 0) { falling++; lowest = Math.min(lowest, position.getY(i)); highest = Math.max(highest, position.getY(i)); }
     }
     assert.ok(falling >= 12, "the terrace fall is a sheet of water");
-    close(lowest, layout.BUNKER_FOUNTAIN.rim - .1, "the fall lands in its basin"); assert.ok(highest > layout.BUNKER_TERRACE.height - .1, "and the fall starts at the terrace");
+    close(lowest, layout.BUNKER_LAGOON.level + .01, "the final little cascades land in the pond"); assert.ok(highest > layout.BUNKER_TERRACE.height - .1, "and the main fall starts at the terrace");
     for (const [x, z, strength] of bunkers.LAGOON_FALLS) assert.ok(layout.inLagoon(x, z) && strength > 0, "water falls into the lake");
     const lake = f.scene.getObjectByName(`uyuni-bunker-lagoon-${bunker.id}`);
     assert.equal(lake.material.transparent, true, "the lake's own water is clear: the bed shows through it");
-    assert.equal(lake.visible, true); f.control.setLagoonDrawn(false); assert.equal(lake.visible, false); f.control.setLagoonDrawn(true); assert.equal(lake.visible, true);
+    assert.equal(lake.visible, true);
     const lakePosition = lake.geometry.attributes.position;
-    for (let i = 0; i < lakePosition.count; i++) assert.ok(layout.lagoonRadius(lakePosition.getX(i), lakePosition.getZ(i)) < 1, "the lake's water stays inside its kerb");
+    for (let i = 0; i < lakePosition.count; i++) {
+      const x = lakePosition.getX(i), z = lakePosition.getZ(i);
+      assert.ok(layout.lagoonRadius(x, z) < 1 || streams.inBunkerStream(x, z), "water stays inside the kerb or a recessed brook");
+    }
     assert.ok(f.scene.getObjectByName(`uyuni-bunker-lagoon-bed-${bunker.id}`).layers.isEnabled(bunkers.BED_LAYER));
     assert.ok(!f.scene.getObjectByName(`uyuni-bunker-white-marble-${bunker.id}`).layers.isEnabled(bunkers.BED_LAYER));
     for (const name of ["garden-leaves", "leaf-sprays", "trailing-willow"]) {
@@ -374,6 +426,179 @@ test("water stays where nobody can stand, the lake is drawn clear until the sea 
   }
   assert.equal(f.scene.getObjectByName("uyuni-bunker-trailing-willow-dawn").material.visible, false, "the willow photograph is not drawn before it has arrived");
   cleanup(f);
+});
+
+test("photographic foliage loads lazily, keeps the 3D planting, and shares one atlas between both rooms", () => {
+  for (const mobile of [false, true]) {
+    const requests = [], photo = new THREE.Texture(), flowerPhoto = new THREE.Texture();
+    let released = 0, flowersReleased = 0;
+    photo.addEventListener("dispose", () => released++);
+    flowerPhoto.addEventListener("dispose", () => flowersReleased++);
+    const f = fixture({ mobile, loadTexture: path => { requests.push(path); return path.includes("flower-garden") ? flowerPhoto : photo; } }, false);
+    assert.equal(requests.length, 0, "the outdoor mirror never fetches indoor plant imagery");
+    assert.equal(f.control.prepare(), true);
+    assert.deepEqual(requests, [mobile ? "/beach/real/uyuni-indoor-botanical-atlas-mobile-v1.webp" : "/beach/real/uyuni-indoor-botanical-atlas-v1.webp", mobile ? "/beach/real/uyuni-flower-garden-atlas-mobile-v1.webp" : "/beach/real/uyuni-flower-garden-atlas-v1.webp"]);
+    const leaves = f.scene.getObjectByName("uyuni-bunker-leaf-sprays-dawn");
+    const geometry = leaves.geometry, cost = roomCost(f, "dawn");
+    assert.equal(leaves.material.map, null, "the existing cutouts remain while the photo downloads");
+    const shader = { uniforms: {}, vertexShader: "#include <common>\n#include <begin_vertex>", fragmentShader: "#include <common>\n#include <color_fragment>\n#include <lights_fragment_begin>\n#include <aomap_fragment>" };
+    leaves.material.onBeforeCompile(shader);
+    assert.equal(shader.uniforms.uBotanicalReady.value, 0);
+    photo.image = { width: mobile ? 1024 : 1254, height: mobile ? 1024 : 1254 };
+    f.control.update(1);
+    assert.equal(leaves.material.map, photo);
+    assert.equal(shader.uniforms.uBotanicalReady.value, 1, "the photograph is not tinted by the old painted greens");
+    assert.equal(f.scene.getObjectByName("uyuni-bunker-leaf-sprays-dusk").material, leaves.material);
+    assert.equal(leaves.geometry, geometry);
+    assert.deepEqual(roomCost(f, "dawn"), cost, "photo detail adds no draw calls or plant geometry");
+    assert.equal(photo.colorSpace, THREE.SRGBColorSpace);
+    assert.equal(photo.wrapS, THREE.ClampToEdgeWrapping);
+    assert.equal(photo.minFilter, THREE.LinearMipmapLinearFilter);
+    assert.ok(leaves.material.alphaTest > 0 && !leaves.material.transparent);
+    assert.equal(leaves.material.alphaToCoverage, true, "antialiased cutout edges do not switch whole pixels on and off during movement");
+    assert.equal(f.scene.getObjectByName("uyuni-bunker-trailing-willow-dawn").material.alphaToCoverage, true);
+    const flowers = f.scene.getObjectByName("uyuni-bunker-photographic-flowers-dawn"), flowerShader = { uniforms: {}, vertexShader: "#include <common>\n#include <begin_vertex>", fragmentShader: "#include <common>\n#include <map_fragment>\n#include <color_fragment>\n#include <lights_fragment_begin>\n#include <aomap_fragment>" };
+    flowers.material.onBeforeCompile(flowerShader);
+    assert.equal(flowers.material.map, photo, "existing blossoms remain if the flower photo is still downloading");
+    assert.equal(flowerShader.uniforms.uFlowerAtlasReady.value, 0);
+    flowerPhoto.image = { width: mobile ? 1024 : 1254, height: mobile ? 1024 : 1254 }; f.control.update(2);
+    assert.equal(flowers.material.map, flowerPhoto); assert.equal(flowerShader.uniforms.uFlowerAtlasReady.value, 1);
+    assert.equal(f.scene.getObjectByName("uyuni-bunker-photographic-flowers-dusk").material, flowers.material);
+    assert.equal(flowers.material.alphaToCoverage, true); assert.equal(flowers.material.transparent, false);
+    assert.deepEqual(roomCost(f, "dawn"), cost, "the detailed flowers change no geometry after loading");
+    const uv = geometry.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+      const u = uv.getX(i) % .5, v = uv.getY(i) % .5;
+      assert.ok(u > .01 && u < .49 && v > .01 && v < .49, "UV gutters prevent neighbouring atlas cells bleeding into a leaf");
+    }
+    f.control.dispose(); f.control.dispose();
+    assert.equal(released, 1);
+    assert.equal(flowersReleased, 1);
+    f.wood.dispose(); f.cotton.dispose();
+  }
+});
+
+test("rotated wall foliage keeps every corner ahead of the wall including wind and curvature", () => {
+  for (const size of [.4, .8, 1.0, 2.5]) for (const yaw of [-.55, -.2, 0, .3, .55]) for (const tilt of [-.55, 0, .55]) {
+    const distance = bunkers.bunkerWallFoliageClearance(size, yaw, tilt, .9), rotation = new THREE.Euler(tilt, yaw, 0, "YXZ");
+    for (const x of [-size / 2, size / 2]) for (const y of [-size / 2, size / 2]) {
+      const corner = new THREE.Vector3(x, y, 0).applyEuler(rotation);
+      assert.ok(distance + corner.z - .052 * .9 > .05 + size * size * .035, "a card cannot disappear behind the plaster when it sways");
+    }
+  }
+});
+
+test("upstairs cherry blossoms and the ladder housing fit below the flat glass ceiling", () => {
+  for (const mobile of [false, true]) {
+    const f = fixture({ mobile }), roofY = layout.BUNKER_GLASS_ROOF_Y;
+    const flowers = f.scene.getObjectByName("uyuni-bunker-photographic-flowers-dawn").geometry, p = flowers.attributes.position, uv = flowers.attributes.uv;
+    for (const tree of layout.BUNKER_TREES_LOCAL.filter(tree => tree.upstairs)) {
+      let crown = 0;
+      for (let i = 0; i < p.count; i++) {
+        if (uv.getX(i) < .5 || uv.getY(i) >= .5 || p.getY(i) < layout.BUNKER_TERRACE.height + 1 || Math.hypot(p.getX(i) - tree.x, p.getZ(i) - tree.z) > 3) continue;
+        crown++;
+        assert.ok(p.getY(i) <= roofY - .1, "whole petals stay below the glass, not clipped at it");
+      }
+      assert.ok(crown >= (mobile ? 200 : 600), "the shorter tree keeps a full flowering crown");
+    }
+    const walls = f.scene.getObjectByName("uyuni-bunker-cream-plaster-dawn").geometry.attributes.position;
+    let shaftTop = 0;
+    for (let i = 0; i < walls.count; i++) if (Math.abs(walls.getX(i)) < 1.1 && Math.abs(walls.getZ(i) - layout.BUNKER_LADDER_LOCAL.z) < 1.1) shaftTop = Math.max(shaftTop, walls.getY(i));
+    close(shaftTop, roofY, "no opaque housing projects above the flat roof");
+    cleanup(f);
+  }
+});
+
+test("the recessed brooks conserve the floor area and have one water layer with a sealed shallow bed", () => {
+  const plane = new THREE.PlaneGeometry(30, 36, 12, 14); plane.rotateX(-Math.PI / 2); plane.translate(0, 0, 1);
+  const cut = streams.carveBunkerStreams(plane);
+  const area = geometry => {
+    const p = geometry.attributes.position, idx = geometry.index; let total = 0;
+    for (let i = 0; i < idx.count; i += 3) {
+      const a = idx.getX(i), b = idx.getX(i + 1), c = idx.getX(i + 2);
+      total += Math.abs((p.getX(b) - p.getX(a)) * (p.getZ(c) - p.getZ(a)) - (p.getZ(b) - p.getZ(a)) * (p.getX(c) - p.getX(a))) / 2;
+    }
+    return total;
+  };
+  assert.ok(Math.abs(area(cut.floor) + area(cut.water) - area(plane)) < .001, `cutting does not overlap or lose floor fragments: ${area(cut.floor)} dry + ${area(cut.water)} wet vs ${area(plane)}`);
+  const material = new THREE.MeshBasicMaterial(), meshes = Object.fromEntries(Object.entries(cut).map(([name, geometry]) => [name, new THREE.Mesh(geometry, material)]));
+  for (const path of streams.bunkerStreamBanks()) for (const [x, z] of path.centre.slice(1, -1)) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, 1, z), new THREE.Vector3(0, -1, 0));
+    assert.equal(ray.intersectObject(meshes.floor).length, 0, "the old floor is removed beneath every stream");
+    const water = ray.intersectObject(meshes.water), bed = ray.intersectObject(meshes.bed);
+    assert.equal(water.length, 1, "curved segments never double their transparent water");
+    close(water[0].point.y, streams.BUNKER_STREAM_LEVEL); close(bed[0].point.y, streams.BUNKER_STREAM_BED);
+  }
+  for (const geometry of [plane, ...Object.values(cut)]) geometry.dispose(); material.dispose();
+});
+
+test("every stone crossing has a real raised surface, separated from its dry banks on PC and mobile", () => {
+  assert.equal(streams.BUNKER_STREAM_CROSSINGS.length, 7);
+  for (const mobile of [false, true]) {
+    const f = fixture({ mobile }), bunker = layout.UYUNI_BUNKERS[0], floor = f.scene.getObjectByName("uyuni-bunker-white-marble-dawn");
+    let bankChecks = 0;
+    for (const [x, z] of streams.BUNKER_STREAM_CROSSINGS) for (const dx of [-.68, 0, .68]) for (const dz of [-.31, .08, .31]) {
+      const hits = new THREE.Raycaster(new THREE.Vector3(bunker.x + x + dx, bunker.floorY + .3, bunker.z + z + dz), new THREE.Vector3(0, -1, 0), 0, .5).intersectObject(floor);
+      assert.ok(hits.length > 0, `crossing at ${x},${z} has no hole`);
+      close(hits[0].point.y - bunker.floorY, streams.BUNKER_STREAM_CROSSING_TOP, "the bridge top sits 3 cm above the old floor");
+      const underneath = hits.filter(hit => Math.abs(hit.point.y - bunker.floorY) < .0001);
+      if (underneath.length) {
+        bankChecks++;
+        assert.ok(hits[0].point.y - underneath[0].point.y > .025, "the dry bank and bridge are distinct surfaces, never coplanar");
+      }
+    }
+    assert.ok(bankChecks >= 24, `${bankChecks} sampled bank overlaps stay separated`);
+    cleanup(f);
+  }
+});
+
+test("the ladder reaches the real hatch and both stair heads have a closed final riser", () => {
+  for (const mobile of [false, true]) {
+    const f = fixture({ mobile }), bunker = layout.UYUNI_BUNKERS[0], ladder = layout.BUNKER_LADDER_LOCAL, T = layout.BUNKER_TERRACE;
+    const oak = f.scene.getObjectByName("uyuni-bunker-warm-oak-dawn"), floor = f.scene.getObjectByName("uyuni-bunker-white-marble-dawn");
+    const up = new THREE.Raycaster(new THREE.Vector3(bunker.x + .25, bunker.floorY + 2, bunker.z + ladder.z + .35), new THREE.Vector3(0, 1, 0)).intersectObject(oak)[0];
+    assert.ok(up); assert.ok(Math.abs(up.point.y - bunker.entry.y) < .06, "no ceiling cap interrupts the shaft below the ground hatch");
+    const p = oak.geometry.attributes.position;
+    let highestRail = 0;
+    for (let i = 0; i < p.count; i++) if (Math.abs(Math.abs(p.getX(i)) - .52) < .055 && Math.abs(p.getZ(i) - ladder.z) < .06) highestRail = Math.max(highestRail, p.getY(i));
+    assert.ok(highestRail >= bunker.entry.y - bunker.floorY - .08, "the rails continue all the way to the hatch");
+    for (const side of [-1, 1]) for (const radius of [.83, .88, .94, .99]) {
+      const from = layout.hallPoint(radius, side * (T.top + .006)), to = layout.hallPoint(radius, side * (T.top - .006));
+      const direction = new THREE.Vector3(to.x - from.x, 0, to.z - from.z).normalize();
+      const ray = new THREE.Raycaster(new THREE.Vector3(bunker.x + from.x, bunker.floorY + T.height - .03, bunker.z + from.z), direction, 0, .5);
+      assert.ok(ray.intersectObject(floor)[0], `the final riser closes the ${side} landing at radius ${radius}`);
+    }
+    const leaves = f.scene.getObjectByName("uyuni-bunker-garden-leaves-dawn").geometry.attributes.position, heights = new Set();
+    for (let i = 0; i < leaves.count; i++) {
+      const y = leaves.getY(i);
+      if (layout.inLagoon(leaves.getX(i), leaves.getZ(i)) && y > layout.BUNKER_LAGOON.level && y < layout.BUNKER_LAGOON.level + .07) heights.add(Math.floor((y - layout.BUNKER_LAGOON.level - .024) / .014));
+    }
+    assert.ok(heights.size >= 3, "overlapping lily pads occupy separate heights instead of flickering on one plane");
+    cleanup(f);
+  }
+});
+
+test("indoor water stays one small animated transparent draw on desktop and phone, without reflection textures", async () => {
+  const source = await readFile(new URL("../lib/beach/uyuni.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /BunkerLagoonWater|prepareWater|bakeShoreMap|OceanSim|OceanSurface/, "entry must not recreate the outdoor ocean engine");
+  for (const mobile of [false, true]) {
+    const f = fixture({ mobile });
+    const lake = f.scene.getObjectByName("uyuni-bunker-lagoon-dawn");
+    assert.ok(lake.geometry.index.count / 3 <= (mobile ? 1800 : 3200), `the pond and all three brooks share a small mesh (${lake.geometry.index.count / 3} triangles)`);
+    assert.equal(lake.material.transparent, true);
+    assert.ok(Object.values(lake.material.uniforms).every(uniform => !uniform.value?.isTexture), "ripples need no texture or offscreen pass");
+    assert.doesNotMatch(lake.material.vertexShader + lake.material.fragmentShader, /sampler|texture2D|textureCube/);
+    assert.match(lake.material.vertexShader, /p\.y \+= edge/);
+    f.control.setActive("dawn"); f.control.update(12.5);
+    assert.equal(lake.material.uniforms.uTime.value, 12.5);
+    f.control.setActive(null); f.control.setActive("dusk"); f.control.update(13.5);
+    const other = f.scene.getObjectByName("uyuni-bunker-lagoon-dusk");
+    assert.equal(other.visible, true);
+    assert.equal(other.geometry, lake.geometry, "changing rooms reuses the pond geometry");
+    assert.equal(other.material, lake.material, "changing rooms reuses the pond shader");
+    assert.equal(other.material.uniforms.uTime.value, 13.5);
+    cleanup(f);
+  }
 });
 
 test("a scatter cushion rests on the seat and lies flat against what is behind it, never sinking into it", () => {

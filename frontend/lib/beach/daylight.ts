@@ -258,8 +258,8 @@ export function gardenDaylightAt(hourIn: number): Daylight {
   const base = daylightAt(hourIn);
   const night = Math.max(0, Math.min(1, base.stars));
   const paper: RGB = [0.89, 0.94, 0.94];
-  const inkNight: RGB = [0.05, 0.08, 0.13];
-  const fog = mixRgb(mixRgb(base.fog, paper, 0.64 * (1 - night)), inkNight, base.deepNight);
+  const inkNight: RGB = [0.025, 0.04, 0.07];
+  const fog = mixRgb(mixRgb(base.fog, paper, 0.64 * (1 - night)), inkNight, night);
   const grey = (base.tint[0] + base.tint[1] + base.tint[2]) / 3;
   const washed: RGB = [mix(base.tint[0], grey, 0.06), mix(base.tint[1], grey, 0.06), mix(base.tint[2], grey, 0.06)];
   return { ...base, fog, fogNear: 55, fogFar: 220, tint: washed };

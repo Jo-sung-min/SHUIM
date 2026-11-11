@@ -269,7 +269,7 @@ void main() {
   #include <fog_fragment>
 }`;
 
-/** 생성한 봄 산수 파노라마. 거울 반복으로 세로 이음새를 없애고 하늘 쪽은 안개로 부드럽게 사라진다. */
+/** 산 능선을 뒤집지 않고 이어 붙이고, 먼 산과 하늘은 안개로 부드럽게 연결한다. */
 export const GARDEN_MOUNTAIN_VERT = `
 varying vec2 vUv;
 void main() {
@@ -286,11 +286,26 @@ uniform float uRain;
 varying vec2 vUv;
 void main() {
   if (uPhotographic > 0.5) {
-    float x = 1.0 - abs(fract(vUv.x * 2.0) * 2.0 - 1.0);
-    vec3 landscape = texture2D(uInk, vec2(x, vUv.y)).rgb;
+    // Two forward-facing spans retain the source's natural proportions on
+    // the 360-degree cylinder. Never reflect the UVs: that makes twin peaks.
+    float span = vUv.x * 2.0;
+    float x = fract(span);
+    float azimuth = vUv.x * 6.2831853;
+    float ridgeOffset = sin(azimuth + 0.7) * 0.025 + sin(azimuth * 3.0 + 1.4) * 0.012;
+    float y = clamp(vUv.y + ridgeOffset * sin(vUv.y * 3.1415927), 0.0, 1.0);
+    // Derivatives must come from the continuous coordinate, before fract.
+    // Implicit mip selection sees the wrap as a huge footprint and paints a
+    // narrow blurred stripe; conditional sampling also leaves helper lanes undefined.
+    vec2 continuousUv = vec2(span * 0.9, y);
+    vec2 gradientX = dFdx(continuousUv), gradientY = dFdy(continuousUv);
+    vec3 current = texture2DGradEXT(uInk, vec2(x * 0.9, y), gradientX, gradientY).rgb;
+    vec3 previous = texture2DGradEXT(uInk, vec2(0.9 + x * 0.9, y), gradientX, gradientY).rgb;
+    // Both sides meet at source x=.9 with the same forward slope; the last
+    // tenth of the photo dissolves into its beginning without mirroring it.
+    vec3 landscape = mix(previous, current, smoothstep(0.0, 1.0 / 9.0, x));
     float luma = dot(landscape, vec3(0.2126, 0.7152, 0.0722));
     landscape = mix(landscape, vec3(luma), 0.08 + uRain * 0.25);
-    landscape *= mix(vec3(1.0, 1.0, 0.99), vec3(0.12, 0.19, 0.32), uNight);
+    landscape *= mix(vec3(1.0, 1.0, 0.99), vec3(0.08, 0.12, 0.2), uNight);
     float haze = 0.1 + smoothstep(0.35, 0.88, vUv.y) * 0.72 + uRain * 0.3;
     landscape = mix(landscape, uFogColor, clamp(haze, 0.0, 0.96));
     float cover = (1.0 - smoothstep(0.54, 0.94, vUv.y)) * smoothstep(0.0, 0.08, vUv.y);
@@ -351,6 +366,62 @@ void main() {
   vec3 tint = mix(uLeafShade, uLeafLit, vTint);
   vec3 viewDir = normalize(cameraPosition - vWorld);
   vec3 light = gardenLight(vWorld, vec3(0.0, 1.0, 0.0), viewDir, 0.7) + uSunColor * uTransmit * max(uSunDir.y, 0.0);
+  vec3 color = leaf.rgb * tint * light * gardenGrain() * (1.0 - uWet * 0.18);
+  gl_FragColor = vec4(color, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+
+/** Small leaf-only clusters occupy a real crown volume instead of crossing complete tree photographs. */
+export const GARDEN_TREE_VERT = `
+attribute vec4 aLeaf;
+attribute vec4 aLeafSeed;
+attribute vec3 aCrownNormal;
+uniform float uTime;
+uniform float uSway;
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vCrownNormal;
+varying float vTint;
+#include <fog_pars_vertex>
+void main() {
+  vUv = uv;
+  vTint = aLeafSeed.y;
+  vCrownNormal = aCrownNormal;
+  float phase = uTime * 0.58 + aLeafSeed.x;
+  vec3 center = aLeaf.xyz + vec3(sin(phase) * 0.028, sin(phase * 0.7) * 0.008, cos(phase * 0.83) * 0.018) * uSway;
+  float c = cos(aLeafSeed.z), s = sin(aLeafSeed.z);
+  vec2 card = vec2(position.x * c - position.y * s, position.x * s + position.y * c) * aLeaf.w;
+  card.y *= aLeafSeed.w;
+  // Orient the small clusters toward the current eye, including the reflected camera.
+  // Their distinct world-space centres preserve parallax and avoid edge-on black sheets.
+  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+  vWorld = center + right * card.x + up * card.y;
+  vec4 mvPosition = viewMatrix * vec4(vWorld, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+
+export const GARDEN_TREE_FRAG = `
+uniform sampler2D uLeaf;
+uniform vec3 uLeafShade;
+uniform vec3 uLeafLit;
+uniform float uTransmit;
+uniform float uWet;
+varying vec2 vUv;
+varying vec3 vWorld;
+varying vec3 vCrownNormal;
+varying float vTint;
+${GARDEN_LIGHT_GLSL}
+#include <fog_pars_fragment>
+void main() {
+  vec4 leaf = texture2D(uLeaf, vUv);
+  if (leaf.a < 0.32) discard;
+  vec3 tint = mix(uLeafShade, uLeafLit, vTint);
+  vec3 viewDir = normalize(cameraPosition - vWorld);
+  vec3 light = gardenLight(vWorld, normalize(vCrownNormal), viewDir, 0.72) + uSunColor * uTransmit * max(uSunDir.y, 0.0);
   vec3 color = leaf.rgb * tint * light * gardenGrain() * (1.0 - uWet * 0.18);
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>

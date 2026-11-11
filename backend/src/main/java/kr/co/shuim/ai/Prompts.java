@@ -4,15 +4,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Claude 에 보내는 시스템 프롬프트 기본값 (frontend/lib/prompts.ts 와 같은 내용).
+ * GPT에 보내는 시스템 프롬프트 기본값 (frontend/lib/prompts.ts 와 같은 내용).
  * 관리자 화면(/admin › 프롬프트)에서 덮어쓴 값은 요청 본문의 prompts 로 전달되어 이 기본값을 대신한다.
  */
 public final class Prompts {
     private Prompts() {}
 
     public static final int MAX_LEN = 8000;
-    public static final String DEFAULT_MODEL = "claude-haiku-5-5";
-    public static final List<String> MODELS = List.of("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5");
+    public static final String DEFAULT_MODEL = "gpt-6.1-terra";
+    public static final List<String> MODELS = List.of("gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna");
 
     public static boolean isAllowedModel(String m) { return m != null && MODELS.contains(m); }
 

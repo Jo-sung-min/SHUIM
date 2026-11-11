@@ -49,7 +49,7 @@ export const SHELTER_SEATS: readonly ShelterSeat[] = SHELTERS.flatMap((shelter) 
     id: `${shelter.id}-${sideIndex * 2 + index + 1}`,
     shelterId: shelter.id,
     name: shelter.name,
-    x: shelter.x + side * 3.9,
+    x: shelter.x + side * 4.08,
     z: shelter.z + LOUNGE_OFFSET_Z + offset,
     yaw: side * Math.PI / 2,
   }))),
@@ -396,8 +396,10 @@ export function buildShelters(scene: THREE.Scene): void {
         add(fabric, x + side * 3.98, 0.605, loungeZ + seatZ, 1.23, 0.19, 1.22, 0xfff8eb);
         add(fabric, x + side * 4.42, 1.0, loungeZ + seatZ, 0.28, 0.66, 1.18, 0xf3e9d8, side * 0.13);
       }
-      const throwPillows: readonly [number, number][] = [[-3.0, 0xb8734a], [-2.46, 0xe2d3b8], [-1.88, 0xc9a25a], [-1.3, accent], [-0.8, 0x8a8a63]];
-      throwPillows.forEach(([pillowZ, tone], index) => add(fabric, x + side * (4.22 - index % 2 * 0.08), 0.96, loungeZ + pillowZ, 0.36, 0.5, 0.5, tone, side * 0.12, (index - 2) * 0.05));
+      // Keep both deep sitting pockets clear: throws nest between the seats and
+      // beside the arms, behind the visitors instead of across their torsos.
+      const throwPillows: readonly [number, number][] = [[-3.0, 0xb8734a], [-1.9, accent], [-0.8, 0x8a8a63]];
+      throwPillows.forEach(([pillowZ, tone], index) => add(fabric, x + side * 4.38, 0.94, loungeZ + pillowZ, 0.32, 0.42, 0.43, tone, side * 0.12, (index - 1) * 0.05));
       // A wool throw falls over the arm of each sofa.
       add(fabric, x + side * 4.0, 0.975, loungeZ - 0.64, 0.8, 0.06, 0.3, 0xc99a7c);
 

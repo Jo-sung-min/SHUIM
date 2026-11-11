@@ -43,6 +43,12 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 
+# Local verification files and temporary caches
+/.tmp/
+/tmp/
+/temp/
+*.tmp
+
 # editor / os
 .vscode/
 .idea/

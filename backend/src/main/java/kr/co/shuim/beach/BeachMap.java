@@ -37,7 +37,8 @@ public enum BeachMap {
             case BeachRoom.REST_SPOT -> hasStarlight();
             case "hut-pine", "hut-wave", "hut-sunset", BeachRoom.BENCH_SPOT,
                  BeachRoom.ONSEN_BENCH_SPOT, BeachRoom.ONSEN_FLOAT_SPOT -> this == BEACH;
-            case BeachRoom.HOTEL_DAWN_SPOT, BeachRoom.HOTEL_DUSK_SPOT, "bunker-dawn-sofa", "bunker-dusk-sofa" -> this == UYUNI;
+            case BeachRoom.HOTEL_DAWN_SPOT, BeachRoom.HOTEL_DUSK_SPOT, BeachRoom.HOTEL_DAWN_CHAISE, BeachRoom.HOTEL_DUSK_CHAISE,
+                "bunker-dawn-sofa", "bunker-dusk-sofa" -> this == UYUNI;
             default -> hasPavilions() && BeachRoom.pavilionOn(this, spotId);
         };
     }

@@ -419,17 +419,22 @@ export class BeachAvatar {
   }
 
   private seatedPose() {
+    // The chibi legs are too short to hang naturally over a deep cushion. Rest
+    // them almost straight ahead instead, with a soft knee and relaxed toes.
+    // Lean from the spine so the pelvis still lands on the exact seat anchor.
+    this.aim("Spine", "Spine1", 0, 1, -0.08);
+    this.aim("Neck", "Head", 0, 1, 0.04, 0.5);
     for (const side of ["Left", "Right"]) {
       const sign = side === "Left" ? 1 : -1;
-      this.aim(`${side}UpLeg`, `${side}Leg`, sign * 0.08, -0.42, 0.91);
-      this.aim(`${side}Leg`, `${side}Foot`, 0, -1, -0.08);
-      this.aim(`${side}Foot`, `${side}ToeBase`, 0, -0.18, 1);
-      this.aim(`${side}Arm`, `${side}ForeArm`, sign * 0.2, -0.9, 0.35, 0.75);
-      this.aim(`${side}ForeArm`, `${side}Hand`, -sign * 0.18, -0.65, 0.75, 0.75);
+      this.aim(`${side}UpLeg`, `${side}Leg`, sign * 0.055, -0.06, 1);
+      this.aim(`${side}Leg`, `${side}Foot`, sign * 0.035, -0.18, 1);
+      this.aim(`${side}Foot`, `${side}ToeBase`, sign * 0.045, 0.28, 1);
+      this.aim(`${side}Arm`, `${side}ForeArm`, sign * 0.16, -0.96, 0.22, 0.85);
+      this.aim(`${side}ForeArm`, `${side}Hand`, -sign * 0.08, -0.40, 0.92, 0.85);
     }
   }
 
-  /** Seat the visible pelvis, not its internal joint; skirts and hanging legs are not support points. */
+  /** Seat the visible pelvis, not its internal joint; skirts and feet are not support points. */
   private seatedContact() {
     const hips = this.bones.get("Hips");
     if (!hips) return new THREE.Vector3(0, this.restHipHeight, 0);

@@ -13,7 +13,7 @@ async function load(file, dependencies, names) {
   vm.runInNewContext(`${source}\nglobalThis.api = { ${names.join(",")} };`, context);
   return context.api;
 }
-const layout = await load("../lib/beach/uyuni-hotel-layout.ts", {}, ["UYUNI_HOTELS", "UYUNI_HOTEL_DECK", "UYUNI_HOTEL_COLLIDERS", "UYUNI_HOTEL_SEATS", "UYUNI_HOTEL_BED_CAPACITY", "uyuniHotelForSpot", "uyuniHotelBedSlot", "claimedUyuniHotelBed", "nearbyUyuniHotel", "uyuniHotelFloorHeight", "uyuniHotelCeilingHeight"]);
+const layout = await load("../lib/beach/uyuni-hotel-layout.ts", {}, ["UYUNI_HOTELS", "UYUNI_HOTEL_DECK", "UYUNI_HOTEL_COLLIDERS", "UYUNI_HOTEL_SEATS", "UYUNI_HOTEL_BED_CAPACITY", "UYUNI_HOTEL_CHAISE_CAPACITY", "uyuniHotelForSpot", "uyuniHotelBedSlot", "claimedUyuniHotelBed", "nearbyUyuniHotel", "nearbyUyuniChaise", "uyuniHotelFloorHeight", "uyuniHotelCeilingHeight"]);
 const nav = await load("../lib/beach/navigation.ts", {}, ["findWalkingPath", "resolveWalls"]);
 const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
 const { buildUyuniHotels } = await load("../lib/beach/uyuni-hotels.ts", { THREE, RoundedBoxGeometry, ...layout, ...textiles }, ["buildUyuniHotels"]);
@@ -40,6 +40,21 @@ test("two compact hotels preserve the shared sky circle, and each has two server
   }
   assert.equal(layout.uyuniHotelBedSlot("hut-pine", 0), null);
   assert.equal(layout.uyuniHotelFloorHeight(7, 7), 0);
+});
+
+test("each deck has two independent outdoor loungers with reachable, gently inclined lying places", () => {
+  assert.equal(layout.UYUNI_HOTEL_CHAISE_CAPACITY, 2);
+  for (const hotel of layout.UYUNI_HOTELS) for (let slot = 0; slot < 2; slot++) {
+    const chaise = layout.uyuniHotelBedSlot(`hotel-${hotel.id}-chaise`, slot);
+    const x = hotel.x + (slot === 0 ? -3.3 : 3.3), z = hotel.z - 6.6;
+    near(chaise.x, x); near(chaise.z, hotel.z - 7.5); near(chaise.yaw, Math.PI);
+    assert.ok(chaise.incline > 0 && chaise.incline < .3);
+    assert.equal(layout.nearbyUyuniChaise(x, z).id, hotel.id);
+    assert.equal(layout.nearbyUyuniChaise(x, z - 2.21), null);
+    assert.equal(layout.nearbyUyuniHotel(x, z), null, "outside loungers do not claim indoor beds");
+    assert.deepEqual(plain(layout.claimedUyuniHotelBed({ ...chaise, pose: "lying" })), plain(chaise));
+    for (const badSlot of [-1, 2, .5]) assert.equal(layout.uyuniHotelBedSlot(chaise.spotId, badSlot), null);
+  }
 });
 
 test("front ramps climb continuously, decks stay dry and bed reach never extends through hotel walls", () => {

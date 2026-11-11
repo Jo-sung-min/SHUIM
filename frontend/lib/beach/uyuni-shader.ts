@@ -113,6 +113,7 @@ vec3 uyuniSky(vec3 direction) {
 export const UYUNI_SKY_FRAGMENT = `${UYUNI_SKY_UNIFORMS}
 varying vec3 vDir;
 ${UYUNI_SKY_FUNCTIONS}
+
 void main() {
   vec3 d = normalize(vDir);
   vec3 color;
@@ -159,8 +160,24 @@ uniform vec2 uWalker;
 uniform vec4 uRipples[${UYUNI_SURFACE.rippleCount}];
 uniform int uRippleLimit;
 uniform float uWaveScale;
+uniform float uFirstPersonWater;
+uniform float uWalkWake;
+uniform vec2 uWalkDirection;
 varying vec3 vWorld;
 ${UYUNI_SKY_FUNCTIONS}
+
+// First-person footsteps spread far enough to be seen ahead of a walker and
+// carry several soft crests. The original third-person wave is the zero case.
+vec2 uyuniStepWave(float distance, float age, float strength, float closeView) {
+  float wave = distance - age * mix(0.74, 5.6, closeView);
+  float envelope = exp(-wave * wave / mix(0.025, 0.6, closeView))
+    * (1.0 - smoothstep(0.2, ${UYUNI_SURFACE.rippleLifetime}, age))
+    * smoothstep(0.0, 0.12, age) * strength;
+  float crest = cos(wave * mix(22.0, 12.6, closeView));
+  float light = mix(1.0, 0.18 + max(crest, 0.0) * 0.82, closeView);
+  return vec2(crest * envelope * mix(0.008, 0.0065, closeView), envelope * mix(0.025, 0.04, closeView) * light);
+}
+
 void main() {
   vec2 p = vWorld.xz;
   float dry = 1.0 - smoothstep(${UYUNI_SURFACE.dryRadius}, ${UYUNI_SURFACE.wetRadius},
@@ -168,6 +185,17 @@ void main() {
   // Millimetric undulations, not ocean waves: keep the galaxy legible at our feet.
   vec2 slope = vec2(cos(p.x * 0.7 + p.y * 0.31 + uTime * 0.24),
     sin(p.y * 0.65 - p.x * 0.23 + uTime * 0.19)) * 0.00065 * uWaveScale;
+  float closeWater = 1.0 - smoothstep(2.0, 7.0, length(p - uCamPos.xz));
+  if (uFirstPersonWater > 0.0 && closeWater > 0.0) {
+    // Keep distant stars perfectly calm; only nearby shallow water rolls.
+    slope += vec2(cos(p.x * 2.3 + p.y * 1.2 - uTime * 1.1),
+      sin(p.y * 2.1 - p.x * 0.9 + uTime * 0.93))
+      * 0.0013 * uFirstPersonWater * closeWater * (0.35 + uWalkWake * 0.65) * uWaveScale;
+    vec2 ahead = p - uWalker - uWalkDirection * 0.9;
+    float reach = length(ahead);
+    float wake = (1.0 - smoothstep(0.65, 4.5, reach)) * uWalkWake * uFirstPersonWater * closeWater;
+    slope += ahead / max(reach, 0.12) * sin(reach * 8.5 - uTime * 4.2) * 0.0025 * wake * uWaveScale;
+  }
   float rings = 0.0;
   for (int i = 0; i < ${UYUNI_SURFACE.rippleCount}; i++) {
     if (i >= uRippleLimit) break;
@@ -176,12 +204,10 @@ void main() {
     if (ripple.w > 0.0 && age >= 0.0 && age < ${UYUNI_SURFACE.rippleLifetime}) {
       vec2 delta = p - ripple.xy;
       float distance = length(delta);
-      float wave = distance - age * 0.74;
-      float envelope = exp(-wave * wave / 0.025)
-        * (1.0 - smoothstep(0.2, ${UYUNI_SURFACE.rippleLifetime}, age))
-        * smoothstep(0.0, 0.12, age) * ripple.w;
-      slope += delta / max(distance, 0.035) * cos(wave * 22.0) * envelope * 0.008;
-      rings += envelope * 0.025;
+      vec2 wave = uyuniStepWave(distance, age, ripple.w, uFirstPersonWater);
+      float nearby = mix(1.0, closeWater, uFirstPersonWater);
+      slope += delta / max(distance, 0.035) * wave.x * nearby;
+      rings += wave.y * nearby;
     }
   }
   slope *= (1.0 - dry);
@@ -201,7 +227,11 @@ void main() {
   // The visible salt floor is only centimetres below the surface. No second
   // transparent plane, render target, depth read, blur pass or avatar reflection.
   vec3 color = mix(salt, reflection, clamp(reflectionAmount, 0.0, 1.0));
-  color += vec3(0.35, 0.43, 0.55) * rings * (1.0 - dry) * mix(0.45, 0.2, night);
+  float ringGlint = rings * mix(0.45, 0.2, night);
+  // A restrained silver catch-light makes moving crests readable against dark
+  // reflections. Clamp overlapping wakes so they never turn into white foam.
+  ringGlint = mix(ringGlint, min(rings * mix(0.45, 0.38, night), 0.016), uFirstPersonWater);
+  color += vec3(0.35, 0.43, 0.55) * ringGlint * (1.0 - dry);
   color = uyuniWaterHorizon(color, incoming, night);
   gl_FragColor = vec4(color, 1.0);
 }

@@ -22,7 +22,8 @@ import { HORIZON_MELT, SKY_FRAGMENT } from "./sky-shader";
 import { UyuniWorld } from "./uyuni";
 import { BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, bunkerById, bunkerCeilingAt, bunkerFloorAt, bunkerForSpot, bunkerCameraBlocked, bunkerColliders, bunkerInside, bunkerStepClear, claimedBunkerSeat, nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa, resolveBunkerWalk, type UyuniBunkerId } from "./uyuni-bunker-layout";
 import type { BoardGame } from "./net";
-import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
+import { UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_CHAISE_CAPACITY, UYUNI_HOTEL_COLLIDERS, UYUNI_HOTEL_SEATS, claimedUyuniHotelBed, isUyuniChaiseSpot, nearbyUyuniChaise, nearbyUyuniHotel, uyuniHotelCeilingHeight, uyuniHotelFloorHeight, uyuniHotelForSpot } from "./uyuni-hotel-layout";
+import { nearUyuniBooks } from "./uyuni-books";
 import { UYUNI_SKY_FRAGMENT } from "./uyuni-shader";
 import { BambooWorld } from "./bamboo";
 import { BambooFestivalToys } from "./bamboo-festival-toys";
@@ -38,7 +39,7 @@ import { BaikalWorld } from "./baikal";
 import { BAIKAL_SKY_FRAGMENT } from "./baikal-sky";
 import { BAIKAL_COLLIDERS, BAIKAL_SEATS, BAIKAL_SEAT_REACH, BAIKAL_WALLS, baikalCeilingHeight, baikalFloorHeight, baikalForSpot, baikalStormAt, claimedBaikalSeat, insideBaikalCabin, nearbyBaikalPlace, resolveBaikalWalk } from "./baikal-layout";
 import { GARDEN_SKY_FRAGMENT } from "./garden-shader";
-import { BOAT_DECK_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, PIER_Y, claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, insideHall, nearbyGardenPavilion, pierEnd, resolveGardenWalk, type BoatStop } from "./garden-layout";
+import { boatBobAt, boatHeadingAt, boatSeatAt, isWater as gardenIsWater, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, PIER_Y, claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, insideHall, nearbyGardenPavilion, pierEnd, resolveGardenWalk, type BoatStop } from "./garden-layout";
 import type { BoatRideState, RemoteRider } from "./garden-boat";
 import { BAMBOO_PAVILIONS, BAMBOO_PAVILION_COLLIDERS, BAMBOO_PAVILION_OBSTACLES, BAMBOO_PAVILION_SEATS, PAVILION_POST_HEIGHT, PAVILION_REACH, PAVILION_SEAT_CAPACITY, TRAIL_WALK_HALF, bambooCeilingHeight, bambooPavilionForSpot, claimedPavilionSeat, nearbyBambooPavilion, nearestOnTrail, onTrail, resolveTrail, type PavilionSeat } from "./bamboo-trail";
 import type { MapId } from "./maps";
@@ -52,7 +53,7 @@ import { CareGestures, type CareAnchor } from "./care-effects";
 import { BeachAvatarModels, type AvatarKind, type BeachAvatar } from "./rigged-avatar";
 import type { ChibiCharacter } from "../chibi/character";
 import { BeachUltraSea, FAR_SKY_SHARE, SAND_SHORE_ALBEDO, SAND_SHORE_CAUSTICS, SAND_SHORE_PARS, ULTRA_RADIUS } from "./ultra-sea";
-import { REFRACT_LAYER, beachSandGeometry, sandHeight } from "./shore-terrain";
+import { beachSandGeometry, sandHeight } from "./shore-terrain";
 import { PixelAvatarDepth } from "./pixel-avatar-depth";
 import { RemoteMotionBuffer, RemoteSnapshotClock, type SnapshotTiming } from "./remote-motion";
 import { STARGAZING, applyLyingTransform, buildStargazingZone, claimedStargazingSlot, stargazingApproach, stargazingBodyPoint, stargazingCameraDistance, type StargazingSlot, type StargazingState } from "./stargazing";
@@ -86,7 +87,7 @@ function mapSupportsSpot(mapId: MapId, spotId: string | null | undefined): boole
 
 export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface SelfState { x: number; z: number; yaw: number; moving: boolean; bunkerId?: UyuniBunkerId | null }
-export interface BunkerState { bunkerId: UyuniBunkerId | null; nearId: UyuniBunkerId | null; name: string; inside: boolean; ladderNear: boolean; sofaNear: boolean; seated: boolean; spotId: string | null; gameNearId: string | null; occupied: number; capacity: number; available: boolean }
+export interface BunkerState { bunkerId: UyuniBunkerId | null; nearId: UyuniBunkerId | null; name: string; inside: boolean; ladderNear: boolean; sofaNear: boolean; seated: boolean; spotId: string | null; gameNearId: string | null; bookNear: boolean; occupied: number; capacity: number; available: boolean }
 export interface RestState { shelterName: string; seated: boolean }
 export interface BenchState { near: boolean; seated: boolean; occupied: number; capacity: number; available: boolean }
 export interface OnsenState { inWater: boolean; canSit: boolean; canFloat: boolean; sitting: boolean; floating: boolean; occupiedSeats: number[]; occupiedFloats: number[] }
@@ -404,10 +405,8 @@ export class BeachEngine {
   private skyMat!: THREE.ShaderMaterial;
   private lastStarView: THREE.Quaternion | null = null;
   private seaMat!: THREE.ShaderMaterial;
-  /** 만 안쪽 가까운 바다 (Ultra Water). 지원하지 않는 기기·낮은 화질에선 원래 바다만 */
+  /** 만 안쪽 가까운 바다. 반사 촬영 없이 가벼운 잔물결로 그린다. */
   private ultraSea: BeachUltraSea | null = null;
-  /** 물에 들어간 사람은 굴절 패스에도 그려 물속 다리가 비친다 */
-  private wading = new WeakMap<THREE.Object3D, boolean>();
   private sandMat!: THREE.MeshStandardMaterial;
   private photo: THREE.Texture | null = null;
   private assetLoads: Promise<void>[] = [];
@@ -629,7 +628,7 @@ export class BeachEngine {
       wood.repeat.set(2, 2);
       // Garden artwork follows the same verified public CDN path as the other map textures.
       const landscape = this.loadEnvironmentTexture("/garden/art/spring-hills-panorama-v1.webp", false);
-      const willow = this.loadEnvironmentTexture("/garden/art/willow-canopy-v1.webp", true);
+      const willow = this.loadEnvironmentTexture(this.mobile ? "/garden/art/zelkova-leaves-mobile-v2.webp" : "/garden/art/zelkova-leaves-v2.webp", true);
       const grass = this.loadEnvironmentTexture(this.mobile ? "/garden/art/grass-natural-mobile-v1.webp" : "/garden/art/grass-natural-v1.webp", true, [1, 1]);
       grass.anisotropy = Math.min(this.mobile ? 2 : 4, this.renderer.capabilities.getMaxAnisotropy());
       this.garden = new GardenWorld(this.scene, this.skyMat.uniforms, { wood, landscape, willow, grass }, this.mobile);
@@ -638,8 +637,6 @@ export class BeachEngine {
     } else {
       this.buildGround();
       this.cove = new Cove(this.scene, this.obstacles);
-      const ridge = this.scene.getObjectByName("cove-original-ridge");
-      if (this.ultraSea && ridge && !this.mobile) this.ultraSea.addRefracted(ridge);
     }
     this.avatarModels = new BeachAvatarModels();
     this.femaleAvatarModels = new BeachAvatarModels("female");
@@ -757,7 +754,7 @@ export class BeachEngine {
       shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvCoastWorld = (modelMatrix * vec4(position, 1.0)).xyz;");
       shader.fragmentShader = "varying vec3 vCoastWorld;\n" + shader.fragmentShader;
       if (ultra) {
-        // 가까운 바다와 같은 해안 지도·시간으로: 물이 모래 위로 찰랑 올라왔다 빠지는 막, 젖은 자국, 물속 코스틱
+        // 가까운 바다와 같은 시간으로 해안에 올라왔다 빠지는 물과 젖은 모래를 맞춘다.
         Object.assign(shader.uniforms, ultra.sandUniforms);
         shader.fragmentShader = shader.fragmentShader
           .replace("#include <common>", "#include <common>\n" + SAND_SHORE_PARS)
@@ -770,7 +767,6 @@ export class BeachEngine {
     // 걷는 모래(z ≥ -1.2)는 그대로, 그 앞은 물가로 기울어 얕은 바다 바닥으로 이어진다 (무늬 좌표는 예전 평면과 같다).
     // 사람이 그 경사를 따라 물에 걸어 들어간다 (deckHeight).
     const sand = new THREE.Mesh(beachSandGeometry(), this.sandMat);
-    ultra?.addRefracted(sand);
     sand.renderOrder = 0;
     sand.receiveShadow = true;
     this.scene.add(sand);
@@ -852,15 +848,6 @@ export class BeachEngine {
 
   private baseAvatarPool(kind: AvatarKind) {
     return kind === "female" ? this.femaleAvatarModels : this.avatarModels;
-  }
-
-  /** 물가 안쪽으로 들어간 사람만 굴절 레이어에 (바뀔 때만 훑는다) */
-  private markWading(root: THREE.Object3D | undefined, z: number) {
-    if (!root || !this.ultraSea) return;
-    const wading = z < -0.6;
-    if (this.wading.get(root) === wading) return;
-    this.wading.set(root, wading);
-    root.traverse((o) => { if (wading) o.layers.enable(REFRACT_LAYER); else o.layers.disable(REFRACT_LAYER); });
   }
 
   private syncAvatar(node: AvatarNode, skin: number, x: number, z: number) {
@@ -1129,10 +1116,12 @@ export class BeachEngine {
       const hotel = uyuniHotelForSpot(spotId);
       if (this.disposed || this.skyRest || this.fixedSeat || !hotel) return Promise.resolve("cancelled");
       if (this.restSeat) this.standUp();
-      const target = { x: hotel.x, z: hotel.z + 0.3 };
+      const chaise = isUyuniChaiseSpot(spotId);
+      const side = this.self.x < hotel.x ? -1 : 1;
+      const target = chaise ? { x: hotel.x + side * 2.12, z: hotel.z - 6.6 } : { x: hotel.x, z: hotel.z + 0.3 };
       const path = findWalkingPath(this.self, target, this.obstacles, UYUNI_HOTEL_COLLIDERS, this.bounds, 12);
       if (!path) return Promise.resolve("blocked");
-      const arrival = this.walkTo(target, { x: hotel.x, z: hotel.z + 2.5 });
+      const arrival = this.walkTo(target, chaise ? { x: hotel.x + side * 3.3, z: hotel.z - 6.6 } : { x: hotel.x, z: hotel.z + 2.5 });
       if (this.auto) { this.auto.path = path; this.auto.cornerStop = 0.06; }
       return arrival;
     }
@@ -1194,9 +1183,11 @@ export class BeachEngine {
       inside: Boolean(room), ladderNear: Boolean(room && !seated && nearbyBunkerLadder(room.id, this.self.x, this.self.z)),
       sofaNear: Boolean(room && (seated || nearbyBunkerSofa(room.id, this.self.x, this.self.z))), seated,
       spotId: room?.spotId ?? null, gameNearId: room && !seated ? nearbyBunkerGame(room.id, this.self.x, this.self.z)?.id ?? null : null,
+      bookNear: Boolean(room && nearUyuniBooks(room.id, this.self.x, this.self.z)),
       occupied: used.size, capacity: BUNKER_SEAT_CAPACITY,
       available: Boolean(room && !seated && BUNKER_SEATS.some(seat => seat.spotId === room.spotId && !used.has(seat.slot)
-        && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= BUNKER_SEAT_REACH)) };
+        && Math.hypot(this.self.x - seat.x, this.self.z - seat.z) <= BUNKER_SEAT_REACH
+        && Math.abs(seat.baseY - bunkerFloorAt(room.id, this.self.x, this.self.z)) < .8)) };
   }
 
   private updateBunkerState() {
@@ -1213,7 +1204,8 @@ export class BeachEngine {
     if (!this.uyuni || (this.activeBunkerId ?? null) === id) return false;
     this.activeBunkerId = id;
     this.uyuni.setBunkerActive(id);
-    this.sky.visible = !id;
+    // The glass conservatory has its own night vista; outdoor geometry stays hidden.
+    this.sky.visible = true;
     this.fireworkAudio?.setSceneRunning(!id && this.running);
     this.uyuniMoments?.dispose(); this.uyuniMoments = null; this.sparklerActors.clear();
     this.fireworks?.dispose(); this.fireworks = null;
@@ -1340,7 +1332,12 @@ export class BeachEngine {
     if (!stop) return null;
     this.cancelAutoWalk(); this.faceGoal = null;
     if (this.restSeat) this.standUp();
+    const pose = this.garden.boatPose;
+    this.self.x = pose.x; this.self.z = pose.z; this.self.yaw = pose.yaw; this.self.moving = false;
+    this.orbitYaw = pose.yaw + .42;
     this.self.pitch = 0.02;
+    this.eyeHeight = boatSeatAt(pose, this.time).avatarY + .78;
+    this.move = { x: 0, y: 0 };
     this.followSnap = true;
     this.handlers.onBoatChange?.(this.garden.boatState);
     return "boarded";
@@ -1355,6 +1352,8 @@ export class BeachEngine {
     this.self.yaw = Math.atan2(pier.dx, pier.dz);
     this.orbitYaw = this.self.yaw;
     this.self.moving = false;
+    this.move = { x: 0, y: 0 };
+    this.self.pitch = 0;
     this.eyeHeight = PIER_Y + EYE;
     this.followSnap = true;
   }
@@ -1422,16 +1421,18 @@ export class BeachEngine {
   getBedState(): BedState | null {
     if (this.bamboo || this.garden || this.cloudSpa || this.baikal || this.activeBunkerId) return null;
     if (this.uyuni) {
-      const hotel = uyuniHotelForSpot(this.skyRest?.spotId) ?? nearbyUyuniHotel(this.self.x, this.self.z);
+      const chaise = isUyuniChaiseSpot(this.skyRest?.spotId) ? uyuniHotelForSpot(this.skyRest?.spotId)
+        : !this.skyRest ? nearbyUyuniChaise(this.self.x, this.self.z) : null;
+      const hotel = uyuniHotelForSpot(this.skyRest?.spotId) ?? chaise ?? nearbyUyuniHotel(this.self.x, this.self.z);
       if (!hotel) return null;
-      const spotId = `hotel-${hotel.id}`, used = new Set<number>();
+      const spotId = `hotel-${hotel.id}${chaise ? "-chaise" : ""}`, used = new Set<number>();
       for (const player of this.players.values()) {
         const bed = claimedUyuniHotelBed(player.data);
         if (bed?.spotId === spotId) used.add(bed.slot);
       }
       if (this.skyRest?.spotId === spotId) used.add(this.skyRest.slot);
-      return { spotId, shelterName: hotel.name, near: true, lying: this.skyRest?.spotId === spotId,
-        occupied: used.size, capacity: UYUNI_HOTEL_BED_CAPACITY };
+      return { spotId, shelterName: chaise ? `${hotel.name} 일광 의자` : hotel.name, near: true, lying: this.skyRest?.spotId === spotId,
+        occupied: used.size, capacity: chaise ? UYUNI_HOTEL_CHAISE_CAPACITY : UYUNI_HOTEL_BED_CAPACITY };
     }
     const shelter = this.isBedLying
       ? SHELTERS.find((s) => `hut-${s.id}` === this.skyRest?.spotId)
@@ -1644,22 +1645,25 @@ export class BeachEngine {
     this.daylight = d;
     this.fireworkAudio?.setBambooNight(d.deepNight);
     this.cove?.applyDaylight(d);
+    // The glass looks through the same sky and clock as the salt flat outside.
+    // Warm room lighting stays separate from the shared outdoor sky.
+    const skyDaylight = d;
     const u = this.skyMat.uniforms;
-    const night = d.stars;
+    const night = skyDaylight.stars;
     const photoTint = u.uPhotoTint.value as THREE.Vector3;
-    photoTint.set(1 - night * (0.85 - d.lanterns * 0.04), 1 - night * (0.79 - d.lanterns * 0.02), 1 - night * 0.64);
-    photoTint.multiplyScalar(1 - d.deepNight * 0.78);
-    u.uDeepNight.value = d.deepNight;
-    (u.uSkyTop.value as THREE.Vector3).set(...d.skyTop);
-    (u.uSkyHorizon.value as THREE.Vector3).set(...d.skyHorizon);
-    (u.uMoon.value as THREE.Vector3).set(...d.moon);
-    (u.uSun.value as THREE.Vector3).set(...d.sun);
-    (u.uSunColor.value as THREE.Vector3).set(...d.sunColor);
-    (u.uCloudColor.value as THREE.Vector3).set(...d.cloud);
-    u.uCloudAmount.value = d.cloudAmount;
-    u.uStars.value = d.stars;
-    u.uLantern.value = d.lanterns;
-    (u.uHorizonFog.value as THREE.Vector3).set(...d.fog);
+    photoTint.set(1 - night * (0.85 - skyDaylight.lanterns * 0.04), 1 - night * (0.79 - skyDaylight.lanterns * 0.02), 1 - night * 0.64);
+    photoTint.multiplyScalar(1 - skyDaylight.deepNight * 0.78);
+    u.uDeepNight.value = skyDaylight.deepNight;
+    (u.uSkyTop.value as THREE.Vector3).set(...skyDaylight.skyTop);
+    (u.uSkyHorizon.value as THREE.Vector3).set(...skyDaylight.skyHorizon);
+    (u.uMoon.value as THREE.Vector3).set(...skyDaylight.moon);
+    (u.uSun.value as THREE.Vector3).set(...skyDaylight.sun);
+    (u.uSunColor.value as THREE.Vector3).set(...skyDaylight.sunColor);
+    (u.uCloudColor.value as THREE.Vector3).set(...skyDaylight.cloud);
+    u.uCloudAmount.value = skyDaylight.cloudAmount;
+    u.uStars.value = skyDaylight.stars;
+    u.uLantern.value = skyDaylight.lanterns;
+    (u.uHorizonFog.value as THREE.Vector3).set(...skyDaylight.fog);
     u.uBambooSunset.value = this.mapId === "bamboo" ? bambooSunsetAmount(d.hour) : 0;
     this.lanterns?.setAmount(d.lanterns);
 
@@ -2242,7 +2246,8 @@ export class BeachEngine {
     this.baikal?.setQuality(level === "low");
     this.uyuniMoments?.setQuality(level);
     if (this.ultraSea) {
-      this.ultraSea.enabled = level === "high";
+      // The single-draw water stays inexpensive even in the mobile low tier.
+      this.ultraSea.enabled = true;
       if (this.seaMat) this.seaMat.uniforms.uUltraRadius.value = this.ultraSea.enabled ? ULTRA_RADIUS : 0;
       this.skyMat.uniforms.uFarSkyShare.value = this.ultraSea.enabled ? FAR_SKY_SHARE : 0;
     }
@@ -2277,7 +2282,9 @@ export class BeachEngine {
       this.applyDaylight(this.mapDaylight());
     }
 
-    this.updateSelf(dt);
+    // Movement is capped after a slow frame, but the entry fade follows real time.
+    // Otherwise a first shader compile can stretch a 1.4 s ladder into many seconds.
+    this.updateSelf(dt, Math.max(0, elapsed / 1000));
     if (this.mapId === "beach") this.fireworkAudio?.updateBeachSound(this.self, FIRE, this.fireState?.logs ?? 0, dt);
     if (this.mapId === "bamboo") this.fireworkAudio?.updateBambooSound(dt);
     this.syncSkyResolution();
@@ -2294,7 +2301,6 @@ export class BeachEngine {
       trimSmallPropShadows(this.scene);
     }
     if (this.ultraSea?.enabled && !this.activeBunkerId) this.ultraSea.prepare(dt, this.camera);
-    if (this.activeBunkerId) this.uyuni?.prepareWater?.(dt, this.camera, this.quality === "high", !this.self.moving && !this.bunkerTransition);
     this.drawScene();
   }
 
@@ -2304,10 +2310,14 @@ export class BeachEngine {
     else this.renderer.render(this.scene, this.camera);
   }
 
-  private updateSelf(dt: number) {
+  private updateSelf(dt: number, transitionDt = dt) {
     const transition = this.bunkerTransition;
     if (transition) {
-      transition.elapsed += dt;
+      // A quick tap at the hatch can arrive before background room assembly finishes.
+      // Keep preparing in small batches under the fade instead of forcing the entire
+      // remaining room into the frame where the floor changes.
+      const roomReady = transition.swapped || !transition.confirmed.bunkerId || this.uyuni?.prepareBunkers?.(4) !== false;
+      transition.elapsed = Math.min(transition.elapsed + transitionDt, roomReady ? Infinity : .65);
       if (transition.elapsed >= .7 && !transition.swapped) {
         transition.swapped = true; this.applyRest(transition.confirmed);
         this.orbitYaw = this.self.yaw + (transition.confirmed.bunkerId ? 1.05 : 0); this.eyeHeight = this.deckHeight(this.self.x, this.self.z) + EYE;
@@ -2353,10 +2363,10 @@ export class BeachEngine {
       const pose = this.garden.boatPose;
       this.self.x = pose.x; this.self.z = pose.z; this.self.moving = false;
       this.move = { x: 0, y: 0 };
-      this.eyeHeight += (BOAT_DECK_Y + 1.12 - this.eyeHeight) * Math.min(1, dt * 6);
-      if (this.view === "third") this.placeFollowCamera(dt);
+      this.eyeHeight = boatSeatAt(pose, this.time).avatarY + .78;
+      if (this.view === "third") this.placeBoatCamera(dt);
       else {
-        this.camera.position.set(this.self.x, this.eyeHeight + Math.sin(this.time * 1.1) * 0.02, this.self.z);
+        this.camera.position.set(this.self.x, this.eyeHeight, this.self.z);
         this.camera.rotation.set(this.self.pitch, this.self.yaw, 0, "YXZ");
       }
       this.sky.position.copy(this.camera.position);
@@ -2544,7 +2554,9 @@ export class BeachEngine {
       }
       // The open sea-facing front is the only sightline: stay below the roof and in front of the bed.
       const shelter = this.uyuni ? uyuniHotelForSpot(resting.spotId)! : SHELTERS.find((s) => `hut-${s.id}` === resting.spotId)!;
-      const wanted = new THREE.Vector3(shelter.x + (resting.x - shelter.x) * 0.85, this.uyuni ? 3.15 : 2.85, shelter.z - 2.9);
+      const chaise = isUyuniChaiseSpot(resting.spotId);
+      const wanted = chaise ? new THREE.Vector3(resting.x + 1.65, 2.9, resting.z - 2.6)
+        : new THREE.Vector3(shelter.x + (resting.x - shelter.x) * 0.85, this.uyuni ? 3.15 : 2.85, shelter.z - 2.9);
       if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
       else this.followCam.lerp(wanted, Math.min(1, dt * 10));
       this.camera.position.copy(this.followCam);
@@ -2568,6 +2580,27 @@ export class BeachEngine {
     this.camera.lookAt(STARGAZING.x, 0.05, STARGAZING.z);
   }
 
+  /** Keep the entire open hull and its seated passenger visible on a portrait phone. */
+  private placeBoatCamera(dt: number) {
+    const seat = boatSeatAt(this.garden!.boatPose, this.time);
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+    const narrow = Math.max(.32, Math.min(1, this.camera.aspect));
+    const reach = Math.max(5.6, 3.15 / (Math.tan(halfFov) * narrow));
+    const elevation = THREE.MathUtils.clamp(.36 - this.self.pitch * .45, .2, .75);
+    const horizontal = Math.cos(elevation) * reach;
+    const wanted = new THREE.Vector3(seat.x + Math.sin(this.orbitYaw) * horizontal,
+      seat.avatarY + .30 + Math.sin(elevation) * reach, seat.z + Math.cos(this.orbitYaw) * horizontal);
+    // At the hall pier an orbit can approach the wall; shorten only as far as needed.
+    for (let k = .9; !this.cameraFree(wanted) && k >= .2; k -= .1) {
+      wanted.set(seat.x + Math.sin(this.orbitYaw) * horizontal * k,
+        seat.avatarY + .30 + Math.sin(elevation) * reach * k, seat.z + Math.cos(this.orbitYaw) * horizontal * k);
+    }
+    if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
+    else this.followCam.lerp(wanted, Math.min(1, dt * 9));
+    this.camera.position.copy(this.followCam);
+    this.camera.lookAt(seat.x, seat.avatarY + .30, seat.z);
+  }
+
   /** Keep both the seated character and the fire in view, including narrow phone screens. */
   private placeBenchCamera(dt: number) {
     const direction = this.facing(this.orbitYaw);
@@ -2584,7 +2617,7 @@ export class BeachEngine {
       eyeY, this.self.z - direction.z * reach);
     // Pavilion seats face outward, so the orbit sits inside the roof: stay below the rafters.
     const seatCeiling = this.baikal ? baikalCeilingHeight(wanted.x, wanted.z) : this.cloudSpa ? cloudSpaCeilingHeight(wanted.x, wanted.z) : this.activeBunkerId ? bunkerCeilingAt(this.activeBunkerId, wanted.x, wanted.z) : this.bamboo ? bambooCeilingHeight(wanted.x, wanted.z) : this.garden ? gardenCeilingHeight(wanted.x, wanted.z) : null;
-    if (seatCeiling !== null) wanted.y = Math.min(wanted.y, seatCeiling - 0.2);
+    if (seatCeiling !== null) wanted.y = Math.min(wanted.y, seatCeiling - (this.activeBunkerId ? .3 : .2));
     // Onsen seats have their backs to the rock: the orbit stays over the bath instead of ending up inside the hillside.
     if (this.onsenSeat) {
       wanted.y += 0.55; // The bath is sunken: look down over its stone rim.
@@ -2595,7 +2628,13 @@ export class BeachEngine {
     }
     if (this.garden || this.cloudSpa || this.baikal || this.activeBunkerId) for (let k = 1; k >= 0.1 && (!this.cameraFree(wanted) || (this.activeBunkerId && !this.hotelCameraSightClear(wanted, baseY + 1.25)) || ((this.cloudSpa || this.baikal) && !this.cloudSpaCameraSightClear(wanted, baseY + 1.25))); k -= 0.15) {
       wanted.set(this.self.x - direction.x * reach * k, eyeY, this.self.z - direction.z * reach * k);
+      // Pulling an orbit under the reading pavilion changes the ceiling height.
+      // Re-clamp each candidate, instead of restoring the original height above its roof.
+      if (this.activeBunkerId) wanted.y = Math.max(bunkerFloorAt(this.activeBunkerId, wanted.x, wanted.z) + .3,
+        Math.min(wanted.y, bunkerCeilingAt(this.activeBunkerId, wanted.x, wanted.z) - .3));
     }
+    if (this.activeBunkerId && (!this.cameraFree(wanted) || !this.hotelCameraSightClear(wanted, baseY + 1.25)))
+      wanted.set(this.self.x, baseY + 1.25, this.self.z);
     if (this.followSnap) { this.followCam.copy(wanted); this.followSnap = false; }
     else this.followCam.lerp(wanted, Math.min(1, dt * 10));
     if (this.activeBunkerId && (!this.cameraFree(this.followCam) || !this.hotelCameraSightClear(this.followCam, baseY + 1.25))) this.followCam.copy(wanted);
@@ -2747,7 +2786,7 @@ export class BeachEngine {
     if (!chibi || !n) return;
     const tooClose = (this.activeBunkerId || this.cloudSpa || this.baikal) && Math.hypot(this.camera.position.x - this.self.x, this.camera.position.z - this.self.z) < 1.35;
     const shown = this.view === "third" && !tooClose;
-    const posed = Boolean(this.floatingPose(this.skyRest) || this.fixedSeat || this.restSeat);
+    const posed = Boolean(this.floatingPose(this.skyRest) || this.fixedSeat || this.restSeat || this.garden?.isRiding);
     const use = shown && !posed;
     chibi.object.visible = use;
     if (!use) { chibi.resetFollow(); return; }
@@ -2757,7 +2796,6 @@ export class BeachEngine {
     const y = this.selfFloorY() + (this.bunkerClimbOffset ?? 0);
     // 바닷가의 yaw 는 (-sin, -cos) 을 보고, 치비는 (sin, cos) 을 본다
     chibi.follow(dt, this.self.x, y, this.self.z, this.self.yaw + Math.PI, this.self.moving);
-    this.markWading(chibi.object, this.self.z);
   }
 
   /** First-person hides both renderers; the sprite remains a position/fallback anchor. */
@@ -2768,23 +2806,23 @@ export class BeachEngine {
     const tooClose = (this.activeBunkerId || this.cloudSpa || this.baikal) && Math.hypot(this.camera.position.x - this.self.x, this.camera.position.z - this.self.z) < 1.35;
     const shown = this.view === "third" && !tooClose;
     const avatar = this.syncAvatar(n, this.skin, this.self.x, this.self.z);
-    this.markWading(avatar?.root, this.self.z);
     const lying = this.floatingPose(this.skyRest);
+    const boatSeat = this.garden?.isRiding ? boatSeatAt(this.garden.boatPose, this.time) : null;
     avatar?.update(dt, {
       ...this.self, y: this.selfFloorY() + (this.bunkerClimbOffset ?? 0), visible: shown, lying,
-      seated: this.fixedSeat ?? (this.restSeat ? { ...this.restSeat, avatarY: this.deckHeight(this.restSeat.x, this.restSeat.z) + 0.52 } : null),
+      seated: boatSeat ?? this.fixedSeat ?? (this.restSeat ? { ...this.restSeat, avatarY: this.deckHeight(this.restSeat.x, this.restSeat.z) + 0.52 } : null),
     });
     n.sprite.visible = shown && !avatar;
     if (!this.skyRest || !n.sprite.visible) this.pixelDepth?.update(n.sprite, this.skin, false);
     n.shadow.visible = shown;
     if (!shown) return;
-    if (this.fixedSeat || this.restSeat) {
-      const baseY = this.onsenSeat ? this.onsenSeat.baseY : this.pavilionSeat ? this.pavilionSeat.baseY : this.restSeat ? this.deckHeight(this.restSeat.x, this.restSeat.z) : 0;
-      const seat = this.fixedSeat ?? { ...this.restSeat!, avatarY: baseY + 0.52 }, cam = this.camera.position;
+    if (boatSeat || this.fixedSeat || this.restSeat) {
+      const baseY = boatSeat ? boatBobAt(this.time) : this.onsenSeat ? this.onsenSeat.baseY : this.pavilionSeat ? this.pavilionSeat.baseY : this.restSeat ? this.deckHeight(this.restSeat.x, this.restSeat.z) : 0;
+      const seat = boatSeat ?? this.fixedSeat ?? { ...this.restSeat!, avatarY: baseY + 0.52 }, cam = this.camera.position;
       n.sprite.position.set(seat.x, baseY, seat.z);
       n.sprite.rotation.set(0, Math.atan2(cam.x - seat.x, cam.z - seat.z), 0, "YXZ");
       shapeSeatedAvatar(n.sprite, { yaw: seat.yaw, avatarY: seat.avatarY - baseY });
-      n.shadow.visible = !this.onsenSeat;
+      n.shadow.visible = !this.onsenSeat && !boatSeat;
       n.shadow.position.set(seat.x, (this.pavilionSeat ? this.deckHeight(seat.x, seat.z) : baseY) + 0.015, seat.z);
       this.setFrameOn(n.tex, viewFor(seat.yaw, seat.x, seat.z, cam), CHAR_ANIM.idle.from, this.skin);
       return;
@@ -2993,7 +3031,10 @@ export class BeachEngine {
       else if (p.motion && renderAt !== undefined) p.motion.write(renderAt, now, p.cur);
       else if (far > 7) { p.cur.x = p.target.x; p.cur.z = p.target.z; }
       else { p.cur.x += (p.target.x - p.cur.x) * smooth; p.cur.z += (p.target.z - p.cur.z) * smooth; }
-      const walking = !fixed && !drifting && (p.motion ? p.cur.moving : p.target.moving || far > 0.12);
+      const boatSeat = this.garden && !fixed && gardenIsWater(p.cur.x, p.cur.z)
+        ? boatSeatAt({ x: p.cur.x, z: p.cur.z, yaw: boatHeadingAt(p.cur.x, p.cur.z) }, this.time) : null;
+      const renderSeat = boatSeat ?? seated;
+      const walking = !boatSeat && !fixed && !drifting && (p.motion ? p.cur.moving : p.target.moving || far > 0.12);
       p.animT += dt;
       const frame = charFrame(walking, p.animT);
       const turn = p.target.yaw - p.cur.yaw;
@@ -3001,26 +3042,25 @@ export class BeachEngine {
       const resting = this.floatingPose(claimed && drifting ? { ...claimed, x: p.cur.x, z: p.cur.z, yaw: p.cur.yaw } : claimed);
       // Pavilion seats are on the deck edge with legs over the side: the folded sprite stands on the ground below.
       const pavilionSeat = seated !== null ? (this.baikal ? claimedBaikalSeat(p.data) : this.cloudSpa ? claimedCloudSpaSeat(p.data) : this.uyuni ? claimedBunkerSeat(p.data) : this.garden ? claimedGardenSeat(p.data) : claimedPavilionSeat(p.data)) : null;
-      if (!seated) shapeSeatedAvatar(p.sprite, null);
+      if (!renderSeat) shapeSeatedAvatar(p.sprite, null);
       if (resting) {
         applyLyingTransform(p.sprite, resting);
         this.setFrame(p, CHAR_VIEW.front, CHAR_ANIM.idle.from, p.data.skin);
       } else {
         p.sprite.rotation.set(0, Math.atan2(cam.x - p.cur.x, cam.z - p.cur.z), 0, "YXZ");
-        if (seated) shapeSeatedAvatar(p.sprite, { yaw: seated.yaw, avatarY: seated.avatarY - (onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : 0) });
-        this.setFrame(p, viewFor(p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
+        if (renderSeat) shapeSeatedAvatar(p.sprite, { yaw: renderSeat.yaw, avatarY: renderSeat.avatarY - (boatSeat ? boatBobAt(this.time) : onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : 0) });
+        this.setFrame(p, viewFor(renderSeat?.yaw ?? p.cur.yaw, p.cur.x, p.cur.z, cam), frame, p.data.skin);
       }
       const dl = Math.hypot(p.cur.x - cam.x, p.cur.z - cam.z);
       if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 2.2);
-      const hop = !fixed && p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
+      const hop = !boatSeat && !fixed && p.bounce > 0 ? Math.abs(Math.sin(p.bounce * Math.PI * 2)) * 0.22 * p.bounce : 0;
       const deck = this.deckHeight(p.cur.x, p.cur.z);
-      if (!resting) p.sprite.position.set(p.cur.x, onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : deck + hop, p.cur.z);
+      if (!resting) p.sprite.position.set(p.cur.x, boatSeat ? boatBobAt(this.time) : onsenSeat ? onsenSeat.baseY : pavilionSeat ? pavilionSeat.baseY : deck + hop, p.cur.z);
       const avatar = this.syncAvatar(p, p.data.skin, p.cur.x, p.cur.z);
-      this.markWading(avatar?.root, p.cur.z);
       p.sprite.visible = !avatar;
       this.pixelDepth?.update(p.sprite, p.data.skin, Boolean(resting) && p.sprite.visible);
-      avatar?.update(dt, { ...p.cur, y: deck + hop, moving: walking, visible: true, lying: resting, seated });
-      p.shadow.visible = !resting && !onsenSeated;
+      avatar?.update(dt, { ...p.cur, y: deck + hop, moving: walking, visible: true, lying: resting, seated: renderSeat });
+      p.shadow.visible = !resting && !onsenSeated && !boatSeat;
       p.shadow.position.set(p.cur.x, deck + 0.015, p.cur.z);
       if (p.label) {
         if (resting) {
@@ -3029,7 +3069,7 @@ export class BeachEngine {
           p.label.scale.set(1.5, 0.375, 1);
           p.label.visible = pid === this.selected && dl > 2.5 && dl < 20;
         } else {
-          p.label.position.set(p.cur.x, seated ? seated.avatarY + 1.22 : deck + AVATAR_HEIGHT + 0.14 + hop, p.cur.z);
+          p.label.position.set(p.cur.x, renderSeat ? renderSeat.avatarY + 1.22 : deck + AVATAR_HEIGHT + 0.14 + hop, p.cur.z);
           p.label.scale.set(2.2, 0.55, 1);
           p.label.visible = dl > 2.5 && dl < 24;
         }
@@ -3065,7 +3105,8 @@ export class BeachEngine {
     } else if (this.cloudSpa) {
       this.cloudSpa.update(this.time, this.camera, this.self, this.pavilionSeat);
     } else if (this.uyuni) {
-      this.uyuni.update(this.time, this.camera, this.self);
+      this.uyuni.update(this.time, this.camera, this.self,
+        this.view === "first" && !this.skyRest && !this.fixedSeat && !this.restSeat);
     } else if (this.bamboo) {
       this.bamboo.update(this.time, this.camera, this.self);
       if (this.festivalToys) {
@@ -3079,7 +3120,18 @@ export class BeachEngine {
       const riders: RemoteRider[] = [];
       for (const [pid, node] of this.players) riders.push({ pid, x: node.cur.x, z: node.cur.z });
       const alighted = this.garden.update(this.time, this.camera, this.self, riders, this.pavilionSeat);
-      if (alighted) this.finishRide(alighted);
+      if (alighted) {
+        this.finishRide(alighted);
+        this.updateSelf(0); // Clear the seated renderer immediately at the destination pier.
+      } else if (this.garden.isRiding) {
+        const pose = this.garden.boatPose;
+        this.self.x = pose.x; this.self.z = pose.z;
+        this.eyeHeight = boatSeatAt(pose, this.time).avatarY + .78;
+        if (this.view === "third") this.placeBoatCamera(0);
+        else this.camera.position.set(this.self.x, this.eyeHeight, this.self.z);
+        this.sky.position.copy(this.camera.position);
+        this.updateSelfAvatar(0);
+      }
       if (this.garden.boatStateChanged()) this.handlers.onBoatChange?.(this.garden.boatState);
     } else {
       this.seaMat.uniforms.uTime.value = this.time;

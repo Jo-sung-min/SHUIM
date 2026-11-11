@@ -139,6 +139,45 @@ class BeachBunkerTest {
         }
     }
 
+    @Test void everyDrawnChairPoufDaybedAndUpstairsBenchAcceptsAStableSeat() {
+        assertEquals(21, BeachBunkers.SOFA_SLOTS);
+        for (var bunker : BeachBunkers.ALL) {
+            var visitor = inside("furniture-" + bunker.id(), bunker.id());
+            for (int slot = 0; slot < BeachBunkers.SOFA_SLOTS; slot++) {
+                var seat = bunker.seat(slot);
+                move(visitor, seat.x(), seat.z());
+                var confirmed = room.rest(visitor.ticket(), "sit", bunker.sofa());
+                assertEquals(slot, confirmed.slot());
+                assertEquals(seat.x(), confirmed.x(), 1e-8);
+                assertEquals(seat.z(), confirmed.z(), 1e-8);
+                assertEquals(seat.yaw(), confirmed.yaw(), 1e-8);
+                assertEquals(bunker.id(), confirmed.bunkerId());
+                room.rest(visitor.ticket(), "stand", null);
+            }
+            room.leave(visitor.ticket());
+        }
+    }
+
+    @Test void outdoorLoungersAreNearestExclusiveLyingPlacesAndNeverUnderground() {
+        for (var bunker : BeachBunkers.ALL) for (int slot = 0; slot < 2; slot++) {
+            String spot = "hotel-" + bunker.id() + "-chaise";
+            double x = bunker.x() + (slot == 0 ? -3.3 : 3.3), z = bunker.z() - 6.6;
+            var first = enter("chaise-" + bunker.id() + slot);
+            var second = enter("waiting-" + bunker.id() + slot);
+            move(first, x, z); move(second, x, z);
+            var rest = room.rest(first.ticket(), "lie", spot);
+            assertEquals("lying", rest.pose()); assertEquals(slot, rest.slot());
+            assertEquals(x, rest.x(), 1e-8); assertEquals(bunker.z() - 7.5, rest.z(), 1e-8); assertNull(rest.bunkerId());
+            assertEquals(409, assertThrows(ApiException.class, () -> room.rest(second.ticket(), "lie", spot)).status());
+            room.rest(first.ticket(), "stand", null);
+            assertEquals(slot, room.rest(second.ticket(), "lie", spot).slot());
+            room.leave(first.ticket()); room.leave(second.ticket());
+            var underground = inside("underground-" + bunker.id() + slot, bunker.id());
+            assertEquals(400, assertThrows(ApiException.class, () -> room.rest(underground.ticket(), "lie", spot)).status());
+            room.leave(underground.ticket());
+        }
+    }
+
     @Test void playersAndCareStayOnTheirOwnFloorIncludingOtherTabsOfTheSameUser() {
         var a = inside("a", "dawn"); var b = inside("b", "dawn"); var other = inside("other", "dusk");
         var outside = enter("b"); move(outside, a.x(), a.z());

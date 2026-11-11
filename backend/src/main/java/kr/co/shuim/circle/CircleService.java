@@ -2,7 +2,7 @@ package kr.co.shuim.circle;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kr.co.shuim.ai.ClaudeClient;
+import kr.co.shuim.ai.OpenAiClient;
 import kr.co.shuim.ai.Crisis;
 import kr.co.shuim.ai.JsonText;
 import kr.co.shuim.auth.DbUser;
@@ -36,15 +36,15 @@ public class CircleService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final JdbcClient jdbc;
     private final MailService mail;
-    private final ClaudeClient claude;
+    private final OpenAiClient ai;
     private final ObjectMapper json;
     private final BadgeService badges;
     private boolean privateTestCreationEnabled;
 
-    public CircleService(JdbcClient jdbc, MailService mail, ClaudeClient claude, ObjectMapper json, BadgeService badges) {
+    public CircleService(JdbcClient jdbc, MailService mail, OpenAiClient ai, ObjectMapper json, BadgeService badges) {
         this.jdbc = jdbc;
         this.mail = mail;
-        this.claude = claude;
+        this.ai = ai;
         this.json = json;
         this.badges = badges;
     }
@@ -676,9 +676,9 @@ public class CircleService {
     public Draft tidy(String text) {
         String raw = text == null ? "" : text;
         CircleLogic.Masked rule = CircleLogic.mask(CircleLogic.tidy(raw));
-        if (!claude.configured()) return new Draft(rule.text(), rule.found(), "local");
+        if (!ai.configured()) return new Draft(rule.text(), rule.found(), "local");
         try {
-            String out = claude.complete(claude.resolveModel(null), 4000, DRAFT_PROMPT, "사연:\n" + raw);
+            String out = ai.complete(ai.resolveModel(null), 4000, DRAFT_PROMPT, "사연:\n" + raw);
             String j = JsonText.extract(out);
             JsonNode node = j == null ? null : json.readTree(j);
             String t = node == null ? "" : node.path("text").asText("");

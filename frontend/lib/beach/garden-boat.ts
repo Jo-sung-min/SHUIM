@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
-  BOAT_DECK_Y, BOAT_ROUTE, BOAT_SPEED, BOAT_STOPS, BOAT_STOP_SECONDS, type BoatPose, type BoatStop, boatPoseAt, isWater, nearestBoatStop, nextBoatStop,
+  BOAT_DECK_Y, BOAT_SEAT_Y, BOAT_ROUTE, BOAT_SPEED, BOAT_STOPS, BOAT_STOP_SECONDS, type BoatPose, type BoatStop, boatBobAt, boatHeadingAt, boatPoseAt, isWater, nearestBoatStop, nextBoatStop,
 } from "./garden-layout";
 
 export interface BoatRideState {
@@ -25,62 +25,134 @@ function colored(geometry: THREE.BufferGeometry, hex: number): THREE.BufferGeome
   return geometry;
 }
 
-/** 선체: 양끝이 뾰족하게 들린 길이 4.6 m 의 나룻배. 가로 6단 × 세로 11단으로 떠서 만든다. */
-function hullGeometry(): THREE.BufferGeometry {
-  const L = 4.6, nAlong = 11, nAcross = 7;
-  const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
-  for (let i = 0; i <= nAlong; i++) {
-    const t = i / nAlong, along = (t - 0.5) * L;
-    const width = 0.82 * Math.pow(Math.sin(Math.PI * t), 0.5) + 0.03;
-    const endLift = 0.28 * Math.pow(1 - Math.sin(Math.PI * t), 1.6);
-    for (let j = 0; j <= nAcross; j++) {
-      const u = j / nAcross * 2 - 1;
-      // 바닥은 둥근 V, 뱃전은 위로 벌어진다.
-      const x = width * u * (1 + 0.15 * Math.abs(u));
-      const y = -0.38 + 0.42 * u * u * u * u + endLift + (Math.abs(u) > 0.95 ? 0.52 : 0);
-      positions.push(x, Math.min(y, 0.55), along);
-      uvs.push(j / nAcross, t);
-    }
+/** A narrow keel opens into a rounded, rising bow. The bow is local -z, like engine yaw. */
+function hullPoint(t: number, u: number, inner = false): THREE.Vector3 {
+  const belly = Math.sin(Math.PI * t), edge = Math.abs(u);
+  const width = 0.975 * Math.pow(Math.max(0, belly), 0.70);
+  const sheer = 0.25 * Math.pow(1 - belly, 2);
+  return new THREE.Vector3(width * u * (inner ? 0.955 : 1),
+    -0.32 + 0.97 * Math.pow(edge, 2.25) + sheer + (inner ? 0.045 : 0), (t - 0.5) * 4.85);
+}
+
+/** Curved timber strakes carry real thickness and separate grain rather than a faceted bowl. */
+function hullPlank(side: number, band: number, inner: boolean): THREE.BufferGeometry {
+  const positions: number[] = [], uv: number[] = [], indices: number[] = [];
+  const along = 36, across = 2;
+  for (let i = 0; i <= along; i++) for (let j = 0; j <= across; j++) {
+    const t = i / along, u = side * (band + j / across) / 7;
+    const p = hullPoint(t, u, inner);
+    positions.push(p.x, p.y, p.z); uv.push(t * 5, u);
   }
-  for (let i = 0; i < nAlong; i++) for (let j = 0; j < nAcross; j++) {
-    const a = i * (nAcross + 1) + j, b = a + 1, c = a + nAcross + 1, d = c + 1;
-    indices.push(a, b, c, b, d, c);
+  for (let i = 0; i < along; i++) for (let j = 0; j < across; j++) {
+    const a = i * (across + 1) + j, b = a + 1, c = a + across + 1, d = c + 1;
+    // Each face is lit from its own side; the open hull remains opaque from outside.
+    if ((side > 0) !== inner) indices.push(a, b, c, b, d, c);
+    else indices.push(a, c, b, b, c, d);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setIndex(indices); geometry.computeVertexNormals();
   return geometry;
 }
 
-/** 선체 + 갑판 + 대나무 지붕 덮개 + 뱃머리 등 (한 지오메트리, 정점 색). 로컬 +z 가 뱃머리. */
+/** Open wooden ferry: clinker planking, bent ribs, thwarts, oars, rope and a brass bow lantern. */
 export function boatGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  const place = (geometry: THREE.BufferGeometry, hex: number, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) => {
-    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
-    geometry.applyMatrix4(m);
+  const place = (geometry: THREE.BufferGeometry, hex: number, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => {
+    geometry.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(1, 1, 1)));
     parts.push(colored(geometry, hex));
   };
-  const hull = hullGeometry();
-  place(hull, 0x5a3f2c, 0, 0, 0);
-  const inner = hullGeometry();
-  inner.scale(0.9, 0.9, 0.97);
-  place(inner, 0x8a6a48, 0, 0.05, 0, 1, 1, 1);
-  place(new THREE.BoxGeometry(1.2, 0.06, 2.9), 0x9c7b55, 0, BOAT_DECK_Y - 0.03, 0.1);
-  place(new THREE.BoxGeometry(1.0, 0.05, 0.35), 0x6d4f36, 0, BOAT_DECK_Y + 0.33, -1.1);
-  for (const x of [-0.62, 0.62]) for (const z of [-0.9, 1.1]) place(new THREE.CylinderGeometry(0.035, 0.035, 1.5, 6), 0xc9a862, x, BOAT_DECK_Y + 0.75, z);
-  const canopy = new THREE.CylinderGeometry(0.95, 0.95, 2.6, 14, 1, true, 0, Math.PI);
-  canopy.rotateZ(Math.PI / 2); canopy.rotateY(Math.PI / 2);
-  place(canopy, 0xd9c08a, 0, BOAT_DECK_Y + 1.05, 0.1);
-  for (const z of [-1.2, 1.4]) {
-    const rib = new THREE.TorusGeometry(0.97, 0.03, 5, 16, Math.PI);
-    place(rib, 0x8a6b3a, 0, BOAT_DECK_Y + 1.05, z, 1, 1, 1, 0, 0, 0);
+  const tube = (points: THREE.Vector3[], radius: number, hex: number, steps = 30, sides = 5) =>
+    place(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), steps, radius, sides, false), hex);
+  const beam = (a: THREE.Vector3, b: THREE.Vector3, radius: number, hex: number, endRadius = radius) => {
+    const axis = b.clone().sub(a);
+    const g = new THREE.CylinderGeometry(endRadius, radius, axis.length(), 8);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.normalize()));
+    const c = a.clone().add(b).multiplyScalar(0.5); place(g, hex, c.x, c.y, c.z);
+  };
+  const outer = [0x624530, 0x765039, 0x855b3c, 0x976c46, 0xa4784d, 0x987047, 0xb08455];
+  const inner = [0x9e774f, 0xaf8758, 0xb68e60, 0xc09a6c, 0xb48b59, 0xc5a174, 0xc2a175];
+  for (const side of [-1, 1]) {
+    for (let band = 0; band < 7; band++) {
+      place(hullPlank(side, band, false), outer[band]);
+      place(hullPlank(side, band, true), inner[band]);
+      if (band > 1) {
+        // The fine dark lap between overlapping boards is readable in grazing light.
+        const seam = Array.from({ length: 19 }, (_, i) => hullPoint(i / 18, side * band / 7));
+        tube(seam, 0.008, 0x6b4b33, 24, 3);
+      }
+    }
+    const rail = Array.from({ length: 25 }, (_, i) => hullPoint(i / 24, side).add(new THREE.Vector3(0, 0.025, 0)));
+    tube(rail, 0.055, 0x62412b, 40, 8);
+    tube(rail.map(p => p.clone().add(new THREE.Vector3(-side * .015, .025, 0))), .018, 0xd4ad74, 36, 5);
   }
-  place(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 5), 0x4a3524, 0, BOAT_DECK_Y + 1.2, 2.25, 1, 1, 1, 0.35);
-  place(new THREE.SphereGeometry(0.11, 8, 6), 0xfff1d6, 0, BOAT_DECK_Y + 0.95, 2.36);
-  const merged = mergeGeometries(parts.map((part) => part.index ? part.toNonIndexed() : part), false)!;
-  for (const part of parts) part.dispose();
+  // Curved steam-bent frames remain visible inside the hull between the three benches.
+  for (const t of [.13, .25, .38, .50, .62, .75, .87]) {
+    const points = Array.from({ length: 17 }, (_, i) => hullPoint(t, i / 8 - 1, true).add(new THREE.Vector3(0, .022, 0)));
+    tube(points, .028, 0x785437, 18, 5);
+  }
+  // Separate floorboards leave narrow seams and make the shallow bilge legible.
+  for (let i = -2; i <= 2; i++) {
+    const length = 3.10 - Math.abs(i) * .20;
+    place(new THREE.BoxGeometry(.18, .055, length), i % 2 ? 0xb38a58 : 0xc29a67, i * .192, .075, .04);
+    for (const z of [-1.05, .95]) place(new THREE.CylinderGeometry(.013, .013, .004, 6), 0x655445, i * .192, .105, z);
+  }
+  for (const z of [-1.24, 0, 1.25]) {
+    const width = z === 0 ? 1.78 : 1.44;
+    // Middle seat top is the one shared with every local and remote rider.
+    const top = z === 0 ? BOAT_SEAT_Y - .055 : .56;
+    for (const dz of [-.105, .105]) place(new THREE.BoxGeometry(width, .065, .198), 0xb78a53, 0, top - .0325, z + dz);
+    for (const side of [-1, 1]) {
+      place(new THREE.BoxGeometry(.075, .28, .34), 0x785235, side * (width / 2 - .12), top - .17, z);
+      for (const dz of [-.11, .11]) place(new THREE.CylinderGeometry(.017, .017, .006, 8), 0x70604b, side * (width / 2 - .09), top + .003, z + dz);
+    }
+  }
+  // A low sage cushion softens the centre seat without hiding the sitter's legs.
+  const cushion = new THREE.CapsuleGeometry(.19, .50, 4, 10);
+  cushion.rotateZ(Math.PI / 2); cushion.scale(1, .14, 1);
+  place(cushion, 0x6b9380, 0, BOAT_SEAT_Y - .027, .015);
+  for (const x of [-.22, .22]) place(new THREE.SphereGeometry(.018, 6, 4), 0x96b09a, x, BOAT_SEAT_Y - .005, .015);
+  // Two resting oars sit in brass rowlocks along the sides, keeping the boarding width compact.
+  for (const side of [-1, 1]) {
+    const grip = new THREE.Vector3(side * .73, .79, -.70), blade = new THREE.Vector3(side * 1.18, .43, 1.76);
+    beam(grip, blade, .027, 0xbd9058, .021);
+    beam(grip, grip.clone().lerp(blade, .13), .036, 0x68472e);
+    const paddle = new THREE.CapsuleGeometry(.12, .48, 3, 8);
+    paddle.rotateX(Math.PI / 2); paddle.scale(1, .20, 1);
+    place(paddle, 0xab7b45, blade.x, blade.y, blade.z, -.145, side * .18);
+    place(new THREE.TorusGeometry(.065, .013, 5, 10, Math.PI * 1.45), 0xb49459, side * .94, .73, .32, 0, Math.PI / 2, .2);
+    place(new THREE.CylinderGeometry(.022, .025, .15, 7), 0x8c743e, side * .94, .64, .32);
+  }
+  // Bow and stern breasthooks cap the joined planks; a little coil ties the ferry to its pier.
+  for (const z of [-2.12, 2.12]) {
+    const cap = new THREE.CylinderGeometry(.26, .26, .055, 3); cap.scale(1, 1, 1.45);
+    place(cap, 0x9b7045, 0, .73, z, 0, z < 0 ? 0 : Math.PI);
+    place(new THREE.CylinderGeometry(.035, .045, .17, 8), 0x65442d, 0, .84, z);
+  }
+  const rope = Array.from({ length: 73 }, (_, i) => {
+    const angle = i / 72 * Math.PI * 6, r = .075 + i / 72 * .12;
+    return new THREE.Vector3(Math.cos(angle) * r, .578 + i / 72 * .008, 1.24 + Math.sin(angle) * r);
+  });
+  tube(rope, .014, 0xc5b58c, 72, 4);
+  // Warm opaque glass and a fine dark cage read in daylight and stay subtle at night.
+  tube([new THREE.Vector3(0, .84, -2.30), new THREE.Vector3(0, 1.21, -2.30),
+    new THREE.Vector3(0, 1.24, -2.17), new THREE.Vector3(0, 1.15, -2.11)], .014, 0x675032, 12, 5);
+  place(new THREE.TorusGeometry(.065, .01, 5, 10), 0x9c7a40, 0, 1.12, -2.11);
+  place(new THREE.CylinderGeometry(.105, .13, .055, 8), 0x7c5f35, 0, .99, -2.11);
+  place(new THREE.CylinderGeometry(.095, .095, .20, 8), 0xffdc98, 0, .865, -2.11);
+  place(new THREE.CylinderGeometry(.12, .11, .045, 8), 0x7c5f35, 0, .74, -2.11);
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 4;
+    place(new THREE.CylinderGeometry(.009, .009, .23, 5), 0x735735, Math.cos(a) * .095, .865, -2.11 + Math.sin(a) * .095);
+  }
+  // Merge once for the whole fleet, and release both original and converted temporary geometries.
+  const flat = parts.map(part => part.index ? part.toNonIndexed() : part);
+  const merged = mergeGeometries(flat, false)!;
+  for (let i = 0; i < parts.length; i++) { if (flat[i] !== parts[i]) flat[i].dispose(); parts[i].dispose(); }
+  merged.translate(0, -BOAT_SEAT_Y, 0);
+  merged.computeBoundingSphere();
   return merged;
 }
 
@@ -90,7 +162,7 @@ export function boatGeometry(): THREE.BufferGeometry {
  */
 export class GardenBoats {
   readonly mesh: THREE.InstancedMesh;
-  private readonly material: THREE.MeshToonMaterial;
+  private readonly material: THREE.MeshStandardMaterial;
   private readonly geometry: THREE.BufferGeometry;
   private riding = false;
   private docked = false;
@@ -100,16 +172,27 @@ export class GardenBoats {
   private stopIndex: number | null = 0;
   private nearStop: BoatStop | null = null;
   private lastKey = "";
-  private readonly headings = new Map<string, { x: number; z: number; yaw: number }>();
   private readonly transform = new THREE.Object3D();
   private wakeAt = -Infinity;
   private disposed = false;
   /** 내 배가 마지막으로 선 위치 (안 탈 땐 가까운 잔교, 타면 경로 위) */
   private ownPose: BoatPose = boatPoseAt(BOAT_ROUTE.stopAt[0]);
 
-  constructor(parent: THREE.Object3D, gradient: THREE.DataTexture) {
+  constructor(parent: THREE.Object3D, _gradient: THREE.DataTexture) {
     this.geometry = boatGeometry();
-    this.material = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradient });
+    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .82, metalness: .025 });
+    this.material.onBeforeCompile = shader => {
+      shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vBoatTimber;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvBoatTimber = position;");
+      shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vBoatTimber;")
+        .replace("#include <color_fragment>", `#include <color_fragment>
+          float timber = smoothstep(1.18, 1.6, diffuseColor.r / max(.02, diffuseColor.g));
+          float grain = sin(vBoatTimber.y * 93.0 + vBoatTimber.x * 76.0 + sin(vBoatTimber.z * 2.9) * 1.7);
+          float fineGrain = sin(vBoatTimber.y * 161.0 + vBoatTimber.x * 139.0 + sin(vBoatTimber.z * 4.3));
+          diffuseColor.rgb *= 1.0 + timber * (grain * .035 + fineGrain * .018);
+        `);
+    };
+    this.material.customProgramCacheKey = () => "garden-timber-boat-v1";
     this.mesh = new THREE.InstancedMesh(this.geometry, this.material, MAX_BOATS);
     this.mesh.name = "garden-boats";
     this.mesh.count = 1;
@@ -152,7 +235,7 @@ export class GardenBoats {
     if (!this.riding) return null;
     if (this.docked && this.stopIndex !== null) {
       const stop = BOAT_STOPS[this.stopIndex];
-      this.riding = false; this.alightArmed = false;
+      this.riding = false; this.docked = false; this.alightArmed = false;
       return stop;
     }
     this.alightArmed = !this.alightArmed;
@@ -175,7 +258,7 @@ export class GardenBoats {
         const ahead = ((at - before) % BOAT_ROUTE.total + BOAT_ROUTE.total) % BOAT_ROUTE.total;
         if (ahead <= BOAT_SPEED * dt + 1e-6) {
           this.s = at; this.docked = true; this.stopIndex = next; this.departAt = time + BOAT_STOP_SECONDS;
-          if (this.alightArmed) { this.riding = false; this.alightArmed = false; alighted = BOAT_STOPS[next]; }
+          if (this.alightArmed) { this.riding = false; this.docked = false; this.alightArmed = false; alighted = BOAT_STOPS[next]; }
         }
         if (time - this.wakeAt > 0.9) this.wakeAt = time;
       }
@@ -193,26 +276,19 @@ export class GardenBoats {
     }
     // 인스턴스: 0 은 내 배, 나머지는 물 위의 다른 사람들
     let count = 0;
-    const bob = Math.sin(time * 1.1) * 0.02;
-    this.transform.position.set(this.ownPose.x, bob + (this.riding && !this.docked ? 0.01 : 0), this.ownPose.z);
+    const bob = boatBobAt(time);
+    this.transform.position.set(this.ownPose.x, BOAT_SEAT_Y + bob, this.ownPose.z);
     this.transform.rotation.set(Math.sin(time * 0.9) * 0.01, this.ownPose.yaw, Math.sin(time * 1.3) * 0.015);
     this.transform.updateMatrix();
     this.mesh.setMatrixAt(count++, this.transform.matrix);
-    const seen = new Set<string>();
     for (const rider of riders) {
       if (count >= MAX_BOATS) break;
       if (!isWater(rider.x, rider.z)) continue;
-      seen.add(rider.pid);
-      let heading = this.headings.get(rider.pid);
-      if (!heading) { heading = { x: rider.x, z: rider.z, yaw: 0 }; this.headings.set(rider.pid, heading); }
-      const moved = Math.hypot(rider.x - heading.x, rider.z - heading.z);
-      if (moved > 0.08) { heading.yaw = Math.atan2(-(rider.x - heading.x), -(rider.z - heading.z)); heading.x = rider.x; heading.z = rider.z; }
-      this.transform.position.set(rider.x, Math.sin(time * 1.1 + count) * 0.02, rider.z);
-      this.transform.rotation.set(0, heading.yaw, Math.sin(time * 1.3 + count) * 0.015);
+      this.transform.position.set(rider.x, BOAT_SEAT_Y + bob, rider.z);
+      this.transform.rotation.set(Math.sin(time * .9) * .01, boatHeadingAt(rider.x, rider.z), Math.sin(time * 1.3) * .015);
       this.transform.updateMatrix();
       this.mesh.setMatrixAt(count++, this.transform.matrix);
     }
-    for (const pid of this.headings.keys()) if (!seen.has(pid)) this.headings.delete(pid);
     this.mesh.count = count;
     this.mesh.instanceMatrix.needsUpdate = true;
     return alighted;

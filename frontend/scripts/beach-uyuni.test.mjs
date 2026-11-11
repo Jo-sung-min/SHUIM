@@ -189,6 +189,79 @@ test("low quality caps ring processing at six without adding meshes, downloads o
   world.dispose();
 });
 
+test("first-person walking blends in visible nearby water and settles again without adding render resources", () => {
+  const { world, camera, scene } = fixture(), u = world.surface.material.uniforms;
+  const resources = [world.surface.geometry, world.surface.material, u.uRipples.value];
+  world.update(0, camera, { x: 0, z: 12, moving: true }, true);
+  assert.equal(u.uFirstPersonWater.value, 0, "the first frame does not pop to a different surface");
+  for (let frame = 1; frame <= 60; frame++) {
+    const z = 12 - frame * .045; camera.position.z = z;
+    world.update(frame / 60, camera, { x: 0, z, moving: true }, true);
+    assert.ok(u.uFirstPersonWater.value >= 0 && u.uFirstPersonWater.value <= 1);
+  }
+  assert.ok(u.uFirstPersonWater.value > .99 && u.uWalkWake.value > .99);
+  assert.deepEqual(u.uWalkDirection.value.toArray(), [0, -1]);
+  assert.ok(u.uRipples.value.some(ripple => ripple.w > 0));
+  const strength = u.uWalkWake.value;
+  world.update(1.1, camera, { x: 0, z: 9.3, moving: false }, true);
+  assert.ok(u.uWalkWake.value > 0 && u.uWalkWake.value < strength, "ripples settle instead of snapping off");
+  for (let frame = 1; frame <= 180; frame++) world.update(1.1 + frame / 60, camera, { x: 0, z: 9.3, moving: false }, false);
+  assert.equal(u.uFirstPersonWater.value, 0); assert.equal(u.uWalkWake.value, 0);
+  assert.equal(scene.children.length, 3);
+  [world.surface.geometry, world.surface.material, u.uRipples.value].forEach((resource, i) => assert.equal(resource, resources[i]));
+  assert.ok(Object.values(u).every(uniform => !uniform.value?.isWebGLRenderTarget));
+  world.dispose();
+});
+
+test("dry island, elevated deck, missing motion and teleports cannot create a first-person bow wave", () => {
+  const { world, camera } = fixture(), u = world.surface.material.uniforms;
+  for (let frame = 0; frame < 60; frame++) world.update(frame / 60, camera, { x: 0, z: 12, moving: true }, true);
+  assert.equal(u.uWalkWake.value, 0, "moving flag alone is not movement");
+  world.update(1.1, camera, { x: .5, z: 12, moving: true }, true);
+  assert.ok(u.uWalkWake.value > 0);
+  world.update(1.2, camera, { x: 100, z: 12, moving: true }, true);
+  assert.equal(u.uWalkWake.value, 0, "teleport cannot carry the old wake to the arrival point");
+  for (const [x, z] of [[7, 7], [-12, 16], [-12, 23]]) {
+    world.update(2, camera, { x, z, moving: true }, true);
+    world.update(2.2, camera, { x: x + .2, z, moving: true }, true);
+    assert.equal(u.uFirstPersonWater.value, 0); assert.equal(u.uWalkWake.value, 0);
+  }
+  world.update(3, camera, undefined, true);
+  assert.equal(u.uWalkWake.value, 0);
+  world.update(4, camera, { x: 0, z: 12, moving: true }, true);
+  world.update(4.2, camera, { x: .5, z: 12, moving: true }, true);
+  world.setBunkerActive("dawn");
+  assert.equal(u.uFirstPersonWater.value, 0); assert.equal(u.uWalkWake.value, 0);
+  world.dispose();
+});
+
+test("first-person crests reach the visible foreground faster while the default third-person wave stays exact", () => {
+  const body = shader.UYUNI_WATER_FRAGMENT.match(/vec2 uyuniStepWave\(float distance, float age, float strength, float closeView\) \{([\s\S]*?)\n\}/)[1]
+    .replace(/\b(?:vec2|float)\s+(\w+)\s*=/g, "let $1 =");
+  const smoothstep = (low, high, value) => { const t = Math.max(0, Math.min(1, (value - low) / (high - low))); return t * t * (3 - 2 * t); };
+  const mix = (a, b, t) => a + (b - a) * t;
+  const wave = new Function("vec2", "mix", "smoothstep", "exp", "cos", "max", `return function(distance,age,strength,closeView){${body}}`)(
+    (x, y) => ({ x, y }), mix, smoothstep, Math.exp, Math.cos, Math.max);
+  for (const age of [.1, .5, 1, 2]) for (let distance = .1; distance < 7; distance += .1) {
+    const oldWave = distance - age * .74;
+    const oldEnvelope = Math.exp(-oldWave * oldWave / .025) * (1 - smoothstep(.2, 3.6, age)) * smoothstep(0, .12, age) * .8;
+    const actual = wave(distance, age, .8, 0);
+    assert.ok(Math.abs(actual.x - Math.cos(oldWave * 22) * oldEnvelope * .008) < 1e-12);
+    assert.ok(Math.abs(actual.y - oldEnvelope * .025) < 1e-12);
+  }
+  const peak = wave(4.48, .8, 1, 1);
+  assert.ok(peak.x > .0045 && peak.x < .0065, "fast crests overtake a 3.2m/s walker with only a slight surface bend");
+  const foreground = [3.3, 3.35, 3.4, 3.45, 3.5].map(ahead => Math.abs(wave(3.2 * 1.1 + ahead, 1.1, 1, 1).x));
+  assert.ok(Math.max(...foreground) > .0008 && Math.max(...foreground) < .003, "the visible foreground retains a faint crest without strongly warping the reflection");
+  assert.ok(Math.abs(wave(4.48, .8, 1, 0).x) < 1e-20, "old ripples could not reach that visible foreground");
+  assert.ok(peak.y * .38 > .01 && peak.y * .38 < .016, "night crests catch just a little light instead of drawing bright rings");
+  const crests = [-.45, -.22, 0, .22, .45].map(offset => wave(4.48 + offset, .8, 1, 1).x);
+  assert.ok(crests[0] > 0 && crests[1] < 0 && crests[2] > 0 && crests[3] < 0 && crests[4] > 0, "a broader train of crests replaces one thin line");
+  assert.equal(1 - smoothstep(2, 7, 7), 0, "enhanced movement fades before distant mirror water");
+  assert.match(shader.UYUNI_WATER_FRAGMENT, /float closeWater = 1\.0 - smoothstep\(2\.0, 7\.0, length\(p - uCamPos\.xz\)\)/);
+  assert.match(shader.UYUNI_WATER_FRAGMENT, /slope \*= \(1\.0 - dry\)/);
+});
+
 test("night fill keeps avatars readable with two bounded non-shadow lights and no campfire illumination", () => {
   const { world, scene } = fixture();
   const lights = scene.children.filter(object => object.isLight);

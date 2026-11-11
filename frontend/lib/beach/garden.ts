@@ -10,7 +10,7 @@ import {
 } from "./garden-ink";
 import {
   GARDEN_FOLIAGE_FRAG, GARDEN_FOLIAGE_VERT, GARDEN_GROUND_FRAG, GARDEN_GROUND_VERT, GARDEN_MIST_FRAG, GARDEN_MIST_VERT, GARDEN_MOUNTAIN_FRAG, GARDEN_MOUNTAIN_VERT,
-  GARDEN_PAD_FRAG, GARDEN_PAD_VERT, GARDEN_RIPPLE_COUNT, GARDEN_SPRITE_FRAG, GARDEN_SPRITE_VERT, GARDEN_WATER_FRAG, GARDEN_WATER_VERT,
+  GARDEN_PAD_FRAG, GARDEN_PAD_VERT, GARDEN_RIPPLE_COUNT, GARDEN_SPRITE_FRAG, GARDEN_SPRITE_VERT, GARDEN_TREE_FRAG, GARDEN_TREE_VERT, GARDEN_WATER_FRAG, GARDEN_WATER_VERT,
 } from "./garden-shader";
 import { buildGardenStructures, toonGradient, type GardenStructures } from "./garden-hall";
 import { GardenBoats, type BoatRideState, type RemoteRider } from "./garden-boat";
@@ -25,6 +25,8 @@ export interface GardenWalker { x: number; z: number; moving: boolean }
 export type GardenSkyUniforms = Record<string, THREE.IUniform>;
 
 const LAMP_INTENSITY = 10;
+const TREE_LEAF_CLUSTERS = 20;
+const TREE_LEAF_CLUSTERS_LOW = 16;
 const srgb = (hex: number) => new THREE.Color(hex);
 
 function instanced(base: THREE.BufferGeometry, count: number): THREE.InstancedBufferGeometry {
@@ -196,15 +198,15 @@ export class GardenWorld {
     this.mountains = new THREE.Mesh(band, mountainMaterial);
     this.mountains.name = "garden-mountains";
     this.mountains.position.set(0, 60 - 10, 40);
-    // Keep the mirrored join away from the entrance/hall's central sight line.
+    // Place the softly blended panorama seam outside the central hall view.
     this.mountains.rotation.y = Math.PI + 0.61;
     this.mountains.renderOrder = -5;
     this.mountains.frustumCulled = false;
     this.mountains.layers.enable(2);
     this.root.add(this.mountains);
 
-    // 버드나무: 줄기(병합) + 늘어지는 가닥(인스턴스 십자 빌보드 3장)
-    this.willowStrands = this.buildWillows(willow, shared);
+    // 느티나무: 입체 가지에 잎만 있는 작은 수관을 나눠 붙인다.
+    this.willowStrands = this.buildWillows(willow, shared, textures.wood);
     this.reeds = this.buildReeds(reed, shared);
     this.buildLotus(pad, flower, shared);
     this.mist = this.buildMist(mistTex);
@@ -226,49 +228,95 @@ export class GardenWorld {
     ];
   }
 
-  private buildWillows(willow: THREE.Texture, shared: () => Record<string, THREE.IUniform>) {
+  private buildWillows(willow: THREE.Texture, shared: () => Record<string, THREE.IUniform>, wood: THREE.Texture) {
     const trunks: THREE.BufferGeometry[] = [];
     const rand = seededRandom(67);
     const quad = new THREE.PlaneGeometry(1, 1);
     this.geometries.push(quad);
-    const strands = instanced(quad, GARDEN_WILLOWS.length * 3);
-    const placement = new Float32Array(GARDEN_WILLOWS.length * 3 * 4), seeds = new Float32Array(GARDEN_WILLOWS.length * 3 * 4);
+    const count = GARDEN_WILLOWS.length * TREE_LEAF_CLUSTERS;
+    const strands = instanced(quad, count);
+    const placement = new Float32Array(count * 4), seeds = new Float32Array(count * 4), crownNormals = new Float32Array(count * 3);
+    const link = (a: THREE.Vector3, b: THREE.Vector3, base: number, tip: number, sides = 7) => {
+      const delta = b.clone().sub(a);
+      // Fork ends overlap the parent stem or sit inside foliage, so invisible end caps are unnecessary.
+      const piece = new THREE.CylinderGeometry(tip, base, delta.length(), sides, 1, true);
+      piece.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize()));
+      piece.translate((a.x + b.x) * .5, (a.y + b.y) * .5, (a.z + b.z) * .5);
+      trunks.push(piece);
+    };
     GARDEN_WILLOWS.forEach((tree, index) => {
-      const height = 5.4 * tree.scale, lean = (rand() - 0.5) * 0.22;
-      const trunk = new THREE.CylinderGeometry(0.17 * tree.scale, 0.3 * tree.scale, height, 9, 1);
-      trunk.translate(0, height / 2, 0);
-      trunk.rotateZ(lean); trunk.rotateY(tree.yaw);
-      trunk.translate(tree.x, tree.y - 0.1, tree.z);
-      trunks.push(trunk);
-      for (const [angle, length] of [[0.5, 1.6], [-0.6, 1.3]] as const) {
-        const bough = new THREE.CylinderGeometry(0.07, 0.13, length, 5, 1);
-        bough.translate(0, length / 2, 0); bough.rotateZ(angle); bough.rotateY(tree.yaw + rand() * 2);
-        bough.translate(tree.x + Math.sin(lean) * height * 0.9, tree.y + height * 0.92, tree.z);
-        trunks.push(bough);
+      const scale = tree.scale, leanX = (rand() - .5) * .26, leanZ = (rand() - .5) * .26;
+      const point = (x: number, y: number, z: number) => new THREE.Vector3(tree.x + x * scale, tree.y + y * scale, tree.z + z * scale);
+      const base = point(0, -.08, 0), fork = point(leanX, 2.75, leanZ), stem = point(leanX * 1.3 + .16, 4.65, leanZ * 1.3 - .12);
+      const stemBend = point(leanX + .12, 3.7, leanZ - .05);
+      link(base, fork, .29 * scale, .15 * scale, 11);
+      link(fork, stemBend, .15 * scale, .085 * scale, 9);
+      link(stemBend, stem, .085 * scale, .026 * scale, 7);
+      const crown: { x: number; y: number; z: number; size: number }[] = [];
+      const forks: THREE.Vector3[] = [];
+      for (let k = 0; k < 8; k++) {
+        const angle = tree.yaw + k * Math.PI / 4 + (rand() - .5) * .18;
+        const radius = 2.05 + rand() * .38, y = 4.65 + rand() * .6;
+        const x = Math.cos(angle) * radius + leanX, z = Math.sin(angle) * radius + leanZ;
+        // Four uneven, upright limbs divide into paired side shoots. Keeping separate
+        // fork heights avoids the umbrella-spoke silhouette of eight rays from one point.
+        const rise = rand(), origin = rand(), thickness = rand();
+        if (k % 2 === 0) {
+          const bearing = angle + .3 + rise * .2, reach = .7 + thickness * .25;
+          const limb = point(leanX + Math.cos(bearing) * reach, 3.65 + rise * .6, leanZ + Math.sin(bearing) * reach);
+          const startY = 2.55 + origin * .95;
+          const start = point(leanX + Math.max(0, startY - 2.75) * .12, startY, leanZ - Math.max(0, startY - 2.75) * .05);
+          link(start, limb, (.087 + thickness * .025) * scale, .052 * scale);
+          forks.push(limb);
+        }
+        const limb = forks[Math.floor(k / 2)], end = point(x, y - .12, z);
+        const bend = limb.clone().lerp(end, .5);
+        bend.y += (.12 + rise * .18) * scale;
+        bend.x += Math.cos(angle + Math.PI / 2) * (origin - .5) * .22 * scale;
+        bend.z += Math.sin(angle + Math.PI / 2) * (origin - .5) * .22 * scale;
+        link(limb, bend, .044 * scale, .025 * scale, 6);
+        link(bend, end, .025 * scale, .008 * scale, 6);
+        crown.push({ x, y, z, size: 2.9 + rand() * .45 });
       }
-      const topX = tree.x - Math.sin(lean) * height * 0.95 * Math.cos(tree.yaw), topZ = tree.z + Math.sin(lean) * height * 0.95 * Math.sin(tree.yaw);
-      for (let k = 0; k < 3; k++) {
-        // Store one complete layer of trees at a time so low quality retains every tree.
-        const i = k * GARDEN_WILLOWS.length + index, size = (6.6 - k * 0.4) * tree.scale;
-        placement.set([topX, tree.y + height + 1.5 - k * 0.12, topZ, size], i * 4);
-        seeds.set([tree.seed * 6.28 + k, 0.35 + rand() * 0.5, tree.yaw + k * Math.PI / 3, 1], i * 4);
+      for (let k = 0; k < 6; k++) {
+        const angle = tree.yaw + k * Math.PI / 3 + .36, radius = 1.2 + rand() * .2;
+        const x = Math.cos(angle) * radius + leanX, z = Math.sin(angle) * radius + leanZ, y = 6.0 + rand() * .35;
+        link(stem, point(x, y - .25, z), .045 * scale, .008 * scale, 6);
+        crown.push({ x, y, z, size: 2.7 + rand() * .3 });
       }
+      crown.push({ x: leanX, y: 5.15, z: leanZ, size: 3.3 }, { x: leanX + .2, y: 6.7, z: leanZ - .1, size: 2.8 });
+      for (let k = 0; k < 4; k++) {
+        const angle = tree.yaw + k * Math.PI / 2 + .8;
+        crown.push({ x: Math.cos(angle) * 1.15, y: 4.25 + rand() * .35, z: Math.sin(angle) * 1.15, size: 2.7 });
+      }
+      crown.forEach((cluster, k) => {
+        // Interleave complete crowns across trees; adaptive quality removes only the four extra infill clusters.
+        const i = k * GARDEN_WILLOWS.length + index, center = point(cluster.x, cluster.y, cluster.z);
+        placement.set([center.x, center.y, center.z, cluster.size * scale], i * 4);
+        seeds.set([tree.seed * 6.28 + k * .79, .45 + rand() * .45, (rand() - .5) * .58, .79 + rand() * .13], i * 4);
+        const normal = new THREE.Vector3(cluster.x * .23, .68 + (cluster.y - 4.25) * .12, cluster.z * .23).normalize();
+        crownNormals.set([normal.x, normal.y, normal.z], i * 3);
+      });
     });
     strands.setAttribute("aLeaf", new THREE.InstancedBufferAttribute(placement, 4));
     strands.setAttribute("aLeafSeed", new THREE.InstancedBufferAttribute(seeds, 4));
+    strands.setAttribute("aCrownNormal", new THREE.InstancedBufferAttribute(crownNormals, 3));
     strands.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 6, 40), 80);
     this.geometries.push(strands);
     const trunkGeometry = mergeGeometries(trunks, false)!;
     for (const trunk of trunks) trunk.dispose();
     this.geometries.push(trunkGeometry);
-    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x776754, roughness: 0.98 });
+    const bark = wood.clone(); bark.repeat.set(1, 3.5); this.textures.push(bark);
+    // The shared campfire timber is almost black as an albedo. Keep only its fine
+    // surface relief, so living zelkova bark retains its natural grey-brown colour.
+    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x968b78, bumpMap: bark, bumpScale: .018, roughness: 0.98 });
     this.materials.push(trunkMaterial);
     const trunkMesh = new THREE.Mesh(trunkGeometry, trunkMaterial);
     trunkMesh.name = "garden-willow-trunks"; trunkMesh.layers.enable(2);
     this.root.add(trunkMesh);
     const material = new THREE.ShaderMaterial({
-      uniforms: { ...shared(), uLeaf: { value: willow }, uLeafShade: { value: srgb(0xa0baaa) }, uLeafLit: { value: srgb(0xc4d6be) }, uTransmit: { value: 0.035 } },
-      vertexShader: GARDEN_FOLIAGE_VERT, fragmentShader: GARDEN_FOLIAGE_FRAG, fog: true, side: THREE.DoubleSide,
+      uniforms: { ...shared(), uLeaf: { value: willow }, uLeafShade: { value: srgb(0xb3bfaf) }, uLeafLit: { value: srgb(0xffffff) }, uTransmit: { value: 0.025 } },
+      vertexShader: GARDEN_TREE_VERT, fragmentShader: GARDEN_TREE_FRAG, fog: true, side: THREE.DoubleSide,
     });
     this.materials.push(material);
     const mesh = new THREE.Mesh(strands, material);
@@ -387,10 +435,10 @@ export class GardenWorld {
     this.sun.position.set(direction[0] * 60, Math.max(12, direction[1] * 60), direction[2] * 60);
     if (sunUp) this.sun.color.setRGB(...d.sunColor, THREE.SRGBColorSpace);
     else this.sun.color.setRGB(0.6, 0.68, 0.92, THREE.SRGBColorSpace);
-    this.sun.intensity = (sunUp ? 0.55 + Math.max(0, direction[1]) * 0.8 : 0.22) * (1 - rain * 0.55);
+    this.sun.intensity = (sunUp ? 0.55 + Math.max(0, direction[1]) * 0.8 : 0.09) * (1 - rain * 0.55);
     this.hemi.color.setRGB(...d.skyHorizon, THREE.SRGBColorSpace).lerp(new THREE.Color(0xe8e4d8), 0.35).lerp(new THREE.Color(0x3a4f6e), night * 0.85);
     this.hemi.groundColor.setRGB(0.4, 0.38, 0.33, THREE.SRGBColorSpace).lerp(new THREE.Color(0x101418), night * 0.8);
-    this.hemi.intensity = THREE.MathUtils.lerp(1.1, 0.62, night) * (1 - rain * 0.2);
+    this.hemi.intensity = THREE.MathUtils.lerp(1.1, 0.28, night) * (1 - rain * 0.2);
     this.light.uSunDir.value.set(direction[0], direction[1], direction[2]).normalize();
     this.light.uSunColor.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 1.1);
     this.light.uAmbient.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity * 0.6);
@@ -402,7 +450,7 @@ export class GardenWorld {
     (mountain.uInkColor.value as THREE.Color).setRGB(0.2, 0.23, 0.27).lerp(new THREE.Color(0.06, 0.08, 0.14), night);
     (this.mist.material.uniforms.uMistColor.value as THREE.Color).copy(fog).lerp(new THREE.Color(1, 1, 1), 0.3);
     const dawn = d.hour >= 4.5 && d.hour <= 8 ? 1 - Math.abs(d.hour - 6) / 2 : 0;
-    const mistAmount = Math.max(0, Math.min(1, dawn * 0.9 + night * 0.35 + rain * 0.5));
+    const mistAmount = Math.max(0, Math.min(1, dawn * 0.9 + night * 0.14 + rain * 0.5));
     this.mist.material.uniforms.uAmount.value = mistAmount;
     this.mist.visible = mistAmount > 0.03;
     this.structures.applyDaylight(d, rain);
@@ -536,7 +584,7 @@ export class GardenWorld {
     this.structures.setQuality(low);
     this.water.material.uniforms.uRainTaps.value = low ? 1 : this.mobile ? 5 : 9;
     this.water.material.uniforms.uRippleLimit.value = low ? 4 : GARDEN_RIPPLE_COUNT;
-    this.willowStrands.geometry.instanceCount = low ? GARDEN_WILLOWS.length * 2 : GARDEN_WILLOWS.length * 3;
+    this.willowStrands.geometry.instanceCount = GARDEN_WILLOWS.length * (low ? TREE_LEAF_CLUSTERS_LOW : TREE_LEAF_CLUSTERS);
     this.reeds.visible = !low;
     this.lastLampAt.t = -Infinity;
   }

@@ -14,14 +14,16 @@ export const WATER_Y = 0;
 export const GROUND_Y = 0.55;
 export const BRIDGE_Y = 0.95;
 export const PIER_Y = 0.62;
-/** 나룻배 갑판(앉는 높이) */
+/** Water-walking fallback; actual boat riders use the visible middle bench below. */
 export const BOAT_DECK_Y = 0.42;
+/** Top of the padded middle thwart; its centre is also the boat's rocking pivot. */
+export const BOAT_SEAT_Y = 0.60;
 export const GARDEN_PATH_WIDTH = 2.6;
 export const GARDEN_SPAWN = { x: 0, z: -11, yaw: Math.PI } as const;
 
 export const LAKE = { x: 0, z: 34, rx: 36, rz: 28 } as const;
-/** The entrance sets the radius of the open lawn; existing paths beyond it remain connected. */
-export const GARDEN_WALK_RADIUS = Math.hypot(GARDEN_SPAWN.x - LAKE.x, GARDEN_SPAWN.z - LAKE.z) + 2;
+/** The outer photo courts share the SOROW arch's 50.15 m circle, with room for their full 1.7 m posing pads. */
+export const GARDEN_WALK_RADIUS = 52;
 export const ISLAND = { x: -16, z: 36, radius: 7 } as const;
 
 /** 청우헌: x −15~15, z 60~80. 남면(z=60)이 통창, 창 쪽이 가장 낮다. */
@@ -408,6 +410,24 @@ export const BOAT_ROUTE: BoatRoute = (() => {
 })();
 
 export interface BoatPose { x: number; z: number; yaw: number }
+export function boatBobAt(time: number): number { return Math.sin(time * 1.1) * 0.02; }
+/** A render-only pose: multiplayer positions still describe the centre of the hull. */
+export function boatSeatAt(pose: BoatPose, time: number) {
+  return { ...pose, avatarY: BOAT_SEAT_Y + boatBobAt(time) };
+}
+/** Remote look yaw is free, so recover the hull's heading from the unchanged ferry route. */
+export function boatHeadingAt(x: number, z: number): number {
+  const points = BOAT_ROUTE.points;
+  let closest = Infinity, yaw = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    const dx = b[0] - a[0], dz = b[1] - a[1], lengthSq = dx * dx + dz * dz;
+    const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / (lengthSq || 1), 0, 1);
+    const distanceSq = (x - a[0] - t * dx) ** 2 + (z - a[1] - t * dz) ** 2;
+    if (distanceSq < closest) { closest = distanceSq; yaw = Math.atan2(-dx, -dz); }
+  }
+  return yaw;
+}
 /** 경로 위 거리 s(m) 의 위치와 뱃머리 방향(yaw: 엔진과 같은 -sin/-cos 규약) */
 export function boatPoseAt(s: number): BoatPose {
   const { points, lengths, total } = BOAT_ROUTE;

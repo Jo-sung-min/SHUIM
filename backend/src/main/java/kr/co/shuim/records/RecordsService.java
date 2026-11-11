@@ -138,10 +138,21 @@ public class RecordsService {
 
     @Transactional
     public void replaceMemos(String userId, List<Memo> memos) {
+        // Preserve the structured pet form only while its notebook text is unchanged.
+        // Deleting/editing the memo also deletes its form; the reward ledger stays intact.
+        record PetForm(String text, String answers) {}
+        Map<String, PetForm> petForms = new HashMap<>();
+        jdbc.sql("SELECT id, text, pet_answers::text AS answers FROM memos WHERE user_id = ? AND pet_answers IS NOT NULL")
+            .param(userId).query((RowCallbackHandler) rs -> petForms.put(rs.getString("id"), new PetForm(rs.getString("text"), rs.getString("answers"))));
         jdbc.sql("DELETE FROM memos WHERE user_id = ?").param(userId).update();
         for (Memo m : RecordsLogic.cleanMemos(memos)) {
             jdbc.sql("INSERT INTO memos (id, user_id, cat, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
                 .param(m.id()).param(userId).param(m.cat()).param(m.text()).param(m.pinned()).param(ts(m.createdAt())).param(ts(m.updatedAt())).update();
+            PetForm form = petForms.get(m.id());
+            if (form != null && form.text().equals(m.text())) {
+                jdbc.sql("UPDATE memos SET pet_answers = CAST(? AS jsonb) WHERE id = ? AND user_id = ?")
+                    .param(form.answers()).param(m.id()).param(userId).update();
+            }
         }
     }
 

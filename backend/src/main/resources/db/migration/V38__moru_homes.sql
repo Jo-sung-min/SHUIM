@@ -1,0 +1,15 @@
+ALTER TABLE user_pets ADD COLUMN visit_points INTEGER NOT NULL DEFAULT 0 CHECK (visit_points >= 0);
+ALTER TABLE user_pets ADD COLUMN home_id INTEGER NOT NULL DEFAULT 0 CHECK (home_id BETWEEN 0 AND 8);
+CREATE TABLE pet_point_ledger (
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_key VARCHAR(80) NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, event_key)
+);
+CREATE TABLE pet_owned_homes (
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    home_id INTEGER NOT NULL CHECK (home_id BETWEEN 1 AND 8),
+    purchased_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, home_id)
+);

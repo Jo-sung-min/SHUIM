@@ -102,7 +102,7 @@ test("the entrance photo court reaches both sculptures and keeps the old gate pa
 });
 
 test("open lawn remains freely walkable well away from the old narrow paths", () => {
-  near(garden.GARDEN_WALK_RADIUS, 47, "the lawn extends two metres past the spawn radius");
+  near(garden.GARDEN_WALK_RADIUS, 52, "the lawn includes the full photo platforms on the SOROW arch circle");
   for (const side of [-1, 1]) {
     for (let step = 0; step <= 100; step++) {
       const x = side * (20 + 11 * step / 100), z = 5 * step / 100;

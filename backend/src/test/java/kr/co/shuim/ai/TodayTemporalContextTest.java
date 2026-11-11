@@ -32,7 +32,7 @@ class TodayTemporalContextTest {
     @ParameterizedTest
     @ValueSource(strings = {"love", "praise", "briefing", "review"})
     void sendsTodayFirstWithDatedHistoryEvenWithAnOldAdministratorPrompt(String mode) {
-        ClaudeClient claude = mock(ClaudeClient.class);
+        OpenAiClient claude = mock(OpenAiClient.class);
         when(claude.configured()).thenReturn(true);
         when(claude.resolveModel(any())).thenReturn("test-model");
         String response = switch (mode) {

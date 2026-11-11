@@ -4,7 +4,9 @@ import { UYUNI_HOTELS } from "./uyuni-hotel-layout";
 
 export type UyuniBunkerId = "dawn" | "dusk";
 export const BUNKER_FLOOR_Y = -8.6;
-export const BUNKER_CEILING_Y = 3.4;
+/** Flat glazing below the shallow salt-flat water, measured from the indoor floor. */
+export const BUNKER_GLASS_ROOF_Y = 8.25;
+export const BUNKER_CEILING_Y = BUNKER_FLOOR_Y + BUNKER_GLASS_ROOF_Y;
 /** What the server allows a visitor's position to be, around the hotel's centre. The oval hall lies inside it. */
 export const BUNKER_EXTENT = { minX: -18, maxX: 18, minZ: -9, maxZ: 27 } as const;
 export const BUNKER_WIDTH = BUNKER_EXTENT.maxX - BUNKER_EXTENT.minX;
@@ -70,12 +72,12 @@ export function bunkerFloorRise(x: number, z: number): number {
   if (r >= T.stair && angle < T.foot) return T.height * stairClimb(stairProgress(angle));
   return 0;
 }
-/** Clear height above the hall floor: low under the front balcony and the pavilion roof, and an oval dome rising from the top of the wall everywhere else. */
+/** Clear height above the hall floor: low under the front balcony and pavilion, with a flat glass roof everywhere else. */
 export function bunkerCeilingRise(x: number, z: number): number {
   const r = hallRadius(x, z), P = BUNKER_PAVILION_LOCAL;
   if (Math.abs(hallAngle(x, z)) >= BUNKER_ENTRY.from && r >= BUNKER_ENTRY.edge) return BUNKER_ENTRY.ceiling;
   if (Math.abs(x - P.x) < 3.4 && Math.abs(z - P.z) < 1.9) return BUNKER_TERRACE.height + 2.95;
-  return BUNKER_HALL.wall + (BUNKER_CEILING_Y - BUNKER_FLOOR_Y - BUNKER_HALL.wall) * Math.sqrt(Math.max(0, 1 - r * r));
+  return BUNKER_GLASS_ROOF_Y;
 }
 /** True when a point is inside the oval wall with `inset` metres to spare. */
 export function bunkerInside(x: number, z: number, inset = 0): boolean {
@@ -135,7 +137,7 @@ export function bunkerStepClear(x0: number, z0: number, x1: number, z1: number, 
 
 export const BUNKER_INTERACTION_REACH = 1.8;
 export const BUNKER_SEAT_REACH = 2.2;
-export const BUNKER_SEAT_CAPACITY = 6;
+export const BUNKER_SEAT_CAPACITY = 21;
 export const BUNKER_SEAT_HEIGHT = .52;
 export const BUNKER_LADDER_LOCAL = { x: 0, z: -6.8 } as const;
 export const BUNKER_ARRIVAL_LOCAL = { x: 0, z: -5.4, yaw: Math.PI } as const;
@@ -162,11 +164,6 @@ export const UYUNI_BUNKERS: readonly UyuniBunker[] = UYUNI_HOTELS.map(hotel => (
 /** Three generous cushions on either side face the shared table; slots are server-stable. */
 export const BUNKER_SOFA_LOCAL: readonly { x: number; z: number; yaw: number }[] = [-1, 1].flatMap(side =>
   [-1.8, 0, 1.8].map(z => ({ x: side * 5.3, z, yaw: side * Math.PI / 2 })));
-export const BUNKER_SEATS: readonly PavilionSeat[] = UYUNI_BUNKERS.flatMap(bunker => BUNKER_SOFA_LOCAL.map((seat, slot) => ({
-  id: `${bunker.spotId}-${slot}`, pavilionId: `bunker-${bunker.id}`, spotId: bunker.spotId, name: bunker.name, slot,
-  x: bunker.x + seat.x, z: bunker.z + seat.z, yaw: seat.yaw,
-  baseY: BUNKER_FLOOR_Y, avatarY: BUNKER_FLOOR_Y + BUNKER_SEAT_HEIGHT, incline: 0,
-})));
 
 export type BunkerGameKind = "omok" | "othello";
 export const BUNKER_GAME_REACH = 2.4;
@@ -188,6 +185,36 @@ export const BUNKER_TREES_LOCAL: readonly { x: number; z: number; upstairs: bool
 ];
 /** The reading pavilion on the terrace. */
 export const BUNKER_PAVILION_LOCAL = { x: 0, z: 23.4 } as const;
+
+/** Stable slots: lounge 0–5, fireside 6–7, game poufs 8–11, daybed 12–14, reading benches 15–20. */
+export const BUNKER_FURNITURE_SEATS_LOCAL = (() => {
+  const seats = BUNKER_SOFA_LOCAL.map(seat => ({ ...seat, x: seat.x + Math.sign(seat.x) * .2, height: BUNKER_SEAT_HEIGHT, floor: 0, name: "소파" }));
+  const atWall = (angle: number, u: number, v: number) => {
+    const origin = hallPoint(1, angle), n = hallInward(angle);
+    return { x: origin.x + n.z * u + n.x * v, z: origin.z - n.x * u + n.z * v, yaw: Math.atan2(n.x, n.z) };
+  };
+  for (const side of [-1.05, 1.05]) {
+    const at = atWall(BUNKER_HEARTH_ANGLE, side, 2.6), yaw = at.yaw + side * .25;
+    seats.push({ x: at.x, z: at.z, yaw, height: .62, floor: 0, name: "난롯가 의자" });
+  }
+  for (const table of BUNKER_GAMES_LOCAL) for (const side of [-1, 1]) {
+    seats.push({ x: table.x + side * 1.15, z: table.z, yaw: side * Math.PI / 2, height: .3008, floor: 0, name: "게임 테이블 방석" });
+  }
+  for (const side of [-.85, 0, .85]) {
+    const at = atWall(BUNKER_DAYBED_ANGLE, side, .95), yaw = Math.atan2(Math.sin(at.yaw + Math.PI), Math.cos(at.yaw + Math.PI));
+    seats.push({ x: at.x, z: at.z, yaw, height: side < -.55 ? .825 : .90, floor: 0, name: "창가 긴 소파" });
+  }
+  for (const side of [-1, 1]) for (const offset of [-.8, 0, .8]) {
+    seats.push({ x: side * 2.36, z: BUNKER_PAVILION_LOCAL.z + offset, yaw: side * Math.PI / 2, height: BUNKER_TERRACE.height + .66, floor: BUNKER_TERRACE.height, name: "위층 독서 벤치" });
+  }
+  return seats;
+})();
+
+export const BUNKER_SEATS: readonly PavilionSeat[] = UYUNI_BUNKERS.flatMap(bunker => BUNKER_FURNITURE_SEATS_LOCAL.map((seat, slot) => ({
+  id: `${bunker.spotId}-${slot}`, pavilionId: `bunker-${bunker.id}`, spotId: bunker.spotId, name: seat.name, slot,
+  x: bunker.x + seat.x, z: bunker.z + seat.z, yaw: seat.yaw,
+  baseY: BUNKER_FLOOR_Y + seat.floor, avatarY: BUNKER_FLOOR_Y + seat.height, incline: 0,
+})));
 /** Where a following camera may not go, in room coordinates: into the crown of a tree, where it would see nothing but leaves. */
 export function bunkerCameraBlocked(x: number, y: number, z: number): boolean {
   return BUNKER_TREES_LOCAL.some(tree => Math.hypot(x - tree.x, z - tree.z, (y - (tree.upstairs ? BUNKER_TERRACE.height : 0) - 3.6) * .8) < 2.2);

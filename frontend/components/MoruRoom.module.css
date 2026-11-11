@@ -1,0 +1,10 @@
+.scenery{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.bed{position:absolute;width:270px;height:160px;left:50%;bottom:20px;transform:translateX(-50%);pointer-events:none;z-index:1}
+.quilt{position:absolute;width:270px;height:68px;left:50%;bottom:35px;transform:translateX(-50%);pointer-events:none;z-index:3}
+.photo{image-rendering:auto;filter:saturate(.7) contrast(1.08)}
+.cityGlow{image-rendering:auto;mix-blend-mode:screen;animation:cityLight 8s ease-in-out infinite;pointer-events:none}
+.rain{animation:rainFall .85s linear infinite;shape-rendering:geometricPrecision}.snow{animation:snowFall 7s linear infinite;shape-rendering:geometricPrecision}
+@keyframes cityLight{0%,100%{opacity:.16}21%{opacity:.3}43%{opacity:.2}69%{opacity:.4}84%{opacity:.23}}
+@keyframes rainFall{from{transform:translate(0,-22px)}to{transform:translate(-3px,10px)}}
+@keyframes snowFall{from{transform:translate(0,-20px)}to{transform:translate(5px,12px)}}
+@media(prefers-reduced-motion:reduce){.rain,.snow,.cityGlow{animation:none}.cityGlow{opacity:.2}}

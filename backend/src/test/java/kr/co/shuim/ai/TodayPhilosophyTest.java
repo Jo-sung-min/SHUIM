@@ -18,7 +18,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class TodayPhilosophyTest {
-    private final ClaudeClient claude = mock(ClaudeClient.class);
+    private final OpenAiClient claude = mock(OpenAiClient.class);
     private final PhilosophyQuoteService quotes = mock(PhilosophyQuoteService.class);
     private final TodayService service = new TodayService(claude, new ObjectMapper(), quotes);
     private static final Quote QUOTE = new Quote("q-one", "작은 시작에도 삶의 방향이 담길 수 있다.", "고전의 저자",

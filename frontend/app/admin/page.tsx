@@ -7,10 +7,11 @@ import { Empty, Hero, LoadError, Segmented, Sheet, SkeletonScreen, TopBar, fmtRe
 import { IconBubble, IconChevronL, IconFilm, IconLock, IconShield } from "@/components/Icons";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
 import { Me, fetchMe } from "@/lib/auth";
-import { DEFAULT_MODEL, DEFAULT_PROMPTS, MODEL_OPTIONS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
+import { DEFAULT_PROMPTS, PROMPT_MAX_LEN, PROMPT_META, PromptKey } from "@/lib/prompts";
 import { PromptOverrides, loadPrompts, savePrompts } from "@/lib/storage";
 import { run } from "@/components/CommunityUI";
 import SiteAdmin from "./SiteAdmin";
+import AiModelAdmin from "./AiModelAdmin";
 import SafetyAdmin from "@/components/SafetyAdmin";
 import QuoteAdmin from "./QuoteAdmin";
 import UsersAdmin from "./UsersAdmin";
@@ -148,27 +149,11 @@ function PromptAdmin() {
     setOverrides(next);
   };
   const customized = Object.keys(overrides).filter((k) => k !== "model").length;
-  const model = overrides.model ?? DEFAULT_MODEL;
-  const pickModel = (id: string) => {
-    const next: PromptOverrides = { ...overrides };
-    if (id === DEFAULT_MODEL) delete next.model;
-    else next.model = id;
-    savePrompts(next);
-    setOverrides(next);
-  };
 
   return (
     <>
       <Hero label="AI 답변 설정" title={customized ? `${customized}개의 작성 지침을 바꿨어요` : "기본 작성 지침을 사용해요"} sub="답변의 말투와 내용을 조정해요. 안내된 답변 형식은 그대로 유지해 주세요." stats={[`${PROMPT_META.length}개 작성 지침`, `최대 ${PROMPT_MAX_LEN.toLocaleString()}자`]} />
-      <div className="section-title"><span>사용할 AI</span><span className="tiny muted">{MODEL_OPTIONS.find((o) => o.id === model)?.label}</span></div>
-      <div className="stack" style={{ gap: 8 }}>
-        {MODEL_OPTIONS.map((o) => (
-          <button key={o.id} type="button" className={`reason glass ${model === o.id ? "on" : ""}`} onClick={() => pickModel(o.id)}>
-            <span className="radio" />
-            <span><b>{o.label}</b><small>{o.desc}</small></span>
-          </button>
-        ))}
-      </div>
+      <AiModelAdmin />
       <div className="section-title"><span>작성 지침</span></div>
       <div className="stack">
         {PROMPT_META.map((p) => {
@@ -190,7 +175,7 @@ function PromptAdmin() {
           );
         })}
       </div>
-      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>변경한 작성 지침과 AI 선택은 현재 기기에서 만드는 답변에 적용돼요.</p>
+      <p className="tiny muted" style={{ textAlign: "center", marginTop: 16 }}>AI 모델은 모든 사용자에게 적용돼요. 작성 지침 변경은 현재 기기에서 만드는 답변에 적용돼요.</p>
     </>
   );
 }

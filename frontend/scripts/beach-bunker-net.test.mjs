@@ -3,6 +3,7 @@ import { stripTypeScriptTypes } from "node:module";
 import vm from "node:vm";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { hotSpring } from "./beach-world-fixture.mjs";
 
 const typed = await readFile(new URL("../lib/beach/net.ts", import.meta.url), "utf8");
 const source = stripTypeScriptTypes(typed).replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
@@ -16,9 +17,10 @@ function setup(fetch) {
 const standing = (bunkerId = "dawn") => ({ pose: "standing", spotId: null, slot: null,
   x: bunkerId === "dawn" ? -12 : 12, z: bunkerId === "dawn" ? 17.6 : 23.6, yaw: Math.PI, bunkerId });
 const surface = { pose: "standing", spotId: null, slot: null, x: -12, z: 16.2, yaw: .75 };
-const seat = (id, slot) => ({ pose: "sitting", spotId: `bunker-${id}-sofa`, slot, bunkerId: id,
-  x: (id === "dawn" ? -12 : 12) + (slot < 3 ? -5.3 : 5.3), z: (id === "dawn" ? 23 : 29) + (slot % 3 - 1) * 1.8,
-  yaw: slot < 3 ? -Math.PI / 2 : Math.PI / 2 });
+const seat = (id, slot) => {
+  const seat = hotSpring.BUNKER_SEATS.find(seat => seat.spotId === `bunker-${id}-sofa` && seat.slot === slot);
+  return { pose: "sitting", spotId: seat.spotId, slot, bunkerId: id, x: seat.x, z: seat.z, yaw: seat.yaw };
+};
 
 test("only explicit Uyuni bunker capability enables entry, while resumed indoor state is retained", async () => {
   for (const value of [undefined, null, false, "true", 1]) {
@@ -54,20 +56,32 @@ test("transitions send only the ticket, requested action, bunker and stable sequ
   assert.equal(sent, 0);
 });
 
-test("all twelve shared sofa seats require their canonical layer, slot, position and facing", async () => {
-  for (const id of ["dawn", "dusk"]) for (let slot = 0; slot < 6; slot++) {
+test("all forty-two shared furniture seats require their canonical layer, slot, position and facing", async () => {
+  for (const id of ["dawn", "dusk"]) for (let slot = 0; slot < 21; slot++) {
     const expected = seat(id, slot);
     const api = setup(async () => response(expected));
     assert.deepEqual(plain(await api.setBeachRest("visit", "sit", expected.spotId)), expected);
     for (const bad of [
       { ...expected, bunkerId: undefined }, { ...expected, bunkerId: id === "dawn" ? "dusk" : "dawn" },
-      { ...expected, slot: 6 }, { ...expected, slot: -1 }, { ...expected, pose: "lying" },
+      { ...expected, slot: 21 }, { ...expected, slot: -1 }, { ...expected, pose: "lying" },
       { ...expected, x: expected.x + .1 }, { ...expected, z: expected.z + .1 }, { ...expected, yaw: expected.yaw + .1 },
     ]) await assert.rejects(setup(async () => response(bad)).setBeachRest("visit", "sit", expected.spotId), /쉴 자리/);
     const rounded = { ...expected, x: Math.round(expected.x * 100) / 100, z: Math.round(expected.z * 100) / 100, yaw: Math.round(expected.yaw * 100) / 100 };
     const player = { pid: "p", id: "u", nick: "친구", skin: 0, moving: false, ...rounded };
     const poll = await setup(async () => response({ players: [player], selfRest: expected })).tickBeach({ ticket: "visit", bunkerId: id });
     assert.deepEqual(plain(poll.players[0]), player);
+  }
+});
+
+test("all four outdoor loungers round-trip only at their surface slot and canonical facing", async () => {
+  for (const id of ["dawn", "dusk"]) for (let slot = 0; slot < 2; slot++) {
+    const expected = { pose: "lying", spotId: `hotel-${id}-chaise`, slot, bunkerId: null,
+      x: (id === "dawn" ? -12 : 12) + (slot === 0 ? -3.3 : 3.3), z: (id === "dawn" ? 23 : 29) - 7.5, yaw: Math.PI };
+    assert.deepEqual(plain(await setup(async () => response(expected)).setBeachRest("visit", "lie", expected.spotId)), expected);
+    for (const bad of [
+      { ...expected, bunkerId: id }, { ...expected, slot: 2 }, { ...expected, pose: "sitting" },
+      { ...expected, x: expected.x + .1 }, { ...expected, z: expected.z + .1 }, { ...expected, yaw: 0 },
+    ]) await assert.rejects(setup(async () => response(bad)).setBeachRest("visit", "lie", expected.spotId), /쉴 자리/);
   }
 });
 

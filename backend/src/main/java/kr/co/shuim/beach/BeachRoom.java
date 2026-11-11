@@ -65,6 +65,7 @@ public class BeachRoom {
     /** Beds sit deeper inside the enlarged shelters; matches the frontend bed-slot anchor. */
     public static final double BED_FEET_OFFSET_Z = 1.5;
     public static final String HOTEL_DAWN_SPOT = "hotel-dawn", HOTEL_DUSK_SPOT = "hotel-dusk";
+    public static final String HOTEL_DAWN_CHAISE = "hotel-dawn-chaise", HOTEL_DUSK_CHAISE = "hotel-dusk-chaise";
     public static final int HOTEL_BED_SLOTS = 2;
     public static final String BENCH_SPOT = "fire-benches";
     public static final int BENCH_SLOTS = 12;
@@ -165,6 +166,7 @@ public class BeachRoom {
         new Pavilion("baikal-aurora-porch", 73.4, -191.6, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
+        boolean chaise() { return HOTEL_DAWN_CHAISE.equals(id) || HOTEL_DUSK_CHAISE.equals(id); }
         boolean bench() { return BENCH_SPOT.equals(id); }
         boolean onsen() { return ONSEN_BENCH_SPOT.equals(id) || ONSEN_FLOAT_SPOT.equals(id); }
         boolean pavilion() { return isPavilionSpot(id); }
@@ -188,7 +190,9 @@ public class BeachRoom {
         Map.entry(ONSEN_BENCH_SPOT, new RestSpot(ONSEN_BENCH_SPOT, ONSEN_X, ONSEN_Z, ONSEN_BENCH_SLOTS, false)),
         Map.entry(ONSEN_FLOAT_SPOT, new RestSpot(ONSEN_FLOAT_SPOT, ONSEN_X, ONSEN_Z, ONSEN_FLOAT_SLOTS, false)),
         Map.entry(HOTEL_DAWN_SPOT, new RestSpot(HOTEL_DAWN_SPOT, -12, 23, HOTEL_BED_SLOTS, true)),
-        Map.entry(HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true)));
+        Map.entry(HOTEL_DUSK_SPOT, new RestSpot(HOTEL_DUSK_SPOT, 12, 29, HOTEL_BED_SLOTS, true)),
+        Map.entry(HOTEL_DAWN_CHAISE, new RestSpot(HOTEL_DAWN_CHAISE, -12, 23, 2, true)),
+        Map.entry(HOTEL_DUSK_CHAISE, new RestSpot(HOTEL_DUSK_CHAISE, 12, 29, 2, true)));
     private static final Map<String, RestSpot> REST_SPOTS = restSpots();
 
     static boolean isPavilionSpot(String spotId) {
@@ -394,8 +398,23 @@ public class BeachRoom {
             nearby = true;
             if (!used[slot] && d < distance) { closest = slot; distance = d; }
         }
-        if (!nearby) throw ApiException.badRequest("소파 가까이에서 앉아 주세요.");
-        if (closest < 0) throw new ApiException(409, "가까운 소파 자리가 모두 차 있어요. 다른 자리로 다가가 주세요.");
+        if (!nearby) throw ApiException.badRequest("의자나 소파 가까이에서 앉아 주세요.");
+        if (closest < 0) throw new ApiException(409, "가까운 자리가 모두 차 있어요. 다른 자리로 다가가 주세요.");
+        return closest;
+    }
+
+    private static int nearestChaiseSlot(Presence me, RestSpot spot, boolean[] used) {
+        int closest = -1;
+        boolean near = false;
+        double nearest = Double.POSITIVE_INFINITY;
+        for (int slot = 0; slot < 2; slot++) {
+            double distance = Math.hypot(me.x - spot.x() - (slot == 0 ? -3.3 : 3.3), me.z - spot.z() + 6.6);
+            if (distance > 2.2 + 1e-9) continue;
+            near = true;
+            if (!used[slot] && distance < nearest) { nearest = distance; closest = slot; }
+        }
+        if (!near) throw ApiException.badRequest("호텔 앞 의자 가까이에서 누워 주세요.");
+        if (closest < 0) throw new ApiException(409, "가까운 의자에 다른 사람이 쉬고 있어요.");
         return closest;
     }
 
@@ -1079,7 +1098,7 @@ public class BeachRoom {
                 if (Math.abs(dx) > 4.35 + 1e-9 || dz < -4.5 - 1e-9 || dz > 4.45 + 1e-9
                     || Math.hypot(dx, dz) > REST_REACH + 1e-9)
                     throw ApiException.badRequest("호텔 안으로 들어와 침구 가까이에서 누워 주세요.");
-            } else if (!spot.bench() && !spot.onsen() && !spot.pavilion() && !spot.bunker() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
+            } else if (!spot.chaise() && !spot.bench() && !spot.onsen() && !spot.pavilion() && !spot.bunker() && Math.hypot(me.x - spot.x(), me.z - reachZ) > REST_REACH) {
                 throw ApiException.badRequest(spot.bed() ? "오두막 가까이에서 누워 주세요." : "별빛 자리 가까이에서 누워 주세요.");
             }
             boolean[] used = new boolean[spot.capacity()];
@@ -1087,8 +1106,8 @@ public class BeachRoom {
                 Integer slot = other.restSlot;
                 if (slot != null && spot.id().equals(other.restSpot) && live(other, now)) used[slot] = true;
             }
-            boolean nearestSeat = spot.bench() || spot.onsen() || spot.pavilion() || spot.bunker();
-            int slot = spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used)
+            boolean nearestSeat = spot.chaise() || spot.bench() || spot.onsen() || spot.pavilion() || spot.bunker();
+            int slot = spot.chaise() ? nearestChaiseSlot(me, spot, used) : spot.bench() ? nearestBenchSlot(me, used) : spot.onsen() ? nearestOnsenSlot(me, spot, used)
                 : spot.pavilion() ? nearestPavilionSlot(me, spot, used) : spot.bunker() ? nearestBunkerSlot(me, spot, used) : 0;
             if (!nearestSeat) while (slot < spot.capacity() && used[slot]) slot++;
             if (slot == spot.capacity()) throw new ApiException(409, spot.hotel()
@@ -1109,7 +1128,7 @@ public class BeachRoom {
                 double[] inside = insideFloatRadius(me.x, me.z, slot);
                 me.x = inside[0];
                 me.z = inside[1];
-            } else if (nearestSeat) {
+            } else if (nearestSeat && !spot.chaise()) {
                 BenchSeat seat = spot.onsen() ? onsenSlot(spot, slot) : spot.pavilion() ? pavilionSeat(pavilionOf(spot), slot)
                     : spot.bunker() ? bunker.seat(slot) : benchSeat(slot);
                 me.x = seat.x();
@@ -1117,9 +1136,9 @@ public class BeachRoom {
                 me.yaw = seat.yaw();
             } else {
                 double theta = spot.bed() ? Math.PI : slot * Math.PI * 2 / REST_SLOTS;
-                me.x = spot.hotel() ? spot.x() + (slot - .5) * 3
+                me.x = spot.chaise() ? spot.x() + (slot == 0 ? -3.3 : 3.3) : spot.hotel() ? spot.x() + (slot - .5) * 3
                     : spot.bed() ? spot.x() + (slot - 1) * 1.9 : spot.x() + Math.sin(theta) * REST_FEET_RADIUS;
-                me.z = spot.bed() ? spot.z() + BED_FEET_OFFSET_Z : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
+                me.z = spot.chaise() ? spot.z() - 7.5 : spot.bed() ? spot.z() + BED_FEET_OFFSET_Z : spot.z() + Math.cos(theta) * REST_FEET_RADIUS;
                 me.yaw = theta;
             }
             me.restSpot = spot.id();

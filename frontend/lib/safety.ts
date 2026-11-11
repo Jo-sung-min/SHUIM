@@ -1,7 +1,7 @@
 "use client";
 import { showToast } from "./toast";
 
-export const POLICY_VERSION = "2026-10-21";
+export const POLICY_VERSION = "2026-11-11";
 export interface PolicyConsent { version: string; userId: string | null; signupAccepted: boolean; aiAccepted: boolean }
 export interface PolicyConsentInput { signupConsentVersion: string; aiDisclosureAccepted: boolean; expectedUserId: string | null }
 

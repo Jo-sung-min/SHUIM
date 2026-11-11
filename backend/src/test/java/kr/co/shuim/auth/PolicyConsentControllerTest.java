@@ -104,7 +104,7 @@ class PolicyConsentControllerTest {
         AuthService auth = mock(AuthService.class);
         MockMvcBuilders.standaloneSetup(new PolicyConsentController(auth, policies())).build()
             .perform(post("/api/auth/consent").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"signupConsentVersion\":\"2026-10-21\",\"aiDisclosureAccepted\":true}"))
+                .content("{\"signupConsentVersion\":\"2026-11-11\",\"aiDisclosureAccepted\":true}"))
             .andExpect(status().isBadRequest());
         verifyNoInteractions(auth);
     }

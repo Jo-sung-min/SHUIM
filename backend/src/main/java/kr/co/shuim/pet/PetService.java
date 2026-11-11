@@ -1,0 +1,162 @@
+package kr.co.shuim.pet;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import kr.co.shuim.config.ApiException;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.nio.charset.StandardCharsets;
+import java.time.*;
+import java.util.*;
+
+@Service
+public class PetService {
+    private final JdbcClient jdbc;
+    private final ObjectMapper json;
+    private final Clock clock;
+    @org.springframework.beans.factory.annotation.Autowired
+    public PetService(JdbcClient jdbc, ObjectMapper json) { this(jdbc, json, Clock.system(ZoneId.of("Asia/Seoul"))); }
+    PetService(JdbcClient jdbc, ObjectMapper json, Clock clock) { this.jdbc = jdbc; this.json = json; this.clock = clock; }
+    public record Answers(String mood, Integer intensity, String reason, String note, String need) {}
+    public record JournalInput(String date, Answers answers) {}
+    public record View(String name, int food, int xp, int level, int levelStart, int levelEnd,
+                       String date, int meals, int earned, Answers answers, int reward,
+                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance) {}
+    private record Pet(String name, PetRules.State state) {}
+    private static final Answers EMPTY = new Answers(null, null, null, null, null);
+    private static final Set<String> MOODS = Set.of("편안해", "기뻐", "그저 그래", "지쳤어", "슬퍼", "불안해", "잘 모르겠어");
+    private static final Set<String> REASONS = Set.of("나 자신", "일", "관계", "몸", "돈", "잘 모르겠어");
+    private static final Set<String> NEEDS = Set.of("휴식", "위로", "정리", "함께 있기", "조용히 있기", "잘 모르겠어");
+
+    private Pet lock(String uid, ZonedDateTime now) {
+        jdbc.sql("INSERT INTO user_pets(user_id, meal_date) VALUES (?, ?) ON CONFLICT DO NOTHING")
+            .param(uid).param(now.toLocalDate()).update();
+        return jdbc.sql("SELECT name, food, xp, meal_date, meals FROM user_pets WHERE user_id = ? FOR UPDATE")
+            .param(uid).query((rs, i) -> new Pet(rs.getString("name"), PetRules.settle(new PetRules.State(
+                rs.getInt("food"), rs.getInt("xp"), rs.getObject("meal_date", LocalDate.class), rs.getInt("meals")), now.toLocalDate(), now.getHour()))).single();
+    }
+    private int mask(String uid, LocalDate date) {
+        return jdbc.sql("SELECT rewarded FROM pet_daily_rewards WHERE user_id = ? AND date = ?")
+            .param(uid).param(date).query(Integer.class).optional().orElse(0);
+    }
+    private String memoId(String uid, LocalDate date) {
+        return UUID.nameUUIDFromBytes(("sorow-pet:" + uid + ":" + date).getBytes(StandardCharsets.UTF_8)).toString();
+    }
+    private Answers answers(String uid, LocalDate date) {
+        var raw = jdbc.sql("SELECT pet_answers::text FROM memos WHERE id = ? AND user_id = ? AND pet_answers IS NOT NULL")
+            .param(memoId(uid, date)).param(uid).query(String.class).optional();
+        if (raw.isEmpty()) return EMPTY;
+        try { return json.readValue(raw.get(), Answers.class); }
+        catch (Exception e) { throw new IllegalStateException("Invalid stored pet diary", e); }
+    }
+    private View save(String uid, Pet p, int reward) {
+        var s = p.state();
+        jdbc.sql("UPDATE user_pets SET name = ?, food = ?, xp = ?, meal_date = ?, meals = ? WHERE user_id = ?")
+            .param(p.name()).param(s.food()).param(s.xp()).param(s.date()).param(s.meals()).param(uid).update();
+        int level = PetRules.level(s.xp());
+        int points = jdbc.sql("SELECT visit_points FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
+        int homeId = jdbc.sql("SELECT home_id FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
+        String appearance = jdbc.sql("SELECT appearance FROM user_pets WHERE user_id=?").param(uid).query(String.class).single();
+        return new View(p.name(), s.food(), s.xp(), level, PetRules.LEVELS[level - 1],
+            level == 10 ? 720 : PetRules.LEVELS[level], s.date().toString(), s.meals(),
+            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance);
+    }
+    private List<Integer> owned(String uid) {
+        var result = new ArrayList<Integer>(); result.add(0);
+        result.addAll(jdbc.sql("SELECT home_id FROM pet_owned_homes WHERE user_id=? ORDER BY home_id").param(uid).query(Integer.class).list());
+        return result;
+    }
+    private void grant(String uid, String key, int amount) {
+        int inserted = jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,?) ON CONFLICT DO NOTHING")
+            .param(uid).param(key).param(amount).update();
+        if (inserted == 1) jdbc.sql("UPDATE user_pets SET visit_points=visit_points+? WHERE user_id=?").param(amount).param(uid).update();
+    }
+    @Transactional public View get(String uid) {
+        var p = lock(uid, ZonedDateTime.now(clock));
+        grant(uid, "visit:" + p.state().date(), 10);
+        return save(uid, p, 0);
+    }
+    public record HomeInput(int homeId) {}
+    public record AppearanceInput(String appearance) {}
+    static String validateAppearance(String value) {
+        if (value == null || !Set.of("moru", "noa", "leo", "lumi").contains(value))
+            throw ApiException.badRequest("친구의 모습을 선택해 주세요.");
+        return value;
+    }
+    @Transactional public View appearance(String uid, AppearanceInput input) {
+        String value = validateAppearance(input == null ? null : input.appearance());
+        var p = lock(uid, ZonedDateTime.now(clock));
+        jdbc.sql("UPDATE user_pets SET appearance=? WHERE user_id=?").param(value).param(uid).update();
+        return save(uid, p, 0);
+    }
+    @Transactional public View home(String uid, HomeInput input) {
+        if (input == null) throw ApiException.badRequest("공간을 선택해 주세요.");
+        var p = lock(uid, ZonedDateTime.now(clock));
+        int points = jdbc.sql("SELECT visit_points FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
+        var owned = owned(uid);
+        var home = PetHomes.check(input.homeId(), PetRules.level(p.state().xp()), points, owned);
+        if (!owned.contains(home.id())) {
+            jdbc.sql("INSERT INTO pet_owned_homes(user_id,home_id) VALUES (?,?)").param(uid).param(home.id()).update();
+            jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,?)")
+                .param(uid).param("home:" + home.id()).param(-home.cost()).update();
+            jdbc.sql("UPDATE user_pets SET visit_points=visit_points-? WHERE user_id=?").param(home.cost()).param(uid).update();
+        }
+        jdbc.sql("UPDATE user_pets SET home_id=? WHERE user_id=?").param(home.id()).param(uid).update();
+        return save(uid, p, 0);
+    }
+    public record FeedInput(String date, int meals) {}
+    @Transactional public View feed(String uid, FeedInput input) {
+        var p = lock(uid, ZonedDateTime.now(clock));
+        // Compare-and-set: retrying the same click, including from another tab, cannot eat twice.
+        if (input == null || !p.state().date().toString().equals(input.date()) || p.state().meals() != input.meals())
+            return save(uid, p, 0);
+        return save(uid, new Pet(p.name(), PetRules.feed(p.state())), 0);
+    }
+    @Transactional public View rename(String uid, String name) {
+        if (name == null || name.strip().isEmpty() || name.strip().length() > 20 || name.codePoints().anyMatch(Character::isISOControl))
+            throw ApiException.badRequest("이름은 1~20자로 지어 주세요.");
+        var p = lock(uid, ZonedDateTime.now(clock));
+        return save(uid, new Pet(name.strip(), p.state()), 0);
+    }
+    static Answers validate(Answers a) {
+        if (a == null) throw ApiException.badRequest("마음기록을 입력해 주세요.");
+        if (a.mood() != null && !MOODS.contains(a.mood()) || a.reason() != null && !REASONS.contains(a.reason()) || a.need() != null && !NEEDS.contains(a.need()))
+            throw ApiException.badRequest("마음기록의 선택지를 확인해 주세요.");
+        if (a.intensity() != null && (a.intensity() < 1 || a.intensity() > 5)) throw ApiException.badRequest("감정의 크기를 골라 주세요.");
+        String note = a.note() == null || a.note().isBlank() ? null : a.note().strip();
+        if (note != null && note.length() > 500) throw ApiException.badRequest("한 조각 기록은 500자까지 남길 수 있어요.");
+        return new Answers(a.mood(), a.intensity(), a.reason(), note, a.need());
+    }
+    static int completed(Answers a) {
+        return (a.mood() != null ? 1 : 0) | (a.intensity() != null ? 2 : 0) | (a.reason() != null ? 4 : 0)
+            | (a.note() != null ? 8 : 0) | (a.need() != null ? 16 : 0);
+    }
+    private static String text(String value) { return value == null ? "아직 남기지 않았어요" : value; }
+    @Transactional public View journal(String uid, JournalInput input) {
+        var now = ZonedDateTime.now(clock);
+        if (input == null || !now.toLocalDate().toString().equals(input.date()))
+            throw ApiException.badRequest("날짜가 바뀌었어요. 오늘의 방을 다시 열어 주세요.");
+        Answers a = validate(input.answers());
+        if (completed(a) == 0) throw ApiException.badRequest("마음을 하나만 골라 주세요.");
+        var p = lock(uid, now); // Serializes rewards, manual meals and automatic meals across devices.
+        var s = p.state();
+        int old = mask(uid, s.date()), next = completed(a), reward = PetRules.reward(old, next);
+        for (int bit = 0; bit < 5; bit++) {
+            if ((next & (1 << bit)) != 0 && (old & (1 << bit)) == 0)
+                grant(uid, "journal:" + s.date() + ":" + bit, 4);
+        }
+        String raw;
+        try { raw = json.writeValueAsString(a); } catch (Exception e) { throw new IllegalStateException(e); }
+        String memo = "[모루와 마음기록 · " + s.date() + "]\n오늘 마음: " + text(a.mood())
+            + "\n감정의 크기: " + (a.intensity() == null ? "아직 남기지 않았어요" : a.intensity() + "/5")
+            + "\n마음의 이유: " + text(a.reason()) + "\n오늘의 한 조각: " + text(a.note()) + "\n지금 필요한 것: " + text(a.need());
+        jdbc.sql("INSERT INTO memos(id, user_id, cat, text, pet_answers) VALUES (?, ?, 'mind', ?, CAST(? AS jsonb)) "
+            + "ON CONFLICT(id) DO UPDATE SET text = EXCLUDED.text, pet_answers = EXCLUDED.pet_answers, updated_at = CURRENT_TIMESTAMP")
+            .param(memoId(uid, s.date())).param(uid).param(memo).param(raw).update();
+        jdbc.sql("INSERT INTO pet_daily_rewards(user_id, date, rewarded) VALUES (?, ?, ?) ON CONFLICT(user_id, date) DO UPDATE SET rewarded = EXCLUDED.rewarded")
+            .param(uid).param(s.date()).param(old | next).update();
+        // New food can satisfy today's outstanding meals, but never past missed meals.
+        var updated = PetRules.settle(new PetRules.State(s.food() + reward, Math.min(720, s.xp() + reward * 4), s.date(), s.meals()), now.toLocalDate(), now.getHour());
+        return save(uid, new Pet(p.name(), updated), reward);
+    }
+}

@@ -3,23 +3,12 @@ import type { Daylight } from "./daylight";
 import { UYUNI_SURFACE, UYUNI_WATER_FRAGMENT, UYUNI_WATER_VERTEX, uyuniDryAmount } from "./uyuni-shader";
 import { buildUyuniHotels } from "./uyuni-hotels";
 import { uyuniHotelFloorHeight } from "./uyuni-hotel-layout";
-import { BED_LAYER, LAGOON_FALLS, type UyuniBunkerOptions, buildUyuniBunkers } from "./uyuni-bunkers";
-import { BUNKER_FLOOR_Y, BUNKER_LAGOON, UYUNI_BUNKERS, type UyuniBunkerId } from "./uyuni-bunker-layout";
-import { BunkerLagoonWater } from "./uyuni-lagoon";
+import { type UyuniBunkerOptions, buildUyuniBunkers } from "./uyuni-bunkers";
+import type { UyuniBunkerId } from "./uyuni-bunker-layout";
 import type { BoardGame } from "./net";
 
 export interface UyuniWalker { x: number; z: number; moving: boolean }
 export type UyuniSkyUniforms = Record<string, THREE.IUniform>;
-
-/** Ground against the lake's water level anywhere in the world: the bed shelves from its kerb to the middle, and everything else is land. Matches the hall's drawn bed. */
-function lagoonShore(x: number, z: number): number {
-  const L = BUNKER_LAGOON;
-  for (const bunker of UYUNI_BUNKERS) {
-    const q = Math.hypot((x - bunker.x - L.x) / L.a, (z - bunker.z - L.z) / L.b);
-    if (q < 1) return -(.17 + (L.depth - .17) * (1 - q * q));
-  }
-  return .6;
-}
 
 /** A single mirror plane and two modest lights; environment textures belong to the engine. */
 export class UyuniWorld {
@@ -28,6 +17,8 @@ export class UyuniWorld {
   private readonly sun = new THREE.DirectionalLight(0xffffff, 1.1);
   private readonly ripples = Array.from({ length: UYUNI_SURFACE.rippleCount }, () => new THREE.Vector4(0, 0, -10000, 0));
   private readonly previousStep = new THREE.Vector2();
+  private readonly previousWalker = new THREE.Vector2();
+  private hasWalker = false;
   private hasStep = false;
   private nextRipple = 0;
   private rippleLimit: number = UYUNI_SURFACE.rippleCount;
@@ -37,22 +28,15 @@ export class UyuniWorld {
   private hotels: ReturnType<typeof buildUyuniHotels> | null = null;
   private bunkers: ReturnType<typeof buildUyuniBunkers> | null = null;
   private indoor = false;
-  private lagoon: BunkerLagoonWater | null = null;
-  private lagoonFailed = false;
-  private lagoonRoom: UyuniBunkerId | null = null;
-  private activeBunker: UyuniBunkerId | null = null;
-  private readonly lagoonEye = new THREE.Vector3();
-  private readonly scene: THREE.Scene;
-  private readonly bunkerOptions: UyuniBunkerOptions | undefined;
 
   constructor(scene: THREE.Scene, skyUniforms: UyuniSkyUniforms, sandTexture: THREE.Texture, hotelTextures?: { wood: THREE.Texture; cotton: THREE.Texture }, bunkerOptions?: UyuniBunkerOptions) {
-    this.scene = scene; this.bunkerOptions = bunkerOptions;
     const material = new THREE.ShaderMaterial({
       uniforms: {
         ...skyUniforms,
         uSand: { value: sandTexture }, uSandTint: { value: new THREE.Vector3(1, 1, 1) },
         uCamPos: { value: new THREE.Vector3() }, uWalker: { value: new THREE.Vector2(0, 12) },
         uRipples: { value: this.ripples }, uRippleLimit: { value: this.rippleLimit }, uWaveScale: { value: 1 },
+        uFirstPersonWater: { value: 0 }, uWalkWake: { value: 0 }, uWalkDirection: { value: new THREE.Vector2(0, -1) },
       },
       vertexShader: UYUNI_WATER_VERTEX, fragmentShader: UYUNI_WATER_FRAGMENT,
       toneMapped: false, transparent: false, depthWrite: true,
@@ -75,43 +59,18 @@ export class UyuniWorld {
 
   setBoardGames(games: readonly BoardGame[]) { this.bunkers?.setBoardGames(games); }
 
-  /**
-   * Runs the beach's sea engine for the lake while someone is underground: clear water over a pale bed, the hall caught in it.
-   * A phone runs a lighter cut of it, as it does at the beach. A device that has turned its quality down, or cannot draw into
-   * float targets, keeps the hall's own clear water instead. `settled` is false while the visitor is moving, so the one heavy
-   * step, photographing the hall for the water to reflect, never lands in the middle of a walk.
-   */
-  prepareWater(dt: number, camera: THREE.PerspectiveCamera, fine: boolean, settled = true) {
-    const options = this.bunkerOptions, bunker = UYUNI_BUNKERS.find(item => item.id === this.activeBunker);
-    if (!bunker || !this.bunkers || !options?.renderer || this.lagoonFailed) return;
-    if (!fine) { if (this.lagoon?.enabled) { this.lagoon.enabled = false; this.bunkers.setLagoonDrawn(true); } return; }
-    if (!this.bunkers.prepare(0)) return;
-    if (!this.lagoon) {
-      try {
-        if (!BunkerLagoonWater.supported(options.renderer)) throw new Error("no float render targets");
-        this.lagoon = new BunkerLagoonWater(options.renderer, this.scene, { level: BUNKER_FLOOR_Y + BUNKER_LAGOON.level, shore: lagoonShore, extent: 100, bedLayer: BED_LAYER, mobile: options.mobile === true });
-      } catch { this.lagoonFailed = true; return; }
-    }
-    if (!this.lagoon.enabled) { this.lagoon.enabled = true; this.bunkers.setLagoonDrawn(false); }
-    if (this.lagoonRoom !== bunker.id) {
-      const L = BUNKER_LAGOON, lap = .45;
-      this.lagoonRoom = bunker.id;
-      this.lagoon.setPool({ minX: bunker.x + L.x - L.a - lap, maxX: bunker.x + L.x + L.a + lap, minZ: bunker.z + L.z - L.b - lap, maxZ: bunker.z + L.z + L.b + lap, falls: LAGOON_FALLS.map(([x, z, strength]) => [bunker.x + x, bunker.z + z, strength] as const) });
-    }
-    this.lagoonEye.set(bunker.x + BUNKER_LAGOON.x, BUNKER_FLOOR_Y + 1.7, bunker.z + BUNKER_LAGOON.z);
-    this.lagoon.prepare(dt, camera, this.lagoonEye, settled);
-  }
-
   /** Puts the shelters together a few milliseconds at a time. True once they are ready to walk into. */
   prepareBunkers(budgetMs: number) { return this.bunkers?.prepare(budgetMs) ?? true; }
 
   setBunkerActive(id: UyuniBunkerId | null) {
-    this.indoor = id !== null; this.activeBunker = id;
-    if (!id && this.lagoon?.enabled) { this.lagoon.enabled = false; this.bunkers?.setLagoonDrawn(true); }
+    this.indoor = id !== null;
     this.surface.visible = this.fill.visible = this.sun.visible = !this.indoor;
     if (this.hotels) this.hotels.root.visible = !this.indoor;
     this.bunkers?.setActive(id);
     this.hasStep = false;
+    this.hasWalker = false;
+    this.surface.material.uniforms.uFirstPersonWater.value = 0;
+    this.surface.material.uniforms.uWalkWake.value = 0;
   }
 
   applyDaylight(d: Daylight) {
@@ -130,13 +89,16 @@ export class UyuniWorld {
     tint.set(...d.sandTint).multiplyScalar(THREE.MathUtils.lerp(1, 0.68, night));
   }
 
-  update(time: number, camera: THREE.Camera, walker?: UyuniWalker) {
+  update(time: number, camera: THREE.Camera, walker?: UyuniWalker, firstPerson = false) {
     if (this.disposed || !Number.isFinite(time)) return;
     if (this.indoor) { this.bunkers?.update(time); return; }
     const uniforms = this.surface.material.uniforms;
+    const elapsed = this.lastTime === null ? 0 : THREE.MathUtils.clamp(time - this.lastTime, 0, .25);
     if (this.lastTime !== null && time < this.lastTime) {
       for (const ripple of this.ripples) ripple.w = 0;
       this.hasStep = false;
+      this.hasWalker = false;
+      uniforms.uFirstPersonWater.value = uniforms.uWalkWake.value = 0;
       this.lastRippleTime = -Infinity;
     }
     this.lastTime = time;
@@ -151,10 +113,33 @@ export class UyuniWorld {
     }
     if (!walker || !Number.isFinite(walker.x) || !Number.isFinite(walker.z)) {
       this.hasStep = false;
+      this.hasWalker = false;
+      uniforms.uFirstPersonWater.value = uniforms.uWalkWake.value = 0;
       return;
     }
     (uniforms.uWalker.value as THREE.Vector2).set(walker.x, walker.z);
-    if (uyuniHotelFloorHeight(walker.x, walker.z) > 0.02) {
+    const onDeck = uyuniHotelFloorHeight(walker.x, walker.z) > 0.02;
+    const wet = onDeck ? 0 : 1 - uyuniDryAmount(walker.x, walker.z);
+    const dx = walker.x - this.previousWalker.x, dz = walker.z - this.previousWalker.y;
+    const displacement = Math.hypot(dx, dz), teleported = this.hasWalker && displacement >= 8;
+    const moved = this.hasWalker && !teleported ? displacement : 0;
+    const walking = walker.moving && moved > .0001 && elapsed > 0;
+    this.previousWalker.set(walker.x, walker.z); this.hasWalker = true;
+    if (teleported) uniforms.uWalkWake.value = 0;
+    if (wet < .02) {
+      uniforms.uFirstPersonWater.value = uniforms.uWalkWake.value = 0;
+    } else {
+      uniforms.uFirstPersonWater.value = THREE.MathUtils.damp(uniforms.uFirstPersonWater.value, firstPerson ? wet : 0, 5, elapsed);
+      const wake = firstPerson && walking ? THREE.MathUtils.clamp(moved / elapsed / 2.4, 0, 1) * wet : 0;
+      uniforms.uWalkWake.value = THREE.MathUtils.damp(uniforms.uWalkWake.value, wake, wake > uniforms.uWalkWake.value ? 8 : 3, elapsed);
+      if (uniforms.uFirstPersonWater.value < .001) uniforms.uFirstPersonWater.value = 0;
+      if (uniforms.uWalkWake.value < .001) uniforms.uWalkWake.value = 0;
+      if (walking) {
+        const direction = uniforms.uWalkDirection.value as THREE.Vector2;
+        direction.set(dx / moved, dz / moved);
+      }
+    }
+    if (onDeck) {
       this.hasStep = false;
       return;
     }
@@ -196,8 +181,6 @@ export class UyuniWorld {
     this.disposed = true;
     this.hotels?.dispose();
     this.hotels = null;
-    this.lagoon?.dispose();
-    this.lagoon = null; this.lagoonRoom = null;
     this.bunkers?.dispose();
     this.bunkers = null;
     this.surface.removeFromParent();

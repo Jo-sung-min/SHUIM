@@ -19,7 +19,7 @@
 
 - `frontend`: Next.js 16, React 19, TypeScript — 화면. `/api/*` 는 백엔드로 프록시
 - `backend`: Spring Boot 3.5.16, Java 21, Gradle 8.14.3, PostgreSQL(Supabase), Flyway — 외침·위로 피드·랭킹·모금·계정·프로필·메시지·사진 업로드(S3 프리사인)·AI 브리핑 API
-- AI: Claude API (Anthropic Messages API, 기본 모델 Haiku 5.5, 관리자 화면에서 변경). 키가 없으면 규칙 기반 결과
+- AI: OpenAI Responses API (기본 모델 GPT-6.1 Terra, 관리자 → AI 답변에서 전체 사용자 공통 모델 변경). 키가 없으면 규칙 기반 결과
 - 개인 기록(기록·메모·목표·일정·내 카테고리)은 **로그인 계정이면 서버 DB**(`/api/records`, 기기 간 동기화), 익명이면 브라우저 localStorage. 브라우저는 계정별 localStorage 를 캐시로 두고 화면을 열 때 서버에서 받아 덮어쓰며, 쓸 때마다 서버로 보낸다. 가입·로그인하면 그 기기의 게스트 기록이 계정의 비어 있는 부분에 한 번 들어간다. AI 요청은 브라우저가 들고 있는 데이터를 본문으로 보낸다
 
 ## 로컬 실행
@@ -28,7 +28,7 @@
 
 ```powershell
 cd backend
-copy .env.example .env        # DB_URL, ANTHROPIC_API_KEY 입력 (키 없어도 동작)
+copy .env.example .env        # DB_URL, OPENAI_API_KEY 입력 (키 없어도 동작)
 gradlew.bat bootRun            # macOS/Linux: ./gradlew bootRun
 ```
 
@@ -54,7 +54,7 @@ npm run dev
 | --- | --- |
 | `DB_URL` | `jdbc:postgresql://host:6543/db?user=..&password=..` 또는 `postgresql://user:pass@host:6543/db`. Supabase 풀러는 **6543(트랜잭션 모드)**. 5432 를 넣어도 자동으로 6543 으로 바꾸고 `prepareThreshold=0` 을 붙인다 (`DB_KEEP_SESSION_MODE=true` 면 그대로) |
 | `DB_POOL_MAX` | Hikari 풀 크기 (기본 3) |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Claude API. 비우면 규칙 기반 |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI API. 키를 비우면 규칙 기반. 모델 기본값 `gpt-6.1-terra`, 관리자 저장값 우선 |
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_PREFIX`, `CDN_BASE_URL` | 피드 사진 업로드. 비우면 업로드 버튼 숨김 |
 | `APP_ALLOWED_ORIGINS` | 프론트를 프록시 없이 직접 붙일 때의 CORS 허용 출처 |
 | `AUTH_SECURE_COOKIE` | HTTPS 운영에서 `true` (세션 쿠키 Secure) |
@@ -191,7 +191,7 @@ backend/
     notify/              NotificationController (알림 전용 API)
     circle/              커뮤니티 소로우: CircleLogic(이름·주소·도메인 검사, 실명·연락처 가리기, 공개 범위), CircleService(가입·인증·사연·검토·게시), MailService(SMTP)
     records/             RecordsService(개인 기록 SQL), RecordsLogic(저장 전 정리), RecordsController(/api/records)
-    ai/                  ClaudeClient, Prompts, TodayService(브리핑·칭찬·사랑·점검 + 규칙 기반 대체), SummarizeService, AiController
+    ai/                  OpenAiClient, Prompts, TodayService(브리핑·칭찬·사랑·점검 + 규칙 기반 대체), SummarizeService, AiController
   src/main/resources/
     application.yml      설정 (환경 변수 → app.*)
     db/migration/        Flyway SQL V1~V17

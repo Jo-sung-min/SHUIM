@@ -76,7 +76,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
       this.daylightNow = { hour: 12, deepNight: 0 }; this.events = []; engines.push(this);
       this.bunkerId = null; this.transitionVersion = 0;
       this.bunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false,
-        seated: false, spotId: null, occupied: 0, capacity: 6, available: false };
+        seated: false, spotId: null, occupied: 0, capacity: 21, available: false, bookNear: false };
     }
     getSelf() { return { ...this.self }; }
     getPavilionState() { return this.pavilionState; }
@@ -210,7 +210,7 @@ async function joined(h, payload = entry()) { await h.mount(); of(h, "enter")[0]
 
 function bunkerControls(h) {
   let controls;
-  walkElements(h.tree, node => { if (node.props.state?.capacity === 6 && typeof node.props.onAction === "function") controls = node.props; });
+  walkElements(h.tree, node => { if (node.props.state && "bunkerId" in node.props.state && typeof node.props.onAction === "function") controls = node.props; });
   return controls;
 }
 const bunkerArrival = { pose: "standing", spotId: null, slot: null, x: -12, z: 17.6, yaw: Math.PI, bunkerId: "dawn" };
@@ -242,7 +242,7 @@ test("bunker entry flushes position, consumes its own sequence and waits for bot
   const seatedPose = of(h, "tick").at(-1); assert.equal(seatedPose.body.bunkerId, "dawn");
   seatedPose.resolve(tick(seatedPose)); await h.flush();
   const seat = of(h, "rest").at(-1); assert.deepEqual(seat.body, { ticket: "visit-1", action: "sit", spotId: "bunker-dawn-sofa" });
-  seat.resolve({ pose: "sitting", spotId: "bunker-dawn-sofa", slot: 0, x: -17.3, z: 21.2, yaw: -Math.PI / 2, bunkerId: "dawn" }); await h.flush();
+  seat.resolve({ pose: "sitting", spotId: "bunker-dawn-sofa", slot: 0, x: -17.5, z: 21.2, yaw: -Math.PI / 2, bunkerId: "dawn" }); await h.flush();
   assert.equal(bunkerControls(h).state.seated, true); assert.equal(bunkerControls(h).busy, null);
   let view, camera; walkElements(h.tree, node => { if (node.props["aria-keyshortcuts"] === "V") view = node; if (node.props["aria-label"] === "풍경 사진 찍기") camera = node; });
   assert.ok(view && !view.props.disabled); assert.ok(camera && !camera.props.disabled, "indoor seats retain view and photo controls");

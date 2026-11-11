@@ -45,8 +45,8 @@ const hotelSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/uy
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const hotelContext = {};
 vm.runInNewContext(`${hotelSource}\nglobalThis.api = {
-  UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_DECK, UYUNI_HOTEL_SEATS, UYUNI_HOTEL_COLLIDERS,
-  uyuniHotelForSpot, uyuniHotelBedSlot, claimedUyuniHotelBed, nearbyUyuniHotel,
+  UYUNI_HOTELS, UYUNI_HOTEL_BED_CAPACITY, UYUNI_HOTEL_CHAISE_CAPACITY, UYUNI_HOTEL_DECK, UYUNI_HOTEL_SEATS, UYUNI_HOTEL_COLLIDERS,
+  uyuniHotelForSpot, uyuniHotelBedSlot, claimedUyuniHotelBed, nearbyUyuniHotel, nearbyUyuniChaise, isUyuniChaiseSpot,
   uyuniHotelFloorHeight, uyuniHotelCeilingHeight
 };`, hotelContext);
 const bunkerSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-bunker-layout.ts", import.meta.url), "utf8"))
@@ -54,12 +54,17 @@ const bunkerSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/u
   .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
 const bunkerContext = { ...hotelContext.api };
 vm.runInNewContext(`${bunkerSource}\nglobalThis.api = {
-  UYUNI_BUNKERS, BUNKER_FLOOR_Y, BUNKER_CEILING_Y, BUNKER_PLAYER_INSET, bunkerFloorAt, bunkerCeilingAt,
+  UYUNI_BUNKERS, BUNKER_FLOOR_Y, BUNKER_CEILING_Y, BUNKER_PLAYER_INSET, BUNKER_TERRACE, hallAngle, hallRadius, hallReach, bunkerFloorAt, bunkerCeilingAt,
   BUNKER_SEATS, BUNKER_SEAT_CAPACITY, BUNKER_SEAT_REACH, BUNKER_INTERACTION_REACH, BUNKER_COLLIDERS,
   bunkerById, bunkerForSpot, bunkerSeat, bunkerColliders, claimedBunkerSeat,
   nearbyBunkerEntry, nearbyBunkerGame, nearbyBunkerLadder, nearbyBunkerSofa,
   bunkerInside, bunkerStepClear, resolveBunkerWalk, bunkerFloorRise, bunkerCeilingRise, bunkerCameraBlocked
 };`, bunkerContext);
+const booksSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/uyuni-books.ts", import.meta.url), "utf8"))
+  .replace(/^import\s+[^\n]+\n/gm, "")
+  .replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b|class\b)/g, "");
+const booksContext = { ...bunkerContext.api };
+vm.runInNewContext(`${booksSource}\nglobalThis.api = { nearUyuniBooks };`, booksContext);
 const motionSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/remote-motion.ts", import.meta.url), "utf8"))
   .replace(/\bexport\s+(?=class\b)/g, "");
 const motionContext = {};
@@ -84,7 +89,7 @@ const gardenContext = { ...trailContext.api };
 vm.runInNewContext(`${gardenSource}\nglobalThis.api = {
   GARDEN_BOUNDS, GARDEN_SPAWN, BOAT_DECK_Y, PIER_Y, GARDEN_OBSTACLES, GARDEN_PIERS, GARDEN_SEATS, GARDEN_WALLS, GARDEN_PAVILIONS, BOAT_STOPS, HALL,
   claimedGardenSeat, gardenCeilingHeight, gardenFloorHeight, gardenPavilionForSpot, gardenRainAt, nearbyGardenPavilion, pierEnd, resolveGardenWalk,
-  isWater, onGardenGround, boatPoseAt, lakeSigned, insideHall
+  isWater, gardenIsWater: isWater, onGardenGround, boatPoseAt, boatHeadingAt, boatSeatAt, boatBobAt, BOAT_SEAT_Y, lakeSigned, insideHall
 };`, gardenContext);
 const cloudSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/cloud-spa-layout.ts", import.meta.url), "utf8"))
   .replace(/^import\s+[^\n]+\n/gm, "")
@@ -117,4 +122,4 @@ const skySource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/sky-
   .replace(/\bexport\s+(?=const\b)/g, "");
 const skyContext = {};
 vm.runInNewContext(`${skySource}\nglobalThis.api = { HORIZON_MELT };`, skyContext);
-export const hotSpring = { ...skyContext.api, ...shoreContext.api, ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };
+export const hotSpring = { ...skyContext.api, ...shoreContext.api, ...context.api, ...landscapeContext.api, ...restContext.api, ...fireworksContext.api, ...hotelContext.api, ...bunkerContext.api, ...booksContext.api, ...motionContext.api, ...trailContext.api, ...gardenContext.api, ...cloudContext.api, ...baikalContext.api, ...assets };

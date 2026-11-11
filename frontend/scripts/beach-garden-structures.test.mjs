@@ -25,7 +25,7 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
 const layout = await load("../lib/beach/garden-layout.ts", trail, [
   "BRIDGE_Y", "GARDEN_BRIDGE", "GARDEN_LANTERNS", "GARDEN_PAVILIONS", "GARDEN_PIERS", "GARDEN_PHOTO_ZONE", "GROUND_Y", "HALL", "HALL_BENCH_HEIGHT", "HALL_SEAT_LX", "HALL_STAIR_HALF", "HALL_STAIR_RUN",
   "HALL_TIERS", "PIER_Y", "WATER_Y", "gardenPavilionWorld", "pierEnd", "GARDEN_SEATS",
-  "BOAT_STOPS", "GARDEN_POLYLINES", "GARDEN_POND_BENCHES", "GARDEN_WILLOWS", "LAKE", "insideHall", "lakeRadiusAt", "lakeSigned", "onBridge", "onPier",
+  "BOAT_STOPS", "GARDEN_POLYLINES", "GARDEN_POND_BENCHES", "GARDEN_WILLOWS", "GARDEN_WALK_RADIUS", "LAKE", "insideHall", "lakeRadiusAt", "lakeSigned", "onBridge", "onPier",
 ]);
 const roofs = await load("../lib/beach/bamboo-pavilions.ts", trail, ["hipRoofGeometry", "hipRidgeGeometry", "roofTileTexture"]);
 const stone = await load("../lib/beach/bamboo.ts", trail, ["stoneLanternGeometry"]);
@@ -36,8 +36,9 @@ const sky = await load("../lib/beach/uyuni-shader.ts", { ...skyBase, ...coast },
 const gardenShaders = await load("../lib/beach/garden-shader.ts", sky, ["GARDEN_GLASS_VERT", "GARDEN_GLASS_FRAG"]);
 const bambooShaders = await load("../lib/beach/bamboo-shader.ts", sky, ["BAMBOO_GLOW_VERT", "BAMBOO_GLOW_FRAG"]);
 const photo = await load("../lib/beach/garden-photo-zone.ts", layout, ["buildGardenPhotoZone"]);
+const castle = await load("../lib/beach/garden-castle.ts", { ...layout, ...trail }, ["buildGardenCastle"]);
 const { buildGardenStructures, toonGradient } = await load("../lib/beach/garden-hall.ts", {
-  ...trail, ...layout, ...roofs, ...stone, ...ink, ...gardenShaders, ...bambooShaders, ...photo,
+  ...trail, ...layout, ...roofs, ...stone, ...ink, ...gardenShaders, ...bambooShaders, ...photo, ...castle,
 }, ["buildGardenStructures", "toonGradient"]);
 const { gardenDetailSites, buildGardenLandscapeDetail } = await load("../lib/beach/garden-landscape-detail.ts", { ...trail, ...layout }, ["gardenDetailSites", "buildGardenLandscapeDetail"]);
 
@@ -147,6 +148,80 @@ test("rounded hall cushions still meet all 24 server-aligned seat positions", ()
   structures.dispose(); gradient.dispose();
 });
 
+test("castle masonry preserves the hall doors, glass sightlines and central aisle", () => {
+  const { scene, structures, gradient } = build(true), castle = scene.getObjectByName("garden-castle");
+  const glass = scene.getObjectByName("garden-hall-glass");
+  glass.geometry.computeBoundingBox();
+  assert.equal(glass.geometry.getAttribute("position").count, 7 * 4 * 4, "every original glass pane remains");
+  assert.equal(glass.geometry.boundingBox.min.z, layout.HALL.glassZ);
+  for (const side of [-1, 1]) for (const offset of [-1.05, 0, 1.05]) for (const y of [2.65, 3.4, 4.4, 5.35]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(side * 17, y, layout.HALL.doorZ + offset), new THREE.Vector3(-side, 0, 0), 0, 4);
+    assert.equal(ray.intersectObject(castle, true).length, 0, "stone does not encroach on either existing side doorway");
+  }
+  for (const seat of layout.GARDEN_SEATS.filter(seat => seat.spotId.startsWith("hall-tier-"))) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .85, layout.HALL.glassZ + 1), new THREE.Vector3(0, 0, -1), 0, 2);
+    assert.equal(ray.intersectObject(castle, true).length, 0, `${seat.id} keeps a clear lake view through the glass`);
+  }
+  for (const z of [62.6, 67.4, 71.8, 77]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(0, 5, z), new THREE.Vector3(0, -1, 0), 0, 4.3);
+    assert.equal(ray.intersectObject(castle, true).length, 0, "the castle exterior never enters the stairs");
+  }
+  structures.dispose(); gradient.dispose();
+});
+
+test("reading chairs provide backs and private side wings without changing seat height or the stair corridor", () => {
+  const { scene, structures, gradient } = build(false);
+  const upholstery = [scene.getObjectByName("garden-linen-cushions"), scene.getObjectByName("garden-sage-cushions")];
+  for (const seat of layout.GARDEN_SEATS.filter(seat => seat.spotId.startsWith("hall-tier-"))) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.baseY + 1.12, seat.z), new THREE.Vector3(0, 0, 1), 0, .85);
+    assert.ok(ray.intersectObjects(upholstery).length, `${seat.id} has a padded back`);
+    const forward = new THREE.Raycaster(new THREE.Vector3(seat.x, seat.avatarY + .5, seat.z), new THREE.Vector3(0, 0, -1), 0, .85);
+    assert.equal(forward.intersectObjects(upholstery).length, 0, `${seat.id} remains open toward the lake`);
+  }
+  for (const x of [-1.8, 0, 1.8]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, 3.5, 61), new THREE.Vector3(0, 0, 1), 0, 18);
+    assert.equal(ray.intersectObjects(upholstery).length, 0, "chair arms and sofa wings stay outside the full stair aisle");
+  }
+  // Both outer rear pairs share continuous padding between their unchanged seat anchors.
+  for (const x of [-9, 9]) {
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, 4.6, 77), new THREE.Vector3(0, -1, 0), 0, 2);
+    assert.ok(ray.intersectObjects(upholstery).length, "rear paired seats are joined by a soft shared cushion");
+  }
+  structures.dispose(); gradient.dispose();
+});
+
+test("castle roof covers the original hall and its silhouette costs only three merged draws", t => {
+  for (const mobile of [true, false]) {
+    const scene = new THREE.Scene(), stoneMap = new THREE.Texture(), slateMap = new THREE.Texture();
+    const exterior = castle.buildGardenCastle(scene, { stone: stoneMap, slate: slateMap }, mobile);
+    scene.updateMatrixWorld(true);
+    let triangles = 0;
+    assert.equal(exterior.root.children.length, 3);
+    exterior.root.traverse(object => {
+      if (!object.isMesh) return;
+      const positions = object.geometry.getAttribute("position"), normals = object.geometry.getAttribute("normal");
+      assert.ok(Array.from(positions.array).every(Number.isFinite));
+      assert.ok(Array.from(normals.array).every(Number.isFinite));
+      triangles += positions.count / 3;
+      assert.ok(object.layers.isEnabled(2));
+    });
+    assert.ok(triangles < 22000, `${triangles} exterior triangles`);
+    const bounds = new THREE.Box3().setFromObject(exterior.root);
+    assert.ok(bounds.max.y > 31 && bounds.max.y < 35, "steep roofs and turrets have a controlled castle silhouette");
+    assert.ok(bounds.min.x > -17 && bounds.max.x < 17 && bounds.min.z > 58 && bounds.max.z < 82, "details stay inside the old eave envelope");
+    for (const x of [-14, -7, 0, 7, 14]) for (const z of [61, 67, 73, 79]) {
+      const ray = new THREE.Raycaster(new THREE.Vector3(x, 36, z), new THREE.Vector3(0, -1, 0), 0, 19.5);
+      assert.ok(ray.intersectObject(exterior.root, true).length, `roof remains closed above x=${x}, z=${z}`);
+    }
+    let sharedDisposed = 0;
+    stoneMap.addEventListener("dispose", () => sharedDisposed++); slateMap.addEventListener("dispose", () => sharedDisposed++);
+    exterior.dispose(); exterior.dispose();
+    assert.equal(sharedDisposed, 0, "the castle borrows rather than disposes shared textures");
+    stoneMap.dispose(); slateMap.dispose();
+    t.diagnostic(`${mobile ? "mobile" : "desktop"}: three castle draws, ${triangles} triangles`);
+  }
+});
+
 test("natural garden materials remain merged and bounded without new light or shadow passes", () => {
   for (const mobile of [true, false]) {
     const { scene, structures, gradient } = build(mobile);
@@ -164,8 +239,8 @@ test("natural garden materials remain merged and bounded without new light or sh
       for (const material of materials) assert.ok(!material.isMeshToonMaterial, `${object.name} avoids stepped flat shading`);
     });
     assert.equal(lights, 0);
-    assert.ok(meshes <= 35, `${meshes} material batches including the six-batch photo court`);
-    assert.ok(triangles < 120000, `${triangles} structure triangles`);
+    assert.ok(meshes <= 41, `${meshes} material batches including the seven-mesh Christmas festival`);
+    assert.ok(triangles < 190000, `${triangles} structure triangles`);
     const warmWood = scene.getObjectByName("garden-pavilion-timber").material;
     assert.ok(warmWood.color.r < warmWood.color.g * 2.1, "pavilion wood stays warm brown instead of saturated red");
     structures.dispose(); gradient.dispose();
@@ -182,8 +257,8 @@ test("the old moon wall is open at eye height, and neon switches on without extr
       assert.ok(!object.isLight);
       if (object.isMesh) triangles += (object.geometry.index?.count ?? object.geometry.getAttribute("position").count) / 3;
     });
-    assert.equal(zone.children.filter(object => object.isMesh).length, 6);
-    assert.ok(triangles < 35000, `${triangles} neon court triangles`);
+    assert.equal(zone.children.filter(object => object.isMesh).length, 7);
+    assert.ok(triangles < 100000, `${triangles} neon court and perimeter triangles`);
     for (const x of [-4, -2, 0, 2, 4]) {
       const ray = new THREE.Raycaster(new THREE.Vector3(x, layout.GROUND_Y + 1.5, -10), new THREE.Vector3(0, 0, -1), 0, 9);
       assert.equal(ray.intersectObject(structures.root, true).length, 0, `open sight and walking aisle at x=${x}`);
@@ -195,7 +270,7 @@ test("the old moon wall is open at eye height, and neon switches on without extr
     structures.applyDaylight({ lanterns: 1 }, 0);
     assert.ok(halo.opacity > 0); assert.equal(pools.uniforms.uNight.value, 1);
     assert.equal(scene.getObjectByName("photo-neon-core").material.color.r, 1);
-    t.diagnostic(`${mobile ? "mobile" : "desktop"}: six draws, ${triangles} photo court triangles, zero added lights`);
+    t.diagnostic(`${mobile ? "mobile" : "desktop"}: seven meshes + one Points batch, ${triangles} photo court/perimeter triangles, zero added lights`);
     structures.dispose(); gradient.dispose();
   }
 });

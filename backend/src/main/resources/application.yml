@@ -79,9 +79,9 @@ app:
     session-token: ${AWS_SESSION_TOKEN:}
     cdn-base-url: ${CDN_BASE_URL:}
   ai:
-    base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
-    api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-haiku-5-5}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-6.1-terra}
   mail:
     # 커뮤니티 소로우 소속 인증 메일. 비우면 메일을 보내지 않고, 개발 환경에서만 인증 코드를 화면에 보여 준다
     host: ${SMTP_HOST:}

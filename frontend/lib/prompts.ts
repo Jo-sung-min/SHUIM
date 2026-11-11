@@ -127,11 +127,12 @@ ${COMMON}
 
 export const PROMPT_MAX_LEN = 8000;
 
-/** 사용할 Claude 모델. 관리자 화면에서 바꿀 수 있고, 서버는 이 목록에 있는 값만 받는다. */
-export const DEFAULT_MODEL = "claude-haiku-5-5";
+/** 서버에 저장되는 관리자 공통 모델 선택. */
+export const DEFAULT_MODEL = "gpt-6.1-terra";
 export const MODEL_OPTIONS: { id: string; label: string; desc: string }[] = [
-  { id: "claude-haiku-5-5", label: "Haiku 5.5", desc: "빠르고 저렴 · 기본" },
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", desc: "균형" },
-  { id: "claude-opus-5-5", label: "Opus 5.5", desc: "가장 깊이 읽음 · 느리고 비쌈" },
+  { id: "gpt-6.1-terra", label: "GPT-6.1 Terra", desc: "자연스러운 글쓰기 · 기본" },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", desc: "복잡한 작업과 추론" },
+  { id: "gpt-6-astra", label: "GPT-6 Astra", desc: "깊이 있는 분석" },
+  { id: "gpt-6-luna", label: "GPT-6 Luna", desc: "가벼운 작업 · 비용 절약" },
 ];
 export const isAllowedModel = (m: unknown): m is string => typeof m === "string" && MODEL_OPTIONS.some((o) => o.id === m);

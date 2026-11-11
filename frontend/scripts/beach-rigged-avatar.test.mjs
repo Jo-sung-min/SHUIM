@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { assets } from "./assets-fixture.mjs";
 import { readAssetBytes } from "./asset-bytes-fixture.mjs";
 import * as sparklerTiming from "../lib/beach/sparkler-timing.ts";
@@ -412,6 +413,52 @@ test("the female rig uses retargeted walking, intact hands, and the same rest an
   pool.dispose();
 });
 
+test("outdoor loungers support both real bodies and leave hands above the uncovered cushion", async context => {
+  async function load(file, dependencies, names) {
+    const code = stripTypeScriptTypes(await readFile(new URL(file, import.meta.url), "utf8"))
+      .replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=function\b|const\b|class\b)/g, "");
+    const scope = { ...dependencies };
+    vm.runInNewContext(`${code}\nglobalThis.api = { ${names.join(",")} };`, scope);
+    return scope.api;
+  }
+  const layout = await load("../lib/beach/uyuni-hotel-layout.ts", {}, ["UYUNI_HOTELS", "uyuniHotelBedSlot"]);
+  const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
+  const { buildUyuniHotels } = await load("../lib/beach/uyuni-hotels.ts", { THREE, RoundedBoxGeometry, ...layout, ...textiles }, ["buildUyuniHotels"]);
+  const scene = new THREE.Scene(), wood = new THREE.Texture(), cotton = new THREE.Texture();
+  const hotels = buildUyuniHotels(scene, { wood, cotton }); scene.updateMatrixWorld(true);
+  const cushions = []; scene.traverse(object => { if (object.name === "uyuni-hotel-chaise-cushions") cushions.push(object); });
+  const ray = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0));
+  for (const kind of ["male", "female"]) {
+    const api = runtime(() => model(kind), kind), pool = new api.BeachAvatarModels(kind); await pool.load();
+    const actor = pool.create(), object = mesh(actor), joints = object.geometry.attributes.skinIndex, weights = object.geometry.attributes.skinWeight;
+    const body = new Set(["Hips", "Spine", "Spine1", "Spine2", "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "LeftFoot", "RightFoot"].map(name => actor.bones.get(name)?.bone));
+    // Some imported palms are weighted to the forearm rather than the hand joint.
+    const hands = new Set(["LeftHand", "RightHand", "LeftForeArm", "RightForeArm"].map(name => actor.bones.get(name)?.bone));
+    for (const slot of [0, 1]) {
+      const resting = layout.uyuniHotelBedSlot("hotel-dawn-chaise", slot); actor.update(0, state({ lying: resting }));
+      let closestBody = Infinity, closestHand = Infinity, lowestPart = "";
+      for (let index = 0; index < joints.count; index++) {
+        let joint = 0, strongest = 0;
+        for (let i = 0; i < 4; i++) if (weights.getComponent(index, i) > strongest) { strongest = weights.getComponent(index, i); joint = joints.getComponent(index, i); }
+        const support = object.skeleton.bones[joint], isBody = body.has(support), isHand = hands.has(support);
+        if (!isBody && !isHand) continue;
+        const point = object.getVertexPosition(index, new THREE.Vector3()).applyMatrix4(object.matrixWorld);
+        ray.ray.origin.set(point.x, 4, point.z);
+        const hit = ray.intersectObjects(cushions, false)[0]; if (!hit) continue;
+        const gap = point.y - hit.point.y;
+        if (isBody && gap < closestBody) { closestBody = gap; lowestPart = `${support.name} at ${point.z.toFixed(3)}`; }
+        if (isHand) closestHand = Math.min(closestHand, gap);
+      }
+      context.diagnostic(`${kind} chaise ${slot}: body ${closestBody.toFixed(3)}m (${lowestPart}), hand ${closestHand.toFixed(3)}m above cushion`);
+      assert.ok(closestBody > -.025 && closestBody < .035, "body touches the curved cushion without the bed-quilt sinking allowance");
+      assert.ok(closestHand > -.025 && closestHand < .25, "hands remain visible beside the body, not buried in the upholstery");
+      finiteSkin(actor);
+    }
+    pool.dispose();
+  }
+  hotels.dispose(); wood.dispose(); cotton.dispose();
+});
+
 test("both models sit on every physical log by their pelvis surface and cache the contact pose", async () => {
   const benchSource = stripTypeScriptTypes(await readFile(new URL("../lib/beach/fire-benches.ts", import.meta.url), "utf8"))
     .replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=function\b|const\b)/g, "");
@@ -445,6 +492,44 @@ test("both models sit on every physical log by their pelvis surface and cache th
     assert.ok(Math.abs(actor.bodyContactY() - 0.082) < 0.003, "seated contact never changes the lying support");
     pool.dispose();
   }
+});
+
+for (const kind of ["male", "female", "male-onsen", "female-onsen"]) test(`${kind} stretches its short legs forward on a deep seat without stretching joints or moving the pelvis`, async () => {
+  const gltf = await model(kind), api = runtime(() => Promise.resolve(gltf), kind), pool = new api.BeachAvatarModels(kind);
+  await pool.load();
+  const actor = pool.create(), world = name => actor.bones.get(name).bone.getWorldPosition(new THREE.Vector3());
+  actor.update(0, state());
+  const lengths = new Map(), hands = new Map();
+  for (const side of ["Left", "Right"]) {
+    lengths.set(side, [world(`${side}UpLeg`).distanceTo(world(`${side}Leg`)), world(`${side}Leg`).distanceTo(world(`${side}Foot`))]);
+    hands.set(side, actor.bones.get(`${side}Hand`).bone.quaternion.clone());
+  }
+  for (const yaw of [0, Math.PI / 2, -1.1]) {
+    const seat = { x: 3.2, z: -2.8, yaw, avatarY: .72 };
+    actor.update(.05, state({ seated: seat }));
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(actor.root.quaternion);
+    const hips = world("Hips");
+    assert.ok(Math.hypot(hips.x - seat.x, hips.z - seat.z) < .001, "the canonical deep-cushion anchor stays under the pelvis");
+    assert.ok(Math.abs(pelvisSurfacePoint(actor).y - seat.avatarY) < .003, "the visible body rests on the cushion");
+    for (const side of ["Left", "Right"]) {
+      const upper = world(`${side}Leg`).sub(world(`${side}UpLeg`));
+      const lower = world(`${side}Foot`).sub(world(`${side}Leg`));
+      const toes = world(`${side}ToeBase`).sub(world(`${side}Foot`));
+      assert.ok(Math.abs(upper.length() - lengths.get(side)[0]) < 1e-6);
+      assert.ok(Math.abs(lower.length() - lengths.get(side)[1]) < 1e-6);
+      assert.ok(upper.clone().normalize().dot(forward) > .98, "thigh rests forward across the cushion");
+      assert.ok(lower.clone().normalize().dot(forward) > .98, "short shin extends ahead rather than dropping over the edge");
+      assert.ok(upper.clone().normalize().dot(lower.clone().normalize()) > .98, "knees remain softly extended");
+      assert.ok(toes.clone().normalize().dot(forward) > .9 && toes.y > 0, "toes tip up comfortably");
+      assert.ok(actor.bones.get(`${side}Hand`).bone.quaternion.equals(hands.get(side)), "the repaired hand keeps its own bind pose");
+    }
+    finiteSkin(actor);
+  }
+  actor.update(0, state());
+  for (const side of ["Left", "Right"]) {
+    assert.ok(world(`${side}Foot`).y < world(`${side}Leg`).y, "standing restores downward legs immediately");
+  }
+  pool.dispose();
 });
 
 test("failed loading keeps the sprite fallback available, and late loads are disposed", async () => {

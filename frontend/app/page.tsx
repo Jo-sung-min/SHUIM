@@ -2,6 +2,7 @@
 import { requestAiProcessing } from "@/lib/safety";
 import SafetyReport from "@/components/SafetyReport";
 import DailyQuote from "@/components/DailyQuote";
+import MoruPet from "@/components/MoruPet";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -260,6 +261,7 @@ export default function HomePage() {
       <div className="screen home">
 
         <DailyQuote />
+        <MoruPet userId={sessionUserId()} />
 
         {/* 오늘의 기록: 버튼 하나 (글라스). 아직 아무것도 안 썼으면 빨간 점, 다 채우면 체크 */}
         <Link

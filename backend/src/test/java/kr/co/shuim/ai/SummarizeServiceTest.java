@@ -19,7 +19,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class SummarizeServiceTest {
-    private final ClaudeClient claude = mock(ClaudeClient.class);
+    private final OpenAiClient claude = mock(OpenAiClient.class);
     private final SummarizeService service = new SummarizeService(claude);
 
     private static EntryDay day(String date, int score, String note) {

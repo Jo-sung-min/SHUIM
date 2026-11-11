@@ -1,7 +1,7 @@
 package kr.co.shuim.circle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kr.co.shuim.ai.ClaudeClient;
+import kr.co.shuim.ai.OpenAiClient;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.profile.BadgeService;
@@ -37,7 +37,7 @@ class CirclePrivatePostgresTest {
         Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
         jdbc = JdbcClient.create(source);
         tx = new TransactionTemplate(new DataSourceTransactionManager(source));
-        circles = new CircleService(jdbc, mock(MailService.class), mock(ClaudeClient.class), new ObjectMapper(), mock(BadgeService.class));
+        circles = new CircleService(jdbc, mock(MailService.class), mock(OpenAiClient.class), new ObjectMapper(), mock(BadgeService.class));
         circles.setPrivateTestCreationEnabled(true);
         owner = user("admin", false, false);
         peer = user("user", false, false);

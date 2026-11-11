@@ -18,18 +18,18 @@ import static kr.co.shuim.common.Korean.josa;
 
 /**
  * "오늘의 나" 브리핑 · 칭찬 · 사랑하기 · 메모 점검.
- * 기록을 사람이 읽는 텍스트로 만들어 Claude 에 보내고 JSON 응답을 검증한다. 키가 없거나 실패하면 규칙 기반 결과.
+ * 기록을 사람이 읽는 텍스트로 만들어 GPT에 보내고 JSON 응답을 검증한다. 키가 없거나 실패하면 규칙 기반 결과.
  * (frontend 에 있던 app/api/today/route.ts 를 옮긴 것)
  */
 @Service
 public class TodayService {
     private static final Logger log = LoggerFactory.getLogger(TodayService.class);
-    private final ClaudeClient claude;
+    private final OpenAiClient ai;
     private final ObjectMapper json;
     private final PhilosophyQuoteService quotes;
 
-    public TodayService(ClaudeClient claude, ObjectMapper json, PhilosophyQuoteService quotes) {
-        this.claude = claude;
+    public TodayService(OpenAiClient ai, ObjectMapper json, PhilosophyQuoteService quotes) {
+        this.ai = ai;
         this.json = json;
         this.quotes = quotes;
     }
@@ -44,7 +44,7 @@ public class TodayService {
         Quote quote = !crisis && ("praise".equals(mode) || "love".equals(mode))
             ? quotes.randomApproved().orElse(null) : null;
 
-        if (!claude.configured()) return local(b, mode, crisis, quote);
+        if (!ai.configured()) return local(b, mode, crisis, quote);
 
         String override = b.prompts().get(mode);
         // Saved administrator prompts must also preserve the dates of the supplied evidence.
@@ -61,7 +61,7 @@ public class TodayService {
             default -> "오늘의 나 브리핑을 만들어줘.";
         };
         try {
-            String rawText = claude.complete(claude.resolveModel(b.prompts().get("model")), "review".equals(mode) ? 6000 : 5000, system, ask + "\n\n" + text);
+            String rawText = ai.complete(ai.resolveModel(b.prompts().get("model")), "review".equals(mode) ? 6000 : 5000, system, ask + "\n\n" + text);
             Map<String, Object> out = new LinkedHashMap<>();
             switch (mode) {
                 case "briefing" -> {

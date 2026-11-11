@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** The account/session is the authority for policy consent; browser state cannot enable AI processing. */
 @Service
 public class PolicyConsentService {
-    public static final String VERSION = "2026-10-21";
+    public static final String VERSION = "2026-11-11";
     private final JdbcClient jdbc;
     private final AuthService auth;
 

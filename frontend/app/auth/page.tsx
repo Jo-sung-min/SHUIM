@@ -160,7 +160,7 @@ export default function AuthPage() {
         <label className={styles.check}><input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} disabled={busy} /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고<br /><Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</strong></span></label>
         <p>토스에서는 사용자를 구분하는 값만 받고, 이름·연락처 같은 정보는 받지 않아요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요.</p>
         <label className={styles.check}><input type="checkbox" checked={aiAccepted} onChange={(e) => setAiAccepted(e.target.checked)} disabled={busy} /><span><strong>[선택] AI 기능의 정보 처리에 동의해요.</strong></span></label>
-        <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 Anthropic의 AI 서비스 Claude에 전달해 답변을 만들어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
+        <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 OpenAI의 GPT에 전달해 답변을 만들어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
       </section>}
       {error && <p className={styles.error} role="alert">{error}</p>}
       {!me.toss && <p className={styles.mutedNote} role="status">지금은 토스 로그인을 준비하고 있어요. 잠시 후 다시 시도해 주세요.</p>}
@@ -193,7 +193,7 @@ export default function AuthPage() {
             <label className={styles.check}><input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} required /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고<br /><Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</strong></span></label>
             <p>계정 정보는 가입과 로그인에 사용해요. 로그인하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요.</p>
             <label className={styles.check}><input type="checkbox" checked={aiAccepted} onChange={(e) => setAiAccepted(e.target.checked)} /><span><strong>[선택] AI 기능의 정보 처리에 동의해요.</strong></span></label>
-            <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 Anthropic의 AI 서비스 Claude에 전달해 답변을 만들어요. 분석에는 전체 메모가 포함될 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있고, AI를 사용할 때 따로 선택할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
+            <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 OpenAI의 GPT에 전달해 답변을 만들어요. 분석에는 전체 메모가 포함될 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있고, AI를 사용할 때 따로 선택할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
           </section>}
         </fieldset>
         {error && <p className={styles.error} role="alert">{error}</p>}

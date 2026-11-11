@@ -19,6 +19,7 @@ const atlas = await load("../lib/beach/atlas.ts", {}, ["CHAR_ATLAS", "CHAR_VIEW"
 const stars = await load("../lib/beach/stargazing.ts", { THREE }, ["STARGAZING", "stargazingSlot", "claimedStargazingSlot", "stargazingBodyPoint", "stargazingApproach", "stargazingCameraDistance", "applyLyingTransform", "buildStargazingZone"]);
 const textiles = await load("../lib/beach/shelter-textiles.ts", { THREE }, ["createShelterDuvetGeometry", "createShelterPillowGeometry", "createShelterTextileMaterial"]);
 const huts = await load("../lib/beach/shelters.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["SHELTERS", "SHELTER_SEATS", "SHELTER_COLLIDERS", "BED_CAPACITY", "bedSlot", "claimedBedSlot"]);
+const { buildUyuniHotels } = await load("../lib/beach/uyuni-hotels.ts", { THREE, RoundedBoxGeometry, ...textiles }, ["buildUyuniHotels"]);
 const benches = await load("../lib/beach/fire-benches.ts", { THREE }, ["FIRE_BENCH_SEATS", "FIRE_BENCH_REACH", "claimedFireBenchSlot"]);
 const navigation = await load("../lib/beach/navigation.ts", {}, ["resolveWalls", "findWalkingPath", "findClearApproach"]);
 const daylight = await load("../lib/beach/daylight.ts", {}, ["daylightAt", "beachDaylightAt", "BEACH_MOON", "uyuniDaylightAt", "cloudSpaDaylightAt", "baikalDaylightAt"]);
@@ -60,12 +61,12 @@ function bunkerRest(id = "dawn") {
   return { pose: "standing", spotId: null, slot: null, x: room.arrival.x, z: room.arrival.z, yaw: room.arrival.yaw, bunkerId: id };
 }
 
-test("bunker floor isolates sky, outdoor actions and collisions until confirmed exit", async () => {
+test("bunker floor preserves the roof sky while isolating outdoor actions and collisions until confirmed exit", async () => {
   const { engine, uyuni } = bunkerFixture(), room = hotSpring.bunkerById("dawn");
   Object.assign(engine.self, room.entry); engine.updateSelf(0);
   assert.equal(engine.bunkerState.nearId, "dawn");
   engine.applyRest(bunkerRest()); engine.updateSelf(0);
-  assert.equal(engine.bunkerId, "dawn"); assert.equal(engine.sky.visible, false);
+  assert.equal(engine.bunkerId, "dawn"); assert.equal(engine.sky.visible, true);
   assert.equal(engine.getSelf().bunkerId, "dawn"); assert.equal(engine.bunkerState.ladderNear, true);
   assert.equal(engine.getBedState(), null); assert.equal(engine.nearbySeat(), null);
   close(engine.deckHeight(room.x, room.z), -8.6);
@@ -81,22 +82,95 @@ test("bunker floor isolates sky, outdoor actions and collisions until confirmed 
   close(engine.eyeHeight,.48+1.55); assert.deepEqual(uyuni.layers,["dawn",null]);
 });
 
-test("all twelve bunker sofas keep shared posture and camera orbits below sealed ceilings", () => {
+test("the glass-roof lounge follows the same day, sunset and night sky as outside while retaining warm indoor lighting", () => {
+  for (const initialHour of [12, 18, 22]) {
+    const { engine, uyuni } = bunkerFixture(), room = hotSpring.bunkerById("dawn");
+    delete engine.applyDaylight;
+    engine.tinted = [];
+    engine.scene.fog = new THREE.Fog(0, 70, 270);
+    engine.renderer.setClearColor = () => {};
+    const receivedDaylight = [];
+    engine.cove = { applyDaylight: value => receivedDaylight.push(value) };
+    engine.buildSky();
+    engine.setHourOverride(initialHour);
+    const outside = daylight.uyuniDaylightAt(initialHour), uniforms = engine.skyMat.uniforms;
+    const skyMatches = expected => {
+      close(uniforms.uStars.value, expected.stars);
+      close(uniforms.uDeepNight.value, expected.deepNight);
+      close(uniforms.uCloudAmount.value, expected.cloudAmount);
+      for (const [name, field] of [["uSkyTop", "skyTop"], ["uSkyHorizon", "skyHorizon"], ["uMoon", "moon"], ["uSun", "sun"], ["uCloudColor", "cloud"]]) {
+        assert.deepEqual(uniforms[name].value.toArray(), plain(expected[field]), `${name} follows the correct sky`);
+      }
+    };
+    skyMatches(outside);
+    assert.equal("uSubmergedSky" in uniforms, false, "the clear roof does not distort the shared sky");
+    engine.applyRest(bunkerRest());
+    assert.equal(engine.sky.visible, true, "the existing sky is visible through the transparent roof");
+    skyMatches(outside);
+    assert.equal(engine.hourOverride, initialHour);
+    assert.deepEqual(plain(engine.daylightNow), plain(outside), "indoor decoration never replaces the shared daylight state");
+    assert.deepEqual(plain(receivedDaylight.at(-1)), plain(outside), "world lighting and roof sky receive the same actual time");
+    assert.equal(engine.scene.fog.color.getHex(), 0x211b15);
+    close(engine.scene.fog.near, 80); close(engine.scene.fog.far, 120);
+    assert.equal(engine.selfNode.mat.color.getHex(), 0xffffff, "visitors keep their readable indoor lighting");
+    assert.equal(engine.skyMat.fog, false, "indoor haze cannot paint over the distant stars");
+
+    // Admin time changes and normal clock refreshes also reach visitors under the glass.
+    const changedHour = initialHour === 12 ? 18 : initialHour === 18 ? 22 : 12;
+    engine.setHourOverride(changedHour);
+    const changed = daylight.uyuniDaylightAt(changedHour);
+    skyMatches(changed);
+    assert.deepEqual(plain(engine.daylightNow), plain(changed));
+    assert.deepEqual(plain(receivedDaylight.at(-1)), plain(changed));
+    engine.applyDaylight(engine.mapDaylight());
+    skyMatches(changed);
+
+    engine.applyRest({ pose:"standing", spotId:null, slot:null, x:room.entry.x, z:room.entry.z, yaw:0, bunkerId:null });
+    skyMatches(changed);
+    assert.equal(engine.sky.visible, true);
+    assert.equal(engine.hourOverride, changedHour, "leaving does not overwrite the user's clock setting");
+    close(engine.scene.fog.near, 70); close(engine.scene.fog.far, 270);
+    assert.deepEqual(uyuni.layers, ["dawn", null]);
+    engine.sky.geometry.dispose(); engine.skyMat.dispose();
+  }
+});
+
+test("all forty-two indoor chairs keep their own shared contact height and camera orbits below sealed ceilings", () => {
+  assert.equal(hotSpring.BUNKER_SEATS.length, 42);
   for (const room of hotSpring.UYUNI_BUNKERS) for (const seat of hotSpring.BUNKER_SEATS.filter(s => s.spotId === room.spotId)) {
     const { engine, camera } = bunkerFixture();
     engine.applyRest(bunkerRest(room.id)); engine.applyRest({ ...seat,pose:"sitting",bunkerId:room.id });
     assert.equal(engine.bunkerState.seated,true); assert.equal(engine.bunkerState.occupied,1);
-    assert.equal(engine.pavilionSeat.slot,seat.slot); assert.equal(engine.bunkerState.capacity,6);
+    assert.equal(engine.pavilionSeat.slot,seat.slot); assert.equal(engine.bunkerState.capacity,21);
     for (let angle=0;angle<Math.PI*2;angle+=.12) {
       engine.orbitYaw=angle; engine.self.pitch=Math.sin(angle)*.45; engine.updateSelf(.016);
-      assert.equal(engine.cameraFree(camera.position),true,`${seat.id} orbit=${angle}`);
-      assert.ok(camera.position.y < room.ceilingY-.2);
-      close(engine.selfNode.avatar.states.at(-1).seated.avatarY,-8.08);
+      assert.equal(engine.cameraFree(camera.position),true,`${seat.id} orbit=${angle} camera=${camera.position.toArray()} ceiling=${hotSpring.bunkerCeilingAt(room.id,camera.position.x,camera.position.z)}`);
+      assert.ok(camera.position.y <= hotSpring.bunkerCeilingAt(room.id,camera.position.x,camera.position.z)-.19);
+      close(engine.selfNode.avatar.states.at(-1).seated.avatarY,seat.avatarY);
     }
-    engine.setView("first"); engine.updateSelf(.016); close(camera.position.y,-8.08+.78);
+    engine.setView("first"); engine.updateSelf(.016); close(camera.position.y,seat.avatarY+.78);
     assert.equal(engine.cameraFree(camera.position),true);
     engine.applyRest({ ...bunkerRest(room.id), x:seat.x+(seat.slot<3?1.5:-1.5), z:seat.z });
     assert.equal(engine.bunkerState.seated,false); assert.equal(engine.bunkerId,room.id);
+  }
+});
+
+test("books appear only beside the real upper curved shelf, including both wings, and clear on leaving the floor", () => {
+  for (const room of hotSpring.UYUNI_BUNKERS) {
+    const { engine } = bunkerFixture();
+    engine.applyRest(bunkerRest(room.id));
+    for (const angle of [-.6, -.3, 0, .3, .6]) {
+      const x = room.x + 15 * .94 * Math.sin(angle), z = room.z + 9 + 18 * .94 * Math.cos(angle);
+      Object.assign(engine.self, { x, z }); engine.updateSelf(0);
+      close(engine.deckHeight(x,z), hotSpring.BUNKER_FLOOR_Y + hotSpring.BUNKER_TERRACE.height);
+      assert.equal(engine.bunkerState.bookNear, true, `shelf ${room.id} angle=${angle}`);
+    }
+    for (const [localX, localZ] of [[0,0], [0,17], [0,22], [12,18], [0,27.2]]) {
+      Object.assign(engine.self, { x:room.x+localX, z:room.z+localZ });
+      assert.equal(engine.bunkerState.bookNear, false, `not beside books at ${localX},${localZ}`);
+    }
+    engine.applyRest({pose:"standing", spotId:null, slot:null, x:room.entry.x, z:room.entry.z, yaw:0, bunkerId:null});
+    assert.equal(engine.bunkerState.bookNear, false);
   }
 });
 
@@ -104,7 +178,7 @@ test("standing and seated resumes restore the indoor floor before collision proj
   const { engine,camera }=bunkerFixture(), rest={ ...bunkerRest("dusk"),x:20,z:24 };
   engine.restoreVisit(rest,rest,{ view:"first",yaw:1.1,pitch:.1,orbitYaw:1.1,restSpot:null },true);
   assert.equal(engine.bunkerId,"dusk"); close(engine.self.x,20); close(engine.self.z,24);
-  close(camera.position.y,-8.6+1.55); assert.equal(engine.sky.visible,false);
+  close(camera.position.y,-8.6+1.55); assert.equal(engine.sky.visible,true);
   // The shelter reaches past the edge of the map above it: indoors only its own walls hold a visitor.
   const map={ minX:-22,maxX:22,minZ:-50,maxZ:55 }, room=hotSpring.bunkerById("dusk"), far={ ...bunkerRest("dusk"),x:24,z:31 };
   assert.ok(far.x>map.maxX && room.bounds.maxX>far.x);
@@ -126,6 +200,37 @@ test("ladder finishes once and resumed visits cancel a suspended old transition"
   engine.updateSelf(.2); engine.restoreVisit(bunkerRest(),bunkerRest()); await pending;
   for(let i=0;i<35;i++) engine.updateSelf(.05);
   assert.equal(engine.bunkerId,"dawn","old animation cannot overwrite resumed indoor presence");
+});
+
+test("quick hatch entry spreads unfinished room work across frames before changing floors", async () => {
+  const { engine, uyuni } = bunkerFixture();
+  Object.assign(engine.self, hotSpring.bunkerById("dawn").entry);
+  const budgets = [];
+  let ready = false;
+  uyuni.prepareBunkers = budget => { budgets.push(budget); return ready; };
+  const finished = engine.transitionBunker(bunkerRest());
+  for (let i = 0; i < 40; i++) engine.updateSelf(.05);
+  assert.equal(engine.bunkerId, null, "an unfinished room is never exposed during the fade");
+  assert.equal(uyuni.layers.length, 0, "entry does not invoke a synchronous full build");
+  assert.ok(budgets.length >= 40 && budgets.every(budget => budget === 4));
+  ready = true;
+  for (let i = 0; i < 20; i++) engine.updateSelf(.05);
+  await finished;
+  assert.equal(engine.bunkerId, "dawn");
+  assert.deepEqual(uyuni.layers, ["dawn"]);
+  assert.equal(engine.bunkerTransition, null);
+});
+
+test("a slow render does not stretch the ladder fade by using the capped movement clock", async () => {
+  const { engine, uyuni } = bunkerFixture();
+  uyuni.prepareBunkers = () => true;
+  const finished = engine.transitionBunker(bunkerRest());
+  engine.updateSelf(.05, .75);
+  assert.equal(engine.bunkerId, "dawn");
+  engine.updateSelf(.05, .75);
+  await finished;
+  assert.equal(engine.bunkerTransition, null);
+  close(engine.bunkerClimbOffset, 0);
 });
 
 test("arrival frames the lounge beside the ladder and close indoor orbits never render a head inside the lens", () => {
@@ -505,10 +610,16 @@ test("world frames forward the exact camera, clock and walking state without tou
   engine.fireworks = { update: (...args) => fireworks.push(args) };
   engine.time = 17.25; engine.self.moving = true; engine.updateWorld(0.016);
   assert.equal(engine.skyMat.uniforms.uTime.value, 17.25);
-  assert.deepEqual(events.world[0], [17.25, camera, engine.self]);
+  assert.deepEqual(events.world[0], [17.25, camera, engine.self, engine.view === "first"]);
   engine.self.moving = false; engine.time = 18; engine.updateWorld(0.016);
   assert.equal(events.world[1][2].moving, false);
   assert.deepEqual(fireworks[1], [camera, undefined, 717]);
+  engine.view = "first"; engine.self.moving = true; engine.updateWorld(0.016);
+  assert.equal(events.world.at(-1)[3], true, "walking in first person enables the near-water motion cue");
+  engine.restSeat = { x: 0, z: 0 }; engine.updateWorld(0.016);
+  assert.equal(events.world.at(-1)[3], false, "resting does not enable walking waves");
+  engine.restSeat = null; engine.view = "third"; engine.updateWorld(0.016);
+  assert.equal(events.world.at(-1)[3], false, "third-person keeps its original surface treatment");
 });
 
 test("quality changes lower water work, preserve the mobile budget and never turn on Uyuni shadows", () => {
@@ -569,6 +680,57 @@ test("both hotel beds are reachable from outside and returning to the star circl
     assert.equal(await back, "arrived");
     assert.ok(Math.hypot(engine.self.x - STARGAZING.x, engine.self.z - STARGAZING.z) < STARGAZING.nearRadius);
   }
+});
+
+test("all four outdoor loungers have unobstructed approach paths and frame the resting avatar on the open deck", async () => {
+  const scene=new THREE.Scene(), hotels=buildUyuniHotels(scene,{wood:new THREE.Texture(),cotton:new THREE.Texture()});
+  scene.updateMatrixWorld(true);
+  const chaiseMeshes=[]; scene.traverse(object=>{if(object.isMesh && object.name.startsWith("uyuni-hotel-chaise-")) chaiseMeshes.push(object);});
+  const ray=new THREE.Raycaster(new THREE.Vector3(),new THREE.Vector3(0,-1,0));
+  for (const hotel of UYUNI_HOTELS) for (const slot of [0,1]) {
+    const { engine, camera } = fixture(); engine.obstacles = [];
+    const spotId = `hotel-${hotel.id}-chaise`, side = slot === 0 ? -1 : 1;
+    Object.assign(engine.self, { x:hotel.x+side*7, z:hotel.z-12 });
+    const walk = engine.walkToBed(spotId);
+    for (let frame=0; frame<1000 && engine.auto; frame++) engine.updateSelf(.05);
+    assert.equal(engine.auto,null,`${spotId}/${slot} route finishes`);
+    assert.equal(await walk,"arrived");
+    assert.equal(engine.skyRest,null,"walking never fabricates a server-confirmed rest");
+    assert.equal(engine.getBedState().spotId,spotId); assert.equal(engine.getBedState().capacity,2);
+    assert.ok(Math.hypot(engine.self.x-hotel.x-side*3.3,engine.self.z-hotel.z+6.6)<=2.2);
+    const prior={x:engine.self.x,z:engine.self.z,yaw:engine.self.yaw};
+    const chaise=uyuniHotelBedSlot(spotId,slot);
+    engine.applyRest({...chaise,pose:"lying"}); engine.updateSelf(.05);
+    assert.equal(engine.getBedState().lying,true); assert.equal(engine.getBedState().occupied,1);
+    close(engine.selfNode.avatar.states.at(-1).lying.avatarY,chaise.avatarY);
+    assert.equal(engine.cameraFree(camera.position),true,`${spotId}/${slot} third-person camera`);
+    assert.equal(camera.layers.mask,1); assert.ok(camera.position.z<hotel.z-4.9,"view stays outside the hotel shell");
+    engine.setView("first"); engine.updateSelf(.05);
+    ray.ray.origin.set(camera.position.x,10,camera.position.z);
+    const support=ray.intersectObjects(chaiseMeshes,false)[0];
+    assert.ok(support,`${spotId}/${slot} the head stays above the actual lounger`);
+    assert.ok(camera.position.y-support.point.y>.12,`${spotId}/${slot} eye clears pillow by ${camera.position.y-support.point.y}`);
+    assert.ok(camera.getWorldDirection(new THREE.Vector3()).z<-.9,"relaxing looks toward the open salt flat");
+    const before=camera.position.clone(); engine.applyRest({...chaise,pose:"lying"}); engine.updateSelf(.05);
+    close(before.distanceTo(camera.position),0,"repeated claims preserve the camera");
+    engine.applyRest({...prior,pose:"standing",spotId:null,slot:null}); engine.updateSelf(.05);
+    assert.equal(engine.isLying,false); close(engine.eyeHeight,hotel.floorY+1.55);
+  }
+  hotels.dispose();
+});
+
+test("outdoor lounge occupancy stays separate from hotel beds and does not apply on other maps", () => {
+  const {engine}=fixture(), beach=fixture("beach").engine, hotel=UYUNI_HOTELS[0], spotId=`hotel-${hotel.id}-chaise`;
+  Object.assign(engine.self,{x:hotel.x-2.12,z:hotel.z-6.6});
+  const people=[0,0,1,2].map((slot,index)=>({pid:`chaise-${index}`,nick:"friend",skin:0,pose:"lying",spotId,slot,x:0,z:3,yaw:0,moving:false}));
+  people.push({...people[0],pid:"indoor",spotId:`hotel-${hotel.id}`});
+  engine.setPlayers(people); engine.updatePlayers(.1);
+  assert.equal(engine.getBedState().occupied,2);
+  const canonical=uyuniHotelBedSlot(spotId,0), first=engine.players.get("chaise-0");
+  close(first.cur.x,canonical.x); close(first.cur.z,canonical.z);
+  close(first.avatar.states.at(-1).lying.incline,canonical.incline);
+  assert.equal(engine.players.get("chaise-3").avatar.states.at(-1).lying,null);
+  beach.applyRest({...canonical,pose:"lying"}); assert.equal(beach.isLying,false);
 });
 
 test("hotel lying uses the confirmed raised pillow, preserves camera drag on retry, and restores the deck", () => {

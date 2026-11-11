@@ -369,6 +369,30 @@
       "contentType": "image/png"
     },
     {
+      "key": "beach/real/uyuni-flower-garden-atlas-mobile-v1.webp",
+      "bytes": 527522,
+      "sha256": "20d87b5118b1813d30c4637393fe956a34dba636f47fcd48238b51846c859700",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/uyuni-flower-garden-atlas-v1.webp",
+      "bytes": 778390,
+      "sha256": "ee1656ea2605301e77ef500a3ceff8c15d9d0027e934e22d60efd7d477d9fefe",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/uyuni-indoor-botanical-atlas-mobile-v1.webp",
+      "bytes": 467032,
+      "sha256": "3c109ea44988d28b9e8020baf41d5d6b573319fb3ed50691929c782181667e26",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "beach/real/uyuni-indoor-botanical-atlas-v1.webp",
+      "bytes": 683660,
+      "sha256": "55bbf2fdaf784f885c235c52399a853c90ee425172ef868d3d90d2c65485e652",
+      "contentType": "image/webp"
+    },
+    {
       "key": "beach/real/uyuni-milky-way-v1.webp",
       "bytes": 443462,
       "sha256": "71e7d279f5ccc41007f0d93ea4b90cbc988b88e1b9be285d92ca9cedf94fc305",
@@ -618,6 +642,30 @@
       "key": "garden/art/willow-canopy-v1.webp",
       "bytes": 766906,
       "sha256": "62ece858e7eb21d595e0f3965c3c41c3d975128ac2538023f3d98c17bbe55aa7",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "garden/art/zelkova-canopy-mobile-v1.webp",
+      "bytes": 320552,
+      "sha256": "19deb1bc0a458272d62594a6f5b4f842cf2ca57abf8231873629214981e64345",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "garden/art/zelkova-canopy-v1.webp",
+      "bytes": 490310,
+      "sha256": "d58c33bfe6b705dc8ffaf664867e4ed1d24b515628c4853735117baaa7864f5c",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "garden/art/zelkova-leaves-mobile-v2.webp",
+      "bytes": 230750,
+      "sha256": "2f2601e1be13cabd83d87dd93394a45b7a46c62dfd07c306e7b33f1cb59b9a7c",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "garden/art/zelkova-leaves-v2.webp",
+      "bytes": 330974,
+      "sha256": "bded5edd03722385801343b1981a572213e58d28448c87f8b90f25902eab2639",
       "contentType": "image/webp"
     },
     {

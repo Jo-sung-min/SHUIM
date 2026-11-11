@@ -25,6 +25,7 @@ import RoomFireworksControls from "./RoomFireworksControls";
 import FireworkTicketSheet from "@/components/FireworkTicketSheet";
 import UyuniMomentControls from "./UyuniMomentControls";
 import UyuniBunkerControls, { type BunkerAction } from "./UyuniBunkerControls";
+import UyuniBookReader from "./UyuniBookReader";
 import BunkerBoardGame, { type BoardAction } from "./BunkerBoardGame";
 import { BUNKER_GAME_TABLES } from "@/lib/beach/uyuni-bunker-layout";
 import GardenPondControls from "./GardenPondControls";
@@ -50,7 +51,7 @@ const INTRO_VISIBLE_MS = 4000;
 const INTRO_FADE_MS = 700;
 const EMPTY_ONSEN: OnsenState = { inWater: false, canSit: false, canFloat: false, sitting: false, floating: false, occupiedSeats: [], occupiedFloats: [] };
 const EMPTY_PAVILION: PavilionState = { near: false, seated: false, occupied: 0, capacity: 6, available: false, spotId: null, name: "", kind: "pavilion" };
-const EMPTY_BUNKER: BunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false, seated: false, spotId: null, gameNearId: null, occupied: 0, capacity: 6, available: false };
+const EMPTY_BUNKER: BunkerState = { bunkerId: null, nearId: null, name: "", inside: false, ladderNear: false, sofaNear: false, seated: false, spotId: null, gameNearId: null, bookNear: false, occupied: 0, capacity: 21, available: false };
 type SkyPhase = "walking" | "joining" | "standing";
 
 /** 마지막에 고른 시점 (기기별로 기억) */
@@ -226,6 +227,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [pavilion, setPavilion] = useState<PavilionState>(EMPTY_PAVILION);
   const [boat, setBoat] = useState<BoatRideState | null>(null);
   const [bunker, setBunker] = useState<BunkerState>(EMPTY_BUNKER);
+  const [bookOpen, setBookOpen] = useState(false);
   const [bunkerEnabled, setBunkerEnabled] = useState(false);
   const [boardGames, setBoardGames] = useState<BoardGame[]>([]);
   const [boardTableId, setBoardTableId] = useState<string | null>(null);
@@ -435,7 +437,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   useEffect(() => { if (hudHidden || photo || phase !== "ready" || lost || mapId === "uyuni") setFieldOpen(false); }, [hudHidden, photo, phase, lost, mapId]);
   // Only a board that is really on screen may take the controls away.
   const boardPanelOpen = boardTableId !== null && boardGames.some(board => board.id === boardTableId);
-  const controlsPaused = boardPanelOpen || Boolean(photo) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
+  const controlsPaused = bookOpen || boardPanelOpen || Boolean(photo) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
     controlsPausedRef.current = controlsPaused;
@@ -935,6 +937,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             onBoatAction: () => boatActionRef.current(),
             onBunkerChange: (state) => {
               setBunker(state);
+              if (!state.inside || !state.bookNear) setBookOpen(false);
               if (state.inside && !bunkerInsideRef.current) { setMomentOpen(false); setActionsOpen(false); }
               if (!state.inside && bunkerInsideRef.current) { setBoardTableId(null); boardGamesRef.current = []; setBoardGames([]); }
               bunkerInsideRef.current = state.inside;
@@ -1658,11 +1661,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       showToast(cause instanceof Error ? cause.message : "잠시 후 다시 눌러 주세요.", { kind: "info" });
     } finally { boardBusyRef.current = false; setBoardBusy(false); }
   };
-  const bunkerContextVisible = mapId === "uyuni" && (bunker.inside ? bunker.ladderNear || bunker.sofaNear || bunker.seated || reachableBoard !== null : bunker.nearId !== null);
+  const bunkerContextVisible = mapId === "uyuni" && (bunker.inside ? bunker.ladderNear || bunker.sofaNear || bunker.seated || bunker.bookNear || reachableBoard !== null : bunker.nearId !== null);
   const bunkerTravel = bunkerBusy === "enter" || bunkerBusy === "exit";
   const contextVisible = bunkerContextVisible || restContextVisible || benchContextVisible || onsenContextVisible || pavilionContextVisible || boatContextVisible || guestbookVisible || (!bunker.inside && Boolean(rest)) || walking;
   const fireContextVisible = mapId === "beach" && fireEnabled && nearFire && !lying && !characterPickerOpen && Boolean(fire && meRef.current);
-  const joystickVisible = phase === "ready" && !photo && (!actionsOpen || hudHidden) && (!selected || hudHidden)
+  const joystickVisible = phase === "ready" && !photo && !bookOpen && (!actionsOpen || hudHidden) && (!selected || hudHidden)
     && !characterPickerOpen && !lightingOpen && !powderOpen && powderPhase !== "adding" && (!lying || onsen.floating)
     && !bench.seated && !pavilion.seated && !bunker.seated && bunkerBusy === null && !onsen.sitting && !boat?.riding && skyPhase !== "joining" && skyPhase !== "standing";
 
@@ -1794,6 +1797,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
         <button type="button" className={styles.hideHud} aria-label="화면 버튼 숨기기" disabled={capturing} onClick={hideHud}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18M9.5 5.7A11 11 0 0 1 12 5.4c6 0 9.5 6.6 9.5 6.6a17 17 0 0 1-3.3 4M14.2 18.4a11 11 0 0 1-2.2.2C6 18.6 2.5 12 2.5 12a17 17 0 0 1 3.2-4M10 10a3 3 0 0 0 4 4" /></svg></button>
         <div className={styles.contextActions} role="group" aria-label="지금 할 수 있는 행동" tabIndex={0} hidden={!(contextVisible || fireContextVisible) || characterPickerOpen || powderOpen}>
           {bunkerContextVisible && <UyuniBunkerControls state={bunker} enabled={bunkerEnabled} busy={bunkerBusy}
+            onRead={() => { setActionsOpen(false); setBookOpen(true); }}
             disabled={lost || Boolean(skyPhase) || momentBusy || fireworksBusy || capturing} onAction={action => void changeBunker(action)}
             gameLabel={reachableBoard ? `${reachableBoard.name} ${seatedBoard?.id === reachableBoard.id ? "이어 두기" : "두기"}` : null}
             onGame={() => { if (reachableBoard) { setActionsOpen(false); setBoardTableId(reachableBoard.id); } }} />}
@@ -1879,6 +1883,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       {!fireworksFree && <FireworkTicketSheet portal open={ticketSheetOpen} loginNext={mapId} onClose={() => setTicketSheetOpen(false)}
         onTickets={(next) => setFireworkTickets(next)} />}
       {photo && <PhotoPreview key={photo.url} photo={photo} onClose={closePhoto} />}
+      <UyuniBookReader open={bookOpen && bunker.inside} onClose={() => setBookOpen(false)} />
       {openBoard && <BunkerBoardGame title={boardTitle} board={openBoard} myPid={myBoardPid} busy={boardBusy} onAction={(action, cell) => void playBoard(action, cell)} onClose={() => setBoardTableId(null)} />}
       {guestbookInSight && phase === "ready" && mapId === "bamboo" && ticketRef.current &&
         <BambooBulletin key={ticketRef.current} ticket={ticketRef.current} initialName={meRef.current?.nick}

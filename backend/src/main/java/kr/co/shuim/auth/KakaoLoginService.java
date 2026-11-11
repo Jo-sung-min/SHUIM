@@ -34,7 +34,7 @@ import java.util.Optional;
  *   → state 검증 → 토큰 교환 → kapi.kakao.com/v2/user/me → users.kakao_id 로 찾거나 만들고 세션 쿠키 발급 → 앱 홈으로.
  * 로그인 전 익명 유저로 활동하던 중이면 그 행을 카카오 계정으로 승격해 외침·힘내요가 이어진다. 새로 가입한 계정에는 폭죽 이용권을 선물한다.
  * KAKAO_CLIENT_ID 가 비어 있으면 configured() 가 false 이고 /api/auth/me 가 kakao: false 를 내려 버튼이 숨겨진다.
- * HTTP 는 ai/ClaudeClient 와 같이 JDK HttpClient 위의 RestClient 를 쓴다.
+ * HTTP 는 ai/OpenAiClient 와 같이 JDK HttpClient 위의 RestClient 를 쓴다.
  */
 @Service
 public class KakaoLoginService {

@@ -302,14 +302,33 @@ function insideBunker(id: BunkerId, x: number, z: number): boolean {
   const cx = id === "dawn" ? -12 : 12, cz = id === "dawn" ? 23 : 29;
   return Math.abs(x - cx) <= 17.61 && z - cz >= -8.61 && z - cz <= 26.61;
 }
+/** Canonical furniture slots mirrored by uyuni-bunker-layout.ts and BeachBunkers.java. */
+const BUNKER_SEAT_POSITIONS: readonly { x: number; z: number; yaw: number }[] = (() => {
+  const seats = [-1, 1].flatMap(side => [-1.8, 0, 1.8].map(z => ({ x: side * 5.5, z, yaw: side * Math.PI / 2 })));
+  const atWall = (angle: number, u: number, v: number) => {
+    const nx = -Math.sin(angle) / 15, nz = -Math.cos(angle) / 18, length = Math.hypot(nx, nz), x = nx / length, z = nz / length;
+    return { x: 15 * Math.sin(angle) + z * u + x * v, z: 9 + 18 * Math.cos(angle) - x * u + z * v, yaw: Math.atan2(x, z) };
+  };
+  for (const side of [-1.05, 1.05]) {
+    const at = atWall(-2.25, side, 2.6), yaw = at.yaw + side * .25;
+    seats.push({ x: at.x, z: at.z, yaw });
+  }
+  for (const x of [-3.6, 3.6]) for (const side of [-1, 1]) seats.push({ x: x + side * 1.15, z: 5.5, yaw: side * Math.PI / 2 });
+  for (const side of [-.85, 0, .85]) {
+    const at = atWall(2.25, side, .95);
+    seats.push({ x: at.x, z: at.z, yaw: Math.atan2(Math.sin(at.yaw + Math.PI), Math.cos(at.yaw + Math.PI)) });
+  }
+  for (const side of [-1, 1]) for (const offset of [-.8, 0, .8]) seats.push({ x: side * 2.36, z: 23.4 + offset, yaw: side * Math.PI / 2 });
+  return seats;
+})();
 function matchesBunkerSeat(state: RestPresence): boolean {
   if (!isBunkerId(state.bunkerId) || state.spotId !== `bunker-${state.bunkerId}-sofa`
-    || state.pose !== "sitting" || !Number.isInteger(state.slot) || state.slot! < 0 || state.slot! >= 6) return false;
+    || state.pose !== "sitting" || !Number.isInteger(state.slot) || state.slot! < 0 || state.slot! >= BUNKER_SEAT_POSITIONS.length) return false;
   const cx = state.bunkerId === "dawn" ? -12 : 12, cz = state.bunkerId === "dawn" ? 23 : 29;
-  const slot = state.slot!, yaw = slot < 3 ? -Math.PI / 2 : Math.PI / 2;
-  return Math.abs(state.x - (cx + (slot < 3 ? -5.3 : 5.3))) <= .02
-    && Math.abs(state.z - (cz + (slot % 3 - 1) * 1.8)) <= .02
-    && Math.abs(Math.atan2(Math.sin(state.yaw - yaw), Math.cos(state.yaw - yaw))) <= .02;
+  const seat = BUNKER_SEAT_POSITIONS[state.slot!];
+  return Math.abs(state.x - (cx + seat.x)) <= .02
+    && Math.abs(state.z - (cz + seat.z)) <= .02
+    && Math.abs(Math.atan2(Math.sin(state.yaw - seat.yaw), Math.cos(state.yaw - seat.yaw))) <= .02;
 }
 export interface RestPresence {
   pose: "standing" | "lying" | "sitting";
@@ -697,6 +716,11 @@ function validRestPresence(value: unknown): value is RestPresence {
         "pavilion-island", "hall-tier-1", "hall-tier-2", "hall-tier-3", "hall-tier-4"].includes(state.spotId ?? "") && state.slot! < 6);
   }
   if (state.spotId === "hotel-dawn" || state.spotId === "hotel-dusk") return state.pose === "lying" && state.slot! < 2;
+  if (state.spotId === "hotel-dawn-chaise" || state.spotId === "hotel-dusk-chaise") {
+    const dawn = state.spotId === "hotel-dawn-chaise", x = (dawn ? -12 : 12) + (state.slot === 0 ? -3.3 : 3.3), z = (dawn ? 23 : 29) - 7.5;
+    return state.pose === "lying" && state.slot! < 2 && Math.abs(state.x - x) <= .02 && Math.abs(state.z - z) <= .02
+      && Math.abs(Math.atan2(Math.sin(state.yaw - Math.PI), Math.cos(state.yaw - Math.PI))) <= .02;
+  }
   return state.pose === "lying" && (state.spotId === "starlight" ? state.slot! < 8
     : ["hut-pine", "hut-wave", "hut-sunset"].includes(state.spotId ?? "") && state.slot! < 3);
 }
