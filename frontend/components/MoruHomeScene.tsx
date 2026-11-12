@@ -1,9 +1,11 @@
 import { useId } from "react";
 import MoruRoom from "./MoruRoom";
+import MoruTrainScene from "./MoruTrainScene";
 import styles from "./MoruRoom.module.css";
 
 export default function MoruHomeScene({ homeId = 0, scene = 0 }: { homeId?: number; scene?: number }) {
   const clip = useId();
+  if (homeId === 0) return <MoruTrainScene scene={scene} />;
   if (homeId >= 2) return <MoruRoom scene={scene} />;
   const cave = homeId === 0;
   return <svg className={styles.scenery} viewBox="0 0 240 260" preserveAspectRatio="none" aria-hidden="true">

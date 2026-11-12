@@ -1,4 +1,5 @@
 import MoruSprite, { type MoruMood } from "./MoruSprite";
+import MoringSprite from "./MoringSprite";
 import styles from "./MoruPet.module.css";
 
 export const COMPANIONS = [
@@ -9,6 +10,7 @@ export const COMPANIONS = [
 ];
 
 export default function MoruCompanion({ appearance = "moru", mood, level = 1 }: { appearance?: string; mood: MoruMood; level?: number }) {
+  if (appearance === "moring") return <MoringSprite mood={mood} level={level} />;
   if (!COMPANIONS.some((c) => c.id === appearance) || appearance === "moru") return <MoruSprite mood={mood} level={level} />;
   const boy = appearance === "leo";
   const lavender = appearance === "lumi";

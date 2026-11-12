@@ -8,3 +8,18 @@
 @keyframes rainFall{from{transform:translate(0,-22px)}to{transform:translate(-3px,10px)}}
 @keyframes snowFall{from{transform:translate(0,-20px)}to{transform:translate(5px,12px)}}
 @media(prefers-reduced-motion:reduce){.rain,.snow,.cityGlow{animation:none}.cityGlow{opacity:.2}}
+/* ---------- 기차 침대칸 (MoruTrainScene) ----------
+   480×600 고정 무대를 방 아래 가운데에 붙인다. 창밖(.view)은 창 자리에만 두고, 띠(.strip)가 transform 으로만 흐른다 */
+.stage{position:absolute;left:50%;bottom:-100px;width:480px;height:700px;margin-left:-240px;overflow:hidden;pointer-events:none}
+.cabin{position:absolute;inset:0;display:block;will-change:transform}
+.view{position:absolute;left:136px;top:234px;width:208px;height:208px;overflow:hidden;background:linear-gradient(#9aadbd,#c5d1d6 68%,#b4c0c0)}
+.view[data-scene="1"]{background:linear-gradient(#bfcdd9,#e6edf1 70%)}
+.view[data-scene="2"]{background:linear-gradient(#141932,#262e52 66%,#1a1f3a)}
+.strip{position:absolute;left:0;top:0;display:block;will-change:transform;animation:trainPass 30s linear infinite}
+.rainPass,.snowPass{position:absolute;left:-40px;top:-60px;display:block;will-change:transform}
+.rainPass{animation:trainRain .5s linear infinite}
+.snowPass{animation:trainSnow 5.5s linear infinite}
+@keyframes trainPass{to{transform:translateX(-320px)}}
+@keyframes trainRain{to{transform:translate(-20px,52px)}}
+@keyframes trainSnow{to{transform:translate(-36px,80px)}}
+@media(prefers-reduced-motion:reduce){.strip,.rainPass,.snowPass{animation:none}}

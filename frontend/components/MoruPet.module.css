@@ -185,89 +185,110 @@
 @keyframes moruTickle{0%,100%{transform:rotate(0)}25%{transform:rotate(-4deg)}75%{transform:rotate(4deg)}}
 @keyframes moruSprout{0%,100%{transform:rotate(0) scaleY(1)}25%{transform:rotate(-12deg) scaleY(.8)}55%{transform:rotate(9deg) scaleY(1.15)}80%{transform:rotate(-4deg) scaleY(1)}}
 @keyframes moruDuck{0%,100%{transform:scale(1)}12%,68%{transform:scale(1.14,.6)}82%{transform:scale(.97,1.05)}}
-/* ---------- 도트 게임 UI ----------
-   방 안의 UI는 앱의 유리 UI가 아니라 그림과 한 세계인 도트 게임 UI다: 2px 외곽선과 계단 모서리(네 방향 그림자로 그린다),
-   단색 면과 아래쪽 턱, 둥근 모서리·흐림·그라데이션 없음, 한글 도트 글꼴 Galmuri11 (SIL OFL 1.1, Pretendard 와 같은 jsDelivr 에서 필요할 때만 받는다).
-   방은 낮·밤 테마와 무관한 같은 세계라 색도 고정이다. 시트(마음 기록·이사·모습)는 방 밖이라 앱 UI 그대로. 위의 유리 규칙을 여기서 덮어쓴다 */
-@font-face{font-family:"Galmuri11";font-weight:400;font-display:swap;src:url("https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11.woff2") format("woff2")}
-@font-face{font-family:"Galmuri11";font-weight:700;font-display:swap;src:url("https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11-Bold.woff2") format("woff2")}
-.room,.closedRoom{--px-ink:#2b2233;--px-panel:#f3eaf4;--px-panel-2:#e3d6ea;--px-shade:#b7a3c6;--px-accent:#7a5fa8;--px-accent-2:#5d4588;--px-accent-hi:#a48ad0;--px-cream:#fff7e6;--px-text:#3f2f4d;--px-text-2:#7c6889;--px-gold:#96661a;
-  --px-line:0 -2px 0 var(--px-ink),0 2px 0 var(--px-ink),-2px 0 0 var(--px-ink),2px 0 0 var(--px-ink);
-  font-family:"Galmuri11","Pretendard Variable",Pretendard,sans-serif;letter-spacing:0}
-.hud,.scenePicker,.pad,.alert,.tools,.talk{background:var(--px-panel);background-image:none;border:0;border-radius:0;color:var(--px-text);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:var(--px-line),0 5px 0 #1b162266,inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff}
-.room svg:not([class]),.closedRoom svg:not([class]){shape-rendering:crispEdges;stroke-linecap:square;stroke-linejoin:miter;stroke-width:2}
-/* HUD: 이름·레벨·성장 막대 · 마음밥 · 포인트 · 안내 */
-.hud{padding:0 8px 0 12px;gap:8px}
-.nameplate b{font-size:13px;font-weight:700}
-.nameplate button span{font-size:11px;font-weight:700;color:var(--px-accent)}
-.xp{height:6px;max-width:112px;border-radius:0;background:var(--px-shade);box-shadow:0 0 0 1px var(--px-ink)}
-.xp i{border-radius:0;background:var(--px-accent);transition:width .7s steps(8)}
-.food{gap:5px;padding:0 2px;font-size:13px;font-weight:700;color:var(--px-text)}
-.food svg{width:18px;height:18px;flex:none}
-.points,.hudIcon{height:28px;border-radius:0;background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff;font-size:12px;font-weight:700;transition:none}
-.points{padding:0 8px;color:var(--px-gold)}
-.hudIcon{width:28px;color:var(--px-text-2);font-size:13px}
-.points:active,.hudIcon:active{transform:translateY(2px);background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 2px 0 #fff}
-/* 양옆 도구 기둥: 네모 칸, 고른 칸은 보라로 찬다 */
-.scenePicker,.tools{gap:4px;padding:5px}
-.scenePicker button,.tools button{width:34px;height:34px;border-radius:0;color:var(--px-text-2);font-size:15px;transition:none}
-.scenePicker button svg,.tools button svg{width:20px;height:20px}
-.scenePicker button[aria-pressed="true"],.tools button[aria-pressed="true"],.tools button[aria-expanded="true"]{background:var(--px-accent);box-shadow:none;color:var(--px-cream)}
-.scenePicker button:active,.tools button:not(:disabled):active{transform:translateY(1px);background:var(--px-panel-2)}
-/* 조작 패드: 눌리는 턱이 있는 도트 버튼 */
+/* ---------- 손그림 UI ----------
+   방 안의 UI는 그림과 한 장면인 손그림이다: 크림색 면, 살짝 삐뚤한 짙은 갈색 외곽선, 둥근 모서리, 둥글고 굵은 글씨.
+   외곽선의 떨림은 면을 그리는 ::before 에만 SVG 필터(#moru-sketch, MoruPet 이 문서에 심는다)를 걸어 만든다: 글자와 아이콘은 떨리지 않는다.
+   글꼴은 Jua (SIL OFL 1.1, Pretendard 와 같은 jsDelivr 에서 방이 그려질 때만 받는다. 못 받으면 Pretendard 로 보인다).
+   방은 낮·밤 테마와 무관한 같은 세계라 색은 고정이다. 시트(마음 기록·이사·모습)는 방 밖이라 앱 UI 그대로. 위의 유리 규칙을 여기서 덮어쓴다 */
+@font-face{font-family:"Jua";font-weight:400;font-display:swap;src:url("https://cdn.jsdelivr.net/npm/@fontsource/jua@5.3.0/files/jua-latin-400-normal.woff2") format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Jua";font-weight:400;font-display:swap;src:url("https://cdn.jsdelivr.net/npm/@fontsource/jua@5.3.0/files/jua-korean-400-normal.woff2") format("woff2");unicode-range:U+1100-11FF,U+3000-303F,U+3130-318F,U+AC00-D7AF,U+FF00-FFEF}
+.room,.closedRoom{--hd-ink:#4a3528;--hd-ink-2:#7a5f4d;--hd-paper:#fff6e0;--hd-key:#ffeccb;--hd-lip:#e6c48d;--hd-accent:#cfbdf2;--hd-accent-lip:#a890d8;--hd-butter:#ffdd8f;--hd-butter-lip:#e9b65c;--hd-shadow:#2a1b1347;
+  font-family:"Jua","Pretendard Variable",Pretendard,sans-serif;font-synthesis:none;letter-spacing:0}
+.sketchDefs{position:absolute;width:0;height:0;overflow:hidden}
+.handIcon{display:block;flex:none}
+/* 판: 면과 외곽선은 ::before 가 그린다 (필터는 여기에만) */
+.hud,.scenePicker,.pad,.alert,.tools,.talk{background:none;border:0;border-radius:0;color:var(--hd-ink);box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+.hud::before,.scenePicker::before,.pad::before,.alert::before,.tools::before,.talk::before,.card[data-full] .meters::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--hd-paper);border:2.5px solid var(--hd-ink);border-radius:18px 22px 17px 21px/21px 17px 22px 18px;box-shadow:0 3px 0 var(--hd-shadow);filter:url(#moru-sketch)}
+.scenePicker::before,.tools::before{border-radius:20px 22px 21px 19px/22px 19px 21px 20px}
+.room svg:not([class]),.closedRoom svg:not([class]){stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+/* 위쪽 줄: 이름·레벨 딱지·성장 막대 · 마음밥 · 포인트 · 안내 */
+.hud{padding:0 9px 0 14px;gap:7px}
+.nameplate{gap:4px}
+.nameplate button{align-items:center;gap:6px}
+.nameplate b{font-size:16px;font-weight:400;line-height:18px}
+.nameplate button span{padding:1px 6px 0;border:2px solid var(--hd-ink);border-radius:9px 10px 8px 10px/10px 8px 10px 9px;background:#fff;color:var(--hd-ink);font-size:11px;font-weight:400;line-height:13px}
+.xp{height:9px;max-width:116px;border:2px solid var(--hd-ink);border-radius:6px 7px 6px 7px/7px 6px 7px 6px;background:#fff;box-shadow:none}
+.xp i{border-radius:3px;background:var(--hd-accent-lip);transition:width .7s var(--ease)}
+.food{gap:4px;padding:0 1px;color:var(--hd-ink);font-size:15px;font-weight:400}
+.food svg{width:23px;height:21px}
+.points,.hudIcon{position:relative;isolation:isolate;height:30px;border-radius:0;background:none;box-shadow:none;color:var(--hd-ink);font-size:13px;font-weight:400;transition:transform .12s ease}
+.points::before,.hudIcon::before{content:"";position:absolute;inset:0;z-index:-1;border:2.2px solid var(--hd-ink);border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:var(--hd-butter);box-shadow:inset 0 -3px 0 var(--hd-butter-lip);filter:url(#moru-sketch)}
+.hudIcon::before{border-radius:50% 46% 52% 48%/48% 52% 46% 50%;background:var(--hd-key);box-shadow:inset 0 -3px 0 var(--hd-lip)}
+.points{padding:0 10px 2px}
+.hudIcon{width:30px;padding:0 0 2px;font-size:15px}
+.points:active,.hudIcon:active{transform:translateY(2px);background:none}
+.points:active::before,.hudIcon:active::before{box-shadow:none}
+/* 양옆 도구 줄: 고른 칸은 연보라 동그라미 */
+.scenePicker,.tools{gap:3px;padding:6px 5px}
+.scenePicker button,.tools button{width:34px;height:34px;border-radius:48% 52% 50% 50%/52% 48% 52% 48%;color:var(--hd-ink);font-size:15px;transition:transform .12s ease}
+.scenePicker button svg,.tools button svg{width:21px;height:21px}
+.scenePicker button[aria-pressed="true"],.tools button[aria-pressed="true"],.tools button[aria-expanded="true"]{background:var(--hd-accent);box-shadow:0 0 0 2px var(--hd-ink);color:var(--hd-ink)}
+.scenePicker button:active,.tools button:not(:disabled):active{transform:scale(.9);background:var(--hd-key)}
+/* 아래 패널: 누르면 턱이 눌리는 손그림 버튼 */
 .pad{padding:10px 10px 12px}
-.status{margin:0 4px 8px;font-size:11px;line-height:15px;color:var(--px-text-2)}
-.keys{gap:8px}
-.key{height:56px;border:0;border-radius:0;background:var(--px-panel-2);color:var(--px-text);box-shadow:var(--px-line),inset 0 -4px 0 var(--px-shade),inset 0 2px 0 #fff;font-size:12px;font-weight:700;letter-spacing:0;transition:none}
-.key svg{width:22px;height:22px}
-.key:not(:disabled):active{transform:translateY(2px);background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 -1px 0 var(--px-shade),inset 0 2px 0 #fff}
-.keyMain{flex-grow:1.45;background:var(--px-accent);color:var(--px-cream);border:0;box-shadow:var(--px-line),inset 0 -4px 0 var(--px-accent-2),inset 0 2px 0 var(--px-accent-hi);font-size:12px;font-weight:700}
-.keyMain:not(:disabled):active{background:var(--px-accent);box-shadow:var(--px-line),inset 0 -1px 0 var(--px-accent-2),inset 0 2px 0 var(--px-accent-hi)}
-.key:focus-visible,.nameplate button:focus-visible{outline:2px solid var(--px-cream);outline-offset:3px}
-/* 말풍선·말 걸기·알림·축하 */
-.speech{border-radius:0;padding:8px 12px;background:var(--px-panel);color:var(--px-text);box-shadow:var(--px-line),0 4px 0 #1b162255;font-size:12px;font-weight:400;line-height:1.5}
-.speech::after{left:calc(50% - 3px);bottom:-4px;width:6px;height:4px;transform:none;background:var(--px-panel);box-shadow:-2px 0 0 var(--px-ink),2px 0 0 var(--px-ink),0 2px 0 var(--px-ink)}
-.speech[data-thinking]{background:#ece2f6;color:var(--px-text)}
-.speech[data-thinking]::after{background:#ece2f6}
-.speech[data-murmur]{background:#e6dcec;color:var(--px-text-2);font-size:11px}
-.speech[data-murmur]::after{background:#e6dcec}
-.talk{gap:10px 8px;padding:12px}
-.talk button{min-height:38px;border:0;border-radius:0;background:var(--px-panel-2);color:var(--px-text);box-shadow:var(--px-line),inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff;font-size:12px;font-weight:700;transition:none}
-.talk button:active{transform:translateY(2px);background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 2px 0 #fff}
-.alert{color:#a23a4c;font-size:11px}
-.alert button{min-height:30px;border-radius:0;background:var(--px-panel-2);color:var(--px-text);box-shadow:var(--px-line),inset 0 -3px 0 var(--px-shade);font-size:11px}
-.celebration>span{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:0;background:#49365e;color:var(--px-cream);box-shadow:var(--px-line),inset 0 2px 0 #6a5484;font-size:12px;font-weight:700}
-.celebration>span svg{width:16px;height:16px}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:var(--px-panel)}}
-@media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:var(--px-panel)}}
-.pixelIcon{display:block;image-rendering:pixelated}
+.status{margin:0 5px 8px;color:var(--hd-ink-2);font-size:12px;line-height:15px}
+.keys{gap:7px}
+.key,.talk button,.alert button{position:relative;isolation:isolate;border:0;border-radius:0;background:none;box-shadow:none;color:var(--hd-ink);font-weight:400;letter-spacing:0;transition:transform .12s ease}
+.key::before,.talk button::before,.alert button::before{content:"";position:absolute;inset:0;z-index:-1;border:2.5px solid var(--hd-ink);border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background:var(--hd-key);box-shadow:inset 0 -4px 0 var(--hd-lip);filter:url(#moru-sketch)}
+.key:nth-child(2n)::before,.talk button:nth-child(2n)::before{border-radius:17px 14px 18px 15px/14px 18px 15px 17px}
+.key{height:56px;padding:0 4px 3px;font-size:13px}
+.key svg{width:23px;height:23px}
+.keyMain{flex-grow:1.45;border:0;background:none;box-shadow:none;color:var(--hd-ink);font-size:14px;font-weight:400}
+.keyMain::before{background:var(--hd-accent);box-shadow:inset 0 -4px 0 var(--hd-accent-lip)}
+.key:not(:disabled):active,.keyMain:not(:disabled):active,.talk button:active,.alert button:active{transform:translateY(2px);background:none;box-shadow:none}
+.key:not(:disabled):active::before,.talk button:active::before,.alert button:active::before{box-shadow:inset 0 -1px 0 var(--hd-lip)}
+.keyMain:not(:disabled):active::before{box-shadow:inset 0 -1px 0 var(--hd-accent-lip)}
+.key:focus-visible,.nameplate button:focus-visible,.talk button:focus-visible{outline:2px dashed var(--hd-ink);outline-offset:2px;border-radius:14px}
+/* 말풍선: 면과 꼬리를 한 덩어리(i)로 그려 같이 떨린다 */
+.speech{isolation:isolate;border-radius:0;padding:8px 14px 9px;background:none;box-shadow:none;color:var(--hd-ink);font-size:13px;font-weight:400;line-height:1.45}
+.speech::after{content:none}
+.speech>i{position:absolute;inset:0;z-index:-1;filter:url(#moru-sketch)}
+.speech>i::before{content:"";position:absolute;inset:0;border:2.5px solid var(--hd-ink);border-radius:16px 19px 15px 18px/18px 15px 19px 16px;background:var(--hd-paper)}
+.speech>i::after{content:"";position:absolute;left:calc(50% - 6px);bottom:-5px;width:10px;height:10px;border:solid var(--hd-ink);border-width:0 2.5px 2.5px 0;border-radius:0 0 3px;background:var(--hd-paper);transform:rotate(45deg)}
+.speech[data-thinking]{background:none;color:var(--hd-ink)}
+.speech[data-thinking]>i::before,.speech[data-thinking]>i::after{background:#f3eaff}
+.speech[data-murmur]{background:none;color:var(--hd-ink-2);font-size:12px}
+.speech[data-murmur]>i{opacity:.94}
+/* 말 걸기 · 알림 · 축하 */
+.talk{gap:9px 8px;padding:12px}
+.talk button{min-height:40px;padding:0 10px 3px;font-size:13px}
+.alert{color:#a8383e;font-size:12px}
+.alert button{min-height:34px;padding:0 12px 3px;font-size:12px}
+.celebration>span{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:2.5px solid var(--hd-ink);border-radius:16px 19px 15px 18px/18px 15px 19px 16px;background:var(--hd-butter);color:var(--hd-ink);box-shadow:0 3px 0 var(--hd-shadow);font-size:14px;font-weight:400}
+.celebration>span svg{width:22px;height:20px}
+.celebration>i{width:9px;height:12px;border:2px solid var(--hd-ink);border-radius:50%;background:#fffaf0;box-shadow:none}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:transparent}}
+@media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:transparent}}
+/* 손그림 캐릭터(모링)는 몸짓이 끊기지 않고 부드럽다 */
+.sprite[data-hand]{image-rendering:auto}
+.sprite[data-hand] .body,.sprite[data-hand] .heart,.sprite[data-hand] .rice{animation-timing-function:ease-in-out}
 /* ---------- 돌봄 상태 (2단계): 하트 줄 · 먼지 뭉치 · 목욕 거품 · 가득 찬 날의 반짝임 ---------- */
 /* 하트 줄은 꽉 찬 화면에서만 보인다 (홈 카드는 패드의 한 줄만) */
 .meters{display:none}
-.card[data-full] .meters{position:absolute;z-index:4;top:calc(var(--edge) + env(safe-area-inset-top) + var(--hud-h) + 10px);left:calc(var(--edge) + 54px);right:calc(var(--edge) + 54px);display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:8px 10px;background:var(--px-panel);color:var(--px-text);box-shadow:var(--px-line),0 4px 0 #1b162255,inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff}
-.meters span{display:flex;align-items:center;gap:3px;min-width:0}
-.meters b{flex:1;font-size:11px;font-weight:700;color:var(--px-text-2);white-space:nowrap}
-.meters svg{width:11px;height:10px;flex:none}
+.card[data-full] .meters{position:absolute;z-index:4;top:calc(var(--edge) + env(safe-area-inset-top) + var(--hud-h) + 10px);left:calc(var(--edge) + 54px);right:calc(var(--edge) + 54px);display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:9px 11px 10px;color:var(--hd-ink)}
+.meters span{display:flex;align-items:center;gap:2px;min-width:0}
+.meters b{flex:1;color:var(--hd-ink-2);font-size:12px;font-weight:400;white-space:nowrap}
+.meters svg{width:14px;height:13px}
 /* 먼지 뭉치: 바닥 세 군데, 톡 누르면 폴짝 사라진다 */
-.dust{position:absolute;z-index:2;display:grid;place-items:center;width:44px;height:40px;padding:0;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;animation:dustIdle 2.4s steps(2,end) infinite}
-.dust svg{width:28px;height:21px}
+.dust{position:absolute;z-index:2;display:grid;place-items:center;width:44px;height:40px;padding:0;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;animation:dustIdle 2.4s ease-in-out infinite}
+.dust svg{width:30px;height:24px}
 .dust[data-spot="0"]{left:9%;bottom:5%}
 .dust[data-spot="1"]{left:70%;bottom:9%}
 .dust[data-spot="2"]{left:40%;bottom:4%}
-.dust[data-poof]{animation:dustPoof .42s steps(4,end) both}
+.dust[data-poof]{animation:dustPoof .42s ease-out both}
 .card .dust:disabled{opacity:1}
 @keyframes dustIdle{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 @keyframes dustPoof{0%{transform:scale(1);opacity:1}50%{transform:scale(1.3) translateY(-6px);opacity:.8}100%{transform:scale(.4) translateY(-14px);opacity:0}}
-/* 목욕: 모루가 살짝 흔들리고 네모난 거품이 떠오른다 */
+/* 목욕: 살짝 흔들리고 동그란 거품이 떠오른다 */
 .petButton[data-touch="bath"] .sprite{animation:moruTickle .4s ease-in-out 6}
 .bubbles{position:absolute;inset:0;pointer-events:none}
-.bubbles i{position:absolute;bottom:18%;width:10px;height:10px;background:#fff;box-shadow:0 0 0 2px #cfe3f5,inset -2px -2px 0 #dbeaf8;opacity:0;animation:bubbleUp 1.2s steps(6,end) infinite}
-.bubbles i:nth-child(1){left:16%;animation-delay:0s}.bubbles i:nth-child(2){left:34%;animation-delay:.3s;width:7px;height:7px}
-.bubbles i:nth-child(3){left:52%;animation-delay:.6s}.bubbles i:nth-child(4){left:70%;animation-delay:.15s;width:7px;height:7px}
-.bubbles i:nth-child(5){left:84%;animation-delay:.45s}.bubbles i:nth-child(6){left:44%;animation-delay:.9s;width:6px;height:6px}
+.bubbles i{position:absolute;bottom:18%;width:11px;height:11px;border:1.8px solid var(--hd-ink);border-radius:50%;background:radial-gradient(circle at 34% 30%,#fff 0 24%,#e3f1fb 26%);opacity:0;animation:bubbleUp 1.2s ease-in infinite}
+.bubbles i:nth-child(1){left:16%;animation-delay:0s}.bubbles i:nth-child(2){left:34%;animation-delay:.3s;width:8px;height:8px}
+.bubbles i:nth-child(3){left:52%;animation-delay:.6s}.bubbles i:nth-child(4){left:70%;animation-delay:.15s;width:8px;height:8px}
+.bubbles i:nth-child(5){left:84%;animation-delay:.45s}.bubbles i:nth-child(6){left:44%;animation-delay:.9s;width:7px;height:7px}
 @keyframes bubbleUp{0%{transform:translateY(0);opacity:0}15%{opacity:1}80%{opacity:1}100%{transform:translateY(-110px);opacity:0}}
-/* 온기·말끔함·기운이 모두 가득: 네모난 별이 깜빡인다 */
-.petButton[data-glow]::before,.petButton[data-glow]::after{content:"";position:absolute;width:6px;height:6px;background:#fff7d6;box-shadow:0 -6px 0 -2px #fff7d6,0 6px 0 -2px #fff7d6,-6px 0 0 -2px #fff7d6,6px 0 0 -2px #fff7d6;pointer-events:none;animation:glowTwinkle 1.6s steps(2,end) infinite}
-.petButton[data-glow]::before{left:6%;top:22%}
-.petButton[data-glow]::after{right:4%;top:44%;animation-delay:.8s}
-@keyframes glowTwinkle{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.6)}}
+/* 온기·말끔함·기운이 모두 가득: 손으로 그린 별이 깜빡인다 */
+.petButton[data-glow]::before,.petButton[data-glow]::after{content:"";position:absolute;width:18px;height:18px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5C10.8 6.5 13.5 9.2 18.5 10C13.5 10.8 10.8 13.5 10 18.5C9.2 13.5 6.5 10.8 1.5 10C6.500 9.200 9.200 6.500 10 1.500Z' fill='%23fff3c4' stroke='%234a3528' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;pointer-events:none;animation:glowTwinkle 1.6s ease-in-out infinite}
+.petButton[data-glow]::before{left:4%;top:20%}
+.petButton[data-glow]::after{right:2%;top:42%;animation-delay:.8s}
+@keyframes glowTwinkle{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}

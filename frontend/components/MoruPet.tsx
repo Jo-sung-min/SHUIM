@@ -16,7 +16,7 @@ import { PetError, petRequest, type PetView } from "@/lib/pet";
 import {
   BATH_LINES, DAILY_FOOD_MAX, DUST_LINES, GLOW_LINE, HUG_LINES, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
   RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, TICKLE_LINES,
-  currentHour, dayPhase, dueMeals, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
+  currentHour, dayPhase, devLook, dueMeals, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
   petLine, pickLine, recordLine, rubStats, saveCompanion, saveRainPref, takeNewMeal, touchSpot, type Companion,
 } from "@/lib/moru";
 import { startRain, stopRain } from "@/lib/rain-sound";
@@ -143,7 +143,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   };
 
   const petName = pet?.name || "모루";
-  const appearance = pet?.appearance ?? "moru";
+  const appearance = devLook() ?? pet?.appearance ?? "moru";
   useEffect(() => {
     if (!pet) return;
     const companion = { name: petName, appearance };
@@ -358,6 +358,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
 
   if (!canUse) return <section className={styles.card} aria-label="모루를 만나기">
     <div className={styles.closedRoom}>
+      <SketchFilter />
       <Link href="/auth" className={styles.closedLink} aria-label="나를 찾아줘 — 로그인하고 모루 만나기">
         <span className={styles.closedRain} aria-hidden="true" />
         <span className={styles.closedWindow} aria-hidden="true"><i /><i /><b /><em>✦</em></span>
@@ -373,6 +374,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   // 모루의 방 한 장 = 게임 화면: 위에는 상태 HUD, 가운데는 모루, 아래에는 조작 패드. 버튼이 모두 이 안에 있다
   return <section className={styles.card} aria-label="나의 소로우 모루 키우기" data-full={full ? "" : undefined}>
     <div className={styles.room} ref={roomRef} onPointerDownCapture={() => { if (rainWanted.current) { rainWanted.current = false; setRainOn(true); } }}>
+      <SketchFilter />
       <div className={styles.world} ref={worldRef}>
         <MoruHomeScene homeId={homeId} scene={scene} />
         {dustSpots.map((spot) => <button key={spot} type="button" className={styles.dust} data-spot={spot} data-poof={poof === spot ? "" : undefined}
@@ -402,11 +404,11 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           onPointerCancel={endPress}
           onClick={(e) => { if (e.detail === 0) gesture("tap"); /* 키보드·보조 기기 */ }}
           onContextMenu={(e) => e.preventDefault()}>
-          <MoruCompanion appearance={pet?.appearance} mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} />
+          <MoruCompanion appearance={appearance} mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} />
           {touch === "bath" && <span className={styles.bubbles} aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>}
         </button>
         <span className={styles.dusk} data-phase={phase} data-off={nightly && off ? "" : undefined} aria-hidden="true" />
-        {speech && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined} data-murmur={!thinking && mood === "idle" ? "" : undefined}>{speech}</div>}
+        {speech && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined} data-murmur={!thinking && mood === "idle" ? "" : undefined}><i aria-hidden="true" />{speech}</div>}
       </div>
       <div className={styles.hud}>
         <div className={styles.nameplate}>
@@ -418,7 +420,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         <button type="button" className={styles.hudIcon} aria-label="돌봄 안내" onClick={() => openSheet("guide")}>?</button>
       </div>
       <div className={styles.scenePicker} role="group" aria-label="창밖 풍경">
-        {ROOM_SCENES.map((label, index) => <button key={label} type="button" title={label} aria-label={label} aria-pressed={scene === index} onClick={() => { haptic(6); setScenePick(index); }}><span aria-hidden="true">{index === 0 ? "☂" : index === 1 ? "❄" : "☾"}</span></button>)}
+        {ROOM_SCENES.map((label, index) => <button key={label} type="button" title={label} aria-label={label} aria-pressed={scene === index} onClick={() => { haptic(6); setScenePick(index); }}>{index === 0 ? <UmbrellaIcon /> : index === 1 ? <SnowIcon /> : <IconMoon />}</button>)}
         <button type="button" aria-pressed={rainOn} aria-label={rainOn ? "빗소리 끄기" : "빗소리 켜기"} title="빗소리" onClick={toggleRain}><SoundIcon on={rainOn} /></button>
       </div>
       <div className={styles.tools} role="group" aria-label={`${petName}와 함께`}>
@@ -514,24 +516,48 @@ function ExpandIcon({ shrink }: { shrink: boolean }) {
     {shrink ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
   </svg>;
 }
-/** 마음밥: 방 그림과 같은 도트 밥그릇 (방 안 UI에는 이모지 대신 도트 아이콘) */
-function RiceIcon() {
-  return <svg className={styles.pixelIcon} viewBox="0 0 12 12" shapeRendering="crispEdges" aria-hidden="true">
-    <path fill="#fff7e6" d="M4 1h4v1h2v3H2V2h2z" /><path fill="#e2d2b4" d="M2 4h8v1H2z" />
-    <path fill="#7a5fa8" d="M1 5h10v2h-1v2H9v1H3V9H2V7H1z" /><path fill="#a48ad0" d="M2 6h8v1H2z" /><path fill="#5d4588" d="M4 10h4v1H4z" />
+const INK = "#4a3528";
+/** 손그림 외곽선의 떨림: UI의 면(::before)에 거는 SVG 필터. MoruPet.module.css 가 url(#moru-sketch) 로 쓴다 */
+function SketchFilter() {
+  return <svg className={styles.sketchDefs} width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="moru-sketch" x="-6%" y="-14%" width="112%" height="128%" colorInterpolationFilters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.6" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
   </svg>;
 }
-/** 상태 한 칸: 도트 하트 (빈 칸은 테두리만) */
+/** 마음밥: 손으로 그린 밥그릇 (방 안 UI에는 이모지 대신 손그림 아이콘) */
+function RiceIcon() {
+  return <svg className={styles.handIcon} viewBox="0 0 22 20" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path fill="#fffaf0" d="M4.500 9.500C5 4.800 8 2.500 11 2.500S17 4.800 17.500 9.500Z" />
+    <path fill="#cfbdf2" d="M2.500 9.500H19.500C19.500 14.500 16 17.500 11 17.500S2.500 14.500 2.500 9.500Z" />
+  </svg>;
+}
+/** 상태 한 칸: 손으로 그린 하트 (빈 칸은 흰 면) */
 function HeartIcon({ on }: { on: boolean }) {
-  return <svg className={styles.pixelIcon} viewBox="0 0 7 6" shapeRendering="crispEdges" aria-hidden="true">
-    <path fill={on ? "#d9628c" : "#cbbbd6"} d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z" />{on && <path fill="#f6a9c0" d="M1 1h1v1H1z" />}
+  return <svg className={styles.handIcon} viewBox="0 0 14 13" aria-hidden="true">
+    <path fill={on ? "#f29aab" : "#fff"} stroke={on ? INK : "#b9a08b"} strokeWidth="1.5" strokeLinejoin="round"
+      d="M7 11.500C3 8.600 1.500 6.400 1.500 4.400C1.500 2.800 2.700 1.600 4.200 1.600C5.400 1.600 6.400 2.300 7 3.300C7.600 2.300 8.600 1.600 9.800 1.600C11.300 1.600 12.500 2.800 12.500 4.400C12.500 6.400 11 8.600 7 11.500Z" />
   </svg>;
 }
 /** 먼지 뭉치: 눈이 달린 작은 회색 솜 */
 function DustIcon() {
-  return <svg className={styles.pixelIcon} viewBox="0 0 12 9" shapeRendering="crispEdges" aria-hidden="true">
-    <path fill="#8d8494" d="M3 1h6v1h2v2h1v3h-1v1H9v1H3V8H1V7H0V4h1V2h2z" /><path fill="#aaa1b1" d="M3 2h5v1H3zM2 3h2v1H2z" />
-    <path fill="#2b2233" d="M4 4h1v2H4zM7 4h1v2H7z" />
+  return <svg className={styles.handIcon} viewBox="0 0 30 24" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path fill="#a99ca3" d="M6 16C2 15 2 10 6 9C5 5 10 3 13 6C15 2 21 3 21 7C25 6 28 10 25 13C28 16 25 20 21 19C19 22 13 22 12 19C9 21 5 20 6 16Z" />
+    <path stroke="#2e2222" strokeWidth="2.2" d="M12 11.500V13.500M18 11.500V13.500" />
+  </svg>;
+}
+/** 창밖 풍경: 비(우산) · 눈 */
+function UmbrellaIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3.500 12.500a8.500 8.500 0 0 1 17 0Z" /><path d="M12 12.500v6a2 2 0 0 0 4 0M12 4V2.800" />
+  </svg>;
+}
+function SnowIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3v18M4.200 7.500l15.600 9M19.800 7.500l-15.600 9M9.800 4.300 12 6.500l2.200-2.200M9.800 19.700 12 17.500l2.200 2.200" />
   </svg>;
 }
 /** 목욕: 물방울 */

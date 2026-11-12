@@ -24,6 +24,12 @@ export function currentHour(): number {
   return koreaHour();
 }
 
+/** 개발 확인용: ?moruLook=moring 으로 저장 없이 모습만 바꿔 본다 (운영 빌드에서는 무시) */
+export function devLook(): string | null {
+  if (process.env.NODE_ENV === "production" || typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("moruLook");
+}
+
 /* ---------- 모루의 말 ---------- */
 
 export const IDLE_LINE = "말없이 곁에 있어도 좋아.";
