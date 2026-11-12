@@ -64,9 +64,17 @@ public class CircleService {
 
     public record Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
                          String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
-                         boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt, String kindLabel) {
+                         boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt, String kindLabel,
+                         /** 지금까지 가장 많았던 활성 멤버 수. 한 번 열린 풍경이 멤버가 줄어도 닫히지 않게 한다 */ int memberPeak) {
         public Circle {
             spaceCapacity = SpaceCapacity.effective(spaceCapacity);
+        }
+
+        public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
+                      String intro, String notice, String createdBy, int postSeq, long createdAt, int memberCount, int listenerCount, boolean sample,
+                      boolean privateTest, boolean pinned, int spaceCapacity, String icon, Long iconAt, String kindLabel) {
+            this(id, slug, name, kind, domain, verified, joinMode, visibility, intro, notice, createdBy, postSeq,
+                createdAt, memberCount, listenerCount, sample, privateTest, pinned, spaceCapacity, icon, iconAt, kindLabel, 0);
         }
 
         public Circle(String id, String slug, String name, String kind, String domain, boolean verified, String joinMode, String visibility,
@@ -89,8 +97,11 @@ public class CircleService {
                 createdAt, memberCount, listenerCount, sample, false, false, SpaceCapacity.MAX);
         }
 
-        /** 소로우 공간에서 이 풍경이 열렸는지. 참여자가 고정된 비공개 테스트 소로우는 늘 수 없으므로 모두 열어 둔다. */
-        public boolean opensMap(String mapId) { return privateTest || SpaceMaps.open(mapId, memberCount); }
+        /**
+         * 소로우 공간에서 이 풍경이 열렸는지. 멤버가 가장 많았던 때를 기준으로 하므로, 한 번 열린 풍경은 멤버가 줄어도 닫히지 않는다
+         * (나가는 사람이 "내가 나가면 풍경이 닫힌다"는 부담을 지지 않게). 참여자가 고정된 비공개 테스트 소로우는 늘 수 없으므로 모두 열어 둔다.
+         */
+        public boolean opensMap(String mapId) { return privateTest || SpaceMaps.open(mapId, Math.max(memberCount, memberPeak)); }
     }
 
     public record Member(String role, String status, boolean primary, boolean verified) {
@@ -139,6 +150,17 @@ public class CircleService {
         return maps;
     }
 
+    /**
+     * 활성 멤버가 늘어난 뒤에 부른다: 가장 많았던 멤버 수를 남겨, 그때 열린 풍경이 멤버가 줄어도 닫히지 않게 한다.
+     * 지금 멤버 수가 더 클 때만 올리므로 여러 번 불러도 같다.
+     */
+    private void rememberMemberPeak(String circleId) {
+        jdbc.sql("""
+            UPDATE communities c SET space_member_peak = n.active
+              FROM (SELECT count(*)::int AS active FROM community_members WHERE community_id = ? AND status = 'active') n
+             WHERE c.id = ? AND c.space_member_peak < n.active""").param(circleId).param(circleId).update();
+    }
+
     /** 누구나 들어오는 공용 공간. 화면은 이 값이 있을 때만 공용 풍경을 보여 준다 */
     static Map<String, Object> publicSpace() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -159,7 +181,8 @@ public class CircleService {
         return new Circle(rs.getString("id"), rs.getString("slug"), rs.getString("name"), rs.getString("kind"), rs.getString("domain"), rs.getBoolean("verified"),
             rs.getString("join_mode"), rs.getString("visibility"), rs.getString("intro"), rs.getString("notice"), rs.getString("created_by"), rs.getInt("post_seq"),
             Db.msReq(rs, "created_at"), rs.getInt("member_count"), rs.getInt("listener_count"), rs.getBoolean("sample"),
-            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"), rs.getString("icon"), nullableLong(rs, "icon_at"), rs.getString("kind_label"));
+            rs.getBoolean("private_test"), rs.getBoolean("pinned"), rs.getInt("space_capacity"), rs.getString("icon"), nullableLong(rs, "icon_at"), rs.getString("kind_label"),
+            rs.getInt("space_member_peak"));
     }
 
     private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
@@ -307,6 +330,8 @@ public class CircleService {
     public Map<String, Object> detail(DbUser viewer, String slug) {
         Circle c = bySlug(slug);
         requireAccess(c, viewer);
+        // 가입·승인 말고 다른 길로 멤버가 늘었어도(예시 데이터 등) 소로우 화면을 열 때 최고치를 남긴다.
+        if (c.memberCount() > c.memberPeak()) rememberMemberPeak(c.id());
         Map<String, Object> out = view(c);
         out.put("spaceMaps", spaceMaps(c));
         Optional<Member> m = viewer == null ? Optional.empty() : member(c.id(), viewer.id());
@@ -618,6 +643,7 @@ public class CircleService {
             INSERT INTO community_members (community_id, user_id, role, status, is_primary, verified_at) VALUES (?, ?, 'member', ?, ?, ?)
             ON CONFLICT (community_id, user_id) DO UPDATE SET status = EXCLUDED.status, verified_at = COALESCE(EXCLUDED.verified_at, community_members.verified_at)""")
             .param(circleId).param(userId).param(status).param(!hasPrimary && "active".equals(status)).param(verified ? LocalDateTime.now(ZoneOffset.UTC) : null).update();
+        if ("active".equals(status)) rememberMemberPeak(circleId);
     }
 
     @Transactional
@@ -712,6 +738,7 @@ public class CircleService {
         Optional<Member> cur = member(c.id(), me.id());
         if (cur.isPresent()) {
             jdbc.sql("UPDATE community_members SET status = 'active', verified_at = now() WHERE community_id = ? AND user_id = ?").param(c.id()).param(me.id()).update();
+            rememberMemberPeak(c.id());
             if ("owner".equals(cur.get().role()) && !c.verified()) jdbc.sql("UPDATE communities SET verified = TRUE WHERE id = ?").param(c.id()).update();
         } else {
             insertMember(c.id(), me.id(), "active", true);
@@ -747,7 +774,10 @@ public class CircleService {
         Member target = member(c.id(), userId).orElseThrow(() -> ApiException.notFound("멤버를 찾을 수 없어요"));
         boolean owner = actor.owner() || appAdmin(me);
         switch (action == null ? "" : action) {
-            case "approve" -> jdbc.sql("UPDATE community_members SET status = 'active' WHERE community_id = ? AND user_id = ?").param(c.id()).param(userId).update();
+            case "approve" -> {
+                jdbc.sql("UPDATE community_members SET status = 'active' WHERE community_id = ? AND user_id = ?").param(c.id()).param(userId).update();
+                rememberMemberPeak(c.id());
+            }
             case "remove" -> {
                 if ("owner".equals(target.role())) throw ApiException.badRequest("소로우를 연 사람은 내보낼 수 없어요");
                 if ("keeper".equals(target.role()) && !owner) throw ApiException.forbidden("소로우지기는 연 사람만 내보낼 수 있어요");

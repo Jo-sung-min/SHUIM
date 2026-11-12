@@ -31,6 +31,14 @@ class CircleSpaceMapsTest {
         assertEquals(SpaceMaps.ORDER, open(circle(101, false)));
     }
 
+    @Test void aMapThatOnceOpenedStaysOpenAfterMembersLeave() {
+        var shrunk = new CircleService.Circle("c", "c", "함께 소로우", "life", null, false, "open", "public",
+            "", "", "owner", 0, 0, 12, 0, false, false, false, SpaceCapacity.MAX, null, null, null, 45);
+        assertEquals(List.of("beach", "uyuni", "bamboo"), open(shrunk), "12명으로 줄었어도 45명이던 때 열린 풍경은 그대로다");
+        assertTrue(shrunk.opensMap("bamboo"));
+        assertFalse(shrunk.opensMap("garden"));
+    }
+
     @Test void aFixedPrivateTestCircleKeepsEveryMapOpen() {
         assertEquals(SpaceMaps.ORDER, open(circle(2, true)));
     }

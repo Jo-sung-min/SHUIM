@@ -161,6 +161,16 @@ class BeachSpaceAccessTest {
     }
 
     @Test
+    void membersOfACircleThatShrankStillEnterTheMapsItOnceOpened() {
+        actor(user("member", false));
+        when(circles.byId("circle-a")).thenReturn(new CircleService.Circle("circle-a", "circle-a", "함께 소로우", "life", null, false, "open", "public",
+            "", "", "owner", 0, 0, 7, 0, false, false, false, SpaceCapacity.MAX, null, null, null, 21));
+        when(circles.member(eq("circle-a"), any())).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
+        assertEquals("uyuni", enter("circle-a", "uyuni").get("mapId"));
+        assertEquals(403, enterStatus("circle-a", "bamboo"));
+    }
+
+    @Test
     void aFixedPrivateTestCircleKeepsEveryMapBecauseItCanNeverGrow() {
         DbUser owner = user("owner", false);
         actor(owner);

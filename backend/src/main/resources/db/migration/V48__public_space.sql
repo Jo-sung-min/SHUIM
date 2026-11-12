@@ -16,3 +16,9 @@ BEGIN
         EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.table_name, fk.conname);
     END LOOP;
 END $$;
+
+-- 소로우 공간의 풍경은 멤버가 늘수록 열린다 (SpaceMaps). 한 번 열린 풍경은 멤버가 줄어도 닫히지 않게,
+-- 소로우마다 지금까지 가장 많았던 활성 멤버 수를 남긴다. 지금 있는 소로우는 현재 멤버 수에서 시작한다.
+ALTER TABLE communities ADD COLUMN space_member_peak INTEGER NOT NULL DEFAULT 0 CHECK (space_member_peak >= 0);
+UPDATE communities c
+   SET space_member_peak = (SELECT count(*) FROM community_members m WHERE m.community_id = c.id AND m.status = 'active');

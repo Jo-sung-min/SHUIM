@@ -96,6 +96,10 @@ class SpaceAccessPostgresTest {
         return ((List<Map<String, Object>>) circleView.get("spaceMaps")).stream().filter(m -> Boolean.TRUE.equals(m.get("open"))).map(m -> m.get("id")).toList();
     }
 
+    private int peak(String circleId) {
+        return jdbc.sql("SELECT space_member_peak FROM communities WHERE id = ?").param(circleId).query(Integer.class).single();
+    }
+
     @Test void aNewCircleGetsItsOwnBeachAndOpensTheNextMapOnceItOutgrowsTwentyMembers() {
         DbUser owner = user();
         Map<String, Object> created = tx.execute(s -> circles.create(owner, new CircleService.CreateInput("공간 시험", "space-trial", "enjoy", "", "open", "public", null, null, null)));
@@ -120,15 +124,61 @@ class SpaceAccessPostgresTest {
         assertEquals(403, refused(id, "uyuni"));
         assertEquals(403, assertThrows(ApiException.class, () -> controller.count(id, "uyuni", request)).status());
 
-        // 21번째 멤버가 들어오는 순간 우유니가 열리고, 그다음 풍경은 아직 닫혀 있다.
-        members(id, 1, "active");
-        assertEquals(List.of("beach", "uyuni"), openMaps(circles.detail(owner, slug)));
+        // 21번째 멤버가 가입하는 순간 우유니가 열리고, 그다음 풍경은 아직 닫혀 있다.
+        DbUser newcomer = user();
+        Map<String, Object> joined = tx.execute(s -> circles.join(newcomer, slug, null));
+        assertEquals(21, joined.get("memberCount"));
+        assertEquals(List.of("beach", "uyuni"), openMaps(joined));
         assertEquals("uyuni", enter(id, "uyuni").get("mapId"));
         assertEquals(403, refused(id, "bamboo"));
+        assertEquals(21, peak(id));
 
-        // 멤버가 다시 20명이 되면 새로 들어오는 사람에게는 닫힌다.
-        jdbc.sql("DELETE FROM community_members WHERE (community_id, user_id) IN (SELECT community_id, user_id FROM community_members WHERE community_id = ? AND role = 'member' AND status = 'active' LIMIT 1)").param(id).update();
+        // 한 번 열린 풍경은 멤버가 줄어도 닫히지 않는다: 그 멤버가 나가 20명이 되고, 더 줄어도 우유니는 그대로다.
+        Map<String, Object> left = tx.execute(s -> circles.leave(newcomer, slug));
+        assertEquals(20, left.get("memberCount"));
+        assertEquals(List.of("beach", "uyuni"), openMaps(left));
+        jdbc.sql("DELETE FROM community_members WHERE community_id = ? AND role = 'member' AND status = 'active'").param(id).update();
+        assertEquals(1, circles.detail(owner, slug).get("memberCount"));
+        assertEquals(List.of("beach", "uyuni"), openMaps(circles.detail(owner, slug)));
+        assertEquals("uyuni", enter(id, "uyuni").get("mapId"));
+        assertEquals(403, refused(id, "bamboo"), "닫히지 않을 뿐, 아직 닿지 못한 풍경이 열리지는 않는다");
+        assertEquals(21, peak(id));
+    }
+
+    @Test void approvingAWaitingMemberOpensTheNextMapAndOtherWaysOfGrowingAreCaughtWhenTheCircleIsOpened() {
+        DbUser owner = user(), applicant = user();
+        Map<String, Object> created = tx.execute(s -> circles.create(owner, new CircleService.CreateInput("승인 시험", "approve-trial", "enjoy", "", "approve", "public", null, null, null)));
+        String id = (String) created.get("id"), slug = (String) created.get("slug");
+        members(id, 19, "active");
+        actor(owner);
+
+        // 가입 신청만으로는 열리지 않고, 소로우지기가 승인해 21명이 되는 순간 열린다.
+        assertEquals(20, tx.execute(s -> circles.join(applicant, slug, null)).get("memberCount"));
         assertEquals(403, refused(id, "uyuni"));
+        tx.execute(s -> circles.memberAction(owner, slug, applicant.id(), "approve"));
+        assertEquals(21, peak(id));
+        assertEquals("uyuni", enter(id, "uyuni").get("mapId"));
+        tx.execute(s -> circles.memberAction(owner, slug, applicant.id(), "remove"));
+        assertEquals("uyuni", enter(id, "uyuni").get("mapId"), "내보낸 뒤에도 열린 풍경은 그대로다");
+
+        // 가입·승인이 아닌 길로 멤버가 늘어도(예시 데이터처럼) 소로우 화면을 여는 순간 최고치가 남는다.
+        members(id, 21, "active");
+        assertEquals(21, peak(id));
+        assertEquals(List.of("beach", "uyuni", "bamboo"), openMaps(circles.detail(owner, slug)));
+        assertEquals(41, peak(id));
+        jdbc.sql("DELETE FROM community_members WHERE community_id = ? AND role = 'member'").param(id).update();
+        assertEquals(List.of("beach", "uyuni", "bamboo"), openMaps(circles.detail(owner, slug)));
+    }
+
+    @Test void circlesThatAlreadyExistStartFromTheMembersTheyHaveWhenTheRuleArrives() {
+        // V19·V21·V22 의 예시 소로우는 마이그레이션이 멤버를 넣어 둔다: V48 이 그 수를 최고치로 옮겨 놓았다.
+        var rows = jdbc.sql("""
+            SELECT c.space_member_peak AS peak,
+                   (SELECT count(*) FROM community_members m WHERE m.community_id = c.id AND m.status = 'active')::int AS active
+              FROM communities c""").query((rs, i) -> new int[] { rs.getInt("peak"), rs.getInt("active") }).list();
+        assertFalse(rows.isEmpty());
+        assertTrue(rows.stream().anyMatch(row -> row[1] > 0));
+        for (int[] row : rows) assertEquals(row[1], row[0]);
     }
 
     @Test void anyoneEntersThePublicSpaceAfterAgreeingToTheRulesButNotACircleTheyNeverJoined() {
