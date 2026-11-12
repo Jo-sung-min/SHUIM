@@ -1,49 +1,57 @@
 import styles from "./MoruPet.module.css";
 
 export type MoruMood = "idle" | "happy" | "eat" | "sleep" | "pet";
-/** Hand-drawn 128px pixel grid; flat palette, no blur or raster upscaling. */
+const INK = "#4a3528";
+/**
+ * 모루: 머리에 보랏빛 새싹이 난 하얀 찹쌀떡 같은 친구. 처진 눈과 조용한 표정은 그대로, 손그림 선(짙은 갈색 외곽선, 단색 면)으로 그린다.
+ * 128×122 칸. 몸짓은 클래스(body·sprout·blink·wave·heart·rice)에 걸린 애니메이션이 맡는다.
+ */
 export default function MoruSprite({ mood, level = 1 }: { mood: MoruMood; level?: number }) {
   const happy = mood === "happy" || mood === "pet" || mood === "eat";
-  return <svg viewBox="0 0 128 122" className={styles.sprite} data-mood={mood} shapeRendering="crispEdges" aria-hidden="true">
-    <path fill="#211b35" opacity=".2" d="M23 108h82v2h7v4h-7v2H23v-2h-7v-4h7z" />
-    <path fill="#211b35" opacity=".16" d="M33 109h62v4H33z" />
+  return <svg viewBox="0 0 128 122" className={styles.sprite} data-mood={mood} data-hand="" aria-hidden="true" fill="none" stroke={INK} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="64" cy="112" rx="44" ry="4.5" fill="#2a1b13" opacity=".16" stroke="none" />
     <g className={styles.body}>
       <g className={styles.sprout}>
-        <path fill="#79608f" d="M62 39V25h-4v-6h4v5h4v-7h4v11h-4v11z" />
-        <path fill="#9575b3" d="M58 24H48v-3h-8v-4h-5v-5h-3V6h12v3h8v4h5v4h5v7zM68 22v-6h5v-4h8V9h14v3h6v5h-5v4h-9v3H74v-2z" />
-        <path fill="#b99bd4" d="M36 8h8v3h8v4h5v4h-9v-3h-8v-4h-4zM73 17h7v-4h15v2h3v2h-9v3H73z" />
-        <path fill="#dbc2ec" d="M37 8h7v2h-7zM44 11h7v2h-7zM81 12h13v2H81z" />
-        <path fill="#83639f" d="M49 19h8v3h-8zM73 21h13v2H73z" />
-        {level >= 10 && <g><path fill="#c586b1" d="M61 3h7v3h5v7h-5v4h-7v-4h-4V6h4z" /><path fill="#f3cee0" d="M62 4h5v4h5v4h-5v4h-5v-4h-4V8h4z" /><path fill="#ffe7b9" d="M63 8h4v4h-4z" /></g>}
+        <path d="M64 38C63 32 64 27 65 23" />
+        <path fill="#b99bd4" d="M63 24C52 25 40 19 33 9C46 6 58 12 63 24Z" />
+        <path fill="#b99bd4" d="M66 23C74 12 88 8 100 12C94 22 80 26 66 23Z" />
+        <path stroke="#8f73b3" strokeWidth="1.6" d="M39 11C47 14 55 19 61 23M95 13C86 15 76 19 69 22" />
+        {level >= 10 && <g strokeWidth="1.6">
+          {[[64, 12], [70, 17], [68, 24], [60, 24], [58, 17]].map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="4" fill="#f6b6c8" />)}<circle cx="64" cy="19" r="3" fill="#ffe2a0" />
+        </g>}
       </g>
-      {/* Rounded silhouette built from small, deliberate stair steps. */}
-      <path fill="#79658f" d="M47 35h34v2h10v3h7v4h6v5h5v7h4v9h3v12h2v16h-2v8h-5v6h-8v4H88v-3H42v3H27v-4h-8v-6h-4v-9h-2V78h2V66h3V56h4v-7h5v-5h6v-4h7v-3h7z" />
-      <path fill="#ab94be" d="M46 38h35v2h10v3h7v4h5v6h5v8h3v11h3v20h-2v8h-5v5h-8v3H88v-4H41v4H28v-4h-7v-6h-3V78h2V65h3v-9h5v-7h6v-5h12z" />
-      <path fill="#cfbbdc" d="M45 39h35v2h10v3h7v5h6v7h4v10h3v24h-3v9h-7v5H85v-3H42v4H29v-5h-7v-8h-2V75h3V62h4v-9h6v-7h12z" />
-      <path fill="#ebe0ec" d="M45 40h34v2h10v4h8v6h5v9h4v26h-3v10h-7v4H38v-3H27v-7h-4V73h4V59h6v-9h12z" />
-      <path fill="#faf3ef" d="M46 40h30v3h12v4h8v7h5v11h2v20h-5v8H87v3H42v-3H31v-6h-5V70h4V58h6v-9h10z" />
-      <path fill="#fffaf1" d="M47 41h28v3h12v4h7v7h4v7h-6v-8h-9v-4H46v4H36v9h-5v-8h6v-8h10z" />
-      <path fill="#f2e8ee" d="M29 83h5v9h10v4h42v-3h12v-8h5v12h-8v3H39v-4H29z" />
-      <path fill="#dac9e1" d="M23 84h3v10h6v5h8v3h46v-3h13v-5h5v-9h4v13h-7v5H88v3H39v-3H29v-5h-6z" />
-      {/* Small feet and resting paws remain distinct from the body shading. */}
-      <path fill="#b59cc7" d="M29 101h16v8H28v-4h-3v-5h4zM84 101h16v8H84z" />
-      <path fill="#f9eff0" d="M30 100h13v7H29v-4h1zM86 100h12v7H85v-4h1z" />
-      <path fill="#fffaf3" d="M31 100h10v3H31zM87 100h9v3h-9z" />
-      <path fill="#ded0e5" d="M22 79h3v13h-3zM106 79h3v12h-3z" />
-      {level >= 3 && (mood === "happy" || mood === "pet") && <g className={styles.wave}><path fill="#9175a8" d="M101 74h5v-8h4v-4h7v4h3v14h-4v7h-7v4h-8z" /><path fill="#f5ebef" d="M104 76h5v-9h4v-3h3v14h-4v7h-8z" /><path fill="#fff9f0" d="M110 68h3v9h-3z" /></g>}
+      {/* 둥글고 넓적한 몸 */}
+      <path fill="#fffaf3" d="M64 36C88 35 106 50 112 72C116 88 110 104 96 107C82 110 46 110 32 107C18 104 12 88 16 72C22 50 40 35 64 36Z" />
+      <path stroke="none" fill="#e9dff0" d="M19 84C28 99 46 103 64 103C82 103 100 99 109 84C110 97 102 105 92 106C78 108 50 108 36 106C26 105 18 97 19 84Z" />
+      <path fill="#fffaf3" d="M30 104C30 99 44 99 45 104C45 109 31 110 30 104ZM83 104C84 99 98 99 98 104C97 110 83 109 83 104Z" />
+      {level >= 3 && (mood === "happy" || mood === "pet") && <path className={styles.wave} fill="#fffaf3" d="M103 82C104 72 111 63 117 65C122 69 118 81 110 89Z" />}
       <g className={styles.face}>
-        {happy && <path fill="#fff7ce" d="M31 64h2v-2h2v2h2v2h-2v2h-2v-2h-2zM95 64h2v-2h2v2h2v2h-2v2h-2v-2h-2z" />}
-        {mood === "sleep" ? <path fill="#66516f" d="M37 74h3v4h7v2h8v-3h3v5H46v-2h-9zM73 77h3v3h8v-2h7v-4h3v6h-9v2H73z" />
-          : happy ? <g><path fill="#5c4768" d="M35 75v-6h4v-4h12v3h5v5h3v6h-5v-5h-4v-5h-9v5h-3v5h-3zM73 75v-6h4v-4h12v3h5v5h3v6h-5v-5h-4v-5h-9v5h-3v5h-3z" /><path fill="#93769d" d="M39 65h12v2H39zM77 65h12v2H77z" /></g>
-          : <g className={styles.blink}><path fill="#594661" d="M38 67h17v3h3v13h-4v4H40v-3h-5V73h3zM74 67h17v6h3v11h-5v3H76v-4h-4V70h2z" /><path fill="#715a7b" d="M38 80h5v3h11v3H41v-2h-3zM75 83h12v-3h5v4h-5v2H76z" /><path fill="#d7c4df" d="M36 65h19v2H36zM74 65h19v2H74z" /></g>}
-        <path fill={happy ? "#e7bfd4" : "#e0cfe3"} d="M29 83h12v2h3v4H30v-2h-1zM91 85h3v-2h11v4h-2v2H91z" />
-        <path fill={happy ? "#f2d5e2" : "#eee0eb"} d="M31 83h8v2h-8zM96 83h7v2h-7z" />
-        {mood === "eat" ? <g><path fill="#80617f" d="M61 86h9v8h-9z" /><path fill="#c28da8" d="M63 91h5v3h-5z" /></g> : happy ? <path fill="#a282a2" d="M60 87h3v3h5v-3h3v5h-3v2h-5v-2h-3z" /> : <path fill="#ba9fbc" d="M63 90h5v2h-5z" />}
+        <ellipse cx="29" cy="87" rx="7" ry="3.6" fill={happy ? "#f2b3cb" : "#eadbec"} stroke="none" />
+        <ellipse cx="99" cy="87" rx="7" ry="3.6" fill={happy ? "#f2b3cb" : "#eadbec"} stroke="none" />
+        {happy && <path fill="#ffe9a8" strokeWidth="1.2" d="M31 61C31.500 64 33 65.500 36 66C33 66.500 31.500 68 31 71C30.500 68 29 66.500 26 66C29 65.500 30.500 64 31 61ZM97 61C97.500 64 99 65.500 102 66C99 66.500 97.500 68 97 71C96.500 68 95 66.500 92 66C95 65.500 96.500 64 97 61Z" />}
+        {mood === "sleep" ? <path strokeWidth="3" d="M37 76Q47 83 57 77M71 77Q81 83 91 76" />
+          : happy ? <path strokeWidth="3.2" d="M37 80Q47 66 57 80M71 80Q81 66 91 80" />
+          : <g className={styles.blink}>{/* 바깥쪽이 처진 반쯤 감긴 눈 */}
+            <path fill="#4f3d59" strokeWidth="2.2" d="M35 72L58 68C60 78 57 87 48 87C40 87 35 81 35 72Z" />
+            <path fill="#4f3d59" strokeWidth="2.2" d="M93 72L70 68C68 78 71 87 80 87C88 87 93 81 93 72Z" />
+            <circle cx="52" cy="74.500" r="1.800" fill="#fff" stroke="none" /><circle cx="76" cy="74.500" r="1.800" fill="#fff" stroke="none" />
+          </g>}
+        {mood === "eat" ? <path fill="#80617f" strokeWidth="2" d="M60 88C60 85 68 85 68 88C68 94 60 94 60 88Z" />
+          : happy ? <path stroke="#8a6a8a" strokeWidth="2.2" d="M59 88Q61.500 92 64 89Q66.500 92 69 88" />
+          : <path stroke="#9a7f9c" strokeWidth="2.2" d="M61 91Q64 92.500 67 91" />}
       </g>
-      {mood === "eat" && <g className={styles.rice}><path fill="#a87f9f" d="M48 96h35v10h-5v4H54v-4h-6z" /><path fill="#ddb4c9" d="M50 97h31v7h-5v3H56v-3h-6z" /><path fill="#fff8e9" d="M52 90h6v-4h15v4h6v8H52z" /><path fill="#e6d9cb" d="M57 93h3v2h-3zM69 89h3v2h-3zM73 95h4v2h-4z" /><path fill="#f8eef0" d="M44 97h8v7h-8zM80 97h8v7h-8z" /></g>}
-      {mood === "sleep" && level >= 5 && <g><path fill="#967cad" d="M26 92h13v4h58v-4h13v13H26z" /><path fill="#bfa6d1" d="M28 93h10v5h61v-5h8v7H28z" /><path fill="#d5c0e0" d="M42 99h3v5h-3zM68 99h3v5h-3zM94 99h3v5h-3z" /></g>}
+      {mood === "eat" && <g className={styles.rice}>
+        <path fill="#fffaf0" d="M50 97C52 86 76 86 78 97Z" /><path fill="#cdbbf0" d="M45 96H83C83 106 75 111 64 111C53 111 45 106 45 96Z" />
+        <path fill="#fffaf3" d="M38 99C38 95 47 95 47 99C47 104 38 104 38 99ZM81 99C81 95 90 95 90 99C90 104 81 104 81 99Z" />
+      </g>}
+      {mood === "sleep" && level >= 5 && <g>{/* 함께한 시간이 쌓이면 덮고 자는 담요 */}
+        <path fill="#bfa6d1" d="M21 93C40 86 88 86 107 93C110 99 108 105 100 107C80 110 48 110 28 107C20 105 18 99 21 93Z" />
+        <path stroke="#9a7fb5" strokeWidth="1.8" d="M44 90L42 108M64 88V109M84 90L86 108" />
+      </g>}
     </g>
-    {(mood === "pet" || mood === "happy") && <g className={styles.heart}><path fill="#a77aab" d="M106 37h6v3h3v-3h6v3h3v7h-4v4h-4v4h-4v-4h-4v-4h-4v-7h2z" /><path fill="#f0bad7" d="M107 39h4v4h5v-4h5v7h-4v4h-4v-3h-3v-3h-3z" /><path fill="#ffdeeb" d="M108 40h2v4h-2z" /></g>}
-    {mood === "sleep" && <g fill="#c7b2df" className={styles.heart}><path d="M94 37h10v3h-3v3h-3v3h6v3H94v-3h3v-3h3v-3h-6zM109 23h9v2h-3v3h-3v3h6v2h-9v-3h3v-3h3v-2h-6z" /></g>}
+    {(mood === "pet" || mood === "happy") && <path className={styles.heart} fill="#f29aab" strokeWidth="2" d="M113 50C105 44 103 38 107 35C110 33 113 36 113 38C113 36 116 33 119 35C123 38 121 44 113 50Z" />}
+    {mood === "sleep" && <g className={styles.heart}>
+      <path stroke={INK} strokeWidth="5" d="M97 31H106L97 41H106M111 18H118L111 26H118" /><path stroke="#fff6e0" strokeWidth="2.2" d="M97 31H106L97 41H106M111 18H118L111 26H118" />
+    </g>}
   </svg>;
 }

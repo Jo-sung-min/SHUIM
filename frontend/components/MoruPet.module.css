@@ -260,9 +260,9 @@
 .celebration>i{width:9px;height:12px;border:2px solid var(--hd-ink);border-radius:50%;background:#fffaf0;box-shadow:none}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:transparent}}
 @media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:transparent}}
-/* 손그림 캐릭터(모링)는 몸짓이 끊기지 않고 부드럽다 */
+/* 손그림 캐릭터는 몸짓이 끊기지 않고 부드럽다 */
 .sprite[data-hand]{image-rendering:auto}
-.sprite[data-hand] .body,.sprite[data-hand] .heart,.sprite[data-hand] .rice{animation-timing-function:ease-in-out}
+.sprite[data-hand] .body,.sprite[data-hand] .sprout,.sprite[data-hand] .heart,.sprite[data-hand] .rice{animation-timing-function:ease-in-out}
 /* ---------- 돌봄 상태 (2단계): 하트 줄 · 먼지 뭉치 · 목욕 거품 · 가득 찬 날의 반짝임 ---------- */
 /* 하트 줄은 꽉 찬 화면에서만 보인다 (홈 카드는 패드의 한 줄만) */
 .meters{display:none}
@@ -302,7 +302,8 @@
 .closedWindow::before{content:"";position:absolute;inset:0;z-index:-1;border:2.5px solid var(--hd-ink);border-radius:20px 23px 19px 22px/22px 19px 23px 20px;background:#3d2a20;box-shadow:0 0 46px #ffcf7a36,0 6px 0 #2a1b1340;filter:url(#moru-sketch)}
 .closedWindow i{border:2.2px solid var(--hd-ink);border-radius:11px 13px 10px 12px/12px 10px 13px 11px;background:#e5b65f repeating-linear-gradient(0deg,transparent 0 17px,#c08f3d 17px 19px);box-shadow:none;filter:url(#moru-sketch)}
 .closedWindow i::after{width:8px;height:8px;border:2px solid var(--hd-ink);border-radius:50%;background:#fff3dc}
-.closedWindow b{top:12px;bottom:12px;left:calc(50% - 1.5px);width:3px;border-radius:2px;background:#ffe9b0;box-shadow:0 0 14px 2px #ffd98a}
+.closedWindow b{top:12px;bottom:12px;left:calc(50% - 2px);width:4px;border-radius:2px;background:#fff1c9;box-shadow:0 0 10px 3px #ffd98acc;animation:shutterGlow 5s ease-in-out infinite}
+@keyframes shutterGlow{0%,100%{opacity:.72}50%{opacity:1}}
 .closedWindow em{right:-18px;top:20px;color:#ffe9b0;font-size:18px}
 .findMe{font-size:20px;letter-spacing:0}
 .findMe span{color:#ecd9bd;font-size:12px}
