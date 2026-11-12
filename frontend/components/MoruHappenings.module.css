@@ -1,0 +1,93 @@
+/* 방 안의 작은 사건 (docs/MORU_HAPPENINGS.md). 방(.room)의 손그림 규칙을 따른다: 갈색 외곽선 #4a3528, 단색 면, 떨리는 선은 #moru-sketch.
+   자리는 방의 월드(.world) 기준: 화분은 오른쪽 아래 이불 위, 선물은 친구 발치 왼쪽 앞(어느 공간에서나 빈 이불 자리), 날아드는 것은 상태 줄 아래에서 내려온다. */
+
+/* ---------- 화분 ---------- */
+.plant{position:absolute;right:calc(var(--world-crop,0px) + 6px);bottom:26px;z-index:2;width:50px;height:66px;padding:0;border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none}
+.plant .plantArt{width:48px;height:64px;margin:1px;filter:drop-shadow(0 2px 0 #2a1b1326)}
+.plant:focus-visible{outline:2px dashed #fff6e0;outline-offset:2px;border-radius:14px}
+.plant:not(:disabled):active .plantArt{transform:translateY(1px)}
+button.plant.plant:disabled{opacity:1;cursor:default}
+.sprout{transform-box:view-box;transform-origin:24px 40px;animation:plantSway 4.6s ease-in-out infinite}
+.plant[data-watering] .sprout{animation:plantDrink .5s ease-in-out 3}
+@keyframes plantSway{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2.5deg)}}
+@keyframes plantDrink{0%,100%{transform:scale(1)}50%{transform:scale(1.05,.94)}}
+.thirsty{position:absolute;left:50%;top:-4px;width:14px;height:18px;margin-left:-7px;animation:thirstyBob 1.8s ease-in-out infinite;pointer-events:none}
+.thirsty svg{width:14px;height:18px}
+.plant[data-stage="0"] .thirsty,.plant[data-stage="1"] .thirsty{top:10px}
+@keyframes thirstyBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.plant[data-bloom]::after{content:"";position:absolute;right:-2px;top:-4px;width:16px;height:16px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5C10.8 6.5 13.5 9.2 18.5 10C13.5 10.8 10.8 13.5 10 18.5C9.2 13.5 6.5 10.8 1.5 10C6.5 9.2 9.2 6.5 10 1.5Z' fill='%23fff3c4' stroke='%234a3528' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;animation:twinkle 1.6s ease-in-out infinite;pointer-events:none}
+@keyframes twinkle{0%,100%{opacity:.35;transform:scale(.7)}50%{opacity:1;transform:scale(1)}}
+/* 물뿌리개: 화분 왼쪽 위에서 기울어 물방울 셋이 떨어진다 */
+.can{position:absolute;left:-26px;top:-12px;width:34px;height:28px;transform-origin:35% 60%;animation:canTilt 1.5s ease both;pointer-events:none}
+.can svg{width:34px;height:28px}
+.can i{position:absolute;left:33px;top:12px;width:4px;height:6px;border:1.2px solid #4a3528;border-radius:50%;background:#a9d3f2;opacity:0;animation:canDrop .5s ease-in .4s 2}
+.can i:nth-of-type(2){left:36px;animation-delay:.55s}
+.can i:nth-of-type(3){left:31px;animation-delay:.7s}
+@keyframes canTilt{0%{opacity:0;transform:rotate(0)}15%{opacity:1;transform:rotate(0)}35%,82%{opacity:1;transform:rotate(26deg)}100%{opacity:0;transform:rotate(0)}}
+@keyframes canDrop{0%{opacity:0;transform:translateY(0)}20%{opacity:1}100%{opacity:0;transform:translateY(22px)}}
+
+/* ---------- 날아드는 것 ---------- */
+.drift{position:absolute;top:64px;z-index:4;width:48px;height:48px;margin-left:-24px;padding:0;border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;animation:driftFall 11s linear both}
+.drift>span{display:grid;place-items:center;width:100%;height:100%;animation:driftSway 2.8s ease-in-out infinite alternate}
+.drift svg{width:28px;height:28px;filter:drop-shadow(0 2px 0 #2a1b1333)}
+.drift[data-kind="starlight"] svg{filter:drop-shadow(0 0 7px #fff3c4)}
+.drift[data-kind="starlight"]>span{animation-name:driftFloat;animation-duration:2.2s}
+.drift[data-kind="snowflake"]>span{animation-name:driftSnow;animation-duration:3.4s}
+.drift:focus-visible{outline:2px dashed #fff6e0;outline-offset:-4px;border-radius:50%}
+@keyframes driftFall{0%{opacity:0;transform:translateY(0)}8%{opacity:1}88%{opacity:1}100%{opacity:0;transform:translateY(300px)}}
+@keyframes driftSway{from{transform:translateX(calc(var(--sway,24px) * -1)) rotate(-18deg)}to{transform:translateX(var(--sway,24px)) rotate(18deg)}}
+@keyframes driftFloat{from{transform:translateX(calc(var(--sway,24px) * -.6)) scale(.88)}to{transform:translateX(calc(var(--sway,24px) * .6)) scale(1.1)}}
+@keyframes driftSnow{from{transform:translateX(calc(var(--sway,24px) * -.8)) rotate(-40deg)}to{transform:translateX(calc(var(--sway,24px) * .8)) rotate(40deg)}}
+
+/* ---------- 물어 온 것 ---------- */
+.gift{position:absolute;left:calc(50% - 78px);bottom:32px;z-index:2;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;animation:giftIn .5s ease both,giftBob 2.2s ease-in-out .5s infinite}
+.gift svg{width:28px;height:28px;filter:drop-shadow(0 2px 0 #2a1b1333)}
+.gift i{position:absolute;right:1px;top:-1px;width:15px;height:15px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5C10.8 6.5 13.5 9.2 18.5 10C13.5 10.8 10.8 13.5 10 18.5C9.2 13.5 6.5 10.8 1.5 10C6.5 9.2 9.2 6.5 10 1.5Z' fill='%23fff3c4' stroke='%234a3528' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;animation:twinkle 1.6s ease-in-out infinite}
+.gift:focus-visible{outline:2px dashed #fff6e0;outline-offset:0;border-radius:14px}
+@keyframes giftIn{from{opacity:0;transform:translateY(8px) scale(.6)}to{opacity:1;transform:none}}
+@keyframes giftBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+
+/* ---------- 먼저 묻는 한마디: 방(.room) 기준. 친구의 머리 위(월드 바닥에서 232px)를 따라가고, 꽉 찬 화면에서는 월드가 커진 만큼 올라간다 ---------- */
+.ask{position:absolute;left:50%;bottom:calc(var(--pad-h,101px) - 9px + 232px * var(--world-scale,1));z-index:5;transform:translateX(-50%);isolation:isolate;width:max-content;max-width:calc(100% - 44px);padding:9px 12px 11px;color:#4a3528;text-align:center;animation:askIn .35s ease both}
+.ask[data-full]{bottom:calc(var(--pad-h,101px) - 9px + env(safe-area-inset-bottom) + 232px * var(--world-scale,1))}
+.ask>i{position:absolute;inset:0;z-index:-1;filter:url(#moru-sketch)}
+.ask>i::before{content:"";position:absolute;inset:0;border:2.5px solid #4a3528;border-radius:16px 19px 15px 18px/18px 15px 19px 16px;background:#fff6e0;box-shadow:0 3px 0 #2a1b1347}
+.ask>i::after{content:"";position:absolute;left:calc(50% - 6px);bottom:-5px;width:10px;height:10px;border:solid #4a3528;border-width:0 2.5px 2.5px 0;border-radius:0 0 3px;background:#fff6e0;transform:rotate(45deg)}
+.ask p{margin:0 6px 8px;font-size:14px;line-height:1.45;word-break:keep-all}
+.ask>div{display:flex;justify-content:center;gap:8px}
+.ask button{position:relative;isolation:isolate;min-width:78px;min-height:40px;padding:0 13px 3px;border:0;background:none;color:#4a3528;font:inherit;font-size:13px;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform .12s ease}
+.ask button::before{content:"";position:absolute;inset:0;z-index:-1;border:2.2px solid #4a3528;border-radius:13px 15px 12px 14px/14px 12px 15px 13px;background:#ffeccb;box-shadow:inset 0 -3px 0 #e6c48d}
+.ask button:nth-child(2)::before{border-radius:15px 12px 14px 13px/12px 15px 13px 14px}
+.ask button:active{transform:translateY(2px)}
+.ask button:active::before{box-shadow:inset 0 -1px 0 #e6c48d}
+.ask button:focus-visible{outline:2px dashed #4a3528;outline-offset:2px;border-radius:13px}
+@keyframes askIn{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+
+/* ---------- 주운 것들 (시트) ---------- */
+.foundThings{padding:0 2px 20px;color:#4a3528}
+.foundThings h4{font-weight:400;letter-spacing:0}
+.pot{display:flex;align-items:center;gap:14px;padding:10px 14px;border:2.5px solid #4a3528;border-radius:18px 21px 17px 20px/20px 17px 21px 18px;background:#fffaf0}
+.pot .plantArt{width:60px;height:80px;flex:none}
+.pot .sprout{animation:none}
+.pot h4{margin:0 0 4px;font-size:17px}
+.pot p{margin:0 0 9px;font-size:13px;color:#7a5f4d}
+.waters{display:flex;gap:4px}
+.waters i{width:12px;height:15px;border:1.8px solid #b9a08b;border-radius:50%/62% 62% 40% 40%;background:#fff}
+.waters i[data-on]{border-color:#4a3528;background:#a9d3f2}
+.foundThings>:global(.btn){width:100%;margin-top:10px}
+.hint{margin:10px 2px 0;font-size:12px;line-height:1.6;color:#7a5f4d;word-break:keep-all}
+.heading{display:flex;align-items:baseline;gap:8px;margin:22px 2px 10px;font-size:16px}
+.heading small{font-size:12px;color:#7a5f4d}
+.shelf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.shelf li{display:grid;justify-items:center;align-content:start;gap:3px;min-width:0;padding:10px 5px 9px;border:2px solid #dcc39b;border-radius:14px 16px 13px 15px/15px 13px 16px 14px;background:#fffaf0;text-align:center}
+.shelf li[data-found]{border-color:#4a3528}
+.shelf svg{width:34px;height:34px}
+.shelf b{font-size:13px;font-weight:400}
+.shelf li:not([data-found]) b{color:#7a5f4d}
+.shelf small{font-size:11px;line-height:1.4;color:#7a5f4d;word-break:keep-all}
+.pressed{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.pressed svg{width:30px;height:38px}
+
+@media(max-width:360px){.ask{max-width:calc(100% - 28px)}.ask button{min-width:70px}.shelf{gap:6px}}
+/* 동작 줄이기: 방의 규칙(.card * 의 animation:none)으로 모두 멈춘다. 날아드는 것은 떨어지지 않으니 눈에 띄는 자리에 가만히 둔다 (MoruPet 이 시간이 지나면 거둔다) */
+@media(prefers-reduced-motion:reduce){.drift{top:34%}.plant *,.gift,.gift *,.ask,.drift,.drift *{animation:none!important;transition:none!important}}

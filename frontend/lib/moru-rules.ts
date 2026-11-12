@@ -90,8 +90,10 @@ export function rubStats(xs: number[]): { travel: number; turns: number } {
 export const isTickle = (stats: { travel: number; turns: number }): boolean => stats.travel >= TICKLE_TRAVEL && stats.turns >= TICKLE_TURNS;
 /** 방금까지의 톡 시각들로 보아 놀랄 만큼 빨리 두드렸는지 */
 export const isStartle = (tapTimes: number[], now: number): boolean => tapTimes.filter((t) => now - t <= STARTLE_MS).length >= STARTLE_TAPS;
-/** 위쪽 3할을 누르면 새싹 (새싹이 있는 모습일 때만) */
-export const touchSpot = (yRatio: number, hasSprout: boolean): "sprout" | "body" => (hasSprout && yRatio < 0.3 ? "sprout" : "body");
+/** 위쪽 3할을 누르면 새싹 (새싹이 있는 모습일 때만). 머리를 긁어 줄 수 있는 친구(모링)는 위쪽 4할 5푼이 머리다 */
+export const HEAD_RATIO = 0.45;
+export const touchSpot = (yRatio: number, hasSprout: boolean, hasHead = false): "sprout" | "head" | "body" =>
+  (hasSprout && yRatio < 0.3 ? "sprout" : hasHead && yRatio < HEAD_RATIO ? "head" : "body");
 
 /** 같은 말을 연달아 하지 않게 고른다 */
 export function pickLine(lines: readonly string[], last: string | null, random: () => number = Math.random): string {

@@ -12,6 +12,13 @@ import MoruMindSheet from "./MoruMindSheet";
 import { IconBook, IconBubble, IconMoon, IconSmile, IconSun } from "./Icons";
 import MoruWeatherBook, { weatherName } from "./MoruWeatherBook";
 import MoruMoodSheet, { MoodFace } from "./MoruMoodSheet";
+import { JarIcon, FoundThingsSheet, MoruAsk, MoruDrift, MoruGift, MoruPlant } from "./MoruHappenings";
+import {
+  ASK_STAY_MS, CLOVER_LINE, DRIFT_LINES, DRIFT_SECONDS, FEATHER_LINE, GIFT_LINES, GROW_LINES, PLANT_STAGE_NAMES, PRESS_LINE, SCRATCH_LINES, WATERED_LINE, WATER_LINES,
+  askSlot, canDrift, catchDrift, driftDelay, driftKind, driftPath, giftOf, keepItem, markAsked, normalizeHappenings, pickAsk, plantStage, pressFlower, takeGift, waterPlant,
+  type Ask, type AskAnswer, type Happenings,
+} from "@/lib/moru-happenings";
+import { happeningsQuick, loadHappenings, saveHappenings } from "@/lib/moru-keep";
 import { fetchMe } from "@/lib/auth";
 import { haptic } from "@/lib/haptics";
 import { useBackLayer } from "@/lib/use-back-layer";
@@ -64,7 +71,16 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [message, setMessage] = useState(IDLE_LINE);
   const [mood, setMood] = useState<MoruMood>("idle");
   const [talkFeel, setTalkFeel] = useState<string | null>(null); // 말 걸기에서 고른 기분: 감정마다 얼굴이 있는 친구(모링)가 그 얼굴로 답한다
-  const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | "decor" | "mood" | null>(null);
+  const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | "decor" | "mood" | "keep" | null>(null);
+  // 방 안의 작은 사건 (docs/MORU_HAPPENINGS.md): 화분·주운 것들은 이 기기에 남고, 날아드는 것·물음은 그때그때 뜬다
+  const [happen, setHappen] = useState<Happenings | null>(null);
+  const happenRef = useRef<Happenings | null>(null);
+  const [drift, setDrift] = useState<{ id: number; kind: string; x: number; sway: number } | null>(null);
+  const [driftTick, setDriftTick] = useState(0);
+  const drifted = useRef(0);
+  const [watering, setWatering] = useState(false);
+  const waterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ask, setAsk] = useState<Ask | null>(null);
   // 꾸미기: 꾸미는 중이면 방의 자리마다 동그라미가 뜨고, 자리를 누르면 가구 고르기 시트가 열린다
   const [decorating, setDecorating] = useState(false);
   const [decorPick, setDecorPick] = useState<string | null>(null); // 꾸미는 중에 고른 가구 (넣어 두기 판이 뜬다)
@@ -87,7 +103,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [rainOn, setRainOn] = useState(false);
   const rainWanted = useRef(false);
   const lastLine = useRef<string | null>(null);
-  const press = useRef<{ id: number; x: number; y: number; xs: number[]; fired: boolean; spot: "sprout" | "body" } | null>(null);
+  const press = useRef<{ id: number; x: number; y: number; xs: number[]; fired: boolean; spot: "sprout" | "head" | "body" } | null>(null);
   const hugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taps = useRef<number[]>([]);
@@ -114,9 +130,10 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     const timer = setTimeout(() => setCelebration(null), 4000);
     return () => clearTimeout(timer);
   }, [celebration]);
-  const react = useCallback((next: MoruMood, text: string) => {
+  /** feel: 감정마다 얼굴이 있는 친구(모링)가 이 반응 동안 지을 얼굴 (말 걸기의 기분 id) */
+  const react = useCallback((next: MoruMood, text: string, feel: string | null = null) => {
     if (reactionTimer.current) clearTimeout(reactionTimer.current);
-    setMood(next); setMessage(text); setTalkFeel(null);
+    setMood(next); setMessage(text); setTalkFeel(feel);
     setMurmur(null);
     reactionTimer.current = setTimeout(() => { setMood("idle"); setMessage(IDLE_LINE); }, 4200);
   }, []);
@@ -127,7 +144,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     }).catch(() => {});
     return () => {
       alive.current = false;
-      for (const timer of [reactionTimer, hugTimer, touchTimer]) if (timer.current) clearTimeout(timer.current);
+      for (const timer of [reactionTimer, hugTimer, touchTimer, waterTimer]) if (timer.current) clearTimeout(timer.current);
     };
   }, [userId]);
   /** 서버에서 방을 받는다. 끼니를 새로 먹었으면 처음 보는 순간 한마디, 밥이 없어 끼니를 거르고 있으면 한 번 말한다 */
@@ -271,7 +288,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   useEffect(() => { if (phase !== "nap") setNapWoken(false); }, [phase]);
 
   // ---------- 조용한 방의 혼잣말: 깨어 있고 아무 일도 없을 때 가끔 한 줄 ----------
-  const quiet = Boolean(pet) && !asleep && !napping && mood === "idle" && !thinking && !sheet && !talking && touch === null;
+  const quiet = Boolean(pet) && !asleep && !napping && mood === "idle" && !thinking && !sheet && !talking && touch === null && !ask;
   const level = pet?.level ?? 1;
   const energy = pet?.energy ?? 4;
   useEffect(() => {
@@ -331,7 +348,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       return null;
     } finally { lock.current = false; }
   };
-  const gesture = (kind: "tap" | "sprout" | "hug" | "tickle") => {
+  const gesture = (kind: "tap" | "sprout" | "scratch" | "hug" | "tickle") => {
     if (touch === "hide" || touch === "bath" || whileSleeping()) return;
     if (kind === "hug") { haptic([12, 60, 12]); flash("hug", 1800); react("happy", say(low ? LOW_HUG_LINES : HUG_LINES)); void care("hug"); return; }
     if (kind === "tickle") { haptic([6, 40, 6, 40, 6]); flash("tickle", 1400); react("happy", say(TICKLE_LINES)); void care("tickle"); return; }
@@ -346,6 +363,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       return;
     }
     if (kind === "sprout") { haptic(6); flash("sprout", 700); react("pet", say(SPROUT_LINES)); return; }
+    if (kind === "scratch") { haptic(6); react("pet", say(SCRATCH_LINES), "tired"); return; } // 모링의 머리: 눈을 감고 기댄다
     haptic(8); react("pet", petLine(ownerName));
   };
   const endPress = () => { press.current = null; if (hugTimer.current) clearTimeout(hugTimer.current); };
@@ -394,6 +412,114 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     if (lastGlow.current === false && glow) react("happy", low ? LOW_GLOW_LINE : GLOW_LINE);
     lastGlow.current = glow;
   }, [pet, glow, react, low]);
+  // ---------- 방 안의 작은 사건 (docs/MORU_HAPPENINGS.md): 화분 · 물어 온 것 · 날아드는 것 · 먼저 묻는 한마디 ----------
+  const who = userId ?? "guest";
+  const commit = (next: Happenings) => { happenRef.current = next; setHappen(next); saveHappenings(next); };
+  // 처음에 이 기기의 것을 읽고, 날이 바뀌면 오늘 칸(잡은 것·선물·물음)만 비운다
+  useEffect(() => {
+    const next = happenRef.current ? normalizeHappenings(happenRef.current, today) : loadHappenings(today);
+    happenRef.current = next; setHappen(next);
+  }, [today]);
+  const awake = !asleep && !napping;
+  /** 방이 그대로 보이는 때: 시트·판·꾸미기·기다리는 말이 없다 */
+  const still = Boolean(pet) && Boolean(happen) && !thinking && sheet === null && panel === null && !decorating;
+  const banner = (text: string) => setCelebration({ id: Date.now(), food: 0, level: null, text });
+  // 날아드는 것: 방이 그대로 보일 때 가끔 하나. 오늘 다섯 개를 잡았으면 더 오지 않는다
+  const driftsLeft = happen ? canDrift(happen) : false;
+  useEffect(() => {
+    if (!still || drift || !driftsLeft) return;
+    const timer = setTimeout(() => {
+      if (document.hidden) { setDriftTick((t) => t + 1); return; }
+      drifted.current++;
+      setDrift({ id: Date.now(), kind: driftKind(sky), ...driftPath() });
+    }, driftDelay(drifted.current === 0, happeningsQuick()));
+    return () => clearTimeout(timer);
+  }, [still, drift, driftsLeft, driftTick, sky]);
+  // 떨어지는 움직임이 꺼져 있어도(동작 줄이기) 때가 지나면 거둔다
+  const driftId = drift?.id;
+  useEffect(() => {
+    if (!driftId) return;
+    const timer = setTimeout(() => setDrift((d) => (d?.id === driftId ? null : d)), DRIFT_SECONDS * 1000 + 600);
+    return () => clearTimeout(timer);
+  }, [driftId]);
+  const catchIt = () => {
+    const now = happenRef.current;
+    if (!drift || !now) return;
+    const kind = drift.kind;
+    setDrift(null); haptic(8);
+    const next = catchDrift(now, kind);
+    if (next !== now) { commit(next); banner(`주웠어요 · ${keepItem(kind)?.name ?? "작은 것"}`); }
+    if (awake) react("pet", say(DRIFT_LINES[kind] ?? DRIFT_LINES.leaf), "bored"); // 모링은 갸웃하며 본다
+  };
+  // 물어 온 것: 깨어 있는 날마다 하나, 발치에 놓여 있다
+  const giftId = giftOf(who, today, appearance);
+  const giftOut = still && awake && happen !== null && !happen.gift;
+  const takeIt = () => {
+    const now = happenRef.current;
+    if (!now) return;
+    const next = takeGift(now, giftId);
+    if (next === now) return;
+    haptic([10, 40, 10]); commit(next);
+    banner(`받았어요 · ${keepItem(giftId)?.name ?? "작은 것"}`);
+    react("happy", giftId === "clover" ? CLOVER_LINE : giftId === "feather" ? FEATHER_LINE : say(GIFT_LINES));
+  };
+  // 화분: 톡 누르면 하루 한 번 물. 꽃이 피어 있으면 주운 것들을 연다 (거기서 꽃갈피로 간직한다)
+  const pressPlant = () => {
+    const now = happenRef.current;
+    if (!now || watering) return;
+    if (plantStage(now.waters) === 4) { openSheet("keep"); return; }
+    const result = waterPlant(now, today);
+    if (!result.done) { haptic(4); if (awake) react("pet", WATERED_LINE); return; }
+    haptic(10); commit(result.state); setWatering(true);
+    if (waterTimer.current) clearTimeout(waterTimer.current);
+    waterTimer.current = setTimeout(() => {
+      if (!alive.current) return;
+      setWatering(false);
+      if (result.grew) banner(result.stage === 4 ? "화분 · 꽃이 폈어요" : `화분 · ${PLANT_STAGE_NAMES[result.stage]}`);
+      if (awake) react(result.grew ? "happy" : "pet", result.grew ? GROW_LINES[result.stage] : say(WATER_LINES));
+    }, 1500);
+  };
+  const pressBloom = () => {
+    const now = happenRef.current;
+    if (!now) return;
+    const next = pressFlower(now, who, today);
+    if (next === now) return;
+    haptic([10, 40, 10]); commit(next); setSheet(null);
+    banner("꽃갈피 한 장을 간직했어요");
+    if (awake) react("happy", PRESS_LINE);
+  };
+  // 먼저 묻는 한마디: 낮과 저녁에 한 번씩, 방이 조용할 때 친구가 먼저 묻는다. 한 번 뜨면 그때의 물음은 지나간 것이다 (다시 조르지 않는다).
+  // 많이 힘든 신호가 있는 날은 묻지 않고, 가라앉은 날은 조용한 물음만 고른다
+  const calm = still && awake && mood === "idle" && touch === null && !watering;
+  const slot = askSlot(hour);
+  const canBreathe = Boolean(onBreathe);
+  useEffect(() => {
+    if (!calm || ask || crisisDay || !happen || !slot) return;
+    const next = pickAsk(who, today, slot, happen, { stage, canBreathe });
+    if (!next) return;
+    const timer = setTimeout(() => {
+      const now = happenRef.current;
+      if (document.hidden || !now) return;
+      commit(markAsked(now, slot));
+      setMurmur(null); setAsk(next);
+    }, happeningsQuick() ? 2500 : 9000 + Math.random() * 6000);
+    return () => clearTimeout(timer);
+    // commit 은 렌더마다 새로 만들어지지만 하는 일은 같다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calm, ask, crisisDay, happen, slot, who, today, stage, canBreathe]);
+  useEffect(() => {
+    if (!ask) return;
+    if (!calm) { setAsk(null); return; } // 다른 일이 시작되면 물음은 물러난다
+    const timer = setTimeout(() => setAsk(null), ASK_STAY_MS);
+    return () => clearTimeout(timer);
+  }, [ask, calm]);
+  /** 물음에 답했다: 말 걸기 한 번으로 친다 (온기와 오늘의 돌봄) */
+  const answerAsk = (answer: AskAnswer) => {
+    setAsk(null); haptic(8);
+    react(answer.mood, answer.reply, answer.feel ?? null);
+    void care("talk");
+    if (answer.breathe && onBreathe) setTimeout(() => { if (alive.current) onBreathe(); }, 1100);
+  };
   const dust = pet ? dustCount(pet.clean ?? 4) : 0;
   const dustSpots = [...spots.slice(0, dust), ...(poof !== null && !spots.slice(0, dust).includes(poof) ? [poof] : [])]; // 사라지는 중인 먼지도 잠깐 그린다
   const bathHint = !pet ? "" : pet.bathed ? "오늘은 씻었어요" : asleep ? "자는 중이에요" : "목욕 (하루 한 번)";
@@ -406,14 +532,17 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     if (!room || !world) return;
     const fit = () => {
       const bottom = parseFloat(getComputedStyle(world).bottom) || 0;
-      room.style.setProperty("--world-scale", Math.max(room.clientWidth / WORLD_W, (room.clientHeight - bottom) / WORLD_H).toFixed(4));
+      const scale = Math.max(room.clientWidth / WORLD_W, (room.clientHeight - bottom) / WORLD_H);
+      room.style.setProperty("--world-scale", scale.toFixed(4));
+      // 키운 월드가 화면보다 넓으면 양옆이 잘린다: 한쪽에서 잘린 폭(월드 px). 가장자리에 놓이는 화분이 이만큼 안으로 들어온다
+      room.style.setProperty("--world-crop", `${Math.max(0, (WORLD_W - room.clientWidth / scale) / 2).toFixed(1)}px`);
     };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(room);
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden"; // 뒤의 홈이 같이 스크롤되지 않게
-    return () => { observer.disconnect(); document.body.style.overflow = previous; room.style.removeProperty("--world-scale"); };
+    return () => { observer.disconnect(); document.body.style.overflow = previous; room.style.removeProperty("--world-scale"); room.style.removeProperty("--world-crop"); };
   }, [full]);
   // 안드로이드 뒤로 가기는 열린 시트만 닫는다 (저장 중이면 그대로). 마음 기록은 남은 입력을 저장하고 닫는다
   const closeMindRef = useRef<(() => void) | null>(null);
@@ -510,7 +639,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           onPointerDown={(e) => {
             if (e.pointerType === "mouse" && e.button !== 0) return;
             const box = e.currentTarget.getBoundingClientRect();
-            press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, xs: [e.clientX], fired: false, spot: touchSpot((e.clientY - box.top) / box.height, appearance === "moru") };
+            press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, xs: [e.clientX], fired: false, spot: touchSpot((e.clientY - box.top) / box.height, appearance === "moru", appearance === "moring") };
             try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 이미 끝난 포인터 */ }
             if (hugTimer.current) clearTimeout(hugTimer.current);
             hugTimer.current = setTimeout(() => { const p = press.current; if (p && !p.fired) { p.fired = true; gesture("hug"); } }, HUG_MS);
@@ -525,7 +654,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           onPointerUp={(e) => {
             const p = press.current;
             endPress();
-            if (p && !p.fired && Math.hypot(e.clientX - p.x, e.clientY - p.y) <= MOVE_SLOP) gesture(p.spot === "sprout" ? "sprout" : "tap");
+            if (p && !p.fired && Math.hypot(e.clientX - p.x, e.clientY - p.y) <= MOVE_SLOP) gesture(p.spot === "sprout" ? "sprout" : p.spot === "head" ? "scratch" : "tap");
           }}
           onPointerCancel={endPress}
           onClick={(e) => { if (e.detail === 0) gesture("tap"); /* 키보드·보조 기기 */ }}
@@ -533,8 +662,11 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           <MoruCompanion appearance={appearance} mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} stage={stage} talk={thinking ? null : talkFeel} />
           {touch === "bath" && <span className={styles.bubbles} aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>}
         </button>
+        {happen && <MoruPlant state={happen} today={today} who={who} watering={watering} disabled={decorating} onPress={pressPlant} />}
+        {giftOut && <MoruGift id={giftId} friend={petName} onTake={takeIt} />}
         <span className={styles.dusk} data-phase={phase} data-off={nightly && off ? "" : undefined} aria-hidden="true" />
-        {speech && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined} data-murmur={!thinking && mood === "idle" ? "" : undefined}><i aria-hidden="true" />{speech}</div>}
+        {drift && !decorating && <MoruDrift key={drift.id} kind={drift.kind} x={drift.x} sway={drift.sway} onCatch={catchIt} onGone={() => setDrift(null)} />}
+        {speech && !(ask && !thinking) && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined} data-murmur={!thinking && mood === "idle" ? "" : undefined}><i aria-hidden="true" />{speech}</div>}
         </>}
       </div>
       <div className={styles.hud}>
@@ -546,6 +678,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         {pet && <button type="button" className={styles.points} onClick={() => openSheet("homes")} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 이사하기`}>{pet.points ?? 0} P</button>}
         <button type="button" className={styles.hudIcon} aria-label="메뉴" aria-expanded={panel === "menu"} aria-controls={menuId} onClick={() => togglePanel("menu")}><MenuIcon /></button>
       </div>
+      {ask && !thinking && !waiting && <MoruAsk ask={ask} friend={petName} full={full} onAnswer={answerAsk} />}
       {/* ☰ 메뉴: 설정과 드물게 쓰는 것들. 바깥을 누르거나 뒤로 가기로 닫힌다 */}
       {panel !== null && <button type="button" className={styles.panelScrim} aria-label="닫기" tabIndex={-1} onClick={() => setPanel(null)} />}
       {panel === "menu" && <div className={styles.menu} id={menuId} role="menu" aria-label="메뉴">
@@ -555,6 +688,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         <button type="button" role="menuitemcheckbox" aria-checked={rainOn} onClick={() => { setPanel(null); toggleRain(); }}><SoundIcon on={rainOn} /><span>{rainOn ? "창밖 소리 끄기" : "창밖 소리 켜기"}</span></button>
         <button type="button" role="menuitemcheckbox" aria-checked={moodOn} onClick={() => { setPanel(null); toggleMood(); }}><MirrorIcon /><span>{moodOn ? "마음 닮기 끄기" : "마음 닮기 켜기"}</span></button>
         {pet?.weatherSeen && <button type="button" role="menuitem" onClick={() => { setPanel(null); openSheet("book"); }}><IconBook /><span>날씨 도감</span></button>}
+        <button type="button" role="menuitem" disabled={!happen} onClick={() => { setPanel(null); openSheet("keep"); }}><JarIcon /><span>주운 것들</span></button>
         <button type="button" role="menuitem" onClick={() => { setPanel(null); openSheet("guide"); }}><GuideIcon /><span>돌봄 안내</span></button>
       </div>}
       {meters.length > 0 && <div className={styles.meters} role="group" aria-label={`${petName}의 상태`}>
@@ -598,6 +732,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     </div>
     <DecorBox open={sheet === "decor"} pet={pet} placed={placed} busy={busy} error={error} onPick={(item, kind) => void pickDecor(item, kind)} onClose={() => { if (!busy) setSheet(null); }} />
     <MoruWeatherBook open={sheet === "book"} onClose={() => setSheet(null)} seen={pet?.weatherSeen ?? []} />
+    {happen && <FoundThingsSheet open={sheet === "keep"} onClose={() => setSheet(null)} friend={petName} state={happen} today={today} who={who} onPress={pressBloom} />}
     <MoruMindSheet open={sheet === "mind"} name={petName} closeRef={closeMindRef} onClose={(changed) => void closeMind(changed)} />
     <MoruMoodSheet open={sheet === "mood"} onClose={() => setSheet(null)} name={petName} appearance={appearance} level={pet?.level} stage={stage} reading={reading} crisis={crisisDay} journal={journal}
       onBreathe={onBreathe} onWrite={ready ? () => { haptic(12); setSheet("mind"); } : undefined} />
@@ -646,7 +781,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     <Sheet open={sheet === "guide"} title={`${petName}와 천천히, 함께`} onClose={() => setSheet(null)} className={styles.handSheet}>
       <div className={styles.guide}>
         <MoruSprite mood="happy" />
-        <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />간식·목욕은 하루 한 번 · 길게 누르면 안아 주기, 문지르면 간질이기<br />먼지는 톡 눌러 치우고, 밤에는 불을 꺼서 재워 주세요.<br />온기·말끔함·기운이 낮아도 잃는 건 없어요. 쉬어 가도 괜찮아요.<br />{petName}의 기분은 내 기록을 닮아요 (메뉴에서 끌 수 있어요). 하트는 {petName}의 것이에요.</p>
+        <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />간식·목욕은 하루 한 번 · 길게 누르면 안아 주기, 문지르면 간질이기<br />먼지는 톡 눌러 치우고, 밤에는 불을 꺼서 재워 주세요.<br />화분은 하루 한 번 물을 주면 일곱 번 만에 꽃이 피어요. 방에 날아드는 것과 발치에 놓인 것은 톡 눌러 주워요.<br />온기·말끔함·기운이 낮아도 잃는 건 없어요. 쉬어 가도 괜찮아요.<br />{petName}의 기분은 내 기록을 닮아요 (메뉴에서 끌 수 있어요). 하트는 {petName}의 것이에요.</p>
         <Link href="/memo">기록장 ↗</Link>
       </div>
     </Sheet>
