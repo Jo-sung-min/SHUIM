@@ -348,18 +348,11 @@
 .handSheet .companionChoices button{border:2.5px solid var(--hd-ink);border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background:#fffaf0;color:var(--hd-ink)}
 .handSheet .companionChoices button[aria-pressed="true"]{border-color:var(--hd-ink);background:#ece2fb;box-shadow:inset 0 0 0 2px var(--hd-accent-lip)}
 .handSheet .error{border:2px solid var(--danger);border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:#fbe3df}
-/* ---------- 모링 (도트 몸통 + 도트 표정): 갸웃·힐끗·폭신 ----------
-   몸통 그림은 부드럽게 줄여 그리고(도트 결은 그림에 있다), 표정 도트는 칸이 갈라지지 않게 crispEdges.
-   평소에는 7초마다 천천히 갸웃하고, 9초마다 슬픈 눈이 옆을 힐끗 본다. 잘 때·먹을 때는 갸웃하지 않는다.
-   안기면 솜털이 부풀었다 가라앉는다 (추울수록 동그래지는 새) */
-.sprite[data-moring] image{image-rendering:auto}
-.moringSway{transform-origin:64px 112px;animation:moringSway 7s ease-in-out infinite}
-.sprite[data-mood="sleep"] .moringSway,.sprite[data-mood="eat"] .moringSway{animation:none}
-.moringGlance{animation:moringGlance 9s steps(1,end) infinite}
-.sprite[data-moring] .heart{animation-timing-function:ease-in-out}
-.sprite[data-moring][data-mood="sleep"] .body{transform-origin:64px 112px}
+/* ---------- 모링 (이미지 에셋 4프레임 움직임) ----------
+   표정마다 4프레임 가로 띠를 한 칸씩 넘겨 반복한다 (MoringSprite 의 --loop-w 만큼, steps(4)).
+   안기면 솜털이 부풀었다 가라앉는다 (추울수록 동그래지는 새). 동작 줄이기에서는 첫 프레임에 멈춘다 */
+.moringLoop{animation:moringLoop 3s steps(4) infinite}
+@keyframes moringLoop{to{transform:translateX(var(--loop-w))}}
 .petButton[data-touch="hug"] .sprite[data-moring]{animation:moringPuff 1.8s ease both}
-@keyframes moringSway{0%,100%{transform:rotate(0)}30%{transform:rotate(-2.2deg)}55%{transform:rotate(0)}78%{transform:rotate(1.6deg)}}
-@keyframes moringGlance{0%,62%,100%{transform:translate(0,0)}64%,74%{transform:translate(-.75px,0)}76%,84%{transform:translate(.75px,0)}}
 @keyframes moringPuff{0%,100%{transform:scale(1)}20%{transform:scale(1.08,1.05)}45%{transform:scale(1.04,1.02)}70%{transform:scale(1.06,1.03)}}
-@media(prefers-reduced-motion:reduce){.moringSway,.moringGlance{animation:none}}
+@media(prefers-reduced-motion:reduce){.moringLoop{animation:none}}
