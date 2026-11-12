@@ -22,7 +22,7 @@
 | 커뮤니티 약관 동의 이력 / 앱 활동·계정 관리 관련 정보 | `POST /api/community/consent`가 사용자/익명 ID·동의 버전·동의 시각을 DB에 저장. 계정 삭제 시 연결 이력 삭제 | 계정 관리·안전/보안. UGC 사용에 필요 | `CommunityConsentService.java`, `V12`, `frontend/lib/consent.ts` |
 | 가입 정책 확인·AI 동의 상태 / 앱 활동·계정 관리 관련 정보 | `GET/POST /api/auth/consent`와 가입 처리에서 계정/익명 사용자 ID·정책 버전·AI 동의 여부·동의/수정 시각을 DB에 저장. 현재 버전 `2026-10-21`. `/info/ai`에서 AI 동의 철회 가능, 계정 삭제 시 연결 상태 삭제 | 가입 정책 확인은 필수, AI 동의는 선택이며 가입 화면에서 미체크. 서버가 유효한 AI 동의 없이 AI 요청을 실행하지 않음 | `auth/PolicyConsentService.java`, `PolicyConsentController.java`, `V13__user_policy_consents.sql`, `frontend/lib/safety.ts`, `frontend/app/info/ai/page.tsx` |
 | IP·접속/오류 로그·진단·접근 이력 | 호스팅·프록시·CDN·DB·AI 업체 설정에 따라 기록될 수 있음. 소스만으로 실제 항목 확정 불가 | 운영자 확인. 광고/분석 목적이라고 추정하지 않음 | 배포 공급자 설정·로그 보관 정책 확인 필요 |
-| 모의 모금/분배 | 원화 숫자·후원 메시지 시연. 실제 카드·계좌·결제 연동 없음 | 출시 시 비활성화 여부 확인. 활성화되면 데이터 항목과 스토어 설명 재검토 | `frontend/app/fund/page.tsx`, `CommunityService.java` |
+| 빛(가상 재화) 주고받기 | 계정 ID 기준 빛 잔액·원장, 누가 어느 광장 글에 몇 빛을 건넸는지(공개 목록에 닉네임·수량 표시). 돈이 아니며 카드·계좌·결제 연동 없음, 현금·상품으로 교환 불가. 계정 삭제 시 지갑·원장 삭제, 건넨 기록은 준 사람 정보 없이 남음 | 앱 활동(인앱 상호작용)으로 분류. 유료 판매를 붙이면 결제 항목과 스토어 설명 재검토 | `frontend/app/fund/page.tsx`, `frontend/app/ranking/page.tsx`, `light/LightService.java`, `V43__light.sql` |
 
 경로 약어: Java 파일은 `backend/src/main/java/kr/co/shuim/` 아래, `V*`는 `backend/src/main/resources/db/migration/` 아래입니다. 소스에 없는 운영 SDK/분석·광고·오류 수집 서비스가 추가되면 표를 다시 작성합니다.
 

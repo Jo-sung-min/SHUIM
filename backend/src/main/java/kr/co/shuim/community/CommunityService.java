@@ -9,6 +9,7 @@ import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.community.Model.*;
 import kr.co.shuim.config.ApiException;
+import kr.co.shuim.light.LightService;
 import kr.co.shuim.profile.BadgeService;
 import kr.co.shuim.points.PointsService;
 import kr.co.shuim.points.PointsPolicy;
@@ -31,6 +32,8 @@ import java.util.regex.Pattern;
 public class CommunityService {
     private static final List<String> SAMPLE_USER_IDS = List.of("u1", "u2", "u3", "u4", "u5", "u6", "u7");
     private static final Pattern URL = Pattern.compile("^(/|https?://)");
+    /** 화면에 내려보내는 "최근 오간 빛" 개수 */
+    static final int RECENT_GIFTS = 30;
 
     private final JdbcClient jdbc;
     private final ObjectMapper json;
@@ -39,10 +42,11 @@ public class CommunityService {
     private final BlockService blocks;
     private final BadgeService badges;
     private final PointsService points;
+    private final LightService light;
 
     @Autowired
     public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env,
-                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks, BadgeService badges, PointsService points) {
+                            @Value("${app.community.simulate:true}") boolean simulate, BlockService blocks, BadgeService badges, PointsService points, LightService light) {
         this.jdbc = jdbc;
         this.json = json;
         this.s3 = s3;
@@ -50,6 +54,11 @@ public class CommunityService {
         this.blocks = blocks;
         this.badges = badges;
         this.points = points;
+        this.light = light;
+    }
+
+    public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env, boolean simulate, BlockService blocks, BadgeService badges, PointsService points) {
+        this(jdbc, json, s3, env, simulate, blocks, badges, points, new LightService(jdbc));
     }
 
     public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env, boolean simulate, BlockService blocks, BadgeService badges) {
@@ -105,11 +114,17 @@ public class CommunityService {
         User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null, null, false));
         List<User> users = new ArrayList<>(allUsers.stream().filter(u -> !u.id().equals(me.id())).toList());
 
+        // 빛: 집계에는 전부 쓰고, 화면에는 forViewer 가 최근 것만 추려 내려보낸다
+        List<Gift> gifts = jdbc.sql("SELECT id::text AS id, from_user, to_user, post_id, amount, created_at FROM light_gifts WHERE post_id IS NOT NULL ORDER BY created_at DESC, id")
+            .query((rs, i) -> new Gift(rs.getString("id"), rs.getString("from_user"), rs.getString("to_user"), rs.getString("post_id"), rs.getInt("amount"), rs.getLong("created_at"))).list();
+        Map<String, Integer> lightByPost = CommunityLogic.lightByPost(gifts);
+
         List<Post> posts = jdbc.sql("SELECT p.*, c.name AS circle_name, c.slug AS circle_slug, a.comment_id AS accepted_comment_id FROM shout_posts p LEFT JOIN communities c ON c.id = p.community_id LEFT JOIN comment_acceptances a ON a.post_id=p.id")
             .query((rs, i) -> new Post(
             rs.getString("id"), rs.getString("cat"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "post:" + rs.getString("id")), reportsOf(reportMap, "post:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
-            Db.textArray(rs, "images"), rs.getString("community_id"), rs.getObject("post_no", Integer.class), rs.getString("circle_name"), rs.getString("circle_slug"), rs.getString("accepted_comment_id"))).list();
+            Db.textArray(rs, "images"), rs.getString("community_id"), rs.getObject("post_no", Integer.class), rs.getString("circle_name"), rs.getString("circle_slug"), rs.getString("accepted_comment_id"),
+            lightByPost.getOrDefault(rs.getString("id"), 0))).list();
         List<Comment> comments = new ArrayList<>(jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
             rs.getString("id"), rs.getString("post_id"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
@@ -130,16 +145,15 @@ public class CommunityService {
         jdbc.sql("SELECT user_id, bio, since FROM creators").query(rs -> {
             creators.put(rs.getString("user_id"), new Creator(rs.getString("bio"), listOf(followerMap, rs.getString("user_id")), Db.msReq(rs, "since")));
         });
-        List<Donation> donations = jdbc.sql("SELECT * FROM donations ORDER BY created_at DESC").query((rs, i) ->
-            new Donation(rs.getString("id"), rs.getString("user_id"), rs.getInt("amount"), rs.getString("message"), Db.msReq(rs, "created_at"))).list();
         Map<String, WeeklyBatch> weekly = new LinkedHashMap<>();
         jdbc.sql("SELECT * FROM weekly_batches").query(rs -> {
             String week = Db.date(rs, "week");
+            // 원화 모의 모금 값(fund_*)은 더 읽지 않는다
             weekly.put(week, new WeeklyBatch(week, Db.msReq(rs, "computed_at"), rs.getBoolean("finalized"), parseRows(rs.getString("rows")),
-                new Fund(rs.getLong("fund_total"), rs.getInt("fund_count"), rs.getInt("fund_donors"))));
+                new Fund(0, 0, 0), new Light(rs.getLong("light_total"), rs.getInt("light_count"), rs.getInt("light_givers"))));
         });
 
-        Store store = new Store(meUser, users, posts, comments, feed, creators, following, donations, weekly);
+        Store store = new Store(meUser, users, posts, comments, feed, creators, following, gifts, weekly);
 
         // 프로토타입: 샘플 유저의 자동 답글
         if (simulate) {
@@ -154,7 +168,7 @@ public class CommunityService {
         }
 
         // 주간 집계 (지난 주 확정, 이번 주 잠정). 소로우 사연은 보낸 사람이 드러나면 안 되니 광장의 외침만 센다
-        Store plaza = new Store(meUser, users, posts.stream().filter(p -> !p.inCircle()).toList(), comments, feed, creators, following, donations, weekly);
+        Store plaza = new Store(meUser, users, posts.stream().filter(p -> !p.inCircle()).toList(), comments, feed, creators, following, gifts, weekly);
         for (CommunityLogic.WeekTodo w : CommunityLogic.weeksNeedingCompute(plaza)) {
             WeeklyBatch b = CommunityLogic.computeWeekly(plaza, w.week(), w.finalized());
             upsertWeekly(b);
@@ -200,12 +214,19 @@ public class CommunityService {
         store.posts().stream().filter(p -> !p.inCircle() && !excluded.contains(p.authorId()) && CommunityLogic.isVisible(store, p) && !CommunityLogic.isFlagged(p))
             .forEach(p -> rankablePostIds.add(p.id()));
         store.weekly().forEach((key, w) -> weekly.put(key, new WeeklyBatch(w.week(), w.computedAt(), w.finalized(),
-            w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund())));
+            w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund(), w.light())));
+        // 최근 오간 빛: 이 사람이 볼 수 있는 광장 글에 건넨 것만, 차단한·차단된 사람과 정지된 계정은 빼고
+        Set<String> plazaPostIds = new HashSet<>();
+        posts.stream().filter(p -> !p.inCircle()).forEach(p -> plazaPostIds.add(p.id()));
+        List<Gift> gifts = store.gifts().stream()
+            .filter(g -> g.by() != null && g.postId() != null && plazaPostIds.contains(g.postId()) && !excluded.contains(g.by()) && !excluded.contains(g.to())
+                && !CommunityLogic.userById(store, g.by()).blocked())
+            .sorted(Comparator.comparingLong(Gift::at).reversed()).limit(RECENT_GIFTS).toList();
         return new Store(store.me(), store.users().stream().filter(u -> !excluded.contains(u.id())).toList(), posts,
             store.comments().stream().filter(c -> !excluded.contains(c.authorId()) && visiblePostIds.contains(c.postId()) && (admin || CommunityLogic.isVisible(store, c)))
                 .map(c -> new Comment(c.id(), c.postId(), c.text(), c.authorId(), c.createdAt(), c.cheers(), publicReports(c, viewer, admin), c.hidden(), c.reviewedAt(), c.parentId())).toList(),
             feed, creators, store.following().stream().filter(id -> !excluded.contains(id)).toList(),
-            store.donations().stream().filter(d -> !excluded.contains(d.by())).toList(), weekly);
+            gifts, weekly);
     }
 
     private static List<Report> publicReports(Item item, String viewer, boolean admin) {
@@ -262,13 +283,13 @@ public class CommunityService {
     private void upsertWeekly(WeeklyBatch b) {
         try {
             jdbc.sql("""
-                INSERT INTO weekly_batches (week, computed_at, finalized, rows, fund_total, fund_count, fund_donors)
+                INSERT INTO weekly_batches (week, computed_at, finalized, rows, light_total, light_count, light_givers)
                 VALUES (?::date, now(), ?, ?::jsonb, ?, ?, ?)
                 ON CONFLICT (week) DO UPDATE SET computed_at = now(), finalized = EXCLUDED.finalized, rows = EXCLUDED.rows,
-                  fund_total = EXCLUDED.fund_total, fund_count = EXCLUDED.fund_count, fund_donors = EXCLUDED.fund_donors
+                  light_total = EXCLUDED.light_total, light_count = EXCLUDED.light_count, light_givers = EXCLUDED.light_givers
                 """)
                 .param(b.week()).param(b.finalized()).param(json.writeValueAsString(b.rows()))
-                .param(b.fund().total()).param(b.fund().count()).param(b.fund().donors()).update();
+                .param(b.light().total()).param(b.light().count()).param(b.light().givers()).update();
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
@@ -542,35 +563,29 @@ public class CommunityService {
         return loadStore(me);
     }
 
+    /**
+     * 광장 글에 빛 주기. 받는 사람·금액·잔액·하루 한도는 LightService 가 정하고 옮긴다.
+     * 같은 트랜잭션에서 이번 주 잠정 순위를 다시 세어, 준 사람 화면에 바로 반영된다.
+     */
     @Transactional
-    public Store donate(DbUser me, Object amount, Object message) {
+    public Store giveLight(DbUser me, String postId, Object amount, Object requestId) {
         Db.lockCommunity(jdbc);
-        long amt;
-        if (amount instanceof Number n) amt = (long) Math.floor(n.doubleValue());
-        else {
-            try { amt = (long) Math.floor(Double.parseDouble(String.valueOf(amount))); } catch (NumberFormatException e) { amt = -1; }
-        }
-        if (amt < 100 || amt > 1_000_000) throw ApiException.badRequest("금액은 100원~1,000,000원이에요");
-        String msg = str(message, 60);
-        jdbc.sql("INSERT INTO donations (id, user_id, amount, message) VALUES (?, ?, ?, ?)").param(Ids.uid()).param(me.id()).param((int) amt).param(msg).update();
-        // 이번 주 잠정 집계를 바로 갱신
-        Store store = loadUnfilteredStore(me);
-        String week = store.weekly().keySet().stream().max(Comparator.naturalOrder()).orElse(null);
-        if (week != null && !store.weekly().get(week).finalized()) {
-            WeeklyBatch cur = CommunityLogic.computeWeekly(store, week, false);
-            upsertWeekly(cur);
-            store.weekly().put(week, cur);
-        }
-        return forViewer(store, me);
+        light.give(me, postId, amount, requestId);
+        return withFreshCurrentWeek(me);
     }
 
     @Transactional
     public Store refreshCurrentWeek(DbUser me) {
         Db.lockCommunity(jdbc);
+        return withFreshCurrentWeek(me);
+    }
+
+    /** 이번 주 잠정 집계를 5분을 기다리지 않고 바로 다시 센 상태 */
+    private Store withFreshCurrentWeek(DbUser me) {
         Store store = loadUnfilteredStore(me);
         String week = store.weekly().keySet().stream().max(Comparator.naturalOrder()).orElse(null);
         if (week != null && !store.weekly().get(week).finalized()) {
-            WeeklyBatch b = CommunityLogic.computeWeekly(store, week, false);
+            WeeklyBatch b = CommunityLogic.computeWeekly(store, week, false); // 소로우 사연은 computeWeekly 가 건너뛴다
             upsertWeekly(b);
             store.weekly().put(week, b);
         }

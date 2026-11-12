@@ -126,6 +126,12 @@ export const IconSparkle = (p: P) => (
     <path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7Z" />
   </svg>
 );
+/** 빛: 네 갈래로 번지는 작은 빛 하나 (주고받는 가상 재화) */
+export const IconLight = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3c.7 4.7 3.5 7.6 9 9-5.5 1.4-8.3 4.3-9 9-.7-4.7-3.5-7.6-9-9 5.5-1.4 8.3-4.3 9-9Z" />
+  </svg>
+);
 export const IconRefresh = (p: P) => (
   <svg {...base(p)}>
     <path d="M20 12a8 8 0 1 1-2.3-5.7" />

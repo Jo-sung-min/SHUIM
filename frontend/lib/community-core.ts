@@ -1,5 +1,5 @@
 /**
- * 외침·위로 피드·랭킹·모금의 타입과 순수 계산 로직.
+ * 외침·위로 피드·랭킹·빛의 타입과 순수 계산 로직.
  * 서버(API 라우트)와 클라이언트가 함께 쓰므로 브라우저 전용 코드("use client", localStorage)는 두지 않는다.
  */
 
@@ -101,6 +101,8 @@ export interface Post extends Base {
   /** 소로우 이름·주소 (화면 표시용) */
   circle?: string;
   circleSlug?: string;
+  /** 이 글이 받은 빛 합계 */
+  light?: number;
 }
 
 export const SHOUT_MAX_IMAGES = 4;
@@ -142,11 +144,13 @@ export const FEED_MAX_PAGES = 10;
 export const pagesOf = (f: FeedPost): FeedPage[] =>
   f.pages?.length ? f.pages : [{ image: f.image, title: f.title, text: f.text }];
 
-export interface Donation {
+/** 광장 글에 건넨 빛 한 건 (by = 준 사람, to = 글쓴이) */
+export interface Gift {
   id: string;
   by: string;
+  to: string;
+  postId: string;
   amount: number;
-  message?: string;
   at: number;
 }
 
@@ -158,8 +162,8 @@ export interface RankRow {
   posts: number;
   topPostId: string;
   topPostText: string;
-  share: number;
-  payout: number;
+  /** 그 주 불행광장 글이 받은 빛 (순위 기준). 빛이 생기기 전에 확정된 주에는 없다 */
+  light?: number;
 }
 
 export interface WeeklyBatch {
@@ -167,7 +171,8 @@ export interface WeeklyBatch {
   computedAt: number;
   finalized: boolean;
   rows: RankRow[];
-  fund: { total: number; count: number; donors: number };
+  /** 그 주 불행광장 글이 받은 빛: 합계, 건수, 준 사람 수 */
+  light?: { total: number; count: number; givers: number };
 }
 
 export interface CommunityStore {
@@ -178,7 +183,8 @@ export interface CommunityStore {
   feed: FeedPost[];
   creators: Record<string, Creator>;
   following: string[];
-  donations: Donation[];
+  /** 최근 오간 빛 (볼 수 있는 광장 글의 것만, 최신순) */
+  gifts: Gift[];
   weekly: Record<string, WeeklyBatch>;
 }
 
@@ -228,7 +234,6 @@ export const blockedUsers = (s: CommunityStore) => [s.me, ...s.users].filter(isB
 
 /* ---------- 주간 집계 ---------- */
 
-export const RANK_SHARES = [25, 18, 14, 11, 9, 7, 6, 4, 3, 3];
 export const PROVISIONAL_TTL = 5 * 60 * 1000;
 
 export function weekKeyOf(ts: number): string {
@@ -245,43 +250,38 @@ export function weekLabel(week: string): string {
   return `${m1}/${d1} ~ ${m2}/${d2}`;
 }
 
+/** 그 주에 쓴 불행광장 글이 받은 빛을 사람별로 더한 순위. 빛이 같으면 힘내요, 그래도 같으면 먼저 쓴 사람 (서버 CommunityLogic 과 같다) */
 export function computeWeekly(s: CommunityStore, week: string, finalized: boolean): WeeklyBatch {
   const inWeek = (ts: number) => weekKeyOf(ts) === week;
-  const posts = s.posts.filter((p) => p.cat === "misfortune" && inWeek(p.createdAt) && isVisible(s, p));
-  const byUser = new Map<string, { cheers: number; posts: number; top: Post; first: number }>();
+  const posts = s.posts.filter((p) => !p.communityId && p.cat === "misfortune" && inWeek(p.createdAt) && isVisible(s, p));
+  const byUser = new Map<string, { light: number; cheers: number; posts: number; top: Post; first: number }>();
   for (const p of posts) {
     const cur = byUser.get(p.authorId);
     const n = p.cheers.length;
-    if (!cur) byUser.set(p.authorId, { cheers: n, posts: 1, top: p, first: p.createdAt });
+    const light = lightOf(p);
+    if (!cur) byUser.set(p.authorId, { light, cheers: n, posts: 1, top: p, first: p.createdAt });
     else {
+      if (light !== lightOf(cur.top) ? light > lightOf(cur.top) : n > cur.top.cheers.length) cur.top = p;
+      cur.light += light;
       cur.cheers += n;
       cur.posts += 1;
-      if (n > cur.top.cheers.length) cur.top = p;
       cur.first = Math.min(cur.first, p.createdAt);
     }
   }
-  const donations = (s.donations ?? []).filter((d) => inWeek(d.at));
-  const total = donations.reduce((n, d) => n + d.amount, 0);
-  const sorted = [...byUser.entries()].sort((a, b) => b[1].cheers - a[1].cheers || a[1].first - b[1].first).slice(0, 20);
-  const top = sorted.slice(0, 10);
-  const shareSum = RANK_SHARES.slice(0, top.length).reduce((a, b) => a + b, 0) || 1;
-  let distributed = 0;
-  const rows: RankRow[] = sorted.map(([userId, v], i) => {
-    const share = i < 10 ? Math.round((RANK_SHARES[i] / shareSum) * 1000) / 10 : 0;
-    const payout = i < 10 ? Math.floor((total * RANK_SHARES[i]) / shareSum) : 0;
-    distributed += payout;
-    return { rank: i + 1, userId, nick: userById(s, userId).nick, cheers: v.cheers, posts: v.posts, topPostId: v.top.id, topPostText: v.top.text.slice(0, 80), share, payout };
-  });
-  if (rows[0] && total > distributed) rows[0].payout += total - distributed;
-  return { week, computedAt: Date.now(), finalized, rows, fund: { total, count: donations.length, donors: new Set(donations.map((d) => d.by)).size } };
+  const sorted = [...byUser.entries()].sort((a, b) => b[1].light - a[1].light || b[1].cheers - a[1].cheers || a[1].first - b[1].first).slice(0, 20);
+  const rows: RankRow[] = sorted.map(([userId, v], i) => (
+    { rank: i + 1, userId, nick: userById(s, userId).nick, cheers: v.cheers, posts: v.posts, topPostId: v.top.id, topPostText: v.top.text.slice(0, 80), light: v.light }
+  ));
+  const ids = new Set(posts.map((p) => p.id));
+  const gifts = (s.gifts ?? []).filter((g) => ids.has(g.postId));
+  return { week, computedAt: Date.now(), finalized, rows, light: { total: gifts.reduce((n, g) => n + g.amount, 0), count: gifts.length, givers: new Set(gifts.map((g) => g.by)).size } };
 }
 
 /** 어떤 주를 (다시) 계산해야 하는지: [week, finalized] 목록 */
 export function weeksNeedingCompute(s: CommunityStore): { week: string; finalized: boolean }[] {
   const cur = currentWeekKey();
   const weeks = new Set<string>([cur]);
-  for (const p of s.posts) if (p.cat === "misfortune") weeks.add(weekKeyOf(p.createdAt));
-  for (const d of s.donations ?? []) weeks.add(weekKeyOf(d.at));
+  for (const p of s.posts) if (!p.communityId && p.cat === "misfortune") weeks.add(weekKeyOf(p.createdAt));
   const out: { week: string; finalized: boolean }[] = [];
   for (const w of weeks) {
     const b = s.weekly?.[w];
@@ -296,14 +296,18 @@ export function weeksNeedingCompute(s: CommunityStore): { week: string; finalize
 
 export const weeklyOf = (s: CommunityStore, week: string): WeeklyBatch | undefined => s.weekly?.[week];
 export const pastWeeks = (s: CommunityStore) => Object.keys(s.weekly ?? {}).filter((w) => w < currentWeekKey()).sort().reverse();
-export const DONATION_PRESETS = [1000, 3000, 5000, 10000];
-export function myPayouts(s: CommunityStore): { week: string; rank: number; amount: number }[] {
-  return Object.values(s.weekly ?? {})
-    .filter((b) => b.finalized)
-    .flatMap((b) => b.rows.filter((r) => r.userId === s.me.id && r.payout > 0).map((r) => ({ week: b.week, rank: r.rank, amount: r.payout })))
-    .sort((a, b) => (a.week < b.week ? 1 : -1));
+
+/* ---------- 빛 ---------- */
+
+/** 한 번에 건넬 수 있는 빛 (서버는 1~10 사이 정수만 받는다) */
+export const LIGHT_CHOICES = [1, 3, 5, 10];
+export const lightOf = (x: { light?: number }) => x.light ?? 0;
+export const fmtLight = (n: number) => `${n.toLocaleString("ko-KR")}빛`;
+/** 이 글에 내가 빛을 줄 수 있는지: 광장 글, 가입한 다른 사람의 글, 가려지지 않은 글 (잔액·하루 한도는 서버가 본다) */
+export function canGiveLight(s: CommunityStore, post: Post | undefined): boolean {
+  if (!post || post.communityId || post.authorId === s.me.id) return false;
+  return userById(s, post.authorId).registered === true && isVisible(s, post) && !isFlagged(post);
 }
-export const fmtWon = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 
 /* ---------- 알림 ---------- */
 

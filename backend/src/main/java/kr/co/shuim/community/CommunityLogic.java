@@ -30,7 +30,6 @@ public final class CommunityLogic {
         }
         return new ArrayList<>(out);
     }
-    public static final int[] RANK_SHARES = {25, 18, 14, 11, 9, 7, 6, 4, 3, 3};
     public static final long PROVISIONAL_TTL = 5 * 60 * 1000L;
 
     /* ---------- 닉네임 ---------- */
@@ -67,43 +66,58 @@ public final class CommunityLogic {
 
     /* ---------- 주간 집계 ---------- */
 
-    private record Agg(int cheers, int posts, Post top, long first) {}
+    private record Agg(int light, int cheers, int posts, Post top, long first) {}
 
+    /** 글마다 받은 빛 합계 (글이 지워진 선물은 빼고) */
+    public static Map<String, Integer> lightByPost(List<Gift> gifts) {
+        Map<String, Integer> out = new HashMap<>();
+        for (Gift g : gifts) if (g.postId() != null) out.merge(g.postId(), g.amount(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * 그 주에 쓴 불행광장 글이 받은 빛을 사람별로 더해 순위를 매긴다. 빛이 같으면 힘내요, 그래도 같으면 먼저 쓴 사람.
+     * 돈을 모아 순위대로 나누던 모의 모금은 없어졌고, 빛은 준 순간 글쓴이 지갑으로 간다. 여기서는 세기만 한다.
+     */
     public static WeeklyBatch computeWeekly(Store s, String week, boolean finalized) {
         Map<String, Agg> byUser = new LinkedHashMap<>();
+        Set<String> weekPosts = new HashSet<>();
         for (Post p : s.posts()) {
             if (p.inCircle() || !"misfortune".equals(p.cat()) || !week.equals(Dates.weekKeyOf(p.createdAt())) || !isVisible(s, p)) continue;
+            weekPosts.add(p.id());
             int n = p.cheers().size();
             Agg cur = byUser.get(p.authorId());
-            if (cur == null) byUser.put(p.authorId(), new Agg(n, 1, p, p.createdAt()));
-            else byUser.put(p.authorId(), new Agg(cur.cheers + n, cur.posts + 1, n > cur.top.cheers().size() ? p : cur.top, Math.min(cur.first, p.createdAt())));
+            if (cur == null) byUser.put(p.authorId(), new Agg(p.light(), n, 1, p, p.createdAt()));
+            else {
+                boolean better = p.light() != cur.top.light() ? p.light() > cur.top.light() : n > cur.top.cheers().size();
+                byUser.put(p.authorId(), new Agg(cur.light + p.light(), cur.cheers + n, cur.posts + 1, better ? p : cur.top, Math.min(cur.first, p.createdAt())));
+            }
         }
-        List<Donation> donations = s.donations().stream().filter(d -> week.equals(Dates.weekKeyOf(d.at()))).toList();
-        long total = donations.stream().mapToLong(Donation::amount).sum();
         List<Map.Entry<String, Agg>> sorted = new ArrayList<>(byUser.entrySet());
-        sorted.sort((a, b) -> b.getValue().cheers != a.getValue().cheers ? Integer.compare(b.getValue().cheers, a.getValue().cheers) : Long.compare(a.getValue().first, b.getValue().first));
+        sorted.sort((a, b) -> {
+            Agg x = a.getValue(), y = b.getValue();
+            if (x.light != y.light) return Integer.compare(y.light, x.light);
+            if (x.cheers != y.cheers) return Integer.compare(y.cheers, x.cheers);
+            return Long.compare(x.first, y.first);
+        });
         if (sorted.size() > 20) sorted = sorted.subList(0, 20);
-        int topN = Math.min(10, sorted.size());
-        int shareSum = 0;
-        for (int i = 0; i < topN; i++) shareSum += RANK_SHARES[i];
-        if (shareSum == 0) shareSum = 1;
-        long distributed = 0;
         List<RankRow> rows = new ArrayList<>();
         for (int i = 0; i < sorted.size(); i++) {
             var e = sorted.get(i);
             Agg v = e.getValue();
-            double share = i < 10 ? Math.round((double) RANK_SHARES[i] / shareSum * 1000) / 10.0 : 0;
-            long payout = i < 10 ? Math.floorDiv(total * RANK_SHARES[i], shareSum) : 0;
-            distributed += payout;
             String topText = v.top.text().length() > 80 ? v.top.text().substring(0, 80) : v.top.text();
-            rows.add(new RankRow(i + 1, e.getKey(), userById(s, e.getKey()).nick(), v.cheers, v.posts, v.top.id(), topText, share, payout));
+            rows.add(new RankRow(i + 1, e.getKey(), userById(s, e.getKey()).nick(), v.cheers, v.posts, v.top.id(), topText, 0, 0, v.light));
         }
-        if (!rows.isEmpty() && total > distributed) {
-            RankRow r0 = rows.get(0);
-            rows.set(0, new RankRow(r0.rank(), r0.userId(), r0.nick(), r0.cheers(), r0.posts(), r0.topPostId(), r0.topPostText(), r0.share(), r0.payout() + (total - distributed)));
+        long total = 0;
+        int count = 0;
+        Set<String> givers = new HashSet<>();
+        for (Gift g : s.gifts()) {
+            if (g.postId() == null || !weekPosts.contains(g.postId())) continue;
+            total += g.amount();
+            count++;
+            if (g.by() != null) givers.add(g.by());
         }
-        int donors = (int) donations.stream().map(Donation::by).distinct().count();
-        return new WeeklyBatch(week, System.currentTimeMillis(), finalized, rows, new Fund(total, donations.size(), donors));
+        return new WeeklyBatch(week, System.currentTimeMillis(), finalized, rows, new Fund(0, 0, 0), new Light(total, count, givers.size()));
     }
 
     public record WeekTodo(String week, boolean finalized) {}
@@ -114,7 +128,6 @@ public final class CommunityLogic {
         Set<String> weeks = new LinkedHashSet<>();
         weeks.add(cur);
         for (Post p : s.posts()) if (!p.inCircle() && "misfortune".equals(p.cat())) weeks.add(Dates.weekKeyOf(p.createdAt()));
-        for (Donation d : s.donations()) weeks.add(Dates.weekKeyOf(d.at()));
         List<WeekTodo> out = new ArrayList<>();
         long now = System.currentTimeMillis();
         for (String w : weeks) {

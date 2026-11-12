@@ -2,18 +2,25 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { CommunityStore, DONATION_PRESETS, RANK_SHARES, api, currentWeekKey, fetchCommunity, fmtWon, myPayouts, pastWeeks, userById, weekLabel, weeklyOf } from "@/lib/community";
+import { CommunityStore, canGiveLight, currentWeekKey, fetchCommunity, fmtLight, lightOf, userById, weekLabel, weeklyOf } from "@/lib/community";
+import { lightReason } from "@/lib/light";
+import { useLight, type Light } from "@/lib/use-light";
 import ShoutTabs from "@/components/ShoutTabs";
-import { Empty, Hero, LoadError, Sheet, SkeletonHero, SkeletonList, fmtRelative } from "@/components/ui";
-import { run } from "@/components/CommunityUI";
-import { IconCoin } from "@/components/Icons";
+import { Empty, Hero, LoadError, SkeletonCard, SkeletonHero, SkeletonList, fmtRelative } from "@/components/ui";
+import { IconLight } from "@/components/Icons";
+import LightGiveSheet, { LightTarget } from "@/components/LightGiveSheet";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { toastSuccess } from "@/lib/toast";
+import styles from "@/components/Light.module.css";
 
+/**
+ * 불행 모금: 돈이 아니라 빛을 모으고 건네는 곳.
+ * 하루 한 번 오늘의 빛을 받고, 이번 주 불행광장 글에 건넨다. 건넨 빛은 바로 글쓴이의 빛이 된다.
+ */
 export default function FundPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<LightTarget | null>(null);
+  const light = useLight();
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -29,140 +36,130 @@ export default function FundPage() {
   useScrollMemory(s !== null);
 
   if (loadError) return <div className="screen"><ShoutTabs /><LoadError message={loadError} onRetry={load} /></div>;
-  if (!s) return <div className="screen" role="status" aria-label="모금 현황을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div>;
+  if (!s) return <div className="screen" role="status" aria-label="빛을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div>;
 
   const cur = currentWeekKey();
   const batch = weeklyOf(s, cur);
-  const lastWeek = pastWeeks(s)[0];
-  const last = lastWeek ? weeklyOf(s, lastWeek) : undefined;
-  const mine = myPayouts(s);
-  const myTotal = mine.reduce((n, p) => n + p.amount, 0);
-  const myDonated = (s.donations ?? []).filter((d) => d.by === s.me.id).reduce((n, d) => n + d.amount, 0);
-  const recent = (s.donations ?? []).filter((d) => d.at >= new Date(cur).getTime()).sort((a, b) => b.at - a.at).slice(0, 8);
-  const top10 = batch?.rows.slice(0, 10) ?? [];
+  const rows = batch?.rows.slice(0, 10) ?? [];
+  const receivers = (batch?.rows ?? []).filter((r) => lightOf(r) > 0).length;
+  const gifts = (s.gifts ?? []).slice(0, 8);
+  const name = (id: string) => (id === s.me.id ? "나" : userById(s, id).nick);
+  const wallet = light.state.kind === "ready" ? light.state.wallet : null;
 
   return (
     <>
       <div className="screen">
         <ShoutTabs />
         <div style={{ height: 12 }} />
-        <Hero label={`${weekLabel(cur)} · 이번 주 모금`} title={fmtWon(batch?.fund.total ?? 0)} stats={[`후원 ${batch?.fund.count ?? 0}건`, `후원자 ${batch?.fund.donors ?? 0}명`, `분배 대상 ${top10.length}명`]} />
-        <div className="notice" style={{ marginTop: 12 }}>지금은 모금을 미리 체험하는 화면이에요. 실제로 결제되거나 돈이 전달되지는 않아요.</div>
-        <button type="button" className="btn block" style={{ marginTop: 16 }} onClick={() => setOpen(true)}>모금하기</button>
+        <Hero label={`${weekLabel(cur)} · 이번 주 모인 빛`} title={fmtLight(batch?.light?.total ?? 0)} stats={[`준 사람 ${batch?.light?.givers ?? 0}명`, `받은 사람 ${receivers}명`]} />
 
-        {(myTotal > 0 || myDonated > 0) && (
-          <div className="tiles" style={{ marginTop: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <div className="tile"><b style={{ fontSize: 18 }}>{fmtWon(myDonated)}</b><small>내가 모금한 금액</small></div>
-            <div className="tile"><b style={{ fontSize: 18 }}>{fmtWon(myTotal)}</b><small>내가 받은 분배</small></div>
-          </div>
-        )}
+        <MyLight light={light} />
 
-        <div className="section-title"><span>이번 주 분배 예상</span><Link href="/ranking" className="link">랭킹 보기</Link></div>
-        {top10.length === 0 ? (
-          <Empty icon={<IconCoin />} title="아직 분배 대상이 없어요">불행광장에 글이 올라오면 순위가 생겨요.</Empty>
+        <div className="section-title"><span>빛을 기다리는 글</span><Link href="/ranking" className="link">랭킹 보기</Link></div>
+        {rows.length === 0 ? (
+          <Empty icon={<IconLight />} title="이번 주 불행광장 글이 아직 없어요" action={<Link href="/shout" className="btn ghost">외침 보러 가기</Link>}>
+            글이 올라오면 여기서 빛을 건넬 수 있어요.
+          </Empty>
         ) : (
-          <section className="card" style={{ padding: "6px 16px" }}>
-            {top10.map((r) => (
-              <div key={r.userId} className="share-row">
-                <span className="rank-no sm">{r.rank}</span>
-                <span className="grow" style={{ minWidth: 0 }}><b>{r.nick}{r.userId === s.me.id ? " (나)" : ""}</b><small className="muted"> · 힘내요 {r.cheers}</small></span>
-                <span className="tiny muted">{r.share}%</span>
-                <b className="share-amt">{fmtWon(r.payout)}</b>
-              </div>
-            ))}
-            {top10.length < 10 && <p className="tiny muted" style={{ margin: "8px 0 6px" }}>10명이 안 되면 있는 사람끼리 비율을 다시 맞춰요.</p>}
-          </section>
-        )}
-
-        <div className="section-title"><span>지난 주 분배 결과 {last ? `· ${weekLabel(last.week)}` : ""}</span></div>
-        {!last || last.rows.length === 0 ? (
-          <p className="tiny muted" style={{ margin: "0 4px" }}>확정된 지난 주 집계가 없어요.</p>
-        ) : (
-          <section className="card" style={{ padding: "6px 16px" }}>
-            <div className="tiny muted" style={{ padding: "6px 0" }}>모금 {fmtWon(last.fund.total)} · 후원 {last.fund.count}건 · 확정 {fmtRelative(last.computedAt)}</div>
-            {last.rows.slice(0, 10).map((r) => (
-              <div key={r.userId} className="share-row">
-                <span className="rank-no sm">{r.rank}</span>
-                <span className="grow" style={{ minWidth: 0 }}><b>{r.nick}{r.userId === s.me.id ? " (나)" : ""}</b><small className="muted"> · 힘내요 {r.cheers}</small></span>
-                <b className="share-amt">{fmtWon(r.payout)}</b>
-              </div>
-            ))}
-          </section>
-        )}
-
-        <div className="section-title"><span>이번 주 후원</span></div>
-        {recent.length === 0 ? (
-          <p className="tiny muted" style={{ margin: "0 4px" }}>아직 후원이 없어요. 첫 후원을 남겨볼까요.</p>
-        ) : (
-          <div className="stack" style={{ gap: 6 }}>
-            {recent.map((d) => (
-              <div key={d.id} className="card flat" style={{ padding: "10px 14px" }}>
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <b style={{ fontSize: 14 }}>{d.by === s.me.id ? "나" : userById(s, d.by).nick}</b>
-                  <span style={{ fontWeight: 800 }}>{fmtWon(d.amount)}</span>
+          <section className="card" style={{ padding: "4px 16px" }}>
+            {rows.map((r) => {
+              const giving = canGiveLight(s, s.posts.find((p) => p.id === r.topPostId));
+              return (
+                <div key={r.userId} className="share-row">
+                  <span className="rank-no sm">{r.rank}</span>
+                  <span className="grow"><b className={styles.rowName}>{r.nick}{r.userId === s.me.id ? " (나)" : ""}<small> · 힘내요 {r.cheers}</small></b></span>
+                  <span className={styles.rowLight}>{fmtLight(lightOf(r))}</span>
+                  {giving && <button type="button" className={`btn soft sm ${styles.give}`} aria-label={`${r.nick} 님에게 빛 주기`} onClick={() => setTarget({ postId: r.topPostId, nick: r.nick })}><IconLight />주기</button>}
                 </div>
-                {d.message && <p className="tiny" style={{ margin: "4px 0 0", color: "var(--text-2)" }}>{d.message}</p>}
-                <div className="tiny muted" style={{ marginTop: 2 }}>{fmtRelative(d.at)}</div>
-              </div>
-            ))}
-          </div>
+              );
+            })}
+          </section>
         )}
 
-        <div className="section-title"><span>분배 비율</span></div>
+        <div className="section-title"><span>최근 오간 빛</span></div>
+        {gifts.length === 0 ? (
+          <p className={styles.quiet}>아직 오간 빛이 없어요. 첫 빛을 건네 볼까요.</p>
+        ) : (
+          <ul className={styles.list}>
+            {gifts.map((g) => (
+              <li key={g.id}>
+                <div className={styles.listMain}>
+                  <strong>{name(g.by)}<span className={styles.arrow} aria-label="님이">→</span>{name(g.to)}</strong>
+                  <time dateTime={new Date(g.at).toISOString()}>{fmtRelative(g.at)}</time>
+                </div>
+                <span className={styles.listAmount}>{fmtLight(g.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {wallet && wallet.history.length > 0 && (
+          <>
+            <div className="section-title"><span>내 빛 내역</span><span className="tiny muted">최근 {wallet.history.length}건</span></div>
+            <ul className={styles.list}>
+              {wallet.history.map((entry) => (
+                <li key={entry.id}>
+                  <div className={styles.listMain}>
+                    <strong>{lightReason(entry)}</strong>
+                    <time dateTime={new Date(entry.createdAt).toISOString()}>{fmtRelative(entry.createdAt)}</time>
+                  </div>
+                  <span className={styles.listAmount} data-out={entry.amount < 0 || undefined}>{entry.amount > 0 ? "+" : "−"}{Math.abs(entry.amount).toLocaleString("ko-KR")}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <div className="section-title"><span>빛은 이렇게 써요</span></div>
         <section className="card tint">
-          <div className="share-grid">
-            {RANK_SHARES.map((p, i) => <span key={i}><b>{i + 1}위</b> {p}%</span>)}
-          </div>
+          <ul className={styles.guide}>
+            <li>하루 한 번 오늘의 빛 {fmtLight(wallet?.dailyLight ?? 10)}을 받아요.</li>
+            <li>광장 글에 한 번에 {fmtLight(wallet?.maxGift ?? 10)}까지, 같은 분께는 하루 {fmtLight(wallet?.perPersonDaily ?? 10)}까지 건네요.</li>
+            <li>받은 빛은 다시 건넬 수 있어요. 돈으로 바꿀 수는 없어요.</li>
+          </ul>
         </section>
       </div>
 
-      <DonateSheet
-        key={open ? "open" : "closed"}
-        open={open}
-        onClose={() => setOpen(false)}
-        onSubmit={async (amount, message) => {
-          const ok = await run(setS, () => api.donate(amount, message));
-          if (!ok) return false;
-          setOpen(false);
-          toastSuccess(`${fmtWon(amount)}을 이번 주 모금에 보탰어요 (모의)`);
-          return true;
-        }}
-      />
+      <LightGiveSheet target={target} light={light} onClose={() => setTarget(null)} onGiven={setS} />
     </>
   );
 }
 
-function DonateSheet({ open, onClose, onSubmit }: { open: boolean; onClose: () => void; onSubmit: (amount: number, message: string) => Promise<boolean> }) {
-  const [amount, setAmount] = useState<number>(3000);
-  const [custom, setCustom] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const value = custom ? Number(custom.replace(/[^0-9]/g, "")) : amount;
-  const valid = Number.isFinite(value) && value >= 100 && value <= 1_000_000;
+/** 내 빛: 잔액, 받은·건넨 합계, 오늘의 빛 받기 */
+function MyLight({ light }: { light: Light }) {
+  const { state } = light;
+  if (state.kind === "guest") {
+    return (
+      <section className={styles.mine} aria-label="내 빛">
+        <p className={styles.mineLabel}><IconLight />내 빛</p>
+        <p className={styles.mineText}>로그인하면 빛을 모으고 건넬 수 있어요.</p>
+        <Link href="/auth?next=fund" className="btn block">로그인하기</Link>
+      </section>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <section className={styles.mine} aria-label="내 빛" role="alert">
+        <p className={styles.mineLabel}><IconLight />내 빛</p>
+        <p className={styles.mineText}>{state.message}</p>
+        <button type="button" className="btn ghost block" onClick={() => void light.refresh()}>다시 확인</button>
+      </section>
+    );
+  }
+  if (state.kind !== "ready") return <div style={{ marginTop: 16 }} role="status" aria-label="내 빛을 불러오고 있어요"><SkeletonCard lines={2} /></div>;
+  const { wallet } = state;
   return (
-    <Sheet open={open} onClose={onClose} title="불행 모금에 보태기">
-      <div className="stack">
-        <div className="field">
-          <label>금액</label>
-          <div className="chips wrap">
-            {DONATION_PRESETS.map((p) => (
-              <button key={p} type="button" className={`chip ${!custom && amount === p ? "on" : ""}`} onClick={() => { setAmount(p); setCustom(""); }}>{fmtWon(p)}</button>
-            ))}
-          </div>
-          <input inputMode="numeric" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="직접 입력 (100원 ~ 1,000,000원)" />
-        </div>
-        <div className="field">
-          <label>한마디 (선택)</label>
-          <input value={message} onChange={(e) => setMessage(e.target.value)} maxLength={60} placeholder="누구에게, 왜" />
-        </div>
-        <div className="notice">모의 모금이에요. 실제 결제는 일어나지 않고, 이번 주 집계에만 더해져요.</div>
-      </div>
-      <div className="sheet-actions">
-        <button className="btn ghost" onClick={onClose}>취소</button>
-        <button className="btn" disabled={!valid || busy} aria-busy={busy} onClick={async () => { setBusy(true); try { await onSubmit(value, message); } finally { setBusy(false); } }}>
-          {busy ? "보내는 중…" : valid ? `${fmtWon(value)} 보태기` : "금액을 확인해요"}
+    <section className={styles.mine} aria-label="내 빛">
+      <p className={styles.mineLabel}><IconLight />내 빛</p>
+      <p className={styles.mineAmount}>{wallet.balance.toLocaleString("ko-KR")}<span>빛</span></p>
+      <p className={styles.mineMeta}>받은 빛 {wallet.totalReceived.toLocaleString("ko-KR")} · 건넨 빛 {wallet.totalGiven.toLocaleString("ko-KR")}</p>
+      {wallet.dailyClaimed ? (
+        <p className={styles.mineDone}>오늘의 빛을 받았어요. 내일 또 받을 수 있어요.</p>
+      ) : (
+        <button type="button" className="btn block" disabled={light.claiming} aria-busy={light.claiming} onClick={() => void light.claim()}>
+          오늘의 빛 받기 +{wallet.dailyLight}
         </button>
-      </div>
-    </Sheet>
+      )}
+    </section>
   );
 }

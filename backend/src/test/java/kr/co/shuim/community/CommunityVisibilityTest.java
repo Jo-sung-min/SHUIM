@@ -58,14 +58,19 @@ class CommunityVisibilityTest {
             List.of(new RankRow(1, "blocked", "private", 2, 1, "b", "secret", 1, 0)), new Fund(0, 0, 0));
         Store source = new Store(me, List.of(new User("blocked", "blocked", "user", null, null)), List.of(visible, blocked, hidden),
             List.of(onBlockedPost, fromBlocked), List.of(), Map.of("blocked", new Creator("bio", List.of(), 0)),
-            List.of("blocked"), List.of(new Donation("d", "blocked", 100, "note", 0)), Map.of(weekly.week(), weekly));
+            List.of("blocked"), List.of(
+                new Gift("from-blocked", "blocked", "ok", "p", 3, 5), new Gift("seen", "giver", "ok", "p", 1, 4),
+                new Gift("to-blocked", "giver", "blocked", "b", 2, 3), new Gift("giver-left", null, "ok", "p", 5, 2),
+                new Gift("on-hidden", "giver", "ok", "h", 1, 1)), Map.of(weekly.week(), weekly));
         Store filtered = CommunityService.visibleStore(source, Set.of("blocked"), false);
         assertEquals(List.of("p"), filtered.posts().stream().map(Post::id).toList());
         assertTrue(filtered.comments().isEmpty());
         assertTrue(filtered.users().isEmpty());
         assertTrue(filtered.creators().isEmpty());
         assertTrue(filtered.following().isEmpty());
-        assertTrue(filtered.donations().isEmpty());
+        // 최근 오간 빛: 차단한 사람이 주거나 받은 것, 떠난 계정이 준 것, 가려진 글에 준 것은 내려가지 않는다
+        assertEquals(List.of("seen"), filtered.gifts().stream().map(Gift::id).toList());
+        assertEquals(5, source.gifts().size());
         assertTrue(filtered.weekly().get(weekly.week()).rows().isEmpty());
         assertEquals(3, source.posts().size());
         assertEquals(1, source.weekly().get(weekly.week()).rows().size());

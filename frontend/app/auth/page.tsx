@@ -91,7 +91,7 @@ export default function AuthPage() {
   /** 로그인 뒤 갈 곳: ?next= 는 정해 둔 값만 받는다 (delete → 계정 삭제, me → 나 화면) */
   const afterLogin = () => {
     const next = new URLSearchParams(window.location.search).get("next");
-    return next === "delete" ? "/account-deletion" : next === "me" ? "/me" : next === "points" ? "/points" : "/";
+    return next === "delete" ? "/account-deletion" : next === "me" ? "/me" : next === "points" ? "/points" : next === "fund" ? "/fund" : "/";
   };
 
   /** 미니앱: 토스 로그인만. 처음이면 서버가 동의를 요구하고, 동의를 저장한 뒤 한 번 더 부른다 */

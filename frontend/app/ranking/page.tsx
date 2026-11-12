@@ -2,20 +2,27 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { CommunityStore, RankRow, WeeklyBatch, api, currentWeekKey, fetchCommunity, fmtWon, pastWeeks, weekLabel, weeklyOf } from "@/lib/community";
+import { CommunityStore, RankRow, WeeklyBatch, api, canGiveLight, currentWeekKey, fetchCommunity, fmtLight, lightOf, pastWeeks, weekLabel, weeklyOf } from "@/lib/community";
 import ShoutTabs from "@/components/ShoutTabs";
 import { Empty, Hero, LoadError, Segmented, SkeletonHero, SkeletonList, fmtRelative } from "@/components/ui";
 import { run } from "@/components/CommunityUI";
-import { IconRefresh, IconTrophy } from "@/components/Icons";
+import { IconLight, IconRefresh, IconTrophy } from "@/components/Icons";
+import LightGiveSheet, { LightTarget } from "@/components/LightGiveSheet";
+import { useLight } from "@/lib/use-light";
 import { useScrollMemory } from "@/lib/scroll-memory";
+import { IS_AIT } from "@/lib/ait";
+import styles from "@/components/Light.module.css";
 
 type View = "current" | "past";
 
+/** 불행 랭킹: 그 주 불행광장 글이 받은 빛 순. 이번 주 카드에서 바로 빛을 건넬 수 있다. */
 export default function RankingPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("current");
   const [pastWeek, setPastWeek] = useState<string | null>(null);
+  const [target, setTarget] = useState<LightTarget | null>(null);
+  const light = useLight(false); // 지갑은 빛 주기 시트를 열 때 읽는다
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -39,6 +46,7 @@ export default function RankingPage() {
   const batch: WeeklyBatch | undefined = view === "current" ? weeklyOf(s, cur) : pastWeek ? weeklyOf(s, pastWeek) : undefined;
   const past = pastWeeks(s);
   const myRow = batch?.rows.find((r) => r.userId === s.me.id);
+  const first = batch?.rows[0];
 
   return (
     <>
@@ -47,8 +55,8 @@ export default function RankingPage() {
         <div style={{ height: 12 }} />
         <Hero
           label={batch ? `${weekLabel(batch.week)} · ${batch.finalized ? "확정" : `잠정 · ${fmtRelative(batch.computedAt)} 집계`}` : "집계 전"}
-          title={batch?.rows.length ? `1위 ${batch.rows[0].nick}, 힘내요 ${batch.rows[0].cheers}` : "아직 불행광장 글이 없어요"}
-          stats={batch ? [`순위 ${batch.rows.length}명`, `모금 ${fmtWon(batch.fund.total)}`, myRow ? `나 ${myRow.rank}위` : "나 순위 밖"] : []}
+          title={first ? (lightOf(first) > 0 ? `1위 ${first.nick}, 빛 ${lightOf(first)}` : `1위 ${first.nick}, 힘내요 ${first.cheers}`) : "아직 불행광장 글이 없어요"}
+          stats={batch ? [`순위 ${batch.rows.length}명`, `모인 빛 ${(batch.light?.total ?? 0).toLocaleString("ko-KR")}`, myRow ? `나 ${myRow.rank}위` : "나 순위 밖"] : []}
         />
         <div style={{ marginTop: 12 }}>
           <Segmented value={view} onChange={setView} options={[{ value: "current", label: "이번 주 (잠정)" }, { value: "past", label: "지난 주 (확정)" }]} />
@@ -66,20 +74,24 @@ export default function RankingPage() {
           </Empty>
         ) : (
           <div className="stack" style={{ marginTop: 12 }}>
-            {batch.rows.map((r) => (
-              <RankCard key={r.userId} row={r} me={r.userId === s.me.id} hasFund={batch.fund.total > 0} finalized={batch.finalized} />
-            ))}
+            {batch.rows.map((r) => {
+              // 지난 주 순위는 확정이라, 빛 주기는 이번 주 카드에서만
+              const giving = view === "current" && canGiveLight(s, s.posts.find((p) => p.id === r.topPostId));
+              return <RankCard key={r.userId} row={r} me={r.userId === s.me.id} onGive={giving ? () => setTarget({ postId: r.topPostId, nick: r.nick }) : undefined} />;
+            })}
           </div>
         )}
-        <p className="tiny muted" style={{ textAlign: "center", marginTop: 20 }}>
-          1~10위는 그 주 <Link href="/fund" style={{ textDecoration: "underline" }}>불행 모금</Link>을 나눠 받아요.
+        <p className="tiny muted" style={{ textAlign: "center", marginTop: 20, wordBreak: "keep-all" }}>
+          순위는 그 주 불행광장 글이 받은 빛으로 정해요.
+          {!IS_AIT && <><br />빛은 <Link href="/fund" style={{ textDecoration: "underline" }}>불행 모금</Link>에서 모아요.</>}
         </p>
       </div>
+      <LightGiveSheet target={target} light={light} onClose={() => setTarget(null)} onGiven={setS} />
     </>
   );
 }
 
-function RankCard({ row, me, hasFund, finalized }: { row: RankRow; me: boolean; hasFund: boolean; finalized: boolean }) {
+function RankCard({ row, me, onGive }: { row: RankRow; me: boolean; onGive?: () => void }) {
   return (
     <section className={`card rank ${row.rank <= 3 ? "top" : ""} ${me ? "me" : ""}`}>
       <div className="rank-no">{row.rank}</div>
@@ -89,13 +101,12 @@ function RankCard({ row, me, hasFund, finalized }: { row: RankRow; me: boolean; 
           <span className="tiny muted">글 {row.posts}개</span>
         </div>
         <p className="rank-quote">{row.topPostText}{row.topPostText.length >= 80 ? "…" : ""}</p>
-        {row.rank <= 10 && hasFund && (
-          <div className="tiny" style={{ color: "var(--text-2)", marginTop: 4 }}>
-            {finalized ? "받은 분배" : "예상 분배"} <b style={{ color: "var(--text)" }}>{fmtWon(row.payout)}</b> · {row.share}%
-          </div>
-        )}
+        <div className={styles.rankFoot}>
+          {onGive && <button type="button" className={`btn soft sm ${styles.give}`} aria-label={`${row.nick} 님에게 빛 주기`} onClick={onGive}><IconLight />빛 주기</button>}
+          <span>힘내요 {row.cheers}</span>
+        </div>
       </div>
-      <div className="rank-cheers"><b>{row.cheers}</b><small>힘내요</small></div>
+      <div className="rank-cheers" aria-label={`받은 빛 ${fmtLight(lightOf(row))}`}><b>{lightOf(row)}</b><small>빛</small></div>
     </section>
   );
 }

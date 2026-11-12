@@ -44,7 +44,9 @@ public class CommunityController {
                       HttpServletRequest req, HttpServletResponse res) {
         Map<String, Object> b = body == null ? Map.of() : body;
         DbUser me = auth.requireUser(req, res);
-        if (java.util.Set.of("post.create", "comment.create", "comment.accept", "feed.create", "bio", "donate").contains(action)) consent.requireAccepted(me);
+        // 빛은 가입 회원만: 비회원에게는 이용규칙 동의보다 로그인 안내가 먼저다
+        if ("light.give".equals(action) && me.anonymous()) throw ApiException.unauthorized("로그인하면 빛을 줄 수 있어요.");
+        if (java.util.Set.of("post.create", "comment.create", "comment.accept", "feed.create", "bio", "light.give").contains(action)) consent.requireAccepted(me);
         return switch (action) {
             case "post.create" -> community.createPost(me, b.get("cat"), b.get("text"), b.get("images"));
             case "post.delete" -> community.deletePost(me, str(b, "id"));
@@ -58,7 +60,9 @@ public class CommunityController {
             case "bio" -> community.updateBio(me, b.get("bio"));
             case "follow" -> community.toggleFollow(me, str(b, "creatorId"));
             case "save" -> community.toggleSave(me, str(b, "feedId"));
-            case "donate" -> community.donate(me, b.get("amount"), b.get("message"));
+            case "light.give" -> community.giveLight(me, str(b, "postId"), b.get("amount"), b.get("requestId"));
+            // 원화 모의 모금은 빛으로 바뀌었다. 옛 화면이 보내는 요청에는 안내만 돌려준다
+            case "donate" -> throw ApiException.gone("불행 모금이 빛으로 바뀌었어요. 화면을 새로 열어 주세요.");
             case "weekly.refresh" -> community.refreshCurrentWeek(me);
             case "admin.hide", "admin.dismiss", "admin.block", "admin.unblock" -> {
                 if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 할 수 있어요");

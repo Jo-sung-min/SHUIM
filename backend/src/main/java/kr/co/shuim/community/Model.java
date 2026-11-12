@@ -40,7 +40,12 @@ public final class Model {
      * 사연의 authorId 는 보낸 사람 본인과 관리자에게만 실제 값이고, 다른 사람에게는 "c:<소로우 id>" 로 가려진다.
      */
     public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
-                       String communityId, Integer postNo, String circle, String circleSlug, String acceptedCommentId) implements Item {
+                       String communityId, Integer postNo, String circle, String circleSlug, String acceptedCommentId, int light) implements Item {
+        /** 아직 빛을 받지 않은 글 */
+        public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
+                    String communityId, Integer postNo, String circle, String circleSlug, String acceptedCommentId) {
+            this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, 0);
+        }
         public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
                     String communityId, Integer postNo, String circle, String circleSlug) {
             this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, null);
@@ -56,7 +61,11 @@ public final class Model {
         public boolean inCircle() { return communityId != null; }
         /** 같은 글, 작성자만 바꿔서 (소로우 사연의 작성자 가리기) */
         public Post withAuthor(String author, List<Report> reports) {
-            return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId);
+            return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, light);
+        }
+        /** 같은 글, 받은 빛 합계만 채워서 */
+        public Post withLight(int light) {
+            return new Post(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, light);
         }
     }
 
@@ -88,17 +97,37 @@ public final class Model {
 
     public record Creator(String bio, List<String> followers, long since) {}
 
-    public record Donation(String id, String by, int amount, String message, long at) {}
+    /** 광장 글에 건넨 빛 한 건. by 는 준 사람(떠난 계정이면 null), to 는 글쓴이 */
+    public record Gift(String id, String by, String to, String postId, int amount, long at) {}
 
-    public record RankRow(int rank, String userId, String nick, int cheers, int posts, String topPostId, String topPostText, double share, long payout) {}
+    /**
+     * 주간 순위 한 줄. light = 그 주 불행광장 글이 받은 빛(순위 기준), cheers = 힘내요(동률일 때).
+     * share·payout 은 원화 모의 모금 때의 값이라 이제 늘 0 이다 (옛 화면·옛 집계 행이 읽는 자리만 남겼다).
+     */
+    public record RankRow(int rank, String userId, String nick, int cheers, int posts, String topPostId, String topPostText, double share, long payout, int light) {
+        public RankRow(int rank, String userId, String nick, int cheers, int posts, String topPostId, String topPostText, double share, long payout) {
+            this(rank, userId, nick, cheers, posts, topPostId, topPostText, share, payout, 0);
+        }
+    }
 
+    /** 원화 모의 모금의 자리. 옛 화면이 깨지지 않게 늘 0 으로 내려간다 */
     public record Fund(long total, int count, int donors) {}
 
-    public record WeeklyBatch(String week, long computedAt, boolean finalized, List<RankRow> rows, Fund fund) {}
+    /** 그 주 불행광장 글이 받은 빛: 합계, 건수, 준 사람 수 */
+    public record Light(long total, int count, int givers) {}
 
-    /** 전체 상태. 목록·맵은 변경 가능한 구현을 넣어 서버가 집계·자동 답글을 덧붙일 수 있게 한다 */
+    public record WeeklyBatch(String week, long computedAt, boolean finalized, List<RankRow> rows, Fund fund, Light light) {
+        public WeeklyBatch(String week, long computedAt, boolean finalized, List<RankRow> rows, Fund fund) {
+            this(week, computedAt, finalized, rows, fund, new Light(0, 0, 0));
+        }
+    }
+
+    /**
+     * 전체 상태. 목록·맵은 변경 가능한 구현을 넣어 서버가 집계·자동 답글을 덧붙일 수 있게 한다.
+     * gifts 는 집계할 때는 전부, 화면에 내려갈 때는 볼 수 있는 광장 글의 최근 것만 담는다.
+     */
     public record Store(User me, List<User> users, List<Post> posts, List<Comment> comments, List<FeedPost> feed,
-                        Map<String, Creator> creators, List<String> following, List<Donation> donations, Map<String, WeeklyBatch> weekly) {}
+                        Map<String, Creator> creators, List<String> following, List<Gift> gifts, Map<String, WeeklyBatch> weekly) {}
 
     public record Target(String kind, String id) {}
 }

@@ -1,0 +1,48 @@
+/* 빛: 랭킹·모금 화면과 빛 주기 시트. 색은 globals.css 토큰만 쓴다 (라이트·나이트 공통). */
+
+/* ---------- 내 빛 카드 ---------- */
+.mine { display: grid; gap: var(--sp-1); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.mine > * { min-width: 0; }
+.mineLabel { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.mineLabel svg, .sheetBalance svg { width: 18px; height: 18px; flex: none; color: var(--tone-praise); }
+.mineAmount { margin: 0; font-size: clamp(30px, 9vw, 38px); font-weight: 800; letter-spacing: -.03em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.mineAmount span { margin-left: 4px; color: var(--text-2); font-size: 20px; font-weight: 650; }
+.mineMeta { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.mineDone { margin: 4px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-2); font-size: 14px; line-height: 1.5; word-break: keep-all; }
+.mine :global(.btn) { margin-top: 4px; }
+.mineText { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.6; word-break: keep-all; }
+
+/* ---------- 빛 주기 버튼 (순위 카드·목록 줄) ---------- */
+.give { flex: none; gap: 4px; padding: 0 12px; }
+.give svg { width: 16px; height: 16px; }
+.rankFoot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.rowLight { flex: none; min-width: 44px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rowName { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowName small { color: var(--text-2); font-weight: 400; }
+
+/* ---------- 최근 오간 빛 · 내 내역 ---------- */
+.list { list-style: none; margin: 0; padding: 0 var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-1); padding: 12px 0; font-size: 15px; }
+.list li + li { border-top: 1px solid var(--border); }
+.listMain { display: grid; gap: 2px; min-width: 0; }
+.listMain strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.listMain time { color: var(--text-2); font-size: 13px; }
+.listAmount { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.listAmount[data-out] { color: var(--text-2); }
+.arrow { margin: 0 6px; color: var(--text-3); font-weight: 400; }
+.quiet { margin: 0 4px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+
+/* ---------- 안내 ---------- */
+.guide { margin: 0; padding: 0 0 0 18px; display: grid; gap: 4px; color: var(--text-2); font-size: 13px; line-height: 1.6; word-break: keep-all; }
+
+/* ---------- 빛 주기 시트 ---------- */
+.sheetBalance { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--sp-2); color: var(--text-2); font-size: 15px; }
+.sheetBalance b { color: var(--text); font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sheetNote { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.6; word-break: keep-all; }
+.sheetHint { margin: var(--sp-1) 0 0; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-1); }
+.choices :global(.chip) { justify-content: center; min-height: 48px; padding: 0 4px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.choices :global(.chip):disabled { opacity: .4; }
+
+/* 글 화면의 받은 빛 (내 글이라 누를 수 없을 때) */
+.static { cursor: default; }

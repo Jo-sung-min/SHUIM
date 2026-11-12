@@ -106,8 +106,8 @@ npm run dev
 | **소로우지기** (`/c/주소/admin`) | 연 사람과 임명된 소로우지기. 검토 큐(위기 신호 먼저) → AI 로 다듬고 가리기 → 고쳐서 **게시**(그 소로우의 다음 #번호) · 보류 · 반려(사유는 보낸 사람에게 보임) + 익명 답장. 멤버 승인·내보내기·소로우지기 임명, 공지·소개·가입 방식·초대 코드. **보낸 사람은 소로우지기에게도 보이지 않는다** |
 | **내 사연함** (`/c/submissions`, 나 › 나만 보여요) | 보낸 사연의 상태·보류/반려 사유·소로우지기의 답장·게시된 #번호 |
 | **외침 › 광장** | 익명 커뮤니티. 카테고리별로 글을 올리면 다른 사람이 위로 댓글을 남김. 좋아요 대신 **힘내요**(선 주먹 → 누르면 3D 주먹). 신고 5회면 가려지고 `/admin` 검토 대기열로. 관리자는 숨기기/유저 차단. 목록 상단의 관리자 검토(방패) 아이콘은 관리자 계정에게만 보인다 |
-| **외침 › 불행 랭킹** | 불행광장 글의 힘내요를 사람별로 더한 주간 순위. 지난 주는 확정, 이번 주는 5분마다 잠정 집계(`weekly_batches`) |
-| **외침 › 불행 모금** | 모금액을 그 주 1~10위에게 25/18/14/11/9/7/6/4/3/3% 로 분배. **프로토타입, 실제 결제 없음** |
+| **외침 › 불행 랭킹** | 그 주 불행광장 글이 받은 **빛**을 사람별로 더한 주간 순위(같으면 힘내요 → 먼저 쓴 글). 지난 주는 확정, 이번 주는 5분마다 잠정 집계(`weekly_batches`)하고 빛을 주면 바로 다시 센다. 이번 주 카드에서 빛 주기 |
+| **외침 › 불행 모금** | 돈이 아니라 **빛**(가상 재화)을 모으고 건네는 곳. 하루 한 번 오늘의 빛 10, 광장 글에 한 번에 1·3·5·10빛(같은 사람에게 하루 10빛) → 바로 글쓴이의 빛. 받은 빛은 다시 건넬 수 있고 돈·폭죽 이용권·온기 포인트로는 바꿀 수 없다. 서버가 잔액을 소유(`light_wallets`·`light_ledger`·`light_gifts`, V43), 요청 번호로 중복 방지. 가입 회원만, 소로우 사연 제외. 온기 포인트·모루 재화와는 별개 |
 | **위로** | 쇼츠형 세로 스냅 피드. 본문의 위로 문장은 형광펜으로 강조(작성 때 "형광펜" 버튼으로 `==문장==` 표시, 표시가 없으면 마지막 줄 자동, `lib/highlight.ts`). 글 하나에 콘텐츠(사진+제목+글) 최대 10개, 가로로 넘기면 함께 바뀜. 인스타식 3단계 작성(사진 선택 → 슬라이드별 편집 → 공유). 힘내요·위로 댓글·저장·리스닝, ⋯ 메뉴에서 전체/리스닝/저장함·위로글 쓰기 |
 | **공개 프로필** (`/u/아이디`) | 나 페이지와 같은 머리: 사진·숫자 줄(위로글 · 리스너 · 리스닝, 누르면 목록 `/u/아이디/listeners` · `/listening`)·닉네임 + 칭호·소개·크리에이터 배지, 위로 배지 선반, 콘텐츠 탭(위로글 · 외침 · 위로), 리스닝하기·메시지 보내기. 서로 리스닝이면 "나를 리스닝 중" |
 | **메시지** (`/messages`) | 1:1 대화함과 대화 화면(5초 폴링, 읽음 표시) |
@@ -129,7 +129,8 @@ npm run dev
 | `GET/POST /api/blocks`, `DELETE /api/blocks/{id}` | 사용자별 차단 목록·차단·해제 |
 | `POST /api/community/consent` | 커뮤니티 약관 동의 버전·시각 저장. 게시·사진 업로드·메시지 전송 전 필요 |
 | `POST/GET /api/safety-reports`, `POST /api/safety-reports/{id}/review` | 사용자·메시지·AI 신고 / 관리자 조회 / 관리자 검토 |
-| `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create `{ cat, text, images? }` — 사진은 본인이 올린 S3 주소만 최대 4장, comment.create, cheer, report, feed.create, follow, save, donate, admin.* …) — 변경 후 최신 상태 반환 |
+| `GET /api/community`, `POST /api/community/{action}` | 커뮤니티 전체 상태 / 변경(post.create `{ cat, text, images? }` — 사진은 본인이 올린 S3 주소만 최대 4장, comment.create, cheer, report, feed.create, follow, save, light.give `{ postId, amount, requestId }`, admin.* …) — 변경 후 최신 상태 반환 |
+| `GET /api/light/me`, `POST /api/light/daily` | 내 빛 지갑(잔액·받은/건넨 합계·오늘의 빛 여부·최근 내역) / 오늘의 빛 받기(하루 한 번). 가입 회원만 |
 | `GET /api/circles?kind=&q=`, `GET /api/circles/warm`, `GET /api/circles/mine` | 소로우 둘러보기(멤버 10명 이상) / 이번 주 가장 따뜻한 소로우(순위만) / 내 소로우·리스닝 중인 소로우 |
 | `POST /api/circles`, `GET/PUT /api/circles/{주소}` | 소로우 열기(가입한 계정, 3개까지) / 소로우 + 나와의 관계 / 공지(소로우지기)·소개·공개 범위·가입 방식·초대 코드(연 사람) |
 | `POST /api/circles/{주소}/{join,leave,primary,follow}` | 가입(`{ code? }`)·나가기·대표 소로우·리스닝 켜고 끄기 |
@@ -155,7 +156,7 @@ npm run dev
 ## DB (PostgreSQL)
 
 - 스키마·시드는 **Flyway** SQL: `backend/src/main/resources/db/migration/V1__init_schema.sql`(테이블 21개) … `V7__personal_records.sql`(cat 길이 확장, `user_categories`, `user_settings`), `V8`·`V9`(카카오 `users.kakao_id`), `V10__site_settings.sql`(사이트 설정·파비콘) … `V15__shout_post_images.sql`(외침 사진), `V16__comment_replies.sql`(대댓글), `V17__profile_badges.sql`(위로 배지 `user_badges`, 칭호 `profiles.title_badge`, 리스너 목록 인덱스), `V18__circles.sql`(커뮤니티 소로우: `communities`·`community_members`·`community_email_codes`·`community_verifications`·`submissions`·`community_follows`, `shout_posts.community_id`·`post_no`), `V19__seed_sample_circles.sql`(샘플 소로우 20개 — 회사 10·대학 10, 사연 3개씩·위로 댓글·힘내요. `communities.sample` 로 표시해 메일 인증 없이 둘러보기에 나오고 화면에 "샘플". 지우는 SQL 은 파일 머리 주석). 백엔드가 시작할 때 자동 적용·검증한다 (`flyway_schema_history`)
-- 외침·위로 피드·랭킹·모금·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
+- 외침·위로 피드·랭킹·빛·관리자·계정·프로필·메시지와 로그인 계정의 기록·메모·목표·일정·내 카테고리(`journal_entries`, `day_logs`, `memos`, `goals`+`goal_steps`, `schedule_items`, `user_categories`, `user_settings`)는 DB. 익명 유저의 기록과 프롬프트 설정, 브리핑 캐시는 localStorage
 - 로그인 전에도 익명 유저가 자동 생성되어(세션 쿠키 `shuim_session`, DB 에는 SHA-256 해시만) 글·힘내요를 쓸 수 있고, 가입하면 승격된다. 비밀번호는 Node 시절과 같은 scrypt(N=16384, r=8, p=1) 라 기존 계정이 그대로 로그인된다
 - 주간 집계는 서버가 GET 때 필요한 주만 계산해 `weekly_batches` 에 저장. 샘플 유저 자동 답글은 `COMMUNITY_SIMULATE=true` 일 때만
 
@@ -208,8 +209,8 @@ backend/
 ## 불행 모금을 실제로 하려면
 
 - 결제: 토스페이먼츠·포트원 등 PG 연동, 환불·취소 처리
-- 법: 불특정 다수에게 모금하는 건 기부금품법 대상, 분배받는 사람의 소득 처리도 검토
-- 운영: 힘내요 어뷰징 방지, 랭킹 확정 전 이의 신청 창구
+- 빛은 가상 재화로 두고 돈으로 바꾸는 길을 만들지 않는다 (실제 돈을 모아 나누면 기부금품법·소득 처리 검토가 필요하다)
+- 운영: 빛·힘내요 어뷰징 방지(이메일 가입에 인증이 없어 부계정 하나가 하루 10빛을 몰아줄 수 있다), 랭킹 확정 전 이의 신청 창구
 - 배치: 월요일 0시 `@Scheduled` 로 `CommunityLogic.computeWeekly` 를 돌려 `weekly_batches` 에 쓰고, 화면은 그 테이블만 읽음
 
 ## 다음 단계 아이디어
