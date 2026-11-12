@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PetHomesTest {
     @Test void appearancesAreRestrictedToSupportedCharacters() {
-        for (var id : List.of("moru", "noa", "leo", "lumi")) assertEquals(id, PetService.validateAppearance(id));
+        for (var id : List.of("moru", "noa", "leo", "lumi", "moring")) assertEquals(id, PetService.validateAppearance(id));
         assertThrows(ApiException.class, () -> PetService.validateAppearance(null));
         assertThrows(ApiException.class, () -> PetService.validateAppearance("other"));
         assertThrows(ApiException.class, () -> PetService.validateAppearance("../noa"));

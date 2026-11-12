@@ -22,7 +22,10 @@ public class PetService {
     public record View(String name, int food, int xp, int level, int levelStart, int levelEnd,
                        String date, int meals, int earned, Answers answers, int reward,
                        int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked,
-                       int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow) {}
+                       int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow,
+                       List<String> appearances) {}
+    /** 고를 수 있는 모습. 화면은 이 목록에 있는 것만 보여 준다 (새 모습을 모르는 옛 서버에서는 고르지 못하게) */
+    static final List<String> APPEARANCES = List.of("moru", "noa", "leo", "lumi", "moring");
     private record CareRow(PetRules.Care care, LocalDate careDate, LocalDate bathDate, LocalDate lightsNight, boolean lightsOff) {}
     private record Pet(String name, PetRules.State state) {}
     private static final Answers EMPTY = new Answers(null, null, null, null, null);
@@ -88,7 +91,7 @@ public class PetService {
             level == 10 ? 720 : PetRules.LEVELS[level], s.date().toString(), s.meals(),
             Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, snacked(uid, s.date()),
             care.care().warmth(), care.care().clean(), care.care().energy(), s.date().equals(care.bathDate()),
-            night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()));
+            night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()), APPEARANCES);
     }
     private List<Integer> owned(String uid) {
         var result = new ArrayList<Integer>(); result.add(0);
@@ -144,7 +147,7 @@ public class PetService {
     public record HomeInput(int homeId) {}
     public record AppearanceInput(String appearance) {}
     static String validateAppearance(String value) {
-        if (value == null || !Set.of("moru", "noa", "leo", "lumi").contains(value))
+        if (value == null || !APPEARANCES.contains(value))
             throw ApiException.badRequest("친구의 모습을 선택해 주세요.");
         return value;
     }

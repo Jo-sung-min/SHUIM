@@ -46,6 +46,13 @@ class PetPostgresTest {
         assertEquals(changed, tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("noa"))));
         assertEquals("noa", tx.execute(s -> pets.get(uid)).appearance());
     }
+    @Test void moringCanBeChosenAndTheViewListsEveryAppearance() {
+        var view = tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("moring")));
+        assertEquals("moring", view.appearance());
+        assertEquals(List.of("moru", "noa", "leo", "lumi", "moring"), view.appearances());
+        assertThrows(Exception.class, () -> tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("dragon"))));
+        assertEquals("moring", tx.execute(s -> pets.get(uid)).appearance());
+    }
     @Test void visitsAndRecordsPayOnlyOnceAndPurchasesAreIdempotent() throws Exception {
         try (var pool = Executors.newFixedThreadPool(4)) {
             var visits = pool.invokeAll(List.of(
