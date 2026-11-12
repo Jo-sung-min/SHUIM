@@ -997,6 +997,12 @@
       "bytes": 188796,
       "sha256": "fe05071bc74d9969f4c61b8b682e491d302b3d52f166eb444a2706326c3d2b1a",
       "contentType": "image/webp"
+    },
+    {
+      "key": "sponsor/fatell-banner-v1.webp",
+      "bytes": 43700,
+      "sha256": "c2ce53944ec2c2525d80757c736921d88fb9355fd9d27219abc7a807b07ade50",
+      "contentType": "image/webp"
     }
   ]
 }

@@ -36,13 +36,20 @@ interface Props {
   onRecordsChange?: () => void;
 }
 
+/**
+ * 마지막으로 받은 방 (메모리에만, 사용자별). 다른 화면에 다녀와 방이 다시 그려질 때 내 친구·내 공간이 바로 보이고, 곧 서버 값으로 바뀐다.
+ * 처음 받기 전에는 아무것도 모르므로 방을 비워 둔다 (기본 모습인 모루가 먼저 보였다가 바뀌지 않게).
+ */
+const lastPet = new Map<string, PetView>();
+
 export default function MoruPet(props: Props) {
   return <PetRoom key={props.userId || "guest"} {...props} />;
 }
 
 function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRecordsChange }: Props) {
-  const [pet, setPet] = useState<PetView | null>(null);
-  const [loading, setLoading] = useState(Boolean(userId));
+  const [pet, setPet] = useState<PetView | null>(() => (userId ? lastPet.get(userId) ?? null : null));
+  const [loading, setLoading] = useState(() => Boolean(userId) && !lastPet.has(userId as string));
+  useEffect(() => { if (userId && pet) lastPet.set(userId, pet); }, [userId, pet]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [needsLogin, setNeedsLogin] = useState(false);
@@ -152,6 +159,8 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
 
   const petName = pet?.name || "모루";
   const appearance = devLook() ?? pet?.appearance ?? "moru";
+  /** 처음 받는 중: 어떤 친구·어떤 공간인지 아직 모른다. 방 안과 이름표를 비워 둔다 */
+  const waiting = loading && !pet;
   useEffect(() => {
     if (!pet) return;
     const companion = { name: petName, appearance };
@@ -464,6 +473,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     <div className={styles.room} ref={roomRef} onPointerDownCapture={() => { if (rainWanted.current) { rainWanted.current = false; setRainOn(true); } }}>
       <SketchFilter />
       <div className={styles.world} ref={worldRef}>
+        {!waiting && <>
         <MoruHomeScene homeId={homeId} sky={sky} />
         <DecorLayer placed={placed} editing={decorating} selected={decorPick} onSelect={setDecorPick}
           onDrop={(item, x, y) => void dropDecor(item, x, y)} onPutAway={(item) => void putAway(item)} />
@@ -499,13 +509,14 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         </button>
         <span className={styles.dusk} data-phase={phase} data-off={nightly && off ? "" : undefined} aria-hidden="true" />
         {speech && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined} data-murmur={!thinking && mood === "idle" ? "" : undefined}><i aria-hidden="true" />{speech}</div>}
+        </>}
       </div>
       <div className={styles.hud}>
-        <div className={styles.nameplate}>
+        <div className={styles.nameplate} style={waiting ? { visibility: "hidden" } : undefined}>
           <button type="button" disabled={!pet} onClick={openCompanions} aria-label={`${petName}, 이름과 모습 바꾸기`}><b>{petName}</b><span>Lv.{pet?.level ?? 1}</span></button>
           <span className={styles.xp} role="progressbar" aria-label={`${petName} 성장`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }} /></span>
         </div>
-        <span className={styles.food} title="마음밥"><RiceIcon /><b aria-hidden="true">{pet?.food ?? 0}</b><span className="sr-only">마음밥 {pet?.food ?? 0}개</span></span>
+        <span className={styles.food} title="마음밥" style={waiting ? { visibility: "hidden" } : undefined}><RiceIcon /><b aria-hidden="true">{pet?.food ?? 0}</b><span className="sr-only">마음밥 {pet?.food ?? 0}개</span></span>
         {pet && <button type="button" className={styles.points} onClick={() => openSheet("homes")} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 이사하기`}>{pet.points ?? 0} P</button>}
         <button type="button" className={styles.hudIcon} aria-label="메뉴" aria-expanded={panel === "menu"} aria-controls={menuId} onClick={() => togglePanel("menu")}><MenuIcon /></button>
       </div>
