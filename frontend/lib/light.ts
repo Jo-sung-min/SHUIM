@@ -46,6 +46,9 @@ export function parseLightWallet(value: unknown): LightWallet {
   return value as unknown as LightWallet;
 }
 
+/** 빛이 아직 없는 서버(화면이 서버보다 먼저 바뀐 동안)는 404 를 준다. 서버의 영어 오류 대신 기다려 달라고 알린다. */
+export const LIGHT_NOT_READY = "빛을 준비하고 있어요. 잠시 뒤에 다시 열어 주세요.";
+
 async function request(userId: string, path: string, method: "GET" | "POST", signal?: AbortSignal): Promise<LightWallet> {
   const assertSession = () => {
     if (!userId || sessionUserId() !== userId) throw new Error("계정이 변경되었어요. 화면을 다시 열어 주세요.");
@@ -54,6 +57,7 @@ async function request(userId: string, path: string, method: "GET" | "POST", sig
   const response = await fetch(path, { method, credentials: "same-origin", cache: "no-store", signal });
   const body: unknown = await response.json().catch(() => null);
   assertSession();
+  if (response.status === 404) throw new Error(LIGHT_NOT_READY);
   if (!response.ok) throw new Error(object(body) && typeof body.error === "string" ? body.error : "빛을 불러오지 못했어요. 다시 시도해 주세요.");
   return parseLightWallet(body);
 }

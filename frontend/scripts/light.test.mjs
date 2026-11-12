@@ -56,6 +56,11 @@ test("malformed balances, bad history and HTML outages never become a wallet", (
 test("errors and account switches are reported instead of showing a zero balance", async () => {
   await assert.rejects(light(async () => ({ ok: false, json: async () => ({ error: "로그인하면 빛을 모을 수 있어요." }) })).fetchLight("alice"), /로그인/);
   await assert.rejects(light(async () => ({ ok: false, json: async () => { throw new Error("html"); } })).fetchLight("alice"), /불러오지 못했어요/);
+  // 빛이 아직 없는 옛 서버: 서버의 "not found" 를 그대로 보여 주지 않는다
+  const old = light(async () => ({ ok: false, status: 404, json: async () => ({ error: "not found" }) }));
+  await assert.rejects(old.fetchLight("alice"), (cause) => cause.message === "빛을 준비하고 있어요. 잠시 뒤에 다시 열어 주세요.");
+  await assert.rejects(old.claimDailyLight("alice"), /준비하고 있어요/);
+  await assert.rejects(light(async () => ({ ok: false, status: 401, json: async () => ({ error: "로그인하면 빛을 모을 수 있어요." }) })).fetchLight("alice"), /로그인/);
   let id = "alice", resolve;
   const api = light(() => new Promise((done) => { resolve = done; }), () => id);
   const pending = api.fetchLight("alice");
