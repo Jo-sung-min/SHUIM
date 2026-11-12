@@ -2,6 +2,7 @@ package kr.co.shuim.profile;
 
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
+import kr.co.shuim.common.Mbti;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.profile.BadgeService.EarnedBadge;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -74,9 +75,9 @@ public class ProfileService {
     public Map<String, Object> getMyProfile(DbUser me) {
         badges.refresh(me.id()); // 주간 랭킹처럼 활동 밖에서 생기는 배지까지 여기서 챙긴다
         PublicProfile pub = getPublicProfile(me.id(), me.id()).orElseThrow();
-        record NP(String name, String phone) {}
-        Optional<NP> np = jdbc.sql("SELECT name, phone FROM profiles WHERE user_id = ?").param(me.id())
-            .query((rs, i) -> new NP(rs.getString("name"), rs.getString("phone"))).optional();
+        record NP(String name, String phone, String mbti) {}
+        Optional<NP> np = jdbc.sql("SELECT name, phone, mbti FROM profiles WHERE user_id = ?").param(me.id())
+            .query((rs, i) -> new NP(rs.getString("name"), rs.getString("phone"), rs.getString("mbti"))).optional();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", pub.id());
         m.put("nick", pub.nick());
@@ -96,8 +97,20 @@ public class ProfileService {
         m.put("badgeCatalog", Badges.ALL);
         m.put("name", np.map(NP::name).orElse(""));
         m.put("phone", np.map(NP::phone).orElse(""));
+        m.put("mbti", np.map(NP::mbti).orElse("")); // 본인용, 선택. 적지 않았으면 빈 값
         m.put("email", me.email());
         return m;
+    }
+
+    /**
+     * MBTI (본인용, 선택): 네 글자가 아니면(빈 값 포함) 지운다. 다른 프로필 항목은 건드리지 않는다.
+     * 칭찬받기·사랑받기가 이 사람이 위로받고 싶어 하는 방향으로 말하는 데 쓴다 (ai/MbtiComfortService)
+     */
+    public void setMbti(DbUser me, String raw) {
+        jdbc.sql("""
+            INSERT INTO profiles (user_id, mbti, updated_at) VALUES (?, ?, now())
+            ON CONFLICT (user_id) DO UPDATE SET mbti = EXCLUDED.mbti, updated_at = now()
+            """).param(me.id()).param(Mbti.normalize(raw)).update();
     }
 
     /** 저장. 문제가 있으면 메시지를 돌려준다. titleBadge 가 null 이면 칭호는 건드리지 않는다("" = 해제) */

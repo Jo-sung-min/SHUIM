@@ -43,6 +43,30 @@ public final class Prompts {
             - 너는 상담사나 의사가 아니야. 진단·처방 없이 곁에서 듣는 친구로 말해.""".formatted(name);
     }
 
+    /** 위로 지침 한 칸의 최대 길이 (표에서 고친 문구가 길어져도 프롬프트를 밀어내지 않게) */
+    public static final int COMFORT_MAX = 300;
+
+    /**
+     * 칭찬받기·사랑받기에 덧붙이는 "이 사람이 위로받고 싶어 하는 방향": 사용자가 프로필에 적은 MBTI 의 지침 (mbti_comfort_guides 표, MbtiComfortService).
+     * 관리자가 프롬프트를 덮어써도 서버가 끝에 덧붙인다. MBTI 글자는 넣지 않는다: 말의 결만 맞추고, 유형을 입에 올리거나 성격을 단정하지 않게.
+     * how 는 칭찬받기면 닿는 칭찬, 사랑받기면 닿는 사랑의 말.
+     */
+    public static String comfort(String direction, String how, String avoid) {
+        return """
+            이 사람이 위로받고 싶어 하는 방향 (참고 지침):
+            - 사용자가 프로필에서 스스로 알려 준 성향에 따른 일반적인 경향이야. 사람마다 다르니 오늘 기록에 드러난 마음이 언제나 먼저고, 기록과 어긋나면 기록을 따라.
+            - 방향: %s
+            - 이렇게 건네면 닿아: %s
+            - 피할 것: %s
+            - 위의 문단 순서·근거·형식 규칙과 금지 사항(조언·비교·진단 금지)은 그대로 지키고, 무엇을 먼저 알아주고 어떤 결의 말로 건넬지만 이 방향에 맞춰. 기록에 없는 일을 이 지침으로 지어내지 마.
+            - 응답에 MBTI·유형 이름·"너는 이런 사람이라서" 같은 말은 쓰지 마. 성격을 단정하지 말고 말의 결로만 반영해.""".formatted(comfortText(direction), comfortText(how), comfortText(avoid));
+    }
+
+    private static String comfortText(String value) {
+        String text = value == null ? "" : value.strip().replaceAll("\\s+", " ");
+        return text.length() > COMFORT_MAX ? text.substring(0, COMFORT_MAX) : text;
+    }
+
     /** 칭찬받기·사랑받기 공통 (브리핑·점검은 각자 규칙을 가진다) */
     private static final String COMMON = TEMPORAL_GROUNDING + "\n\n" + """
         입력: 사용자의 최근 기록(카테고리별 -5~+5 점수와 한 줄 메모, 오늘 한 행동), 카테고리별 메모, 진행 중인 목표, 오늘과 다가오는 일정.

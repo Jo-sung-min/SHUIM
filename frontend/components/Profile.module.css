@@ -109,3 +109,7 @@ a.number:active { background: var(--surface-2); }
 .chipIco { display: inline-flex; }
 .chipIco .badgeIco { width: 20px; height: 20px; border-width: 1px; background: transparent; color: inherit; }
 .chipIco .badgeIco svg { width: 13px; height: 13px; }
+/* 프로필 편집의 MBTI: 자리마다 둘 중 하나 (E·I / S·N / T·F / J·P) */
+.mbti { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mbtiPair { display: flex; gap: 4px; }
+.mbtiPair :global(.chip) { min-width: 40px; justify-content: center; }

@@ -32,6 +32,8 @@ export interface PublicProfile {
 export interface MyProfile extends PublicProfile {
   name: string;
   phone: string;
+  /** MBTI 네 글자 (본인용, 선택). 적지 않았으면 "". 옛 서버(V51 이전) 응답에는 없다: 그때는 입력 칸을 보여 주지 않는다 */
+  mbti?: string;
   email: string | null;
   /** 칭호로 고른 배지 id */
   titleBadge?: string;
@@ -101,7 +103,7 @@ const opts = (method: string, body?: unknown): RequestInit => ({
 });
 
 export const fetchMyProfile = () => fetch("/api/profile", opts("GET")).then((r) => j<MyProfile>(r));
-export const updateMyProfile = async (input: { nick?: string; bio?: string; avatarUrl?: string | null; name?: string; phone?: string; titleBadge?: string }) => {
+export const updateMyProfile = async (input: { nick?: string; bio?: string; avatarUrl?: string | null; name?: string; phone?: string; titleBadge?: string; /** "" 이면 지운다 */ mbti?: string }) => {
   await requireCommunityConsent();
   return fetch("/api/profile", opts("PUT", input)).then((r) => j<MyProfile>(r));
 };

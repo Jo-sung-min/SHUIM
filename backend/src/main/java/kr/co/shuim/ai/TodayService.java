@@ -34,7 +34,13 @@ public class TodayService {
         this.quotes = quotes;
     }
 
-    public Map<String, Object> run(Request raw) {
+    public Map<String, Object> run(Request raw) { return run(raw, null); }
+
+    /**
+     * comfort: 이 사람이 위로받고 싶어 하는 방향 (프로필의 MBTI 에서 온 지침, 없으면 null).
+     * 칭찬받기·사랑받기의 AI 응답에만 쓴다. 위험 신호가 있는 날은 109 안내가 먼저라 붙이지 않고, 규칙 기반 응답(키 없음·실패)에도 쓰지 않는다
+     */
+    public Map<String, Object> run(Request raw, MbtiComfortService.Guide comfort) {
         Request b = raw.normalized();
         String mode = b.mode();
         String text = "review".equals(mode) ? reviewText(b) : toPlainText(b);
@@ -52,6 +58,8 @@ public class TodayService {
             ? cut(override, Prompts.MAX_LEN) + "\n\n" + Prompts.TEMPORAL_GROUNDING : Prompts.DEFAULTS.get(mode);
         // 정리·칭찬·사랑은 모루가 건넨다: 관리자 프롬프트를 덮어써도 화자와 말투는 서버가 붙인다 (분석하기는 그대로)
         if (!"review".equals(mode)) system += "\n\n" + Prompts.companion(b.companion());
+        if (comfort != null && !crisis && ("praise".equals(mode) || "love".equals(mode)))
+            system += "\n\n" + Prompts.comfort(comfort.direction(), "praise".equals(mode) ? comfort.praise() : comfort.love(), comfort.avoid());
         if (quote != null) {
             system += "\n\n" + PHILOSOPHY_CONTEXT_RULES;
             text += "\n\n" + quoteContext(quote);

@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
+import kr.co.shuim.common.Mbti;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.community.CommunityConsentService;
@@ -38,15 +39,18 @@ public class ProfileController {
         return profiles.getMyProfile(auth.requireUser(req, res));
     }
 
-    /** PUT /api/profile { nick?, bio?, avatarUrl?, name?, phone?, titleBadge? } — titleBadge "" 이면 칭호 해제 */
+    /** PUT /api/profile { nick?, bio?, avatarUrl?, name?, phone?, titleBadge?, mbti? } — titleBadge "" 이면 칭호 해제, mbti "" 이면 지움 (없으면 그대로) */
     @PutMapping("/api/profile")
     public Map<String, Object> update(@RequestBody(required = false) Map<String, Object> body, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
         Map<String, Object> b = body == null ? Map.of() : body;
         if (b.containsKey("nick") || b.containsKey("bio") || b.containsKey("avatarUrl") || b.containsKey("titleBadge")) consent.requireAccepted(me);
+        String mbti = s(b.get("mbti")); // 본인용이라 커뮤니티 동의와 무관하다
+        if (mbti != null && !mbti.isBlank() && Mbti.normalize(mbti) == null) throw ApiException.badRequest("MBTI는 네 글자로 골라 주세요.");
         String err = profiles.updateMyProfile(me, new ProfileService.ProfileInput(
             s(b.get("nick")), s(b.get("bio")), s(b.get("avatarUrl")), s(b.get("name")), s(b.get("phone"))), s(b.get("titleBadge")));
         if (err != null) throw ApiException.badRequest(err);
+        if (mbti != null) profiles.setMbti(me, mbti);
         return profiles.getMyProfile(me);
     }
 

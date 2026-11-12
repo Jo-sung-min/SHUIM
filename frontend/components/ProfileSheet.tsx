@@ -11,7 +11,14 @@ import { BadgeIcon } from "@/components/BadgeShelf";
 import styles from "@/app/account-screens.module.css";
 import profileStyles from "@/components/Profile.module.css";
 
-/** 프로필 편집: 사진·닉네임·소개·칭호(공개) + 이름·전화(비공개). 나 화면(사진 누르기)과 설정에서 연다 */
+/** MBTI 의 네 자리: 자리마다 둘 중 하나를 고른다 */
+const MBTI_AXES: [string, string][] = [["E", "I"], ["S", "N"], ["T", "F"], ["J", "P"]];
+const mbtiLetters = (value: string | undefined): string[] => MBTI_AXES.map((axis, i) => (axis.includes((value ?? "").charAt(i).toUpperCase()) ? (value ?? "").charAt(i).toUpperCase() : ""));
+
+/**
+ * 프로필 편집: 사진·닉네임·소개·칭호(공개) + 이름·전화·MBTI(비공개). 나 화면(사진 누르기)과 설정에서 연다.
+ * MBTI 는 고르지 않아도 된다. 적어 두면 홈의 칭찬받기·사랑받기가 그 유형이 위로받고 싶어 하는 방향으로 말한다 (서버 mbti_comfort_guides)
+ */
 export default function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; profile: MyProfile; onClose: () => void; onSaved: (p: MyProfile) => void }) {
   const [nick, setNick] = useState(profile.nick);
   const [bio, setBio] = useState(profile.bio);
@@ -19,6 +26,7 @@ export default function ProfileSheet({ open, profile, onClose, onSaved }: { open
   const [name, setName] = useState(profile.name);
   const [phone, setPhone] = useState(formatPhone(profile.phone));
   const [titleBadge, setTitleBadge] = useState(profile.titleBadge ?? "");
+  const [mbti, setMbti] = useState<string[]>(() => mbtiLetters(profile.mbti));
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [editingPhoto, setEditingPhoto] = useState<File | null>(null);
@@ -42,6 +50,9 @@ export default function ProfileSheet({ open, profile, onClose, onSaved }: { open
   }, []);
   const digits = phone.replace(/\D/g, "");
   const phoneOk = digits.length === 0 || (digits.length >= 10 && digits.length <= 11);
+  const canMbti = profile.mbti !== undefined; // 옛 서버는 MBTI 를 모른다: 칸을 숨기고 보내지 않는다
+  const mbtiPicked = mbti.filter(Boolean).length;
+  const mbtiOk = mbtiPicked === 0 || mbtiPicked === MBTI_AXES.length;
 
   const pickFile = (file: File | undefined) => {
     if (!file || savingRef.current) return;
@@ -50,7 +61,7 @@ export default function ProfileSheet({ open, profile, onClose, onSaved }: { open
   };
 
   const save = async () => {
-    if (savingRef.current || editingPhoto || !phoneOk || nick.trim().length < 2) return;
+    if (savingRef.current || editingPhoto || !phoneOk || !mbtiOk || nick.trim().length < 2) return;
     savingRef.current = true;
     setBusy(true);
     setError(null);
@@ -68,7 +79,7 @@ export default function ProfileSheet({ open, profile, onClose, onSaved }: { open
           setUploading(null);
         }
       }
-      const saved = await updateMyProfile({ nick: nick.trim(), bio, avatarUrl: avatarUrl || null, name, phone: digits, titleBadge });
+      const saved = await updateMyProfile({ nick: nick.trim(), bio, avatarUrl: avatarUrl || null, name, phone: digits, titleBadge, ...(canMbti ? { mbti: mbti.join("") } : {}) });
       if (mountedRef.current) onSaved(saved);
     } catch (e) {
       if (mountedRef.current) setError(e instanceof Error && e.name === "AbortError" ? "사진 전송을 취소했어요. 편집한 사진은 그대로 있어요." : e instanceof Error ? e.message : "저장하지 못했어요. 작성한 내용은 그대로 있어요.");
@@ -124,11 +135,27 @@ export default function ProfileSheet({ open, profile, onClose, onSaved }: { open
           <input id="profile-phone" value={phone} disabled={busy} onChange={(e) => setPhone(formatPhone(e.target.value))} placeholder="010-0000-0000" inputMode="tel" autoComplete="tel" />
           {!phoneOk && <span className="form-error">숫자 10~11자리로 입력해요.</span>}
         </div>
+        {canMbti && <div className="field">
+          <span className={profileStyles.fieldLabel} id="profile-mbti-label">MBTI (나만 보기 · 선택)</span>
+          <div className={profileStyles.mbti} role="group" aria-labelledby="profile-mbti-label">
+            {MBTI_AXES.map((axis, i) => (
+              <div key={axis[0]} className={profileStyles.mbtiPair} role="radiogroup" aria-label={`${axis[0]} 또는 ${axis[1]}`}>
+                {axis.map((letter) => (
+                  <button key={letter} type="button" role="radio" aria-checked={mbti[i] === letter} className={`chip ${mbti[i] === letter ? "on" : ""}`} disabled={busy}
+                    onClick={() => setMbti((current) => current.map((value, at) => (at !== i ? value : value === letter ? "" : letter)))}>{letter}</button>
+                ))}
+              </div>
+            ))}
+            {mbtiPicked > 0 && <button type="button" className="text-btn muted" disabled={busy} onClick={() => setMbti(MBTI_AXES.map(() => ""))}>지우기</button>}
+          </div>
+          {mbtiOk ? <span className="tiny muted">적어 두면 칭찬받기·사랑받기가 내가 위로받고 싶은 방향으로 말해 줘요. 다른 사람에게는 보이지 않아요.</span>
+            : <span className="form-error">네 자리를 모두 고르거나, 모두 비워 주세요.</span>}
+        </div>}
         {error && <p className={styles.error} role="alert">{error}</p>}
       </div>
       <div className="sheet-actions">
         <button type="button" className="btn ghost" disabled={busy || uploading !== null} onClick={onClose}>취소</button>
-        <button type="button" className="btn" disabled={!phoneOk || busy || uploading !== null || nick.trim().length < 2} onClick={save}>{uploading !== null ? `사진 전송 중 ${uploading}%` : busy ? "저장 중…" : "저장"}</button>
+        <button type="button" className="btn" disabled={!phoneOk || !mbtiOk || busy || uploading !== null || nick.trim().length < 2} onClick={save}>{uploading !== null ? `사진 전송 중 ${uploading}%` : busy ? "저장 중…" : "저장"}</button>
       </div>
     </Sheet>
     </div>

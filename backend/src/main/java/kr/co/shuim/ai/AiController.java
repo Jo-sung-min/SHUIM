@@ -2,6 +2,7 @@ package kr.co.shuim.ai;
 
 import jakarta.servlet.http.HttpServletRequest;
 import kr.co.shuim.auth.PolicyConsentService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,18 +15,29 @@ public class AiController {
     private final TodayService today;
     private final SummarizeService summarize;
     private final PolicyConsentService policies;
+    private final MbtiComfortService comfort;
 
+    /** 위로 지침 없이 (시험용) */
     public AiController(TodayService today, SummarizeService summarize, PolicyConsentService policies) {
+        this(today, summarize, policies, null);
+    }
+
+    @Autowired
+    public AiController(TodayService today, SummarizeService summarize, PolicyConsentService policies, MbtiComfortService comfort) {
         this.today = today;
         this.summarize = summarize;
         this.policies = policies;
+        this.comfort = comfort;
     }
 
     /** POST /api/today — mode: briefing | praise | love | review */
     @PostMapping("/api/today")
     public Map<String, Object> today(@RequestBody TodayDtos.Request body, HttpServletRequest req) {
         policies.requireAiConsent(req);
-        return today.run(body);
+        // 칭찬받기·사랑받기는 이 계정이 프로필에 적어 둔 MBTI 의 위로 방향을 지침으로 받는다 (없으면 지금까지와 같다)
+        boolean moment = body != null && ("praise".equals(body.mode()) || "love".equals(body.mode()));
+        MbtiComfortService.Guide guide = moment && comfort != null ? comfort.guideFor(req).orElse(null) : null;
+        return guide == null ? today.run(body) : today.run(body, guide);
     }
 
     /** POST /api/summarize — 최근 N일 흐름 정리 */
