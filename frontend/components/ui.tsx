@@ -129,7 +129,7 @@ export function CatTag({ cat }: { cat: MemoCat }) {
 /* ---------- 바텀시트 (작은 작업용. 긴 읽기는 별도 화면) ---------- */
 const openSheets: HTMLElement[] = [];
 let previousOverflow = "";
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Sheet({ open, onClose, title, children, className }: { open: boolean; onClose: () => void; title: string; children: ReactNode; /** 시트에 덧입힐 모양 (모루 방의 손그림 시트) */ className?: string }) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -166,7 +166,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   return (
     <>
       <div className="sheet-backdrop" aria-hidden="true" onClick={() => { if (openSheets.at(-1) === sheetRef.current) onClose(); }} />
-      <div ref={sheetRef} className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+      <div ref={sheetRef} className={className ? `sheet ${className}` : "sheet"} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="handle" aria-hidden="true" />
         <div className="sheet-title"><h3 id={titleId}>{title}</h3><button type="button" className="icon-btn sheet-close" onClick={onClose} aria-label={`${title} 닫기`}><IconClose /></button></div>
         {children}

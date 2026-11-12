@@ -24,10 +24,15 @@ export function currentHour(): number {
   return koreaHour();
 }
 
-/** 개발 확인용: ?moruLook=moring 으로 저장 없이 모습만 바꿔 본다 (운영 빌드에서는 무시) */
-export function devLook(): string | null {
+/** 개발 확인용: ?moruLook=moring 으로 모습을, ?moruHome=1 로 공간을 저장 없이 바꿔 본다 (운영 빌드에서는 무시) */
+function devParam(name: string): string | null {
   if (process.env.NODE_ENV === "production" || typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("moruLook");
+  return new URLSearchParams(window.location.search).get(name);
+}
+export const devLook = (): string | null => devParam("moruLook");
+export function devHome(): number | null {
+  const raw = devParam("moruHome");
+  return raw !== null && /^[0-8]$/.test(raw) ? Number(raw) : null;
 }
 
 /* ---------- 모루의 말 ---------- */

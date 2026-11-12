@@ -111,7 +111,7 @@ export default function MoruMindSheet({ open, name, onClose, closeRef }: { open:
   const delta = c && e ? e.delta ?? e.score - prevScoreOf(c.id) : null;
 
   return (
-    <Sheet open={open} title={`${name}에게 마음 들려주기`} onClose={close}>
+    <Sheet open={open} title={`${name}에게 마음 들려주기`} onClose={close} className={styles.handSheet}>
       {!ready ? <div role="status" aria-label="오늘 기록을 불러오고 있어요" className={styles.mindLoading}><div className="skeleton" /><div className="skeleton" /></div> : <div className={styles.mind}>
         <p className={styles.mindIntro}>마음 {recorded}/{cats.length} · 하나에 마음밥 1개, 하루 {DAILY_FOOD_MAX}개까지</p>
         <div className={styles.mindSteps} ref={stepsRef} role="tablist" aria-label="기록 단계">

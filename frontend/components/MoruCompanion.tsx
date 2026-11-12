@@ -7,11 +7,15 @@ export const COMPANIONS = [
   { id: "noa", name: "노아", detail: "흑발 · 달빛 리본" },
   { id: "leo", name: "레오", detail: "금발 · 작은 망토" },
   { id: "lumi", name: "루미", detail: "라벤더 · 별빛 베레모" },
+  { id: "moring", name: "모링", detail: "눈밭의 흰 솜털 새" },
 ];
+/** 서버가 처음부터 알던 모습. 그 뒤에 생긴 모습(모링)은 서버가 받아 준다고 알려 줄 때만 고르게 한다 */
+const FIRST_LOOKS = ["moru", "noa", "leo", "lumi"];
+export const companionChoices = (allowed?: string[]) => COMPANIONS.filter((c) => (allowed ?? FIRST_LOOKS).includes(c.id));
 
 export default function MoruCompanion({ appearance = "moru", mood, level = 1 }: { appearance?: string; mood: MoruMood; level?: number }) {
   if (appearance === "moring") return <MoringSprite mood={mood} level={level} />;
-  if (!COMPANIONS.some((c) => c.id === appearance) || appearance === "moru") return <MoruSprite mood={mood} level={level} />;
+  if (!["noa", "leo", "lumi"].includes(appearance)) return <MoruSprite mood={mood} level={level} />;
   const boy = appearance === "leo";
   const lavender = appearance === "lumi";
   const happy = mood === "happy" || mood === "pet" || mood === "eat";

@@ -62,7 +62,7 @@
 @media(prefers-reduced-motion:reduce){.card *,.guide *{animation:none!important;transition:none!important}}
 .shop{padding-bottom:20px}.shopBalance{font-size:13px;color:var(--text-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}.shopBalance b{color:var(--text);font-size:19px}.shopBalance small{flex-basis:100%;font-size:11px;line-height:1.7}
 .homeCard{display:flex;gap:16px;margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:16px;background:var(--surface-2)}
-.homePreview{position:relative;flex:0 0 110px;height:120px;overflow:hidden;border-radius:10px;background:#292733;pointer-events:none}.homePreview>span{display:grid;place-items:center;height:100%;font-size:42px;color:#8e7f9d}.homePreview svg:not(:first-child){display:none}
+.homePreview{position:relative;flex:0 0 110px;height:120px;overflow:hidden;border-radius:10px;background:#292733;pointer-events:none}.homePreview>span{display:grid;place-items:center;height:100%;font-size:42px;color:#8e7f9d}.homePreview [data-moru-stage]{bottom:-30px;transform:scale(.3);transform-origin:50% 100%}.homePreview [data-moru-stage] *{animation:none!important;will-change:auto}
 .homeInfo{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px}.homeInfo strong{font-size:15px}.homeInfo small{font-size:11px;color:var(--text-2)}.homeInfo button{border:0;border-radius:9px;padding:9px 12px;background:var(--accent);color:white;font:inherit;font-size:11px;cursor:pointer}.homeInfo button:disabled{background:var(--border);color:var(--text-2);cursor:default}
 .closedRoom{--edge:12px;--pad-h:78px;position:relative;height:420px;overflow:hidden;background:radial-gradient(ellipse at 50% 40%,#4b405b 0%,#282637 55%,#20212c 100%);color:#f0e4f3}
 .closedLink{position:absolute;inset:0 0 calc(var(--pad-h) + var(--edge));display:flex;align-items:center;justify-content:center;flex-direction:column;gap:30px;text-decoration:none;color:inherit}
@@ -163,10 +163,11 @@
 .card[data-full] .alert{bottom:calc(var(--edge) + env(safe-area-inset-bottom) + var(--pad-h) + 8px)}
 .card[data-full] .talk{bottom:calc(var(--edge) + env(safe-area-inset-bottom) + var(--pad-h) + 8px)}
 /* ---------- 비 오는 작은 방의 하루 (docs/MORU_TAMAGOTCHI.md 1단계) ---------- */
-/* 저녁에는 등불 빛이 번지고, 밤에 불을 끄면 방이 어두워진다 (창가만 조금 밝게). 말풍선은 그 위에 */
+/* 저녁에는 등불 빛이 번지고, 밤에 불을 끄면 방이 어두워진다 (창가만 조금 밝게). 말풍선은 그 위에.
+   등과 창의 자리는 무대(MoruScene)와 같이 방 아래 가운데에서 잰다: 등은 왼쪽 130px·위 160px, 창 가운데는 위 265px */
 .dusk{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity 1.2s ease}
-.dusk[data-phase="evening"],.dusk[data-phase="sleepy"]{opacity:1;background:radial-gradient(ellipse at 14% 84%,#ffb86a3d,transparent 58%)}
-.dusk[data-off]{opacity:1;background:radial-gradient(ellipse at 50% 36%,#0b0a1866 0%,#0b0a18c9 64%)}
+.dusk[data-phase="evening"],.dusk[data-phase="sleepy"]{opacity:1;background:radial-gradient(ellipse at calc(50% - 130px) calc(100% - 160px),#ffb86a3d,transparent 58%)}
+.dusk[data-off]{opacity:1;background:radial-gradient(ellipse at 50% calc(100% - 265px),#0b0a1866 0%,#0b0a18c9 64%)}
 .speech{z-index:4}
 /* 혼잣말은 대답보다 작고 흐리게 */
 .speech[data-murmur]{background:#e9e2f0d9;color:#6a5874;font-size:11px;animation:speechIn .5s var(--ease)}
@@ -292,3 +293,57 @@
 .petButton[data-glow]::before{left:4%;top:20%}
 .petButton[data-glow]::after{right:2%;top:42%;animation-delay:.8s}
 @keyframes glowTwinkle{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
+/* ---------- 로그인 전: 닫힌 덧창 (손그림) ----------
+   밤의 나무 벽에 덧창이 닫혀 있고, 틈으로 방 안의 불빛이 샌다. 떨리는 외곽선은 멈춰 있는 창틀과 덧창에만 건다 (빛은 따로 깜빡인다) */
+.closedRoom{background:#5e3f33 repeating-linear-gradient(90deg,transparent 0 58px,#4b3028 58px 60px);color:#fff6e0}
+.closedLink:focus-visible{outline:3px dashed #fff6e0;outline-offset:-6px}
+.closedRain{background:repeating-linear-gradient(105deg,transparent 0 30px,#dfe9f01f 31px 32px,transparent 33px 62px)}
+.closedWindow{isolation:isolate;gap:6px;padding:9px;background:none;border:0;box-shadow:none}
+.closedWindow::before{content:"";position:absolute;inset:0;z-index:-1;border:2.5px solid var(--hd-ink);border-radius:20px 23px 19px 22px/22px 19px 23px 20px;background:#3d2a20;box-shadow:0 0 46px #ffcf7a36,0 6px 0 #2a1b1340;filter:url(#moru-sketch)}
+.closedWindow i{border:2.2px solid var(--hd-ink);border-radius:11px 13px 10px 12px/12px 10px 13px 11px;background:#e5b65f repeating-linear-gradient(0deg,transparent 0 17px,#c08f3d 17px 19px);box-shadow:none;filter:url(#moru-sketch)}
+.closedWindow i::after{width:8px;height:8px;border:2px solid var(--hd-ink);border-radius:50%;background:#fff3dc}
+.closedWindow b{top:12px;bottom:12px;left:calc(50% - 1.5px);width:3px;border-radius:2px;background:#ffe9b0;box-shadow:0 0 14px 2px #ffd98a}
+.closedWindow em{right:-18px;top:20px;color:#ffe9b0;font-size:18px}
+.findMe{font-size:20px;letter-spacing:0}
+.findMe span{color:#ecd9bd;font-size:12px}
+/* ---------- 손그림 시트 ----------
+   방에서 여는 시트(마음 기록·이사·모습·안내)는 같은 종이 위에 쓴다: 앱의 색 토큰을 시트 안에서만 크림·갈색으로 바꾸고
+   버튼·칩·입력창에 굵은 외곽선을 두른다. 낮·밤 테마와 무관하다 (방과 같은 세계). ui.tsx 의 Sheet 가 className 으로 받는다 */
+.handSheet{--surface:#fff6e0;--surface-2:#ffeccb;--surface-3:#f3dcb0;--text:#4a3528;--text-2:#7a5f4d;--text-3:#7a5f4d;--border:#dcc39b;--border-strong:#b89a72;
+  --accent:#7a5fc4;--accent-strong:#6a4fb4;--accent-soft:#ece2fb;--on-accent:#fff;--danger:#a8383e;--danger-soft:#fbe3df;
+  --lg-fill:#ffeccb;--lg-fill-strong:#f6dcae;--lg-lens:#4a352817;--lg-rim:transparent;--lg-line:#4a3528;--lg-sheen:none;--lg-tint-sheen:none;--lg-shadow:none;
+  --field-bg:#fffaf0;--field-bg-focus:#fff;--field-line:#4a3528;--field-line-hover:#4a3528;--field-focus-line:#7a5fc4;--up:#4a3528;--down:#7a5f4d;--zero:#dcc39b;
+  --hd-ink:#4a3528;--hd-lip:#e6c48d;--hd-accent:#cfbdf2;--hd-accent-lip:#a890d8;
+  border-top:2.5px solid #4a3528;border-radius:24px 20px 0 0/22px 24px 0 0;background:#fff6e0;color:#4a3528;color-scheme:light;
+  font-family:"Jua","Pretendard Variable",Pretendard,sans-serif;font-synthesis:none;letter-spacing:0}
+.handSheet :global(.handle){background:#4a352855}
+.handSheet h3,.handSheet h4,.handSheet strong,.handSheet b{font-weight:400;letter-spacing:0}
+.handSheet :global(.sheet-close){border:2.2px solid var(--hd-ink);background:#ffeccb;color:var(--hd-ink)}
+.handSheet :global(.sheet-actions){background:#fff6e0}
+.handSheet :global(.btn),.handSheet .primary{border:2.5px solid var(--hd-ink);border-radius:16px 19px 15px 18px/18px 15px 19px 16px;background-color:var(--hd-accent);background-image:none;color:var(--hd-ink);box-shadow:inset 0 -4px 0 var(--hd-accent-lip);font-weight:400}
+.handSheet :global(.btn):not(:disabled):active,.handSheet .primary:not(:disabled):active{background-color:var(--hd-accent);box-shadow:inset 0 -1px 0 var(--hd-accent-lip);transform:translateY(2px)}
+.handSheet :global(.btn.ghost),.handSheet :global(.btn.soft),.handSheet .secondary{border:2.5px solid var(--hd-ink);border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background-color:#ffeccb;background-image:none;color:var(--hd-ink);box-shadow:inset 0 -4px 0 var(--hd-lip);font-weight:400}
+.handSheet :global(.btn.ghost):not(:disabled):active,.handSheet :global(.btn.soft):not(:disabled):active,.handSheet .secondary:not(:disabled):active{background-color:#ffeccb;box-shadow:inset 0 -1px 0 var(--hd-lip);transform:translateY(2px)}
+.handSheet .primary span{color:var(--hd-ink)}
+.handSheet :global(.chip){border:2px solid var(--hd-ink);box-shadow:none;font-weight:400}
+.handSheet :global(.chip.on){border-color:var(--hd-ink);box-shadow:none}
+.handSheet :global(.note),.handSheet :global(.inline-input) input,.handSheet .noteLabel input,.handSheet .noteLabel textarea{border:2px solid var(--hd-ink);border-radius:14px 16px 13px 15px/15px 13px 16px 14px;background:#fffaf0;color:var(--hd-ink)}
+.handSheet :global(.score-row){border:2px solid var(--hd-ink);border-radius:14px 16px 13px 15px/15px 13px 16px 14px;background:#fffaf0;overflow:hidden}
+.handSheet :global(.score-btn){border-radius:0;font-weight:400}
+.handSheet :global(.score-thumb){border-radius:0}
+.handSheet .mindSteps{border-bottom:2px dashed #dcc39b}
+.handSheet .mindSteps b{border:2px solid var(--hd-ink);background:#fffaf0;color:var(--hd-ink)}
+.handSheet .mindSteps [data-done] b{background:#ece2fb;color:var(--hd-ink)}
+.handSheet .mindSteps [aria-current="step"]{color:var(--hd-ink);font-weight:400}
+.handSheet .mindSteps [aria-current="step"] b{background:var(--hd-accent);color:var(--hd-ink)}
+.handSheet .homeCard{border:2.5px solid var(--hd-ink);border-radius:18px 21px 17px 20px/20px 17px 21px 18px;background:#fffaf0}
+.handSheet .homePreview{border:2px solid var(--hd-ink);border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:#8c5f47}
+.handSheet .homePreview>span{color:#f3dcb0}
+.handSheet .homeInfo strong{font-size:16px}
+.handSheet .homeInfo button{min-height:36px;padding:7px 13px 10px;border:2.2px solid var(--hd-ink);border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:var(--hd-accent);color:var(--hd-ink);box-shadow:inset 0 -3px 0 var(--hd-accent-lip);font-size:12px}
+.handSheet .homeInfo button:not(:disabled):active{transform:translateY(2px);box-shadow:none}
+.handSheet .homeInfo button:disabled{border-color:#b89a72;background:#f3e6cc;color:#6f5545;box-shadow:none;opacity:1}
+.handSheet .companionHero{background:radial-gradient(ellipse at 50% 72%,#e6c48d66,transparent 66%)}
+.handSheet .companionChoices button{border:2.5px solid var(--hd-ink);border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background:#fffaf0;color:var(--hd-ink)}
+.handSheet .companionChoices button[aria-pressed="true"]{border-color:var(--hd-ink);background:#ece2fb;box-shadow:inset 0 0 0 2px var(--hd-accent-lip)}
+.handSheet .error{border:2px solid var(--danger);border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:#fbe3df}

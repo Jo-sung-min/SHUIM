@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sheet } from "./ui";
 import MoruSprite, { type MoruMood } from "./MoruSprite";
-import MoruCompanion, { COMPANIONS } from "./MoruCompanion";
+import MoruCompanion, { companionChoices } from "./MoruCompanion";
 import { ROOM_SCENES } from "./MoruRoom";
-import MoruHomeScene from "./MoruHomeScene";
+import MoruHomeScene, { HOME_NAMES } from "./MoruHomeScene";
 import MoruMindSheet from "./MoruMindSheet";
 import { IconBook, IconBubble, IconMoon, IconSmile, IconSun } from "./Icons";
 import { fetchMe } from "@/lib/auth";
@@ -16,7 +16,7 @@ import { PetError, petRequest, type PetView } from "@/lib/pet";
 import {
   BATH_LINES, DAILY_FOOD_MAX, DUST_LINES, GLOW_LINE, HUG_LINES, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
   RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, TICKLE_LINES,
-  currentHour, dayPhase, devLook, dueMeals, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
+  currentHour, dayPhase, devHome, devLook, dueMeals, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
   petLine, pickLine, recordLine, rubStats, saveCompanion, saveRainPref, takeNewMeal, touchSpot, type Companion,
 } from "@/lib/moru";
 import { startRain, stopRain } from "@/lib/rain-sound";
@@ -181,7 +181,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   };
 
   const progress = pet ? pet.level === 10 ? 100 : (pet.xp - pet.levelStart) / (pet.levelEnd - pet.levelStart) * 100 : 0;
-  const homeId = pet?.homeId ?? 0;
+  const homeId = devHome() ?? pet?.homeId ?? 0;
   const ownedHomes = pet?.ownedHomes ?? [0];
   const ready = Boolean(pet) && !busy;
 
@@ -452,7 +452,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       </div>
     </div>
     <MoruMindSheet open={sheet === "mind"} name={petName} closeRef={closeMindRef} onClose={(changed) => void closeMind(changed)} />
-    <Sheet open={sheet === "companions"} title="우리 친구" onClose={() => { if (!busy) setSheet(null); }}>
+    <Sheet open={sheet === "companions"} title="우리 친구" onClose={() => { if (!busy) setSheet(null); }} className={styles.handSheet}>
       <div className={styles.companionGallery}>
         <form className={styles.nameForm} onSubmit={async (e) => { e.preventDefault(); const data = await mutate("/name", { name }); if (data) { setSheet(null); react("happy", `${data.name}, 그게 내 이름이구나.`); } }}>
           <label className={styles.noteLabel}>부르고 싶은 이름<input maxLength={20} value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required /></label>
@@ -460,7 +460,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         </form>
         <div className={styles.companionHero}><MoruCompanion appearance={chosenAppearance} mood="idle" level={pet?.level} /></div>
         <div className={styles.companionChoices} role="group" aria-label="캐릭터 선택">
-          {COMPANIONS.map((friend) => <button key={friend.id} type="button" disabled={busy} aria-pressed={chosenAppearance === friend.id} onClick={() => setChosenAppearance(friend.id)}>
+          {companionChoices(pet?.appearances).map((friend) => <button key={friend.id} type="button" disabled={busy} aria-pressed={chosenAppearance === friend.id} onClick={() => setChosenAppearance(friend.id)}>
             <MoruCompanion appearance={friend.id} mood={chosenAppearance === friend.id ? "happy" : "idle"} />
             <strong>{friend.name}</strong><small>{friend.detail}</small>
           </button>)}
@@ -473,7 +473,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         }}>{busy ? "저장 중…" : !pet ? "연결 후 선택할 수 있어요" : chosenAppearance === appearance ? "함께하는 중" : "이 모습으로 함께하기"}</button>
       </div>
     </Sheet>
-    <Sheet open={sheet === "homes"} title={`${petName}의 공간`} onClose={() => { if (!busy) setSheet(null); }}>
+    <Sheet open={sheet === "homes"} title={`${petName}의 공간`} onClose={() => { if (!busy) setSheet(null); }} className={styles.handSheet}>
       <div className={styles.shop}>
         <p className={styles.shopBalance}>방문포인트 <b>{pet?.points ?? 0} P</b><small>첫 방문 +10 · 마음밥 하나에 +4 (하루 +20까지)</small></p>
         {error && <p className={styles.error} role="alert">{error}</p>}
@@ -487,14 +487,14 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           const label = current ? "머무는 중" : !home.available ? "준비 중" : owned ? "머물기" : previousNeeded ? "이전 공간 필요" : lowLevel ? `Lv.${home.level} 필요` : missing ? `${missing} P 부족` : "구매하고 이사";
           return <article key={home.id} className={styles.homeCard}>
             <div className={styles.homePreview}>{home.available ? <MoruHomeScene homeId={home.id} scene={scene} /> : <span aria-hidden="true">⌂</span>}</div>
-            <div className={styles.homeInfo}><strong>{home.name}</strong><small>Lv.{home.level} · {owned ? "보유" : `${home.cost} P`}</small>
+            <div className={styles.homeInfo}><strong>{HOME_NAMES[home.id] ?? home.name}</strong><small>Lv.{home.level} · {owned ? "보유" : `${home.cost} P`}</small>
               <button type="button" disabled={disabled} onClick={async () => { const data = await mutate("/home", { homeId: home.id }); if (data) { setSheet(null); setMood("idle"); if (reactionTimer.current) clearTimeout(reactionTimer.current); } }}>{label}</button>
             </div>
           </article>;
         })}
       </div>
     </Sheet>
-    <Sheet open={sheet === "guide"} title={`${petName}와 천천히, 함께`} onClose={() => setSheet(null)}>
+    <Sheet open={sheet === "guide"} title={`${petName}와 천천히, 함께`} onClose={() => setSheet(null)} className={styles.handSheet}>
       <div className={styles.guide}>
         <MoruSprite mood="happy" />
         <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />간식·목욕은 하루 한 번 · 길게 누르면 안아 주기, 문지르면 간질이기<br />먼지는 톡 눌러 치우고, 밤에는 불을 꺼서 재워 주세요.<br />온기·말끔함·기운이 낮아도 잃는 건 없어요. 쉬어 가도 괜찮아요.</p>

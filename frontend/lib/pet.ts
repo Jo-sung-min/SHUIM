@@ -20,6 +20,8 @@ export interface PetView {
   lightsOff?: boolean;
   /** 온기·말끔함·기운이 모두 가득 */
   glow?: boolean;
+  /** 서버가 받아 주는 모습들. 예전 서버 응답에는 없다 (그때는 새 모습을 보여 주지 않는다) */
+  appearances?: string[];
 }
 export interface PetHome { id: number; name: string; level: number; cost: number; available: boolean }
 export const EMPTY_ANSWERS: PetAnswers = { mood: null, intensity: null, reason: null, note: null, need: null };
