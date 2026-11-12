@@ -283,6 +283,12 @@ public class BeachService {
         return binding.room().setLighting(mode);
     }
 
+    /** 지금 같은 방에서 서로 보이는 사람들 (감정구슬의 "함께 있던 친구"). 모르는 티켓이면 아무도 없다 */
+    public java.util.List<BeachRoom.Companion> companions(String ticket) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        return binding == null ? java.util.List.of() : binding.room().companions(ticket);
+    }
+
     /** Read only the existing in-memory binding; this does not validate or refresh a visit. */
     String communityIdForTicket(String ticket) {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);

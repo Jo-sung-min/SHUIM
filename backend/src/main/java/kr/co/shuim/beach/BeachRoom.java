@@ -1051,6 +1051,22 @@ public class BeachRoom {
         return p != null && live(p, clock.getAsLong()) ? p : null;
     }
 
+    /** 감정구슬의 "함께 있던 친구" 메모에 적는 사람 (docs/EMOTION_ORBS.md 4장) */
+    public record Companion(String userId, String nick) {}
+
+    /** 지금 이 방에서 나와 서로 보이는 사람들. 서로 차단한 사이, 가짜 방문자, 내 다른 기기는 뺀다 */
+    public List<Companion> companions(String ticket) {
+        Presence me = presence(ticket);
+        if (me == null) return List.of();
+        long now = clock.getAsLong();
+        Map<String, Companion> beside = new LinkedHashMap<>();
+        for (Presence p : byTicket.values()) {
+            if (p.bot() || p.userId.equals(me.userId) || !live(p, now) || !me.sees(p) || !p.sees(me)) continue;
+            beside.putIfAbsent(p.userId, new Companion(p.userId, p.nick));
+        }
+        return List.copyOf(beside.values());
+    }
+
     /** Slot assignment, release and expiry share the room lock. A ticket cannot reserve another room's slot. */
     public synchronized RestPresence rest(String ticket, String action, String spotId) {
         long now = clock.getAsLong();
