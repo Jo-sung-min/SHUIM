@@ -81,9 +81,12 @@ export default function AiPreferencesPage() {
         </label>}
         <label className="consent-choice">
           <input type="checkbox" checked={ai} disabled={saving} onChange={(event) => { setAi(event.target.checked); setMessage(""); }} />
-          <span><strong>[선택]</strong> AI 응답 생성을 위해 위의 기록을 OpenAI에 전달해 처리하는 것에 동의해요.</span>
+          <span>AI 응답 생성을 위해 위의 기록을 OpenAI에 전달해 처리하는 것에 동의해요.</span>
         </label>
-        <p className="consent-help">동의하지 않아도 기록과 커뮤니티를 이용할 수 있어요. 동의 후에는 AI 요청 때마다 확인창이 뜨지 않으며, 이 화면에서 언제든 해제할 수 있어요. 해제하면 이후 AI 요청부터 전송하지 않아요.</p>
+        {/* 지금 가입하면 가입 동의에 AI 정보 처리가 함께 들어 있다. 이 화면은 끄거나 다시 켤 때, 그리고 그 전에 만든 계정이 처음 동의할 때 쓴다 */}
+        <p className="consent-help">{consent.aiAccepted
+          ? "가입할 때 함께 동의한 항목이에요. 끄면 이후 AI 요청부터 보내지 않고, 기록과 커뮤니티는 그대로 쓸 수 있어요."
+          : "동의하면 AI 요청 때마다 다시 묻지 않아요. 동의하지 않아도 기록과 커뮤니티는 그대로 쓸 수 있어요."}</p>
         <button className="btn block" type="submit" disabled={!terms || saving} aria-busy={saving}>{saving ? "저장하는 중…" : returnTo && ai ? "동의하고 돌아가기" : "선택 저장하기"}</button>
       </form>}
       {error && <div className="inline-error" role="alert"><p>{error}</p><button className="text-btn" type="button" onClick={() => void load()} disabled={loading || saving}>설정 다시 불러오기</button></div>}

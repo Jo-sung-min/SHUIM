@@ -13,6 +13,19 @@ import { IconChevronL, IconChevronR, IconKakao, IconUser } from "@/components/Ic
 import styles from "../account-screens.module.css";
 
 type Mode = "login" | "signup";
+
+/**
+ * 가입 전 동의 한 번: 이용약관에 동의하고 개인정보 처리방침과 AI 기능의 정보 처리(OpenAI 전달)를 함께 확인한다.
+ * 가입할 때 AI 동의도 같이 저장해서(aiDisclosureAccepted: true) AI 기능을 처음 쓸 때 따로 묻지 않는다. AI 는 서비스 안내의 AI 이용 안내에서 언제든 끌 수 있다
+ */
+function SignupConsent({ checked, onChange, disabled, note }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; note: string }) {
+  return <section className={styles.consent} aria-labelledby="signup-consent-title">
+    <h3 id="signup-consent-title">가입 전 확인해 주세요</h3>
+    <label className={styles.check}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} required /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고, <Link href="/privacy">개인정보 처리방침</Link>과 AI 기능의 정보 처리를 확인했어요.</strong></span></label>
+    <p>{note}</p>
+    <p>AI 기능을 쓰면 관련 기록·메모·목표·일정과 위로 요청 내용을 OpenAI의 GPT에 전달해 답변을 만들어요. 분석에는 전체 메모가 포함될 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. AI는 서비스 안내에서 언제든 끌 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
+  </section>;
+}
 type Pending = "submit" | "nick" | "logout" | "kakao" | "toss" | null;
 
 export default function AuthPage() {
@@ -27,8 +40,8 @@ export default function AuthPage() {
   const pendingRef = useRef(false);
   const navigatingRef = useRef(false);
   const [editNick, setEditNick] = useState<string | null>(null);
+  /** 가입 동의 하나: 이용약관·개인정보 처리방침과 AI 기능의 정보 처리를 함께 확인한다 (AI 를 처음 쓸 때 따로 묻지 않게) */
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [aiAccepted, setAiAccepted] = useState(false);
   const [kakaoSignup, setKakaoSignup] = useState(false);
   const [tossSignup, setTossSignup] = useState(false);
   const [policy, setPolicy] = useState<PolicyConsent | null>(null);
@@ -73,11 +86,11 @@ export default function AuthPage() {
 
   const submit = () => run("submit", async () => {
     if (mode === "signup" && !termsAccepted) {
-      setError("이용약관과 개인정보 처리방침을 확인하고 동의해 주세요.");
+      setError("이용약관·개인정보 처리방침과 AI 정보 처리를 확인하고 동의해 주세요.");
       return;
     }
     const result = mode === "signup"
-      ? await signUp(email, nick, password, { signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: aiAccepted })
+      ? await signUp(email, nick, password, { signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: true })
       : await signIn(email, password);
     if (!result.ok) {
       setError(result.error);
@@ -98,7 +111,7 @@ export default function AuthPage() {
   const tossStart = () => run("toss", async () => {
     if (tossSignup) {
       if (!termsAccepted || !policy) return;
-      setPolicy(await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: aiAccepted, expectedUserId: policy.userId }));
+      setPolicy(await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: true, expectedUserId: policy.userId }));
     }
     const result = await signInWithToss();
     if (!result.ok) {
@@ -155,13 +168,7 @@ export default function AuthPage() {
         <h2>마음을 기록하고,<br />익명으로 위로를 나눠요.</h2>
         <p>{tossSignup ? "토스로 처음 오셨네요. 가입 안내를 확인해 주세요." : "하루의 마음을 적으면 흐름을 보여 주고, 털어놓은 고민에는 다른 사람들이 위로를 남겨요. 토스로 시작하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요."}</p>
       </section>
-      {tossSignup && <section className={styles.consent} aria-labelledby="signup-consent-title">
-        <h3 id="signup-consent-title">가입 전 확인해 주세요</h3>
-        <label className={styles.check}><input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} disabled={busy} /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고<br /><Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</strong></span></label>
-        <p>토스에서는 사용자를 구분하는 값만 받고, 이름·연락처 같은 정보는 받지 않아요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요.</p>
-        <label className={styles.check}><input type="checkbox" checked={aiAccepted} onChange={(e) => setAiAccepted(e.target.checked)} disabled={busy} /><span><strong>[선택] AI 기능의 정보 처리에 동의해요.</strong></span></label>
-        <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 OpenAI의 GPT에 전달해 답변을 만들어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
-      </section>}
+      {tossSignup && <SignupConsent checked={termsAccepted} onChange={setTermsAccepted} disabled={busy} note="토스에서는 사용자를 구분하는 값만 받고, 이름·연락처 같은 정보는 받지 않아요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
       {error && <p className={styles.error} role="alert">{error}</p>}
       {!me.toss && <p className={styles.mutedNote} role="status">지금은 토스 로그인을 준비하고 있어요. 잠시 후 다시 시도해 주세요.</p>}
       <button type="button" className="btn block" disabled={busy || !me.toss || (tossSignup && (!termsAccepted || !policy))} aria-busy={pending === "toss"} onClick={tossStart}>
@@ -188,13 +195,7 @@ export default function AuthPage() {
           {mode === "signup" && <div className="field"><label htmlFor="auth-nick">닉네임</label><input id="auth-nick" value={nick} onChange={(e) => setNick(e.target.value)} autoComplete="nickname" placeholder="나를 부를 이름, 2~12자" minLength={2} maxLength={12} required /></div>}
           <div className="field"><label htmlFor="auth-password">비밀번호</label><input id="auth-password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6자 이상 입력해 주세요" minLength={mode === "signup" ? 6 : undefined} required /></div>
           </>}
-          {mode === "signup" && <section className={styles.consent} aria-labelledby="signup-consent-title">
-            <h3 id="signup-consent-title">가입 전 확인해 주세요</h3>
-            <label className={styles.check}><input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} required /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고<br /><Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</strong></span></label>
-            <p>계정 정보는 가입과 로그인에 사용해요. 로그인하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요.</p>
-            <label className={styles.check}><input type="checkbox" checked={aiAccepted} onChange={(e) => setAiAccepted(e.target.checked)} /><span><strong>[선택] AI 기능의 정보 처리에 동의해요.</strong></span></label>
-            <p>AI 기능을 요청하면 관련 기록·메모·목표·일정과 위로 요청 내용을 소로우가 받아 OpenAI의 GPT에 전달해 답변을 만들어요. 분석에는 전체 메모가 포함될 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. 동의하지 않아도 가입할 수 있고, AI를 사용할 때 따로 선택할 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
-          </section>}
+          {mode === "signup" && <SignupConsent checked={termsAccepted} onChange={setTermsAccepted} note="계정 정보는 가입과 로그인에 사용해요. 로그인하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
         </fieldset>
         {error && <p className={styles.error} role="alert">{error}</p>}
         {!kakaoSignup && <button type="submit" className="btn block" disabled={busy || (mode === "signup" && !termsAccepted)}>{pending === "submit" ? (mode === "signup" ? "가입하는 중…" : "로그인하는 중…") : mode === "signup" ? "동의하고 가입하기" : "로그인"}</button>}
@@ -204,7 +205,7 @@ export default function AuthPage() {
         <button type="button" className="btn block kakao" disabled={busy || (mode === "signup" && (!termsAccepted || !policy))} onClick={() => run("kakao", async () => {
           if (mode === "signup") {
             if (!termsAccepted || !policy) return;
-            const saved = await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: aiAccepted, expectedUserId: policy.userId });
+            const saved = await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: true, expectedUserId: policy.userId });
             setPolicy(saved);
           }
           navigatingRef.current = true;
