@@ -47,6 +47,9 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [scene, setScene] = useState(0);
   const [thinkIndex, setThinkIndex] = useState(0);
   const [celebration, setCelebration] = useState<{ id: number; food: number; level: number | null } | null>(null);
+  const [full, setFull] = useState(false);
+  const roomRef = useRef<HTMLDivElement>(null);
+  const worldRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
   const alive = useRef(true);
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -151,6 +154,23 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const homeId = pet?.homeId ?? 0;
   const ownedHomes = pet?.ownedHomes ?? [0];
   const ready = Boolean(pet) && !busy;
+  // 꽉 찬 화면: 방이 화면 전체(탭바 위까지)를 덮는다. 풍경·모루는 카드에서의 비율 그대로 화면을 채울 만큼 키운다 (가로가 넘치면 양옆이 잘린다)
+  useBackLayer(full, () => { setFull(false); return false; });
+  useEffect(() => {
+    if (!full) return;
+    const room = roomRef.current, world = worldRef.current;
+    if (!room || !world) return;
+    const fit = () => {
+      const bottom = parseFloat(getComputedStyle(world).bottom) || 0;
+      room.style.setProperty("--world-scale", Math.max(room.clientWidth / WORLD_W, (room.clientHeight - bottom) / WORLD_H).toFixed(4));
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(room);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden"; // 뒤의 홈이 같이 스크롤되지 않게
+    return () => { observer.disconnect(); document.body.style.overflow = previous; room.style.removeProperty("--world-scale"); };
+  }, [full]);
   // 안드로이드 뒤로 가기는 열린 시트만 닫는다 (저장 중이면 그대로). 마음 기록은 남은 입력을 저장하고 닫는다
   const closeMindRef = useRef<(() => void) | null>(null);
   useBackLayer(sheet !== null, () => {
@@ -177,9 +197,9 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     </div>
   </section>;
   // 모루의 방 한 장 = 게임 화면: 위에는 상태 HUD, 가운데는 모루, 아래에는 조작 패드. 버튼이 모두 이 안에 있다
-  return <section className={styles.card} aria-label="나의 소로우 모루 키우기">
-    <div className={styles.room}>
-      <div className={styles.world}>
+  return <section className={styles.card} aria-label="나의 소로우 모루 키우기" data-full={full ? "" : undefined}>
+    <div className={styles.room} ref={roomRef}>
+      <div className={styles.world} ref={worldRef}>
         <MoruHomeScene homeId={homeId} scene={scene} />
         {speech && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined}>{speech}</div>}
         <button type="button" className={styles.petButton} aria-label={`${petName} 쓰다듬기`} onClick={() => { haptic(8); react("pet", petLine(ownerName)); }}>
@@ -198,6 +218,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       <div className={styles.scenePicker} role="group" aria-label="창밖 풍경">
         {ROOM_SCENES.map((label, index) => <button key={label} type="button" title={label} aria-label={label} aria-pressed={scene === index} onClick={() => { haptic(6); setScene(index); }}><span aria-hidden="true">{index === 0 ? "☂" : index === 1 ? "❄" : "☾"}</span></button>)}
       </div>
+      <button type="button" className={styles.expand} aria-pressed={full} aria-label={full ? "작게 보기" : `${petName}를 꽉 찬 화면으로 보기`} title={full ? "작게 보기" : "꽉 찬 화면"} onClick={() => { haptic(8); setFull((v) => !v); }}><ExpandIcon shrink={full} /></button>
       {celebration && <div key={celebration.id} className={styles.celebration} onAnimationEnd={(event) => { if (event.target === event.currentTarget) setCelebration(null); }}>
         {Array.from({ length: celebration.food }, (_, i) => <i key={i} style={{ left: `${28 + i * 11}%`, animationDelay: `${i * 100}ms` }} aria-hidden="true" />)}
         <span role="status">{celebration.level ? `Lv.${celebration.level} ↑` : `🍚 +${celebration.food}`}</span>
@@ -268,6 +289,15 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
 
 function HouseIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.5 11.5 12 4.5l8.5 7" /><path d="M6 10v9.5h12V10" /><path d="M10 19.5V15h4v4.5" /></svg>;
+}
+/** 꽉 찬 화면에서 풍경·모루를 키울 때의 기준 크기: 360px 폭 휴대폰의 카드 속 월드 */
+const WORLD_W = 320;
+const WORLD_H = 440;
+/** 네 모서리가 벌어지는(키우기) / 모이는(줄이기) 화살표 */
+function ExpandIcon({ shrink }: { shrink: boolean }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {shrink ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
+  </svg>;
 }
 function PenIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg>;

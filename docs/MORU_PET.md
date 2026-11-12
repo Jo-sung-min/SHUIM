@@ -117,3 +117,6 @@ Added three original human-shaped pixel companions: Noa (dark hair/ribbon), Leo 
 V41__moru_appearance.sql stores the validated appearance ID, defaulting existing users to moru. Unknown IDs are rejected by the server. The client renders Moru as fallback for missing/unknown IDs. All human appearances share idle/blink, interaction smile, eating, sleeping and reduced-motion handling.
 
 Browser verified all three gallery previews. Actual appearance persistence remains unverified because the running pet API is unavailable; apply stays disabled until pet state is loaded. Restarting the backend applies V41 through Flyway.
+
+## Tamagotchi direction
+See [MORU_TAMAGOTCHI.md](MORU_TAMAGOTCHI.md) for the Tamagotchi-style direction (real-time daily rhythm, four needs without punishment, planned interactions and phases). Only the full-screen room view from that document is implemented.

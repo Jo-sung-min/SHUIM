@@ -83,7 +83,7 @@
    월드(풍경·모루) 위에 앱의 떠 있는 유리(탭바와 같은 --lg-*)로 위쪽 HUD 와 아래쪽 조작 패드를 얹는다.
    패드의 키는 홈 타일처럼 단색(--surface) 버튼, 밥 주기만 보라. 카드 한 장 높이가 화면(탭바 위)에 들어오게 잡는다 */
 .world{position:absolute;inset:0 0 calc(var(--pad-h) - 9px)}
-.hud,.scenePicker,.pad,.alert{position:absolute;z-index:4;color:var(--text);background-color:var(--lg-bar);background-image:var(--lg-sheen);border:1px solid var(--lg-line);box-shadow:inset 0 1px 0 var(--lg-rim),var(--lg-shadow-float);-webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur)}
+.hud,.scenePicker,.pad,.alert,.expand{position:absolute;z-index:4;color:var(--text);background-color:var(--lg-bar);background-image:var(--lg-sheen);border:1px solid var(--lg-line);box-shadow:inset 0 1px 0 var(--lg-rim),var(--lg-shadow-float);-webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur)}
 .hud{top:var(--edge);left:var(--edge);right:var(--edge);height:var(--hud-h);display:flex;align-items:center;gap:4px;padding:0 6px 0 14px;border-radius:18px}
 .nameplate{flex:1;min-width:0;display:grid;gap:5px}
 .nameplate button{display:flex;align-items:baseline;gap:6px;min-width:0;max-width:100%;padding:0;color:inherit;text-align:left;cursor:pointer}
@@ -117,8 +117,8 @@
 .alert span{flex:1;min-width:0}
 .alert button{flex:none;min-height:36px;padding:0 12px;border-radius:999px;background:var(--lg-lens);color:var(--text);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 /* 마음밥 시트: 저장·다음 버튼은 시트 아래에 붙어 있다 (globals.css 의 .sheet-actions) */
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert{background-color:var(--surface)}}
-@media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert{background-color:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert,.expand{background-color:var(--surface)}}
+@media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert,.expand{background-color:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media(max-width:340px){.keys{gap:5px}.key{font-size:11px}.food{padding:0 4px}.points{padding:0 8px}}
 .speech[data-thinking]{background:#efe7f6;color:#5b4766;animation:speechIn .35s var(--ease)}
 @keyframes speechIn{from{opacity:0;transform:translate(-50%,4px)}to{opacity:1;transform:translate(-50%,0)}}
@@ -148,3 +148,17 @@
 .flowLine b{display:block;font-size:12px;color:var(--text-2);margin-bottom:1px}
 .flowFace{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;background:color-mix(in srgb,var(--accent) 16%,var(--surface))}
 .flowFace svg{width:42px;height:40px;margin-top:6px}
+/* ---------- 꽉 찬 화면으로 보기 ----------
+   오른쪽 위 버튼으로 방을 화면 전체에 편다 (탭바 위까지, 시트 z 40 보다는 아래). 가운데 정렬에 transform 을 쓰지 않는다:
+   쓰면 안쪽 시트(position: fixed)의 기준이 카드로 바뀐다. 풍경·모루(.world)는 기준 크기 320×440 을 그대로 키워 화면을 채운다 (MoruPet 의 --world-scale) */
+.expand{right:var(--edge);top:calc(var(--edge) + var(--hud-h) + 8px);display:grid;place-items:center;width:44px;height:44px;padding:0;border-radius:50%;color:var(--text-2);cursor:pointer;transition:transform var(--dur-fast) var(--ease),background-color var(--dur) var(--ease)}
+.expand svg{width:20px;height:20px}
+.expand:active{transform:scale(.92);background-color:var(--lg-fill-strong)}
+.card[data-full]{position:fixed;z-index:35;top:0;bottom:0;left:max(0px,calc(50% - var(--app-w) / 2));width:min(100%,var(--app-w));margin:0;border:0;border-radius:0;box-shadow:none;background:#2a262f}
+.card[data-full] .room{height:100%}
+.card[data-full] .world{inset:auto;left:50%;bottom:calc(var(--pad-h) - 9px + env(safe-area-inset-bottom));width:320px;height:440px;transform:translateX(-50%) scale(var(--world-scale,1));transform-origin:50% 100%}
+.card[data-full] .hud{top:calc(var(--edge) + env(safe-area-inset-top))}
+.card[data-full] .scenePicker,.card[data-full] .expand{top:calc(var(--edge) + env(safe-area-inset-top) + var(--hud-h) + 8px)}
+.card[data-full] .pad{bottom:calc(var(--edge) + env(safe-area-inset-bottom))}
+.card[data-full] .alert{bottom:calc(var(--edge) + env(safe-area-inset-bottom) + var(--pad-h) + 8px)}
+.card[data-full] .expand{color:var(--accent)}
