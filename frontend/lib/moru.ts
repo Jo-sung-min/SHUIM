@@ -90,6 +90,30 @@ export const TALK_TOPICS: { id: string; label: string; replies: string[] }[] = [
   { id: "bored", label: "심심해", replies: ["나도 심심했어. 새싹 한 번 톡 해 볼래?", "창밖 빗방울을 세고 있었어. 같이 셀래?", "심심한 건 쉬고 있다는 거래."] },
   { id: "just", label: "그냥 왔어", replies: ["그냥 와도 좋아. 그게 제일 좋아.", "이유 없이 와 준 거, 나는 알아.", "왔구나. 그걸로 충분해."] },
 ];
+/**
+ * 말 걸기에 말 대신 소리로 답하는 친구들: 모루(말랑한 새싹)와 모링(작은 새). 기분마다 그 결의 소리를 낸다.
+ * 사람 친구(노아·레오·루미)는 위의 말로 답한다
+ */
+export const TALK_SOUNDS: Record<string, Record<string, string[]>> = {
+  moru: {
+    tired: ["몽… 몽…", "말랑… 토닥토닥.", "뭉글… 뭉글…"],
+    happy: ["뽀잉! 뽀잉!", "몽글몽글!", "쫀득쫀득~"],
+    sad: ["몽…", "토닥… 토닥…", "뭉…"],
+    anxious: ["꼬물… 꼬물…", "후우… 몽.", "말랑… 말랑…"],
+    bored: ["뿅?", "몽? 뿅뿅?", "뽀잉… 뿅?"],
+    just: ["몽글!", "뽀잉~", "몽!"],
+  },
+  moring: {
+    tired: ["삐이…", "쮸우… 쮸.", "삐… 포옥."],
+    happy: ["삐약삐약!", "짹짹! 짹!", "쮸잇! 쮸잇!"],
+    sad: ["삐…", "쮸우…", "삐이… 삐."],
+    anxious: ["삐, 삐…", "쮸… 쮸…", "포르르…"],
+    bored: ["짹?", "삐약? 짹짹?", "쮸잇?"],
+    just: ["짹!", "삐약!", "쮸잇~"],
+  },
+};
+/** 이 모습의 친구가 이 기분에 하는 답: 소리로 답하는 친구면 소리, 아니면 말 */
+export const talkReplies = (appearance: string, topic: { id: string; replies: string[] }): string[] => TALK_SOUNDS[appearance]?.[topic.id] ?? topic.replies;
 
 /** 칭찬·사랑·정리를 기다리는 동안 방 안의 모루가 돌려 말하는 문장 */
 export const PRAISE_WAITING = ["네 하루를 천천히 읽고 있어.", "새싹이 살짝 흔들렸어. 좋은 걸 찾았나 봐.", "네가 지나친 작은 좋은 점을 줍고 있어.", "조금만 기다려 줘. 꼭 말해 주고 싶은 게 있어."];

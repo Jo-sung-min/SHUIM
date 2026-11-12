@@ -15,7 +15,7 @@ import { useBackLayer } from "@/lib/use-back-layer";
 import { PetError, petRequest, type PetView } from "@/lib/pet";
 import {
   BATH_LINES, DAILY_FOOD_MAX, DUST_LINES, GLOW_LINE, HUG_LINES, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
-  RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, TICKLE_LINES,
+  RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, talkReplies, TICKLE_LINES,
   currentHour, dailySky, dayPhase, devHome, devLook, devSky, dueMeals, koreaDate, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
   petLine, pickLine, recordLine, rubStats, saveCompanion, saveRainPref, takeNewMeal, touchSpot, type Companion,
 } from "@/lib/moru";
@@ -443,7 +443,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         {meters.map(([label, value]) => <span key={label} role="img" aria-label={`${label} ${value}/4`}><b>{label}</b>{[0, 1, 2, 3].map((i) => <HeartIcon key={i} on={i < value} />)}</span>)}
       </div>}
       {panel === "talk" && <div className={styles.talk} role="group" aria-label={`${petName}에게 말 걸기`}>
-        {TALK_TOPICS.map((topic) => <button key={topic.id} type="button" onClick={() => talk(topic.replies)}>{topic.label}</button>)}
+        {TALK_TOPICS.map((topic) => <button key={topic.id} type="button" onClick={() => talk(talkReplies(appearance, topic))}>{topic.label}</button>)}
       </div>}
       {/* 돌보기: 간식·목욕·안아 주기·불. 할 수 없는 것은 이유를 한 줄로 */}
       {panel === "care" && pet && <div className={styles.care} role="group" aria-label={`${petName} 돌보기`}>
