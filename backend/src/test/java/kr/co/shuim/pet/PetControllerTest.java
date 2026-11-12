@@ -18,6 +18,7 @@ class PetControllerTest {
         assertThrows(ApiException.class, () -> controller.feed(new PetService.FeedInput("2026-11-11", 0), req));
         when(auth.currentUser(req)).thenReturn(Optional.of(new DbUser("blocked", null, "b", "user", false, 1L, "", 0)));
         assertThrows(ApiException.class, () -> controller.journal(null, req));
+        assertThrows(ApiException.class, () -> controller.snack(req));
         verifyNoInteractions(pets);
     }
     @Test void authenticatedIdentityIsTakenFromSessionAndResponseIsPrivate() {
@@ -25,5 +26,7 @@ class PetControllerTest {
         when(auth.currentUser(req)).thenReturn(Optional.of(new DbUser("owner", null, "o", "user", false, null, null, 0)));
         var response = new PetController(auth, pets).get(req);
         verify(pets).get("owner"); assertEquals("no-store", response.getHeaders().getCacheControl());
+        new PetController(auth, pets).snack(req);
+        verify(pets).snack("owner");
     }
 }

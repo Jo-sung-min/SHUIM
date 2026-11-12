@@ -21,7 +21,7 @@ public class PetService {
     public record JournalInput(String date, Answers answers) {}
     public record View(String name, int food, int xp, int level, int levelStart, int levelEnd,
                        String date, int meals, int earned, Answers answers, int reward,
-                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance) {}
+                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked) {}
     private record Pet(String name, PetRules.State state) {}
     private static final Answers EMPTY = new Answers(null, null, null, null, null);
     private static final Set<String> MOODS = Set.of("편안해", "기뻐", "그저 그래", "지쳤어", "슬퍼", "불안해", "잘 모르겠어");
@@ -59,7 +59,7 @@ public class PetService {
         String appearance = jdbc.sql("SELECT appearance FROM user_pets WHERE user_id=?").param(uid).query(String.class).single();
         return new View(p.name(), s.food(), s.xp(), level, PetRules.LEVELS[level - 1],
             level == 10 ? 720 : PetRules.LEVELS[level], s.date().toString(), s.meals(),
-            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance);
+            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, snacked(uid, s.date()));
     }
     private List<Integer> owned(String uid) {
         var result = new ArrayList<Integer>(); result.add(0);
@@ -139,6 +139,21 @@ public class PetService {
         }
         jdbc.sql("UPDATE user_pets SET home_id=? WHERE user_id=?").param(home.id()).param(uid).update();
         return save(uid, p, 0);
+    }
+    /** 오늘 간식을 줬는지: 포인트 장부의 0점짜리 표시 한 줄 (snack:날짜). 열을 늘리지 않고 하루 한 번을 지킨다 */
+    private boolean snacked(String uid, LocalDate date) {
+        return jdbc.sql("SELECT COUNT(*) FROM pet_point_ledger WHERE user_id = ? AND event_key = ?")
+            .param(uid).param("snack:" + date).query(Integer.class).single() > 0;
+    }
+    /** 간식 주기: 마음밥 하나를 끼니와 따로 직접 준다. 하루 한 번, 경험치 +1 (식사 수와 자동 식사는 그대로) */
+    @Transactional public View snack(String uid) {
+        var p = lock(uid, ZonedDateTime.now(clock));
+        var s = p.state();
+        if (s.food() == 0) throw ApiException.badRequest("마음밥이 없어요. 마음을 기록하면 생겨요.");
+        int marked = jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,0) ON CONFLICT DO NOTHING")
+            .param(uid).param("snack:" + s.date()).update();
+        if (marked == 0) throw ApiException.badRequest("오늘 간식은 이미 줬어요.");
+        return save(uid, new Pet(p.name(), PetRules.snack(s)), 0);
     }
     public record FeedInput(String date, int meals) {}
     @Transactional public View feed(String uid, FeedInput input) {

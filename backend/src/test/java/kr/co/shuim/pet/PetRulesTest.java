@@ -15,6 +15,13 @@ class PetRulesTest {
         assertEquals(0b01011, PetRules.fillRecords(0b01001, 3)); // 예전 5문항 칸도 다섯 칸 안에 센다
         assertEquals(1, PetRules.reward(0b01001, PetRules.fillRecords(0b01001, 3)));
     }
+    @Test void snackEatsOneFoodWithoutUsingAMealSlot() {
+        var s = PetRules.snack(new PetRules.State(3, 10, day, 1));
+        assertEquals(2, s.food()); assertEquals(11, s.xp()); assertEquals(1, s.meals());
+        var empty = new PetRules.State(0, 10, day, 1);
+        assertEquals(empty, PetRules.snack(empty));
+        assertEquals(720, PetRules.snack(new PetRules.State(1, 720, day, 3)).xp());
+    }
     @Test void automaticMealSlotsAreEightThirteenNineteen() {
         assertEquals(0, PetRules.due(7)); assertEquals(1, PetRules.due(8));
         assertEquals(1, PetRules.due(12)); assertEquals(2, PetRules.due(13));

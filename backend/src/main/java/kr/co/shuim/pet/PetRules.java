@@ -26,6 +26,11 @@ public final class PetRules {
         if (s.meals() >= 3 || s.food() == 0) return s;
         return new State(s.food() - 1, Math.min(720, s.xp() + 2), s.date(), s.meals() + 1);
     }
+    /** 간식: 마음밥 하나를 끼니와 따로 먹는다 (끼니 수는 그대로, 경험치 +1). 하루 한 번인지는 서비스가 장부로 지킨다 */
+    public static State snack(State s) {
+        if (s.food() == 0) return s;
+        return new State(s.food() - 1, Math.min(720, s.xp() + 1), s.date(), s.meals());
+    }
     public static int level(int xp) {
         int level = 1;
         while (level < LEVELS.length && xp >= LEVELS[level]) level++;

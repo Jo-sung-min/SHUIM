@@ -116,6 +116,29 @@ class PetPostgresTest {
         assertEquals(2, view.reward()); assertEquals(11, view.food()); assertEquals(2, view.earned());
         assertEquals(0, tx.execute(s -> pets.get(uid)).reward());
     }
+    @Test void snackIsOncePerDayAndNeverCountsAsAMeal() throws Exception {
+        var start = tx.execute(s -> pets.get(uid));
+        assertFalse(start.snacked());
+        int succeeded = 0;
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var taps = pool.invokeAll(List.<java.util.concurrent.Callable<PetService.View>>of(
+                () -> tx.execute(s -> pets.snack(uid)), () -> tx.execute(s -> pets.snack(uid))));
+            for (var tap : taps) { try { tap.get(); succeeded++; } catch (java.util.concurrent.ExecutionException expected) { /* 두 번째는 거절 */ } }
+        }
+        assertEquals(1, succeeded);
+        var after = tx.execute(s -> pets.get(uid));
+        assertEquals(start.food() - 1, after.food()); assertEquals(start.xp() + 1, after.xp());
+        assertEquals(start.meals(), after.meals()); assertEquals(start.points(), after.points());
+        assertTrue(after.snacked());
+        assertThrows(Exception.class, () -> tx.execute(s -> pets.snack(uid)));
+        // An empty pantry refuses the snack and leaves today's one snack unused.
+        String other = UUID.randomUUID().toString();
+        jdbc.sql("INSERT INTO users(id,nick,role,is_anonymous) VALUES (?,'other','user',false)").param(other).update();
+        tx.execute(s -> pets.get(other));
+        jdbc.sql("UPDATE user_pets SET food=0 WHERE user_id=?").param(other).update();
+        assertThrows(Exception.class, () -> tx.execute(s -> pets.snack(other)));
+        assertFalse(tx.execute(s -> pets.get(other)).snacked());
+    }
     @Test void repeatedFeedClicksUseCompareAndSet() {
         var click = new PetService.FeedInput(date, 0);
         var first = tx.execute(s -> pets.feed(uid, click));

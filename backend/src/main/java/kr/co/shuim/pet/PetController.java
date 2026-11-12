@@ -19,6 +19,7 @@ public class PetController {
     private ResponseEntity<PetService.View> result(PetService.View view) { return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(view); }
     @GetMapping public ResponseEntity<PetService.View> get(HttpServletRequest req) { return result(pets.get(user(req))); }
     @PostMapping("/feed") public ResponseEntity<PetService.View> feed(@RequestBody PetService.FeedInput in, HttpServletRequest req) { return result(pets.feed(user(req), in)); }
+    @PostMapping("/snack") public ResponseEntity<PetService.View> snack(HttpServletRequest req) { return result(pets.snack(user(req))); }
     public record NameInput(String name) {}
     @PutMapping("/name") public ResponseEntity<PetService.View> name(@RequestBody NameInput in, HttpServletRequest req) { return result(pets.rename(user(req), in.name())); }
     @PutMapping("/journal") public ResponseEntity<PetService.View> journal(@RequestBody PetService.JournalInput in, HttpServletRequest req) { return result(pets.journal(user(req), in)); }

@@ -10,6 +10,8 @@ export interface PetView {
   date: string; meals: number; earned: number; answers: PetAnswers; reward: number;
   points: number; homeId: number; ownedHomes: number[]; homes: PetHome[];
   appearance: string;
+  /** 오늘 간식을 줬는지 (하루 한 번) */
+  snacked?: boolean;
 }
 export interface PetHome { id: number; name: string; level: number; cost: number; available: boolean }
 export const EMPTY_ANSWERS: PetAnswers = { mood: null, intensity: null, reason: null, note: null, need: null };
