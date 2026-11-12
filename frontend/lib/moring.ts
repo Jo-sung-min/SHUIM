@@ -11,6 +11,14 @@ import type { MoodStage } from "@/lib/moru-rules";
 export const MORING_LOOPS = ["idle", "happy", "eat", "sleep", "gloomy", "light", "joy", "cozy", "worry", "curious"] as const;
 export type MoringLoop = (typeof MORING_LOOPS)[number];
 
+/**
+ * 띠의 버전. CDN 의 버전 파일은 1년 캐시라 같은 이름으로 덮어쓰지 않고 새 버전으로 올린다.
+ * 평소·웃음·먹기·잠의 v2 는 감정 띠와 같은 원본(콩 눈·꼬리 깃)으로 다시 만든 것이다 (v1 은 CDN 에 그대로 남는다)
+ */
+const VERSION: Record<MoringLoop, number> = { idle: 2, happy: 2, eat: 2, sleep: 2, gloomy: 1, light: 1, joy: 1, cozy: 1, worry: 1, curious: 1 };
+/** 띠 그림의 경로 (assetUrl 로 CDN 주소가 된다) */
+export const moringArt = (name: MoringLoop) => `/moru/moring/moring-${name}-v${VERSION[name]}.webp`;
+
 /** 오늘의 기분마다 평소의 띠: 2~3단계는 처음부터 있던 반쯤 감긴 눈 */
 export const MORING_REST: Record<MoodStage, MoringLoop> = { 1: "gloomy", 2: "idle", 3: "idle", 4: "light", 5: "joy" };
 

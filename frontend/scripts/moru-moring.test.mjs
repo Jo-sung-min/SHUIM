@@ -8,8 +8,8 @@ import test from "node:test";
 const typed = await readFile(new URL("../lib/moring.ts", import.meta.url), "utf8");
 const source = stripTypeScriptTypes(typed, { mode: "transform" }).replace(/\bexport\s+/g, "");
 const context = { Object };
-vm.runInNewContext(`${source}\nglobalThis.moring = { MORING_LOOPS, MORING_REST, MORING_TALK, moringLoop };`, context);
-const { MORING_LOOPS, MORING_REST, MORING_TALK, moringLoop } = context.moring;
+vm.runInNewContext(`${source}\nglobalThis.moring = { MORING_LOOPS, MORING_REST, MORING_TALK, moringLoop, moringArt };`, context);
+const { MORING_LOOPS, MORING_REST, MORING_TALK, moringLoop, moringArt } = context.moring;
 
 test("each mood stage has its own resting face, and 2~3 keep the original half-closed eyes", () => {
   assert.deepEqual([1, 2, 3, 4, 5].map((stage) => moringLoop("idle", stage)), ["gloomy", "idle", "idle", "light", "joy"]);
@@ -45,6 +45,7 @@ test("no crying face, and every face is a published CDN strip", async () => {
   const manifest = JSON.parse(await readFile(new URL("../public-assets.manifest.json", import.meta.url), "utf8"));
   const keys = new Set(manifest.files.map((f) => f.key));
   // Array.from: the list comes from the vm realm, and strict deepEqual compares prototypes
-  const missing = Array.from(MORING_LOOPS, (name) => `moru/moring/moring-${name}-v1.webp`).filter((key) => !keys.has(key));
+  const missing = Array.from(MORING_LOOPS, (name) => moringArt(name).slice(1)).filter((key) => !keys.has(key));
+  assert.match(moringArt("idle"), /^\/moru\/moring\/moring-idle-v\d+\.webp$/);
   assert.deepEqual(missing, [], "upload with: python scripts/sync-public-assets.py --apply --only moru/moring/");
 });

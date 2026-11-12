@@ -91,6 +91,7 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 - **명화 큐레이션 10장(V39):** 피드가 메트로폴리탄 미술관 원본 JPG(장당 2.2~6.2MB, 합계 44.5MB)를 바로 읽고 있었습니다. 9:16 상자에 cover로 보이던 가운데 영역을 sRGB로 맞춰 1080x1920 WebP로 만들고(합계 4.0MB), S3 `feed/curation/met-<작품ID>-v1.webp`에 올렸습니다. V50 마이그레이션이 글의 주소를 바꿉니다. 원본 주소는 `frontend/lib/curation-nov11.json`의 `image`에, CDN 주소는 `cdnImage`에 있습니다. V39 생성 스크립트 `--check` 결과는 그대로입니다.
 - 50개 모두 `--verify`로 SHA256·형식·CORS를 확인한 뒤 로컬 사본을 지웠습니다.
 - **모링 감정 띠 6개(같은 날 추가):** `moru/moring/moring-{gloomy,light,joy,cozy,worry,curious}-v1.webp`(한 칸 300×350, 51~72KB). `--apply --only moru/moring/`로 올리고 `--verify`로 확인한 뒤 로컬 사본을 지웠습니다. 만든 법은 [MORU_TAMAGOTCHI.md](MORU_TAMAGOTCHI.md)의 "캐릭터".
+- **모링 기본 띠 v2 4개(2026-11-13):** 평소·웃음·먹기·잠을 감정 띠와 같은 원본으로 다시 만들어 `moru/moring/moring-{idle,happy,eat,sleep}-v2.webp`(300×350, 51~58KB)로 올리고 같은 방법으로 확인했습니다. v1 은 지우지 않았습니다. 이 PC의 기본 `python`에는 `botocore`가 없어 EB CLI가 깔린 Python 3.13(`AppData\Local\Programs\Python\Python313\python.exe`)으로 실행했습니다.
 
 ### 업로드 스크립트 변경
 

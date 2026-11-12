@@ -981,6 +981,12 @@
       "contentType": "image/webp"
     },
     {
+      "key": "moru/moring/moring-eat-v2.webp",
+      "bytes": 53830,
+      "sha256": "0dc32f5edf73fc309c93e9567206aa361eca3d6c908286fd5fc9dbcfa1e34973",
+      "contentType": "image/webp"
+    },
+    {
       "key": "moru/moring/moring-gloomy-v1.webp",
       "bytes": 51318,
       "sha256": "59462072d6ae7d09b0a59a7791a9a92fb5f3254580a5bcab63ce4036f5493c5d",
@@ -993,9 +999,21 @@
       "contentType": "image/webp"
     },
     {
+      "key": "moru/moring/moring-happy-v2.webp",
+      "bytes": 58272,
+      "sha256": "329340c829607a8ec9322e885daee01ce23bea02d47a25453be591c44d7f1133",
+      "contentType": "image/webp"
+    },
+    {
       "key": "moru/moring/moring-idle-v1.webp",
       "bytes": 72464,
       "sha256": "a1718d371c36cfda7165927ffaff51ed3a99a2bbf32f64ffe02ffb7432f452d2",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-idle-v2.webp",
+      "bytes": 51450,
+      "sha256": "9dbe49691f8f916e4c9acbba080a550bf381630ee54892b0803ce660ce057ffb",
       "contentType": "image/webp"
     },
     {
@@ -1014,6 +1032,12 @@
       "key": "moru/moring/moring-sleep-v1.webp",
       "bytes": 88892,
       "sha256": "8b745b3cbb7e4183eeccdf6c5f608775f7405c15185c458d6afc5a52c454cdf5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-sleep-v2.webp",
+      "bytes": 54200,
+      "sha256": "0d86bd7e69883fc96aec0b638f728499459549ef8056b4edce6a17d610e2c90e",
       "contentType": "image/webp"
     },
     {
