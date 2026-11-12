@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { assetUrl } from "@/lib/assets";
 import type { MoruMood } from "./MoruSprite";
+import type { MoodStage } from "@/lib/moru-rules";
 import styles from "./MoruPet.module.css";
 
 /**
@@ -23,15 +24,22 @@ const LOOPS: Record<"idle" | "happy" | "eat" | "sleep", { art: string; seconds: 
   sleep: { art: assetUrl("/moru/moring/moring-sleep-v1.webp"), seconds: 4 },
 };
 
-export default function MoringSprite({ mood }: { mood: MoruMood; level?: number }) {
+/**
+ * 오늘의 기분(docs/MORU_MOOD_SYNC.md)에 따른 평소 띠의 빠르기: 가라앉은 날은 숨이 느리고 가벼운 날은 조금 빠르다.
+ * 모링은 표정이 이미지라 기분마다의 얼굴은 새 띠가 생길 때까지 없다 (지금의 평소 띠가 반쯤 감긴 눈이다)
+ */
+const REST_TEMPO: Record<MoodStage, number> = { 1: 1.6, 2: 1.3, 3: 1, 4: 0.9, 5: 0.8 };
+
+export default function MoringSprite({ mood, stage = 3 }: { mood: MoruMood; level?: number; stage?: MoodStage }) {
   const name = mood === "sleep" ? "sleep" : mood === "eat" ? "eat" : mood === "happy" || mood === "pet" ? "happy" : "idle";
   const loop = LOOPS[name];
-  return <svg viewBox="0 0 128 122" className={styles.sprite} data-mood={mood} data-moring="" aria-hidden="true">
+  const seconds = name === "idle" ? loop.seconds * (REST_TEMPO[stage] ?? 1) : loop.seconds;
+  return <svg viewBox="0 0 128 122" className={styles.sprite} data-mood={mood} data-stage={stage} data-moring="" aria-hidden="true">
     <ellipse cx="64" cy="113" rx="32" ry="4.5" fill="#2a1b13" opacity=".16" />
     {/* 한 칸만 보이는 창: 띠를 왼쪽으로 한 칸씩 넘긴다 (steps(4)) */}
     <svg x={FRAME.x} y={FRAME.y} width={FRAME.w} height={FRAME.h} viewBox={`0 0 ${FRAME.w} ${FRAME.h}`} overflow="hidden">
       <image key={name} className={styles.moringLoop} href={loop.art} x="0" y="0" width={FRAME.w * 4} height={FRAME.h} preserveAspectRatio="none"
-        style={{ "--loop-w": `${-FRAME.w * 4}px`, animationDuration: `${loop.seconds}s` } as CSSProperties} />
+        style={{ "--loop-w": `${-FRAME.w * 4}px`, animationDuration: `${seconds}s` } as CSSProperties} />
     </svg>
   </svg>;
 }

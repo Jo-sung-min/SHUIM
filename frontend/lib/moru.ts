@@ -10,7 +10,7 @@
  * 시계·하루 리듬·손길 판정 같은 순수 규칙은 lib/moru-rules.ts (여기서 다시 내보낸다).
  */
 import { read, write } from "./storage";
-import { DAILY_FOOD_MAX, callName, koreaHour, type DayPhase } from "./moru-rules";
+import { DAILY_FOOD_MAX, callName, koreaHour, type DayPhase, type MoodStage } from "./moru-rules";
 
 export * from "./moru-rules";
 
@@ -44,6 +44,11 @@ export const CHORE_NAMES: Record<string, string> = { record: "마음 기록", hu
 export function devHome(): number | null {
   const raw = devParam("moruHome");
   return raw !== null && /^[0-8]$/.test(raw) ? Number(raw) : null;
+}
+/** 개발 확인용: ?moruMood=1~5 로 오늘의 기분을 기록과 상관없이 바꿔 본다 (1 울적해 … 5 행복해) */
+export function devMood(): MoodStage | null {
+  const raw = devParam("moruMood");
+  return raw !== null && /^[1-5]$/.test(raw) ? (Number(raw) as MoodStage) : null;
 }
 
 /* ---------- 모루의 말 ---------- */
@@ -136,6 +141,65 @@ export function flowLine(days: number, recorded: number, ups: number, downs: num
   return "크게 흔들리지 않고 지나왔어. 그것도 힘이야.";
 }
 
+/* ---------- 마음 닮기 (docs/MORU_MOOD_SYNC.md): 오늘의 기분은 내 기록을 닮는다 ----------
+   단계는 lib/moru-rules.ts 의 moodOf 가 기록에서 계산한다. 여기는 그 기분의 말과, 닮기를 켜 두었는지(이 기기).
+   낮은 날에도 탓하거나 권하지 않고 같이 있다고만 말한다. 사람을 판정하는 말("우울해 보여")은 쓰지 않는다 */
+
+/** 화면에 보이는 기분의 이름: 캐릭터가 자기 기분을 말하는 반말 (기분 칩과 같은 말투) */
+export const MOOD_NAMES: Record<MoodStage, string> = { 1: "울적해", 2: "가라앉아", 3: "고요해", 4: "가벼워", 5: "행복해" };
+/** 기분에 따른 혼잣말 (고요한 날은 지금까지의 혼잣말 그대로) */
+const MOOD_MURMURS: Record<MoodStage, string[]> = {
+  1: ["…오늘은 이불 밖이 멀다.", "…", "같이 가라앉아 있자.", "말 안 해도 돼. 나도 그래."],
+  2: ["오늘은 마음이 좀 무겁네.", "빗소리만 듣고 있어.", "천천히 있자.", "…후우."],
+  3: [],
+  4: ["오늘은 새싹이 좀 가벼워.", "창밖이 잘 보여.", "숨이 편하다."],
+  5: ["오늘은 그냥 좋아.", "자꾸 콧노래가 나와.", "…흥얼, 흥얼."],
+};
+/** 오늘 마음을 다 들은 순간, 그날의 기분으로 자리 잡으며 하는 한마디 */
+export const MOOD_SETTLE_LINES: Record<MoodStage, string> = {
+  1: "들려줘서 고마워. 오늘은 나도 이불 속에 있을게.",
+  2: "들려줘서 고마워. 오늘은 나도 같이 가라앉아 있을게.",
+  3: "네 마음, 잘 들었어. 오늘은 고요하네.",
+  4: "네 마음이 가벼우니까 나도 가벼워.",
+  5: "네 마음이 환하니까 나도 그냥 좋아.",
+};
+/** 닮기가 생긴 뒤 처음 마음을 들은 날에 한 번 */
+export const MOOD_INTRO_LINE = "들려줘서 고마워. 이제 나는 네 마음을 닮아 있을게.";
+/** 가라앉은 날(1·2단계)의 손길: 웃음은 그대로, 말은 조용히 */
+export const LOW_HUG_LINES = ["…고마워. 조금 낫다.", "이대로 조금만 있자.", "네 손, 따뜻해."];
+export const LOW_GLOW_LINE = "방이 포근해. 고마워.";
+/** 닮기를 켜고 끌 때 */
+export const MOOD_ON_LINE = "이제 네 마음을 닮아 있을게.";
+export const MOOD_OFF_LINE = "알겠어. 나는 그냥 고요하게 있을게.";
+/** 오늘 기록에 많이 힘든 신호가 있는 날: 닮지 않고 곁에 있는다 */
+export const MOOD_BESIDE_LINE = "들려줘서 고마워. 오늘은 네 곁에 꼭 있을게.";
+/** 오늘의 기분 쪽지의 한 줄: 기록을 말하고 사람을 판정하지 않는다 */
+export function moodNoteLine(stage: MoodStage, recorded: boolean): string {
+  if (!recorded) {
+    if (stage < 3) return "아직 오늘 마음은 못 들었어. 요즘 기록이 조금 내려와 있어서, 나도 그 여운 속이야.";
+    if (stage > 3) return "아직 오늘 마음은 못 들었어. 요즘 기록이 조금 올라와 있어서, 나도 그 여운 속이야.";
+    return "아직 오늘 마음은 못 들었어. 들려주면 나도 닮아 갈게.";
+  }
+  return ({
+    1: "나는 네가 들려준 마음을 닮아. 기록이 많이 내려와 있어서 나도 이불 속이야. 같이 있자.",
+    2: "나는 네가 들려준 마음을 닮아. 요즘 조금 내려와 있더라.",
+    3: "나는 네가 들려준 마음을 닮아. 오늘은 크게 흔들리지 않았네.",
+    4: "네 마음이 조금 가벼운 날이야. 나도 좋아.",
+    5: "네 마음이 환한 날이야. 나도 그냥 좋아.",
+  } as Record<MoodStage, string>)[stage];
+}
+/** 마음 닮기를 켜 두었는지 (이 기기, 계정별). 기본은 켜짐. 끄면 늘 고요해 */
+const MOOD_SYNC_KEY = "moru:mood-sync:v1";
+export const loadMoodSync = (): boolean => read<boolean>(MOOD_SYNC_KEY, true) !== false;
+export const saveMoodSync = (on: boolean) => write(MOOD_SYNC_KEY, on);
+/** 닮기를 처음 알리는 한마디를 아직 안 했으면 true 를 돌려주고 했다고 적어 둔다 */
+const MOOD_INTRO_KEY = "moru:mood-intro:v1";
+export function takeMoodIntro(): boolean {
+  if (read<boolean>(MOOD_INTRO_KEY, false) === true) return false;
+  write(MOOD_INTRO_KEY, true);
+  return true;
+}
+
 /* ---------- 홈 밖에서 모루를 그릴 때 쓰는 이름·모습 (계정별, 이 기기) ---------- */
 
 export interface Companion { name: string; appearance: string }
@@ -166,8 +230,13 @@ const MURMURS: { minLevel: number; lines: string[] }[] = [
 ];
 /** 기운이 낮은 날에는 하품이 섞인다 (탓하는 말은 없다) */
 const DROWSY = ["…하암.", "오늘은 조금 졸려."];
-export const murmurPool = (level: number, energy = 4): string[] =>
-  [...MURMURS.filter((m) => level >= m.minLevel).flatMap((m) => m.lines), ...(energy <= 2 ? DROWSY : [])];
+/** 오늘의 기분(마음 닮기)에 따라 혼잣말이 달라진다: 울적한 날은 말수가 줄고, 그 밖의 날은 그 기분의 말이 절반쯤 섞인다 */
+export function murmurPool(level: number, energy = 4, stage: MoodStage = 3): string[] {
+  const base = [...MURMURS.filter((m) => level >= m.minLevel).flatMap((m) => m.lines), ...(energy <= 2 ? DROWSY : [])];
+  const mood = MOOD_MURMURS[stage] ?? [];
+  if (!mood.length) return base;
+  return stage === 1 ? mood : [...mood, ...mood, ...base];
+}
 /** 다음 혼잣말까지: 45~75초. 개발 중에는 ?moruQuick=1 로 3.5초 (운영 빌드에서는 무시) */
 export function murmurDelay(): number {
   if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("moruQuick")) return 3500;

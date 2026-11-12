@@ -136,3 +136,85 @@ export function dailySky(who: string, date: string): { land: Land; weather: Weat
 }
 /** 한국 날짜 (YYYY-MM-DD). 서버가 날짜를 주기 전에도 오늘의 하늘을 정할 수 있게 */
 export const koreaDate = (now: Date = new Date()): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(now);
+
+/* ---------- 마음 닮기 (docs/MORU_MOOD_SYNC.md): 오늘의 기분은 내 기록을 닮는다 ----------
+   기분은 저장하지 않는다. 기록(날짜 → 카테고리 → 오늘 위치 score −5~+5, 한 줄 note)에서 그때그때 계산한다.
+   수치는 "어제보다"를 쌓은 값이라 절대값이 아니다: 말할 수 있는 것은 "요즘 내려와 있다"까지다 */
+
+/** 1 울적해 · 2 가라앉아 · 3 고요해(지금까지의 평소) · 4 가벼워 · 5 행복해 */
+export type MoodStage = 1 | 2 | 3 | 4 | 5;
+export const MOOD_CALM: MoodStage = 3;
+/** 기분이 기록에서 읽는 것 (lib/storage 의 CategoryEntry·DayRecord·Journal 과 같은 모양) */
+export interface MoodEntry { score: number; note?: string }
+export type MoodDay = Record<string, MoodEntry | undefined>;
+export type MoodJournal = Record<string, MoodDay | undefined>;
+export interface MoodReading {
+  stage: MoodStage;
+  /** 기분값 −5 ~ +5 (소수 둘째 자리까지) */
+  value: number;
+  /** 오늘 기록이 있는지. 없으면 지난 기록의 여운이다 */
+  recorded: boolean;
+  /** 오늘 값 T (마음에 두 배를 준 평균), 흐름 값 R (직전 7일 가운데 기록한 날들의 T 평균). 없으면 null */
+  today: number | null;
+  trend: number | null;
+}
+
+export const MOOD_MIND_WEIGHT = 2; // 마음 칸은 두 배
+export const MOOD_TREND_DAYS = 7; // 흐름은 오늘을 뺀 직전 7일
+export const MOOD_TREND_SHARE = 0.3; // 기분값에서 흐름이 차지하는 몫
+export const MOOD_ECHO_DAYS = 3; // 마지막 기록이 이 안에 있어야 여운이 남는다
+export const MOOD_ECHO_SHARE = 0.5; // 기록 전의 여운은 흐름의 절반
+const MOOD_LOW_CHIPS = ["슬퍼", "지쳤어", "불안해"];
+const MOOD_HIGH_CHIPS = ["기뻐", "편안해"];
+
+/** 날짜 키에서 n일 뒤(음수면 앞)의 날짜 키 */
+export function shiftDate(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d) + days * 86_400_000).toISOString().slice(0, 10);
+}
+/** 하루의 값 T: 기록한 카테고리 위치의 가중 평균 (마음 2, 나머지 1). 기록이 없으면 null */
+export function moodDayValue(day: MoodDay | undefined): number | null {
+  let sum = 0, weight = 0;
+  for (const [cat, entry] of Object.entries(day ?? {})) {
+    if (!entry || typeof entry.score !== "number" || !Number.isFinite(entry.score)) continue;
+    const w = cat === "mind" ? MOOD_MIND_WEIGHT : 1;
+    sum += w * Math.max(-5, Math.min(5, entry.score));
+    weight += w;
+  }
+  return weight ? sum / weight : null;
+}
+/** 마음 칸의 기분 칩: 슬퍼·지쳤어·불안해 −1, 기뻐·편안해 +1, 둘 다 있으면 0 */
+export function moodChipShift(note: string | undefined): number {
+  const text = note ?? "";
+  return (MOOD_HIGH_CHIPS.some((chip) => text.includes(chip)) ? 1 : 0) - (MOOD_LOW_CHIPS.some((chip) => text.includes(chip)) ? 1 : 0);
+}
+/** 기분값 → 단계: −3 이하 1 · −1 이하 2 · +1 미만 3 · +3 미만 4 · 그 위 5 */
+export function moodStageOf(value: number): MoodStage {
+  if (value <= -3) return 1;
+  if (value <= -1) return 2;
+  if (value < 1) return 3;
+  if (value < 3) return 4;
+  return 5;
+}
+/**
+ * 오늘의 기분. 오늘 기록이 있으면 0.7×오늘 + 0.3×흐름 + 칩 (흐름이 없으면 오늘 + 칩).
+ * 아직 안 썼으면 여운: 마지막 기록이 3일 안에 있을 때 흐름의 절반 (그래서 2~4단계 안에서만 움직인다). 그보다 오래 비웠으면 고요해
+ */
+export function moodOf(journal: MoodJournal | null | undefined, todayKey: string): MoodReading {
+  const book = journal ?? {};
+  const today = moodDayValue(book[todayKey]);
+  const past: number[] = [];
+  let lastGap = 0; // 가장 가까운 기록이 며칠 전인지 (없으면 0)
+  for (let back = 1; back <= MOOD_TREND_DAYS; back++) {
+    const value = moodDayValue(book[shiftDate(todayKey, -back)]);
+    if (value === null) continue;
+    past.push(value);
+    if (!lastGap) lastGap = back;
+  }
+  const trend = past.length ? past.reduce((a, b) => a + b, 0) / past.length : null;
+  let raw = 0;
+  if (today !== null) raw = (trend === null ? today : (1 - MOOD_TREND_SHARE) * today + MOOD_TREND_SHARE * trend) + moodChipShift(book[todayKey]?.mind?.note);
+  else if (trend !== null && lastGap <= MOOD_ECHO_DAYS) raw = MOOD_ECHO_SHARE * trend;
+  const value = Math.round(Math.max(-5, Math.min(5, raw)) * 100) / 100;
+  return { stage: moodStageOf(value), value, recorded: today !== null, today, trend };
+}

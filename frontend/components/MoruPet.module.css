@@ -434,3 +434,41 @@ button.decorItem[data-dragging]{z-index:2;cursor:grabbing;filter:drop-shadow(0 6
 .decorShop .secondary{width:100%;min-height:44px;font:inherit;font-size:14px;cursor:pointer}
 /* 무대·가구 판(480px)은 방보다 넓다: 자리 버튼에 초점이 가도 방이 옆으로 밀려 스크롤되지 않게 잘라 낸다 (hidden 은 스크롤될 수 있다) */
 .room{overflow:clip}
+/* ---------- 마음 닮기 (docs/MORU_MOOD_SYNC.md): 오늘의 기분에 따라 평소 몸짓이 달라진다 ----------
+   얼굴은 스프라이트가 그린다 (data-stage 1 울적해 · 2 가라앉아 · 3 고요해 · 4 가벼워 · 5 행복해). 여기는 숨·새싹의 빠르기와 가라앉은 날의 조용한 반응.
+   새싹 규칙은 :where 로 낮춰 둔다: 손길(새싹 톡)의 몸짓이 이긴다 */
+.sprite[data-stage="1"][data-mood="idle"] .body{animation-duration:5.6s}
+.sprite[data-stage="2"][data-mood="idle"] .body{animation-duration:4.6s}
+.sprite[data-stage="4"][data-mood="idle"] .body{animation-duration:3s}
+.sprite[data-stage="5"][data-mood="idle"] .body{animation:moodHum 2.6s ease-in-out infinite}
+.sprite:where([data-stage="1"]) .sprout{animation-duration:7s}
+.sprite:where([data-stage="2"]) .sprout{animation-duration:5.5s}
+.sprite:where([data-stage="5"]) .sprout{animation-duration:1.9s}
+/* 가라앉은 날에는 뛰지 않고 살짝 기댄다 (웃는 얼굴과 하트는 그대로) */
+.sprite[data-stage="1"][data-mood="happy"] .body,.sprite[data-stage="1"][data-mood="pet"] .body,.sprite[data-stage="2"][data-mood="happy"] .body,.sprite[data-stage="2"][data-mood="pet"] .body{animation:moodLean 2.4s ease-in-out 1}
+@keyframes moodHum{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-2px) rotate(-1.6deg)}75%{transform:translateY(-2px) rotate(1.6deg)}}
+@keyframes moodLean{0%,100%{transform:translateY(0) rotate(0)}35%,70%{transform:translateY(1px) rotate(-2.4deg)}}
+/* 모링은 표정이 이미지라 몸집으로만: 가라앉은 날은 조금 움츠린다 */
+.sprite[data-moring][data-stage="1"][data-mood="idle"]{transform:scale(.95)}
+.sprite[data-moring][data-stage="2"][data-mood="idle"]{transform:scale(.975)}
+/* 상태줄의 오늘 기분 딱지: 줄 높이를 늘리지 않게 위아래를 음수 여백으로 접고, 누르는 자리는 ::after 로 넓힌다 */
+.status{overflow:visible}
+.moodTag{position:relative;flex:none;display:inline-flex;align-items:center;gap:4px;height:21px;margin:-3px 0;padding:0 8px 1px 4px;border:2px solid var(--hd-ink);border-radius:10px 12px 9px 11px/11px 9px 12px 10px;background:#fffaf0;color:var(--hd-ink);font:inherit;font-size:12px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s ease}
+.moodTag::after{content:"";position:absolute;inset:-12px -6px}
+.moodTag svg{width:15px;height:15px}
+.moodTag[data-stage="1"],.moodTag[data-stage="2"]{background:#ece2fb}
+.moodTag[data-stage="4"],.moodTag[data-stage="5"]{background:#ffeccb}
+.moodTag:active{transform:translateY(1px)}
+.moodTag:focus-visible{outline:2px dashed var(--hd-ink);outline-offset:2px}
+/* 오늘의 기분 쪽지 (손그림 시트) */
+.moodNote{padding:0 2px 20px;text-align:center}
+.moodHero{height:150px;display:flex;justify-content:center;align-items:center;background:radial-gradient(ellipse at 50% 72%,#e6c48d66,transparent 66%)}
+.moodHero>svg{width:150px;height:143px}
+.moodNote h4{margin:6px 0 8px;font-size:22px;font-weight:400}
+.moodSay{max-width:300px;margin:0 auto 12px;font-size:15px;line-height:1.6;word-break:keep-all;text-wrap:balance}
+.moodFacts{display:inline-block;margin:0 0 16px;padding:7px 12px;border:2px dashed #dcc39b;border-radius:12px;color:var(--text-2);font-size:12px;line-height:1.5;font-variant-numeric:tabular-nums;word-break:keep-all}
+.moodActions{display:flex;justify-content:center;gap:8px;margin:0 0 14px}
+.moodActions>*{flex:1 1 0;max-width:170px}
+.moodNote .footnote{font-size:11px;text-align:left;word-break:keep-all}
+.moodNote :global(.help),.moodNote :global(.help-fold){margin-top:12px;text-align:left}
+@media(prefers-reduced-motion:reduce){.moodNote *{animation:none!important;transition:none!important}}

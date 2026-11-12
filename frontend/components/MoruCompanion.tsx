@@ -1,5 +1,6 @@
 import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoringSprite from "./MoringSprite";
+import type { MoodStage } from "@/lib/moru-rules";
 import styles from "./MoruPet.module.css";
 
 export const COMPANIONS = [
@@ -16,19 +17,29 @@ export const companionChoices = (allowed?: string[]) => COMPANIONS.filter((c) =>
 const INK = "#4a3528";
 const SKIN = "#ffe6cf";
 /** 노아·레오·루미: 머리가 큰 작은 아이. 모루·모링과 같은 손그림 선으로 그리고, 머리 모양과 옷 색만 다르다 */
+/** 평소(idle)의 입과 볼: 오늘의 기분에 따라 (3 이 지금까지의 평소) */
+const REST_MOUTH: Record<MoodStage, string> = { 1: "M60.500 67Q64 64.600 67.500 67", 2: "M61 66.200Q64 65 67 66.200", 3: "M61 65Q64 67 67 65", 4: "M60 64.500Q64 68.500 68 64.500", 5: "M60 64Q64 69 68 64" };
+const REST_CHEEK: Record<MoodStage, string> = { 1: ".3", 2: ".45", 3: ".6", 4: ".8", 5: ".9" };
 const LOOKS: Record<string, { hair: string; dress: string }> = {
   noa: { hair: "#3f3a4e", dress: "#8a7190" },
   leo: { hair: "#e9c27c", dress: "#5f7f81" },
   lumi: { hair: "#b8a0cc", dress: "#8f83ad" },
 };
 
-export default function MoruCompanion({ appearance = "moru", mood, level = 1 }: { appearance?: string; mood: MoruMood; level?: number }) {
-  if (appearance === "moring") return <MoringSprite mood={mood} level={level} />;
+/**
+ * stage 는 오늘의 기분(docs/MORU_MOOD_SYNC.md, 1 울적해 … 5 행복해): 깨어 있는 평소(idle)의 얼굴만 바꾼다.
+ * 가라앉은 날은 눈꺼풀이 내려오고(1단계는 이불을 두른다), 가벼운 날은 입꼬리가 올라간다. 손길·식사·잠의 얼굴은 어느 날이나 같다
+ */
+export default function MoruCompanion({ appearance = "moru", mood, level = 1, stage = 3 }: { appearance?: string; mood: MoruMood; level?: number; stage?: MoodStage }) {
+  if (appearance === "moring") return <MoringSprite mood={mood} level={level} stage={stage} />;
   const look = LOOKS[appearance];
-  if (!look) return <MoruSprite mood={mood} level={level} />;
+  if (!look) return <MoruSprite mood={mood} level={level} stage={stage} />;
   const boy = appearance === "leo";
   const happy = mood === "happy" || mood === "pet" || mood === "eat";
-  return <svg viewBox="0 0 128 122" className={styles.sprite} data-mood={mood} data-hand="" aria-hidden="true" fill="none" stroke={INK} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+  const rest = mood === "idle" ? stage : 3;
+  const smiling = happy || (mood === "idle" && rest === 5);
+  const cheek = happy ? ".9" : REST_CHEEK[rest];
+  return <svg viewBox="0 0 128 122" className={styles.sprite} data-mood={mood} data-stage={stage} data-hand="" aria-hidden="true" fill="none" stroke={INK} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
     <ellipse cx="64" cy="113" rx="30" ry="4" fill="#2a1b13" opacity=".16" stroke="none" />
     <g className={styles.body}>
       {/* 뒷머리 (레오는 짧은 머리라 망토가 보인다) */}
@@ -41,19 +52,29 @@ export default function MoruCompanion({ appearance = "moru", mood, level = 1 }: 
       {boy && <path fill="#fff3dc" d="M54 76H74L64 87Z" />}
       <path fill={SKIN} d="M45 82C38 84 36 92 39 97C44 96 47 90 48 84ZM83 82C90 84 92 92 89 97C84 96 81 90 80 84Z" />
       {level >= 5 && <circle cx="64" cy="81" r="3" fill="#ffe2a0" strokeWidth="1.6" />}
+      {mood === "idle" && rest === 1 && <g>{/* 울적한 날: 이불을 어깨까지 두르고 웅크린다 */}
+        <path fill="#bfa6d1" d="M38 80C30 88 28 98 31 106C52 112 76 112 97 106C100 98 98 88 90 80C82 74 46 74 38 80Z" />
+        <path stroke="#9a7fb5" strokeWidth="1.8" d="M64 77C60 88 60 98 64 109M45 83L41 105M83 83L87 105" />
+      </g>}
       {/* 얼굴 */}
       <path fill={SKIN} d="M64 22C82 22 94 34 94 50C94 66 82 76 64 76C46 76 34 66 34 50C34 34 46 22 64 22Z" />
       <g className={styles.face}>
-        <ellipse cx="46" cy="61" rx="5" ry="3" fill="#f6b3ae" opacity={happy ? ".9" : ".6"} stroke="none" />
-        <ellipse cx="82" cy="61" rx="5" ry="3" fill="#f6b3ae" opacity={happy ? ".9" : ".6"} stroke="none" />
+        <ellipse cx="46" cy="61" rx="5" ry="3" fill="#f6b3ae" opacity={cheek} stroke="none" />
+        <ellipse cx="82" cy="61" rx="5" ry="3" fill="#f6b3ae" opacity={cheek} stroke="none" />
         {mood === "sleep" ? <path strokeWidth="2.8" d="M48 55Q53 59 58 55M70 55Q75 59 80 55" />
-          : happy ? <path strokeWidth="2.8" d="M48 57Q53 50 58 57M70 57Q75 50 80 57" />
+          : smiling ? <path strokeWidth="2.8" d="M48 57Q53 50 58 57M70 57Q75 50 80 57" />
+          : rest === 1 ? <path strokeWidth="2.6" d="M48.500 57.800L57.500 55.400M79.500 57.800L70.500 55.400" />
           : <g className={styles.blink} style={{ transformOrigin: "64px 55px" }}>
-            <ellipse cx="53" cy="55" rx="3.4" ry="4.6" fill="#3d2f3d" stroke="none" /><ellipse cx="75" cy="55" rx="3.4" ry="4.6" fill="#3d2f3d" stroke="none" />
-            <circle cx="54.2" cy="53.4" r="1.2" fill="#fff" stroke="none" /><circle cx="76.2" cy="53.4" r="1.2" fill="#fff" stroke="none" />
+            {rest === 2 ? <>{/* 바깥쪽이 처진 반쯤 감긴 눈 */}
+              <path fill="#3d2f3d" stroke="none" d="M49.400 56L56.600 54C56.900 57.600 55.400 59.600 53 59.600C50.800 59.600 49.500 58.200 49.400 56ZM78.600 56L71.400 54C71.100 57.600 72.600 59.600 75 59.600C77.200 59.600 78.500 58.200 78.600 56Z" />
+              <path strokeWidth="1.8" d="M48.400 56.300L57.400 53.800M79.600 56.300L70.600 53.800" />
+            </> : <>
+              <ellipse cx="53" cy="55" rx="3.4" ry="4.6" fill="#3d2f3d" stroke="none" /><ellipse cx="75" cy="55" rx="3.4" ry="4.6" fill="#3d2f3d" stroke="none" />
+              <circle cx="54.2" cy="53.4" r="1.2" fill="#fff" stroke="none" /><circle cx="76.2" cy="53.4" r="1.2" fill="#fff" stroke="none" />
+            </>}
           </g>}
         {mood === "eat" ? <path fill="#a8797c" strokeWidth="1.8" d="M61 64C61 62 67 62 67 64C67 69 61 69 61 64Z" />
-          : <path stroke="#a8797c" strokeWidth="2.2" d={happy ? "M60 64Q64 69 68 64" : "M61 65Q64 67 67 65"} />}
+          : <path stroke="#a8797c" strokeWidth="2.2" d={smiling ? "M60 64Q64 69 68 64" : REST_MOUTH[rest]} />}
       </g>
       {/* 앞머리 */}
       {boy
