@@ -79,6 +79,8 @@ export const LIGHTS_OFF_LINE = "잘 자. 너도 푹 자.";
 export const LIGHTS_ON_LINE = "…눈부셔. 조금만 더 있을까.";
 export const SNACK_LINES = ["냠. 고마워, 맛있어.", "마음밥이다. 아껴 먹을게.", "…냠냠. 네가 주니까 더 좋아."];
 /** 돌봄 (2단계): 먼지 치우기 · 목욕 · 푹 잔 아침 · 온기·말끔함·기운이 모두 가득 찼을 때 */
+/** 꾸미기: 가구를 놓았을 때 */
+export const DECOR_LINES = ["여기 잘 어울린다.", "방이 조금 더 우리 방 같아.", "…마음에 들어."];
 export const DUST_LINES = ["방이 조금 넓어졌어.", "먼지가 갔다. 고마워.", "…개운해."];
 export const BATH_LINES = ["보글보글. 따뜻해.", "새싹까지 말끔해졌어.", "…비누 냄새, 좋다."];
 export const RESTED_GREETING = "푹 잤어. 어젯밤 불 꺼 줘서 고마워.";

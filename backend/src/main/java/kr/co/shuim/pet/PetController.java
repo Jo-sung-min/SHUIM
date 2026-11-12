@@ -25,5 +25,6 @@ public class PetController {
     @PutMapping("/name") public ResponseEntity<PetService.View> name(@RequestBody NameInput in, HttpServletRequest req) { return result(pets.rename(user(req), in.name())); }
     @PutMapping("/journal") public ResponseEntity<PetService.View> journal(@RequestBody PetService.JournalInput in, HttpServletRequest req) { return result(pets.journal(user(req), in)); }
     @PutMapping("/home") public ResponseEntity<PetService.View> home(@RequestBody PetService.HomeInput in, HttpServletRequest req) { return result(pets.home(user(req), in)); }
+    @PutMapping("/decor") public ResponseEntity<PetService.View> decor(@RequestBody PetService.DecorInput in, HttpServletRequest req) { return result(pets.decorate(user(req), in)); }
     @PutMapping("/appearance") public ResponseEntity<PetService.View> appearance(@RequestBody PetService.AppearanceInput in, HttpServletRequest req) { return result(pets.appearance(user(req), in)); }
 }

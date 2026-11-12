@@ -258,4 +258,35 @@ class PetPostgresTest {
         var other = tx.execute(s -> later.get(uid));
         assertEquals(other.weatherSeen().size() * PetDays.WEATHER_POINTS, ledger("weather:%"));
     }
+    @Test void furnitureIsBoughtOnceAndPlacedPerHome() {
+        tx.execute(s -> pets.get(uid));
+        jdbc.sql("UPDATE user_pets SET visit_points=100, xp=60 WHERE user_id=?").param(uid).update();
+        // 없는 자리·없는 가구·종류가 맞지 않는 자리는 거절하고 포인트도 그대로
+        for (var bad : List.of(new PetService.DecorInput("wallL", "heart"), new PetService.DecorInput("roof", "frame"), new PetService.DecorInput("wallL", "sofa")))
+            assertThrows(Exception.class, () -> tx.execute(s -> pets.decorate(uid, bad)));
+        var placed = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("wallL", "frame")));
+        assertEquals(70, placed.points()); assertEquals(Map.of("wallL", "frame"), placed.decor());
+        assertEquals(List.of("frame"), placed.ownedFurniture()); assertEquals(-30, ledger("furniture:%"));
+        assertEquals(PetDecor.ITEMS, placed.furniture());
+        // 같은 가구를 다른 자리로 옮기면 다시 사지 않고, 앞 자리는 빈다
+        var moved = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("wallR", "frame")));
+        assertEquals(70, moved.points()); assertEquals(Map.of("wallR", "frame"), moved.decor());
+        // 포인트가 모자라면 사지도 놓지도 않는다
+        assertEquals(15, tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("hang", "lantern"))).points());
+        assertThrows(Exception.class, () -> tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("bedL", "bear"))));
+        var after = tx.execute(s -> pets.get(uid));
+        assertEquals(15, after.points()); assertEquals(Map.of("wallR", "frame", "hang", "lantern"), after.decor());
+        assertEquals(-85, ledger("furniture:%"));
+        // 비우면 자리만 비고 산 가구는 남는다
+        var cleared = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("hang", null)));
+        assertEquals(Map.of("wallR", "frame"), cleared.decor()); assertEquals(Set.of("frame", "lantern"), Set.copyOf(cleared.ownedFurniture()));
+        // 공간마다 따로 꾸미고, 산 가구는 다른 공간에도 그냥 놓는다
+        jdbc.sql("UPDATE user_pets SET visit_points=60 WHERE user_id=?").param(uid).update();
+        var attic = tx.execute(s -> pets.home(uid, new PetService.HomeInput(1)));
+        assertEquals(1, attic.homeId()); assertTrue(attic.decor().isEmpty());
+        var atticFrame = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("wallL", "frame")));
+        assertEquals(0, atticFrame.points()); assertEquals(Map.of("wallL", "frame"), atticFrame.decor());
+        assertEquals(Map.of("wallR", "frame"), tx.execute(s -> pets.home(uid, new PetService.HomeInput(0))).decor());
+        assertEquals(-85, ledger("furniture:%"));
+    }
 }

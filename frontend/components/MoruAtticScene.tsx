@@ -1,8 +1,8 @@
-import { Bulb, DEFAULT_SKY, Outside, Stage, type Sky } from "./MoruScene";
+import { Bulb, DEFAULT_SKY, NO_DECOR, Outside, Stage, type Sky } from "./MoruScene";
 import styles from "./MoruRoom.module.css";
 
 /** 다락방: 기울어진 지붕 아래 둥근 창, 바닥에 깐 요와 두꺼운 이불. 창밖은 멈춰 있고 비·눈만 내린다 */
-export default function MoruAtticScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
+export default function MoruAtticScene({ sky = DEFAULT_SKY, decor = NO_DECOR }: { sky?: Sky; decor?: Record<string, string> }) {
   return <Stage view={<Outside sky={sky} width={188} height={188} className={styles.viewAttic} />}>{(glow) => <>
     {/* 박공벽: 둥근 창 자리만 비운다 */}
     <path stroke="none" fill="#dbb78f" fillRule="evenodd" d="M-10-10H490V710H-10ZM150 332a90 90 0 1 0 180 0a90 90 0 1 0-180 0Z" />
@@ -20,8 +20,8 @@ export default function MoruAtticScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
     {[[152, 281], [181, 248], [222, 231], [258, 231], [299, 248], [328, 281]].map(([x, y]) => <Bulb key={x} x={x} y={y + 2} />)}
     {/* 오른쪽 벽 선반: 화분과 병 */}
     <path fill="#b9835a" d="M350 448H412Q416 452 412 456H350Z" /><path fill="#8f5f44" d="M360 456v12l12-12Z" />
-    <path fill="#c9705a" d="M360 430H382L379 448H363Z" /><path fill="#7f9d78" strokeWidth="1.6" d="M366 430C360 422 362 412 368 410C372 416 372 424 370 430ZM374 430C374 420 380 412 386 414C386 422 382 428 378 430Z" />
-    <path fill="#fff3dc" d="M393 434H405V448H393Z" /><path fill="#d9a55e" d="M392 430H406V435H392Z" />
+    {!decor.bedR && <><path fill="#c9705a" d="M360 430H382L379 448H363Z" /><path fill="#7f9d78" strokeWidth="1.6" d="M366 430C360 422 362 412 368 410C372 416 372 424 370 430ZM374 430C374 420 380 412 386 414C386 422 382 428 378 430Z" />
+    <path fill="#fff3dc" d="M393 434H405V448H393Z" /><path fill="#d9a55e" d="M392 430H406V435H392Z" /></>}
     {/* 책 위에 올려 둔 등 */}
     <circle cx="111" cy="438" r="52" fill={glow} stroke="none" />
     <path fill="#b5694f" d="M86 458H136V468H86Z" /><path fill="#8fa3bd" d="M90 468H132V478H90Z" />

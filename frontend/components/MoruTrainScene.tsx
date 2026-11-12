@@ -1,4 +1,4 @@
-import { Bulb, DEFAULT_SKY, Outside, Stage, type Sky } from "./MoruScene";
+import { Bulb, DEFAULT_SKY, NO_DECOR, Outside, Stage, type Sky } from "./MoruScene";
 import styles from "./MoruRoom.module.css";
 
 /** 묶어 둔 커튼 한 쪽 (오른쪽은 뒤집어 쓴다) */
@@ -13,7 +13,7 @@ function Curtain() {
 }
 
 /** 기차 침대칸: 창밖 풍경이 천천히 지나가고, 모루는 창가 침대에 앉아 쉰다 */
-export default function MoruTrainScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
+export default function MoruTrainScene({ sky = DEFAULT_SKY, decor = NO_DECOR }: { sky?: Sky; decor?: Record<string, string> }) {
   return <Stage view={<Outside sky={sky} moving width={208} height={208} className={styles.viewTrain} />}>{(glow) => <>
     {/* 나무 벽: 창 자리만 비운다 */}
     <path stroke="none" fill="#8c5f47" fillRule="evenodd" d="M-10-10H490V710H-10ZM158 238h164a18 18 0 0 1 18 18v164a18 18 0 0 1-18 18H158a18 18 0 0 1-18-18V256a18 18 0 0 1 18-18Z" />
@@ -32,9 +32,9 @@ export default function MoruTrainScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
       <path fill="#d9a55e" d="M56 164H424Q428 168 424 172H56Q52 168 56 164Z" />
       <path fill="#8f5f44" d="M84 172v14l14-14ZM396 172v14l-14-14Z" />
     </g>
-    {/* 벽에 건 화분 */}
-    <path fill="none" strokeWidth="1.5" d="M380 384V402" /><path fill="#c9705a" d="M369 402H391L388 420H372Z" />
-    <path fill="#7f9d78" strokeWidth="1.6" d="M373 402C366 396 366 388 372 386C376 390 377 396 376 402ZM384 402C384 394 388 388 394 389C395 395 391 400 387 402Z" />
+    {/* 벽에 건 화분 (꾸미기 "벽의 못"에 다른 것을 걸면 비킨다) */}
+    {!decor.hang && <><path fill="none" strokeWidth="1.5" d="M380 384V402" /><path fill="#c9705a" d="M369 402H391L388 420H372Z" />
+    <path fill="#7f9d78" strokeWidth="1.6" d="M373 402C366 396 366 388 372 386C376 390 377 396 376 402ZM384 402C384 394 388 388 394 389C395 395 391 400 387 402Z" /></>}
     {/* 창틀과 창턱 */}
     <path fill="#5f3d2d" fillRule="evenodd" d="M152 228h176a22 22 0 0 1 22 22v176a22 22 0 0 1-22 22H152a22 22 0 0 1-22-22V250a22 22 0 0 1 22-22ZM158 238h164a18 18 0 0 1 18 18v164a18 18 0 0 1-18 18H158a18 18 0 0 1-18-18V256a18 18 0 0 1 18-18Z" />
     <path stroke="none" fill="#ffffff" opacity=".08" d="M150 428L226 240H262L186 438H160Z" /><path stroke="none" fill="#ffffff" opacity=".05" d="M262 438L334 262V330L290 438Z" />
@@ -55,8 +55,8 @@ export default function MoruTrainScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
     <path fill="#f6e8d0" d="M-10 477C110 473 370 480 490 476V710H-10Z" />
     <path fill="#fff6e4" d="M266 448C284 438 336 438 352 446C362 460 362 486 354 498C336 506 284 506 268 498C258 486 258 462 266 448Z" />
     <path fill="none" stroke="#a9c1d6" strokeWidth="2" d="M286 444C282 462 282 482 286 502M310 441C308 462 308 484 310 504M334 443C338 462 338 482 334 502" />
-    <path fill="#fffaf0" d="M108 498L138 492L140 508L110 514Z" /><path fill="#fffaf0" d="M138 492L168 498L166 514L140 508Z" />
-    <path fill="none" stroke="#c9b9a2" strokeWidth="1.2" d="M114 502L133 498M115 507L134 503M145 498L162 502M145 503L161 507" />
+    {!decor.bedL && <><path fill="#fffaf0" d="M108 498L138 492L140 508L110 514Z" /><path fill="#fffaf0" d="M138 492L168 498L166 514L140 508Z" />
+    <path fill="none" stroke="#c9b9a2" strokeWidth="1.2" d="M114 502L133 498M115 507L134 503M145 498L162 502M145 503L161 507" /></>}
     <path fill="#c9806a" d="M-10 530C60 520 130 534 200 526C270 518 340 534 410 524C440 520 470 526 490 524V710H-10Z" />
     <path stroke="none" fill="#dba08b" d="M-10 532C60 522 130 536 200 528C270 520 340 536 410 526C440 522 470 528 490 526V540C470 542 440 536 410 540C340 550 270 534 200 542C130 550 60 536 -10 546Z" />
     <path fill="none" stroke="#a9624f" strokeWidth="1.6" strokeDasharray="5 6" d="M-10 546C60 536 130 550 200 542C270 534 340 550 410 540C440 536 470 542 490 540" />

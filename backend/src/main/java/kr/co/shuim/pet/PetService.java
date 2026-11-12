@@ -24,7 +24,8 @@ public class PetService {
                        int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked,
                        int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow,
                        List<String> appearances,
-                       PetDays.Sky sky, List<String> weatherSeen, List<String> newWeather, List<Task> tasks, boolean tasksRewarded) {}
+                       PetDays.Sky sky, List<String> weatherSeen, List<String> newWeather, List<Task> tasks, boolean tasksRewarded,
+                       List<PetDecor.Item> furniture, List<String> ownedFurniture, Map<String, String> decor) {}
     /** 오늘의 돌봄 한 칸 */
     public record Task(String id, boolean done) {}
     private record DayTasks(List<String> tasks, int done, boolean rewarded) {}
@@ -150,7 +151,45 @@ public class PetService {
             night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()), APPEARANCES,
             sky(uid, s.date()), jdbc.sql("SELECT weather FROM pet_weather_seen WHERE user_id = ? ORDER BY first_day, weather").param(uid).query(String.class).list(), newWeather,
             dayTasks(uid, s.date()).map(t -> { var list = new ArrayList<Task>(); for (int i = 0; i < t.tasks().size(); i++) list.add(new Task(t.tasks().get(i), (t.done() & (1 << i)) != 0)); return (List<Task>) list; }).orElse(List.of()),
-            dayTasks(uid, s.date()).map(DayTasks::rewarded).orElse(false));
+            dayTasks(uid, s.date()).map(DayTasks::rewarded).orElse(false),
+            PetDecor.ITEMS, jdbc.sql("SELECT item FROM pet_furniture WHERE user_id = ? ORDER BY bought_at, item").param(uid).query(String.class).list(),
+            decor(uid, homeId));
+    }
+    /** 이 공간의 자리마다 놓인 가구 (자리 → 가구) */
+    private Map<String, String> decor(String uid, int homeId) {
+        var placed = new TreeMap<String, String>();
+        for (var row : jdbc.sql("SELECT slot, item FROM pet_decor WHERE user_id = ? AND home_id = ?").param(uid).param(homeId)
+            .query((rs, i) -> List.of(rs.getString("slot"), rs.getString("item"))).list()) placed.put(row.get(0), row.get(1));
+        return placed;
+    }
+    public record DecorInput(String slot, String item) {}
+    /**
+     * 꾸미기: 지금 머무는 공간의 한 자리에 가구를 놓는다. 아직 없는 가구는 방문포인트로 사서 놓고(장부 furniture:가구, 한 번만),
+     * 같은 공간의 다른 자리에 있던 같은 가구는 이 자리로 옮긴다. item 이 비어 있으면 그 자리를 비운다 (산 가구는 남는다).
+     */
+    @Transactional public View decorate(String uid, DecorInput in) {
+        String slot = in == null ? null : in.slot();
+        PetDecor.slotKind(slot);
+        var p = lock(uid, ZonedDateTime.now(clock)); // 포인트 차감과 배치를 기기 사이에서 한 줄로 세운다
+        int homeId = jdbc.sql("SELECT home_id FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
+        String id = in.item() == null || in.item().isBlank() ? null : in.item();
+        if (id == null) {
+            jdbc.sql("DELETE FROM pet_decor WHERE user_id = ? AND home_id = ? AND slot = ?").param(uid).param(homeId).param(slot).update();
+            return save(uid, p, 0);
+        }
+        var item = PetDecor.check(slot, id);
+        boolean owned = jdbc.sql("SELECT COUNT(*) FROM pet_furniture WHERE user_id = ? AND item = ?").param(uid).param(item.id()).query(Integer.class).single() > 0;
+        if (!owned) {
+            int points = jdbc.sql("SELECT visit_points FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
+            if (points < item.cost()) throw ApiException.badRequest("방문포인트가 부족해요.");
+            jdbc.sql("INSERT INTO pet_furniture(user_id, item) VALUES (?, ?)").param(uid).param(item.id()).update();
+            jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,?)").param(uid).param("furniture:" + item.id()).param(-item.cost()).update();
+            jdbc.sql("UPDATE user_pets SET visit_points=visit_points-? WHERE user_id=?").param(item.cost()).param(uid).update();
+        }
+        jdbc.sql("DELETE FROM pet_decor WHERE user_id = ? AND home_id = ? AND item = ? AND slot <> ?").param(uid).param(homeId).param(item.id()).param(slot).update();
+        jdbc.sql("INSERT INTO pet_decor(user_id, home_id, slot, item) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, home_id, slot) DO UPDATE SET item = EXCLUDED.item")
+            .param(uid).param(homeId).param(slot).param(item.id()).update();
+        return save(uid, p, 0);
     }
     private List<Integer> owned(String uid) {
         var result = new ArrayList<Integer>(); result.add(0);

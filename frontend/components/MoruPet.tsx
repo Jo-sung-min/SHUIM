@@ -6,7 +6,8 @@ import { Sheet } from "./ui";
 import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoruCompanion, { companionChoices } from "./MoruCompanion";
 import MoruHomeScene, { HOME_NAMES } from "./MoruHomeScene";
-import type { Sky } from "./MoruScene";
+import { NO_DECOR, type Sky } from "./MoruScene";
+import { DecorLayer, DecorSheet, FURNITURE } from "./MoruDecor";
 import MoruMindSheet from "./MoruMindSheet";
 import { IconBook, IconBubble, IconMoon, IconSmile, IconSun } from "./Icons";
 import MoruWeatherBook, { weatherName } from "./MoruWeatherBook";
@@ -15,7 +16,7 @@ import { haptic } from "@/lib/haptics";
 import { useBackLayer } from "@/lib/use-back-layer";
 import { PetError, petRequest, type PetView } from "@/lib/pet";
 import {
-  BATH_LINES, DAILY_FOOD_MAX, DUST_LINES, GLOW_LINE, HUG_LINES, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
+  BATH_LINES, DAILY_FOOD_MAX, DECOR_LINES, DUST_LINES, GLOW_LINE, HUG_LINES, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
   RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, talkReplies, TICKLE_LINES,
   CHORE_NAMES, currentHour, dailySky, dayPhase, devHome, devLook, devSky, dueMeals, koreaDate, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
   petLine, pickLine, recordLine, rubStats, saveCompanion, saveRainPref, takeNewMeal, touchSpot, type Companion,
@@ -47,7 +48,10 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [needsLogin, setNeedsLogin] = useState(false);
   const [message, setMessage] = useState(IDLE_LINE);
   const [mood, setMood] = useState<MoruMood>("idle");
-  const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | null>(null);
+  const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | "decor" | null>(null);
+  // 꾸미기: 꾸미는 중이면 방의 자리마다 동그라미가 뜨고, 자리를 누르면 가구 고르기 시트가 열린다
+  const [decorating, setDecorating] = useState(false);
+  const [decorSlot, setDecorSlot] = useState<string | null>(null);
   const [chosenAppearance, setChosenAppearance] = useState("moru");
   const [ownerName, setOwnerName] = useState("");
   const [name, setName] = useState("");
@@ -379,14 +383,15 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   // 시트·판(메뉴·돌보기·말 걸기)·꽉 찬 화면은 뒤로 가기 기록 하나를 함께 쓴다: 메뉴에서 시트나 꽉 찬 화면을 열 때
   // 판이 기록을 걷어 내며 보낸 뒤로 가기가 방금 연 것을 닫아 버리지 않게. 뒤로 가기는 시트 → 판 → 꽉 찬 화면 순서로 하나씩 닫는다
   // (닫은 뒤에도 남은 것이 있으면 true 를 돌려 기록을 다시 쌓는다)
-  useBackLayer(sheet !== null || panel !== null || full, () => {
+  useBackLayer(sheet !== null || panel !== null || decorating || full, () => {
     if (sheet !== null) {
       if (busy) return true;
       if (sheet === "mind" && closeMindRef.current) closeMindRef.current();
       else setSheet(null);
-      return panel !== null || full;
+      return panel !== null || decorating || full;
     }
-    if (panel !== null) { setPanel(null); return full; }
+    if (panel !== null) { setPanel(null); return decorating || full; }
+    if (decorating) { setDecorating(false); return full; }
     setFull(false);
     return false;
   });
@@ -396,6 +401,19 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const togglePanel = (next: NonNullable<typeof panel>) => { haptic(8); setPanel((v) => (v === next ? null : next)); };
   const snackShort = !pet ? "" : pet.snacked ? "오늘 줬어요" : pet.food === 0 ? "마음밥 없음" : asleep ? "자는 중" : "마음밥 1개";
   const bathShort = !pet ? "" : pet.bathed ? "오늘 했어요" : asleep ? "자는 중" : "하루 한 번";
+  // 꾸미기 (V47 서버): 옛 서버면 버튼이 없다. 개발용 공간 보기(?moruHome)로 다른 공간을 볼 때는 놓인 가구를 그리지 않는다
+  const canDecorate = Boolean(pet?.furniture);
+  const decor = pet && homeId === pet.homeId ? pet.decor ?? NO_DECOR : NO_DECOR;
+  const place = async (slot: string, item: string | null) => {
+    haptic(10);
+    const bought = item !== null && !(pet?.ownedFurniture ?? []).includes(item);
+    const data = await mutate("/decor", { slot, item });
+    if (!data) return;
+    setSheet(null);
+    if (!item) return;
+    react("happy", say(DECOR_LINES));
+    if (bought) setCelebration({ id: Date.now(), food: 0, level: null, text: `새 가구 · ${FURNITURE[item]?.name ?? "가구"}` });
+  };
   const speech = thinking ? thinking[thinkIndex % thinking.length] : mood !== "idle" ? message : murmur;
 
   if (!canUse) return <section className={styles.card} aria-label="모루를 만나기">
@@ -418,7 +436,8 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     <div className={styles.room} ref={roomRef} onPointerDownCapture={() => { if (rainWanted.current) { rainWanted.current = false; setRainOn(true); } }}>
       <SketchFilter />
       <div className={styles.world} ref={worldRef}>
-        <MoruHomeScene homeId={homeId} sky={sky} />
+        <MoruHomeScene homeId={homeId} sky={sky} decor={decor} />
+        <DecorLayer homeId={homeId} decor={decor} editing={decorating} onPick={(slot) => { setDecorSlot(slot); openSheet("decor"); }} />
         {dustSpots.map((spot) => <button key={spot} type="button" className={styles.dust} data-spot={spot} data-poof={poof === spot ? "" : undefined}
           disabled={poof !== null} aria-label="먼지 치우기" onClick={() => sweep(spot)}><DustIcon /></button>)}
         <button type="button" className={styles.petButton} data-touch={touch ?? undefined} data-glow={glow && !asleep ? "" : undefined}
@@ -494,15 +513,22 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         <span role="status">{celebration.text ? celebration.text : celebration.level ? `Lv.${celebration.level} ↑` : <><RiceIcon /><span className="sr-only">마음밥</span>+{celebration.food}</>}</span>
       </div>}
       {error && !sheet && <div className={styles.alert} role="alert"><span>{error}</span>{!needsLogin && <button type="button" onClick={() => void load()}>다시 연결</button>}</div>}
-      <div className={styles.pad} role="group" aria-label={`${petName}와 오늘`}>
+      {decorating ? <div className={styles.pad} role="group" aria-label="방 꾸미기">
+        <p className={styles.status}><span>꾸미기 · 자리를 눌러 골라요</span><span>{pet?.points ?? 0} P</span></p>
+        <div className={styles.keys}>
+          <button type="button" className={`${styles.key} ${styles.keyMain}`} onClick={() => { haptic(8); setDecorating(false); }}><DoneIcon /><span>다 꾸몄어요</span></button>
+        </div>
+      </div> : <div className={styles.pad} role="group" aria-label={`${petName}와 오늘`}>
         <p className={styles.status}>{loading ? <span role="status">방을 정리하는 중…</span> : pet ? <><span>마음 {pet.earned}/{DAILY_FOOD_MAX} · 식사 {pet.meals}/3</span><span>{asleep ? "자는 중" : napping ? "낮잠 중" : phase === "sleepy" ? "졸려 해요" : mealStatus(pet.meals, pet.food, hour)}</span></> : <span>잠시 후 다시 만나요</span>}</p>
         <div className={styles.keys}>
           <button type="button" className={`${styles.key} ${styles.keyMain}`} disabled={!ready} onClick={() => { haptic(12); setPanel(null); setError(""); setSheet("mind"); }} aria-label={`${petName}에게 오늘 마음 들려주기`}><PenIcon /><span>마음 기록</span></button>
           <button type="button" className={styles.key} disabled={!pet} aria-expanded={panel === "care"} onClick={() => togglePanel("care")} aria-label={tasks.length ? `${petName} 돌보기, 오늘의 돌봄 ${tasksDone}/${tasks.length}` : `${petName} 돌보기`}><CareIcon /><span>돌보기</span>{tasks.length > 0 && <span className={styles.keyBadge} data-done={pet?.tasksRewarded ? "" : undefined} aria-hidden="true">{tasksDone}/{tasks.length}</span>}</button>
           <button type="button" className={styles.key} disabled={!pet} aria-expanded={panel === "talk"} onClick={() => togglePanel("talk")} aria-label={`${petName}에게 말 걸기`}><IconBubble /><span>말 걸기</span></button>
+          {canDecorate && <button type="button" className={styles.key} disabled={!pet} onClick={() => { haptic(8); setPanel(null); setError(""); setDecorating(true); }} aria-label="방 꾸미기"><DecorIcon /><span>꾸미기</span></button>}
         </div>
-      </div>
+      </div>}
     </div>
+    <DecorSheet open={sheet === "decor"} slot={decorSlot} homeId={homeId} pet={pet} busy={busy} error={error} onPlace={(slot, item) => void place(slot, item)} onClose={() => { if (!busy) setSheet(null); }} />
     <MoruWeatherBook open={sheet === "book"} onClose={() => setSheet(null)} seen={pet?.weatherSeen ?? []} />
     <MoruMindSheet open={sheet === "mind"} name={petName} closeRef={closeMindRef} onClose={(changed) => void closeMind(changed)} />
     <Sheet open={sheet === "companions"} title="우리 친구" onClose={() => { if (!busy) setSheet(null); }} className={styles.handSheet}>
@@ -637,6 +663,14 @@ function SnackIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M12 4.5c1.6 0 2.4 1 3.4 2.8l3.4 6c1.4 2.6.2 5.2-2.8 5.2H8c-3 0-4.2-2.6-2.8-5.2l3.4-6C9.600 5.500 10.400 4.500 12 4.500Z" /><path d="M9.500 18.500v-4h5v4" />
   </svg>;
+}
+/** 꾸미기: 작은 액자와 화분 */
+function DecorIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.500h9v7H4Z" /><path d="m4.500 11 2.800-2.800 2 2 1.400-1.400 2.300 2.300" /><path d="M15 15.500h5l-.8 4h-3.400Z" /><path d="M17.500 15.500c0-2 .5-3.300 2-4.300M17.500 15.500c-.3-1.600-1.300-2.500-2.700-2.800" /></svg>;
+}
+/** 다 꾸몄어요: 체크 */
+function DoneIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.500 4.500 4.500L19 7.500" /></svg>;
 }
 function PenIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg>;

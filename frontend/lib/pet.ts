@@ -28,7 +28,10 @@ export interface PetView {
   weatherSeen?: string[]; newWeather?: string[];
   /** 오늘의 돌봄 할 일 셋과 다 해서 보상을 받았는지 */
   tasks?: { id: string; done: boolean }[]; tasksRewarded?: boolean;
+  /** 꾸미기 (V47 서버부터): 살 수 있는 가구, 산 가구, 지금 공간의 자리마다 놓인 가구 (자리 → 가구) */
+  furniture?: PetFurniture[]; ownedFurniture?: string[]; decor?: Record<string, string>;
 }
+export interface PetFurniture { id: string; kind: string; cost: number }
 export interface PetHome { id: number; name: string; level: number; cost: number; available: boolean }
 export const EMPTY_ANSWERS: PetAnswers = { mood: null, intensity: null, reason: null, note: null, need: null };
 export const PET_STEPS = ["마음", "크기", "이유", "한 조각", "필요한 것"];
