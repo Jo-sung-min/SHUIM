@@ -19,7 +19,7 @@ import java.util.UUID;
 import java.util.function.LongSupplier;
 
 /**
- * 후원 기업·PC 양옆 배너·멋져요. 공개 조회는 게시 중인 것만, 관리자 조회는 전부.
+ * 후원 기업·PC 양옆 배너·멋져요·꾸미기 액자. 공개 조회는 게시 중인 것만, 관리자 조회는 전부.
  * 멋져요는 이용권 지갑 → 기업 행 순서로 잠가 하루 한도와 남은 폭죽을 함께 지킨다.
  */
 @Service
@@ -28,21 +28,26 @@ public class SponsorService {
     public record Image(String type, byte[] bytes) {}
     public record PublicBanner(String id, String title, String tagline, String linkUrl, Long imageAt, int position) {}
     public record PublicSponsor(String id, String name, String tagline, String linkUrl, Long logoAt, long amountWon,
-                                int fireworksTotal, int fireworksGiven, int remaining, int cheers, int rank) {}
+                                int fireworksTotal, int fireworksGiven, int remaining, int cheers, int rank, SponsorPolicy.Frame frame) {}
     public record CheerResult(int tickets, PublicSponsor sponsor, int cheersLeftToday) {}
     public record Contribution(String id, long amountWon, int fireworks, String note, long createdAt) {}
     public record AdminBanner(String id, String title, String tagline, String linkUrl, Long imageAt, int position, long startsAt, long endsAt,
                               boolean published, String sponsorId, long clicks, String status, long createdAt, long updatedAt) {}
     public record AdminSponsor(String id, String name, String tagline, String linkUrl, Long logoAt, long amountWon, int fireworksTotal,
                                int fireworksGiven, int remaining, int cheers, boolean published, int position, long createdAt, long updatedAt,
-                               List<Contribution> contributions) {}
+                               List<Contribution> contributions, SponsorPolicy.Frame frame, Long studioKeyAt) {}
     /** 이미지 변경: change=false 면 유지, dataUrl=null 이면 삭제 */
     public record ImageChange(boolean change, String dataUrl) {
         public static final ImageChange KEEP = new ImageChange(false, null);
         public static ImageChange of(boolean present, String dataUrl) { return present ? new ImageChange(true, dataUrl) : KEEP; }
     }
     public record BannerInput(String title, String tagline, String linkUrl, int position, long startsAt, long endsAt, boolean published, String sponsorId, ImageChange image) {}
-    public record SponsorInput(String name, String tagline, String linkUrl, boolean published, int position, ImageChange logo) {}
+    /** frame=null 이면 액자는 그대로 둔다 */
+    public record SponsorInput(String name, String tagline, String linkUrl, boolean published, int position, ImageChange logo, SponsorPolicy.Frame frame) {}
+    /** 꾸미기 화면에 보이는 내 기업 카드. rank 0 = 아직 공개 전 */
+    public record StudioSponsor(String id, String name, String tagline, Long logoAt, long amountWon, int rank, SponsorPolicy.Frame frame) {}
+    /** 발급 직후에만 키 원문을 돌려준다 (DB 에는 해시만) */
+    public record StudioKey(String key, long issuedAt, AdminSponsor sponsor) {}
 
     private final JdbcClient jdbc;
     private final FireworkTicketService tickets;
@@ -124,6 +129,23 @@ public class SponsorService {
         return new CheerResult(after, view, SponsorPolicy.DAILY_CHEERS - today - 1);
     }
 
+    /* ---------- 꾸미기 링크 (로그인 없이, 키를 가진 기업 담당자) ---------- */
+
+    public StudioSponsor studio(String key) {
+        String hash = SponsorPolicy.studioKeyHash(key);
+        if (hash == null) throw studioNotFound();
+        return jdbc.sql(STUDIO_SPONSOR).param(hash).query(this::studioRow).optional().orElseThrow(SponsorService::studioNotFound);
+    }
+
+    /** 링크로는 액자만 바꾼다. 이름·로고·링크 주소는 관리자만. */
+    @Transactional
+    public StudioSponsor decorate(String key, SponsorPolicy.Frame frame) {
+        String hash = SponsorPolicy.studioKeyHash(key);
+        if (hash == null || jdbc.sql("UPDATE sponsors SET frame_style=?,frame_color=?,frame_deco=?,updated_at=? WHERE studio_key_hash=?")
+            .param(frame.style()).param(frame.color()).param(frame.deco()).param(clock.getAsLong()).param(hash).update() == 0) throw studioNotFound();
+        return studio(key);
+    }
+
     /* ---------- 관리자 ---------- */
 
     public List<AdminBanner> adminBanners() {
@@ -173,6 +195,7 @@ public class SponsorService {
         jdbc.sql("INSERT INTO sponsors(id,name,tagline,link_url,published,position,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
             .param(id).param(input.name()).param(input.tagline()).param(input.linkUrl()).param(input.published()).param(input.position()).param(now).param(now).update();
         applyImage("sponsors", "logo", id, input.logo(), now);
+        applyFrame(id, input.frame(), now);
         if (firstAmountWon != null) contribute(id, firstAmountWon, note, adminId, now);
         return adminSponsor(id).orElseThrow();
     }
@@ -185,6 +208,7 @@ public class SponsorService {
         jdbc.sql("UPDATE sponsors SET name=?,tagline=?,link_url=?,published=?,position=?,updated_at=? WHERE id=?")
             .param(input.name()).param(input.tagline()).param(input.linkUrl()).param(input.published()).param(input.position()).param(now).param(id).update();
         applyImage("sponsors", "logo", id, input.logo(), now);
+        applyFrame(id, input.frame(), now);
         return adminSponsor(id).orElseThrow();
     }
 
@@ -192,6 +216,25 @@ public class SponsorService {
     public void deleteSponsor(String sponsorId) {
         UUID id = parse(sponsorId);
         if (id == null || jdbc.sql("DELETE FROM sponsors WHERE id=?").param(id).update() == 0) throw ApiException.notFound("후원 기업을 찾을 수 없어요.");
+    }
+
+    /** 꾸미기 링크 발급. 다시 발급하면 옛 링크는 열리지 않는다. */
+    @Transactional
+    public StudioKey issueStudioKey(String sponsorId) {
+        UUID id = parse(sponsorId);
+        String key = SponsorPolicy.newStudioKey();
+        long now = clock.getAsLong();
+        if (id == null || jdbc.sql("UPDATE sponsors SET studio_key_hash=?,studio_key_at=?,updated_at=? WHERE id=?")
+            .param(SponsorPolicy.studioKeyHash(key)).param(now).param(now).param(id).update() == 0) throw ApiException.notFound("후원 기업을 찾을 수 없어요.");
+        return new StudioKey(key, now, adminSponsor(id).orElseThrow());
+    }
+
+    @Transactional
+    public AdminSponsor revokeStudioKey(String sponsorId) {
+        UUID id = parse(sponsorId);
+        if (id == null || jdbc.sql("UPDATE sponsors SET studio_key_hash=NULL,studio_key_at=NULL,updated_at=? WHERE id=?")
+            .param(clock.getAsLong()).param(id).update() == 0) throw ApiException.notFound("후원 기업을 찾을 수 없어요.");
+        return adminSponsor(id).orElseThrow();
     }
 
     /** 후원액을 더하면 1,000원마다 폭죽 1개가 충전된다. 내역은 남고 고칠 수 없다. */
@@ -223,9 +266,15 @@ public class SponsorService {
 
     private static final String PUBLIC_SPONSORS = """
         SELECT id,name,tagline,link_url,logo_at,amount_won,fireworks_total,fireworks_given,fireworks_total-fireworks_given AS remaining,
+               frame_style,frame_color,frame_deco,
                row_number() OVER (ORDER BY amount_won DESC,fireworks_given DESC,created_at,id) AS rank
         FROM sponsors WHERE published
         """;
+    private static final String STUDIO_SPONSOR = """
+        SELECT s.id,s.name,s.tagline,s.logo_at,s.amount_won,s.frame_style,s.frame_color,s.frame_deco,
+               COALESCE((SELECT r.rank FROM (%s) r WHERE r.id=s.id),0) AS rank
+        FROM sponsors s WHERE s.studio_key_hash=?
+        """.formatted(PUBLIC_SPONSORS);
     private static final String ADMIN_BANNER = """
         SELECT b.*,(SELECT COALESCE(sum(c.count),0) FROM sponsor_banner_clicks c WHERE c.banner_id=b.id) AS clicks FROM sponsor_banners b
         """;
@@ -233,8 +282,19 @@ public class SponsorService {
 
     private PublicSponsor publicSponsorRow(ResultSet rs, int i) throws SQLException {
         return new PublicSponsor(rs.getString("id"), rs.getString("name"), rs.getString("tagline"), rs.getString("link_url"), nullableLong(rs, "logo_at"),
-            rs.getLong("amount_won"), rs.getInt("fireworks_total"), rs.getInt("fireworks_given"), rs.getInt("remaining"), rs.getInt("fireworks_given"), rs.getInt("rank"));
+            rs.getLong("amount_won"), rs.getInt("fireworks_total"), rs.getInt("fireworks_given"), rs.getInt("remaining"), rs.getInt("fireworks_given"), rs.getInt("rank"), frame(rs));
     }
+
+    private StudioSponsor studioRow(ResultSet rs, int i) throws SQLException {
+        return new StudioSponsor(rs.getString("id"), rs.getString("name"), rs.getString("tagline"), nullableLong(rs, "logo_at"),
+            rs.getLong("amount_won"), rs.getInt("rank"), frame(rs));
+    }
+
+    private static SponsorPolicy.Frame frame(ResultSet rs) throws SQLException {
+        return SponsorPolicy.frameOrDefault(rs.getString("frame_style"), rs.getString("frame_color"), rs.getString("frame_deco"));
+    }
+
+    private static ApiException studioNotFound() { return ApiException.notFound("꾸미기 링크가 맞지 않아요. 새 링크를 받아 주세요."); }
 
     private AdminBanner adminBanner(ResultSet rs, long now) throws SQLException {
         boolean published = rs.getBoolean("published");
@@ -255,7 +315,7 @@ public class SponsorService {
             .param(UUID.fromString(id)).query((r, j) -> new Contribution(r.getString("id"), r.getLong("amount_won"), r.getInt("fireworks"), r.getString("note"), r.getLong("created_at"))).list();
         return new AdminSponsor(id, rs.getString("name"), rs.getString("tagline"), rs.getString("link_url"), nullableLong(rs, "logo_at"), rs.getLong("amount_won"),
             rs.getInt("fireworks_total"), rs.getInt("fireworks_given"), rs.getInt("remaining"), rs.getInt("fireworks_given"), rs.getBoolean("published"),
-            rs.getInt("position"), rs.getLong("created_at"), rs.getLong("updated_at"), contributions);
+            rs.getInt("position"), rs.getLong("created_at"), rs.getLong("updated_at"), contributions, frame(rs), nullableLong(rs, "studio_key_at"));
     }
 
     private Optional<AdminSponsor> adminSponsor(UUID id) {
@@ -268,6 +328,12 @@ public class SponsorService {
             UUID sponsor = parse(input.sponsorId());
             if (sponsor == null || adminSponsor(sponsor).isEmpty()) throw ApiException.badRequest("연결할 후원 기업을 다시 골라 주세요.");
         }
+    }
+
+    private void applyFrame(UUID id, SponsorPolicy.Frame frame, long now) {
+        if (frame == null) return;
+        jdbc.sql("UPDATE sponsors SET frame_style=?,frame_color=?,frame_deco=?,updated_at=? WHERE id=?")
+            .param(frame.style()).param(frame.color()).param(frame.deco()).param(now).param(id).update();
     }
 
     private void applyImage(String table, String column, UUID id, ImageChange change, long now) {

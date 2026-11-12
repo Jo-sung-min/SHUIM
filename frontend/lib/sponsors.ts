@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * 기업 후원: PC 양옆 홍보 배너와 후원 기업(멋져요 → 무료 폭죽 이용권).
- * 공개 조회는 로그인 없이, 멋져요는 가입 회원만. 관리자 CRUD 는 lib/admin-sponsors.ts.
+ * 기업 후원: PC 양옆 홍보 배너와 후원 기업(순위 · 멋져요 → 무료 폭죽 이용권 · 꾸미기 액자).
+ * 공개 조회는 로그인 없이, 멋져요는 가입 회원만, 액자 꾸미기는 꾸미기 링크의 키로. 관리자 CRUD 는 lib/admin-sponsors.ts.
  */
+
+import { parseFrame, type SponsorFrame } from "./sponsor-frames";
 
 export interface SponsorContact { email: string; priceLabel: string }
 export interface SponsorBanner { id: string; title: string; tagline: string; linkUrl: string; imageAt: number | null; position: number }
@@ -11,7 +13,11 @@ export interface SponsorBannersResponse { banners: SponsorBanner[]; contact: Spo
 export interface Sponsor {
   id: string; name: string; tagline: string; linkUrl: string | null; logoAt: number | null;
   amountWon: number; fireworksTotal: number; fireworksGiven: number; remaining: number; cheers: number; rank: number;
+  /** 기업이 고른 꾸미기 액자 */
+  frame: SponsorFrame;
 }
+/** 꾸미기 링크로 연 내 기업 카드. rank 0 = 아직 공개 전 */
+export interface StudioSponsor { id: string; name: string; tagline: string; logoAt: number | null; amountWon: number; rank: number; frame: SponsorFrame }
 export interface SponsorsResponse { sponsors: Sponsor[]; contact: SponsorContact }
 export interface SponsorCheerResult { tickets: number; sponsor: Sponsor; cheersLeftToday: number }
 
@@ -47,12 +53,23 @@ export function parseSponsor(value: unknown): Sponsor | null {
   return { id: value.id, name: value.name.slice(0, 40), tagline: text(value.tagline) ? value.tagline.slice(0, 80) : "",
     linkUrl: safeLink(value.linkUrl) ? value.linkUrl : null, logoAt: value.logoAt ?? null,
     amountWon: value.amountWon, fireworksTotal: value.fireworksTotal, fireworksGiven: value.fireworksGiven,
-    remaining: value.remaining, cheers: value.cheers, rank: count(value.rank) && value.rank > 0 ? value.rank : 0 };
+    remaining: value.remaining, cheers: value.cheers, rank: count(value.rank) && value.rank > 0 ? value.rank : 0, frame: parseFrame(value.frame) };
+}
+
+function parseStudioSponsor(value: unknown): StudioSponsor | null {
+  if (!object(value) || !text(value.id) || !text(value.name) || !count(value.amountWon) || !timeOrNull(value.logoAt)) return null;
+  return { id: value.id, name: value.name.slice(0, 40), tagline: text(value.tagline) ? value.tagline.slice(0, 80) : "", logoAt: value.logoAt ?? null,
+    amountWon: value.amountWon, rank: count(value.rank) ? value.rank : 0, frame: parseFrame(value.frame) };
 }
 
 export const bannerImageHref = (banner: Pick<SponsorBanner, "id" | "imageAt">) => banner.imageAt ? `/api/sponsors/banners/${banner.id}/image?v=${banner.imageAt}` : null;
 export const sponsorLogoHref = (sponsor: Pick<Sponsor, "id" | "logoAt">) => sponsor.logoAt ? `/api/sponsors/${sponsor.id}/logo?v=${sponsor.logoAt}` : null;
-export const fmtSponsorWon = (won: number) => won >= 10_000 && won % 10_000 === 0 ? `${(won / 10_000).toLocaleString("ko-KR")}만원` : `${won.toLocaleString("ko-KR")}원`;
+/** 500만원 · 1억 2,500만원. 만 단위로 떨어지지 않으면 원 단위 그대로(1,234,000원) */
+export const fmtSponsorWon = (won: number) => {
+  if (won < 10_000 || won % 10_000 !== 0) return `${won.toLocaleString("ko-KR")}원`;
+  const eok = Math.floor(won / 100_000_000), man = (won % 100_000_000) / 10_000;
+  return `${eok ? `${eok.toLocaleString("ko-KR")}억` : ""}${eok && man ? " " : ""}${man ? `${man.toLocaleString("ko-KR")}만` : ""}원`;
+};
 
 /** "+" 카드·후원 페이지의 문의 메일. 제목·본문 템플릿을 넣어 담당자가 바로 답할 수 있게 한다. */
 export function sponsorInquiryMailto(contact: SponsorContact, company = ""): string {
@@ -103,3 +120,14 @@ export async function cheerSponsor(id: string): Promise<SponsorCheerResult> {
   if (!object(body) || !count(body.tickets) || !sponsor) throw new Error("멋져요 결과를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.");
   return { tickets: body.tickets, sponsor, cheersLeftToday: count(body.cheersLeftToday) ? body.cheersLeftToday : 0 };
 }
+
+/* ---------- 꾸미기 링크 (로그인 없이, 키는 본문으로만 보낸다) ---------- */
+const STUDIO_FAILED = "꾸미기 화면을 열지 못했어요. 잠시 후 다시 시도해 주세요.";
+const studioRequest = async (path: string, method: "POST" | "PUT", body: Record<string, string>): Promise<StudioSponsor> => {
+  const result = await request<unknown>(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const sponsor = object(result) ? parseStudioSponsor(result.sponsor) : null;
+  if (!sponsor) throw new Error(STUDIO_FAILED);
+  return sponsor;
+};
+export const openSponsorStudio = (key: string) => studioRequest("/api/sponsors/studio/open", "POST", { key });
+export const saveSponsorFrame = (key: string, frame: SponsorFrame) => studioRequest("/api/sponsors/studio", "PUT", { key, style: frame.style, color: frame.color, deco: frame.deco });

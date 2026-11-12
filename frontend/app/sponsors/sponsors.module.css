@@ -1,27 +1,121 @@
-/* 후원 기업 순위 (공개) */
-.mine { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 14px; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; line-height: 1.5; }
-.mine svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
-.mine span { flex: 1; min-width: 0; }
-.mine a { flex: none; font-size: 13px; font-weight: 700; color: var(--accent); }
-.list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
-.row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
-.rank { flex: none; width: 28px; text-align: center; font-size: 15px; font-weight: 800; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.row[data-top="1"] .rank { color: var(--tone-praise); font-size: 18px; }
-.row[data-top="2"] .rank { color: var(--text-2); font-size: 17px; }
-.row[data-top="3"] .rank { color: var(--tone-love); font-size: 16px; }
-.logo {
-  flex: none; width: 48px; height: 48px; border-radius: 14px; overflow: hidden; display: grid; place-items: center;
-  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: 18px; font-weight: 800;
+/*
+ * 후원 기업 순위. 위는 1~3위 시상대(받침대 위에 선 액자), 아래는 4위부터 한 줄 50px.
+ * 360×740 기준: 상단 바 69 + 시상대 216 + 7줄 350 = 10위까지 탭바(668) 위에 들어온다. 글자는 이름과 금액뿐.
+ * 금·은·동(--metal*)은 고정 색, 나머지는 토큰이라 라이트·나이트를 그대로 따라간다.
+ */
+.screen { padding-top: 12px; }
+
+/* ---------- 시상대 ---------- */
+.stage {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.16fr) minmax(0, 1fr); align-items: end; gap: 8px;
+  margin: 0; padding: 26px 12px 0; list-style: none; overflow: hidden;
+  border-radius: 24px; border: 1px solid var(--border);
+  background:
+    radial-gradient(110% 62% at 50% -6%, color-mix(in srgb, #f2c45a 32%, transparent), transparent 64%),
+    radial-gradient(70% 50% at 0% 0%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 72%),
+    radial-gradient(70% 50% at 100% 0%, color-mix(in srgb, var(--tone-love) 13%, transparent), transparent 72%),
+    var(--surface);
 }
-.logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.body { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.name { font-size: 15px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.name a { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
-.tagline { font-size: 13px; line-height: 1.45; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.meta { font-size: 11.5px; color: var(--text-3); line-height: 1.4; }
-.row > :global(.btn) { flex: none; white-space: nowrap; }
-.inquiry { display: grid; gap: 10px; justify-items: center; margin: 28px 0 8px; text-align: center; }
-@media (max-width: 400px) {
-  .row { flex-wrap: wrap; }
-  .row > :global(.btn) { width: 100%; margin-left: 40px; }
+/* 1위 둘레의 작은 반짝임 둘 */
+.stage::before, .stage::after {
+  content: ""; position: absolute; width: 9px; height: 9px; background: #f2c45a; pointer-events: none;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: twinkle 3.2s ease-in-out infinite;
+}
+.stage::before { top: 22px; left: 30%; }
+.stage::after { top: 46px; right: 29%; width: 6px; height: 6px; animation-delay: 1.4s; }
+
+.seat { grid-row: 1; min-width: 0; animation: rise 520ms var(--ease) both; }
+.seat[data-rank="1"] { grid-column: 2; --metal: #e2aa32; --metal-hi: #fbe9ab; --metal-lo: #a66d10; --frame-size: 96px; --plinth: 82px; animation-delay: 200ms; }
+.seat[data-rank="2"] { grid-column: 1; --metal: #9aa3b1; --metal-hi: #eef1f5; --metal-lo: #5b6372; --frame-size: 72px; --plinth: 74px; animation-delay: 110ms; }
+.seat[data-rank="3"] { grid-column: 3; --metal: #c98652; --metal-hi: #f5d4b5; --metal-lo: #87502a; --frame-size: 72px; --plinth: 68px; animation-delay: 30ms; }
+
+.pillar { display: grid; justify-items: center; gap: 10px; width: 100%; min-width: 0; color: inherit; text-align: center; border-radius: 16px 16px 0 0; }
+.pillar:focus-visible { outline: 3px solid var(--ring); outline-offset: -3px; }
+.pillar:active .piece { scale: .97; }
+.piece { position: relative; display: grid; justify-items: center; isolation: isolate; transition: scale var(--dur) var(--ease); }
+/* 1위 뒤의 금빛 숨 */
+.seat[data-rank="1"] .piece::before {
+  content: ""; position: absolute; inset: -24%; z-index: -1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, #f4c95d 62%, transparent), transparent);
+  animation: breathe 4.6s ease-in-out infinite;
+}
+.crown {
+  position: absolute; top: -20px; left: 50%; z-index: 4; width: 30px; height: 22px; translate: -50% 0;
+  filter: drop-shadow(0 1px 2px rgba(120, 70, 0, .4)); animation: bob 3.6s ease-in-out infinite;
+}
+
+/* 받침대: 숫자 · 이름 · 금액이 새겨진 명패 */
+.plinth {
+  display: grid; justify-items: center; align-content: start; width: 100%; height: var(--plinth); min-width: 0; padding: 7px 6px 0;
+  border-radius: 14px 14px 0 0; border: 1px solid color-mix(in srgb, var(--metal) 40%, var(--border)); border-bottom: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--metal) 22%, var(--surface)), color-mix(in srgb, var(--metal) 5%, var(--surface)) 80%);
+  box-shadow: inset 0 1.5px 0 color-mix(in srgb, var(--metal-hi) 85%, transparent);
+}
+.medal {
+  font-size: 22px; font-weight: 900; line-height: 1.15; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(115deg, var(--metal-lo) 0%, var(--metal) 34%, var(--metal-hi) 50%, var(--metal) 66%, var(--metal-lo) 100%) 0 0 / 240% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shimmer 5.5s ease-in-out infinite;
+}
+.seat[data-rank="1"] .medal { font-size: 26px; }
+.pname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; line-height: 1.35; letter-spacing: -.02em; }
+.seat[data-rank="1"] .pname { font-size: 14.5px; }
+.pamount { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* ---------- 4위부터 ---------- */
+.board { margin-top: 8px; padding: 0 14px; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { border-bottom: var(--hairline-w) solid var(--hairline); animation: rise 380ms var(--ease) both; animation-delay: calc(240ms + var(--i, 0) * 26ms); }
+.row {
+  --frame-size: 34px;
+  display: grid; grid-template-columns: 26px var(--frame-size) minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  width: 100%; height: 50px; color: inherit; text-align: left; transition: opacity var(--dur-fast) var(--ease);
+}
+.row:active { opacity: .6; }
+.row:focus-visible { outline: 3px solid var(--ring); outline-offset: -2px; border-radius: 12px; }
+.rank { font-size: 14px; font-weight: 800; color: var(--text-3); text-align: center; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
+.amount { font-size: 13px; font-weight: 600; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.join .name { color: var(--text-2); font-weight: 600; }
+
+/* ---------- 기업 시트 ---------- */
+.showcase {
+  --frame-size: 132px;
+  position: relative; display: grid; place-items: center; height: 200px; margin-bottom: 14px; overflow: hidden; isolation: isolate;
+  border-radius: 20px; border: 1px solid var(--border);
+  background: radial-gradient(90% 84% at 50% 0%, color-mix(in srgb, var(--metal, var(--accent)) 30%, transparent), transparent 72%), var(--surface-2);
+}
+.showcase[data-rank="1"] { --metal: #e2aa32; --metal-hi: #fbe9ab; }
+.showcase[data-rank="2"] { --metal: #9aa3b1; --metal-hi: #eef1f5; }
+.showcase[data-rank="3"] { --metal: #c98652; --metal-hi: #f5d4b5; }
+.place {
+  position: absolute; top: 12px; left: 12px; padding: 4px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 800; line-height: 1.3;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.showcase[data-rank] .place { border-color: transparent; color: #2e1c00; background: linear-gradient(120deg, var(--metal-hi), var(--metal)); }
+.tagline { margin: 0 0 12px; text-align: center; font-size: 14.5px; line-height: 1.55; color: var(--text-2); word-break: keep-all; overflow-wrap: anywhere; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.facts div { display: grid; justify-items: center; gap: 2px; min-width: 0; padding: 10px 4px; border-radius: 14px; background: var(--surface-2); }
+.facts dt { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+.facts dd { max-width: 100%; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.hint { margin: 10px 0 0; text-align: center; font-size: 12.5px; color: var(--text-3); }
+
+/* ---------- 불러오는 동안 ---------- */
+.loading::before, .loading::after { display: none; }
+.loading .seat { animation: none; }
+.skFrame { display: block; width: var(--frame-size); height: var(--frame-size); border-radius: calc(var(--frame-size) * .26); }
+.skRow { pointer-events: none; }
+.skRow + .skRow { border-top: var(--hairline-w) solid var(--hairline); }
+.skThumb { display: block; width: 34px; height: 34px; border-radius: 9px; }
+
+@keyframes rise { from { opacity: 0; translate: 0 20px; } }
+@keyframes breathe { 0%, 100% { opacity: .55; scale: .94; } 50% { opacity: 1; scale: 1.04; } }
+@keyframes bob { 0%, 100% { translate: -50% 0; } 50% { translate: -50% -2.5px; } }
+@keyframes shimmer { 0%, 62% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@keyframes twinkle { 0%, 100% { opacity: .15; scale: .7; } 50% { opacity: 1; scale: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .seat, .rows li, .crown, .medal, .stage::before, .stage::after, .seat[data-rank="1"] .piece::before { animation: none; }
+  .piece, .row { transition: none; }
 }

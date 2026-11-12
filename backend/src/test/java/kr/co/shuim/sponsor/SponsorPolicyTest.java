@@ -49,6 +49,33 @@ class SponsorPolicyTest {
         assertEquals(400, assertThrows(ApiException.class, () -> SponsorPolicy.period(0, 20)).status());
     }
 
+    @Test void framesAreLimitedToTheKnownLists() {
+        var frame = new SponsorPolicy.Frame("gold", "teal", "star");
+        assertEquals(frame, SponsorPolicy.frame("gold", "teal", "star"));
+        assertEquals(400, assertThrows(ApiException.class, () -> SponsorPolicy.frame("hologram", "teal", "star")).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> SponsorPolicy.frame("gold", null, "star")).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> SponsorPolicy.frame("gold", "teal", "crown")).status());
+        // 저장된 값이 목록에서 빠졌어도 화면은 기본 액자로 뜬다
+        assertEquals(SponsorPolicy.Frame.DEFAULT, SponsorPolicy.frameOrDefault(null, "beige", ""));
+        assertEquals(new SponsorPolicy.Frame("wood", "violet", "leaf"), SponsorPolicy.frameOrDefault("wood", "beige", "leaf"));
+        assertEquals(SponsorPolicy.Frame.DEFAULT, SponsorPolicy.frame(SponsorPolicy.FRAME_STYLES.get(0), SponsorPolicy.FRAME_COLORS.get(0), SponsorPolicy.FRAME_DECOS.get(0)));
+    }
+
+    @Test void studioKeysAreRandomAndMatchedOnlyByHash() {
+        String a = SponsorPolicy.newStudioKey(), b = SponsorPolicy.newStudioKey();
+        assertEquals(43, a.length());
+        assertTrue(a.matches("[A-Za-z0-9_-]+"));
+        assertNotEquals(a, b);
+        assertEquals(64, SponsorPolicy.studioKeyHash(a).length());
+        assertEquals(SponsorPolicy.studioKeyHash(a), SponsorPolicy.studioKeyHash(a));
+        assertNotEquals(SponsorPolicy.studioKeyHash(a), SponsorPolicy.studioKeyHash(b));
+        assertNotEquals(a, SponsorPolicy.studioKeyHash(a));
+        assertNull(SponsorPolicy.studioKeyHash(null));
+        assertNull(SponsorPolicy.studioKeyHash(""));
+        assertNull(SponsorPolicy.studioKeyHash(a + "x"));
+        assertNull(SponsorPolicy.studioKeyHash(a.substring(1) + "!"));
+    }
+
     @Test void imagesAreDecodedAndBounded() {
         String png = "data:image/png;base64," + Base64.getEncoder().encodeToString(new byte[]{1, 2, 3});
         var image = SponsorPolicy.decodeImage(png);

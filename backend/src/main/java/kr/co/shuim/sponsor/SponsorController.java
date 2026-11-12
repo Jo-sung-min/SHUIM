@@ -9,6 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
@@ -16,7 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/** 공개 조회(배너·후원 기업 순위·이미지)와 회원의 멋져요. */
+/** 공개 조회(배너·후원 기업 순위·이미지), 회원의 멋져요, 꾸미기 링크로 여는 액자 고르기. */
 @RestController
 public class SponsorController {
     private final AuthService auth;
@@ -62,6 +64,22 @@ public class SponsorController {
         var user = auth.currentUser(request).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 멋져요를 보낼 수 있어요."));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(sponsors.cheer(user, id));
     }
+
+    /** POST /api/sponsors/studio/open { key } → { sponsor }. 꾸미기 링크를 가진 기업 담당자가 자기 카드를 연다 (로그인 없음). */
+    @PostMapping("/api/sponsors/studio/open")
+    public ResponseEntity<Map<String, Object>> studio(@RequestBody(required = false) Map<String, Object> body) {
+        return fresh(Map.of("sponsor", sponsors.studio(str(body, "key"))));
+    }
+
+    /** PUT /api/sponsors/studio { key, style, color, deco } → { sponsor }. 링크로는 액자만 바꾼다. */
+    @PutMapping("/api/sponsors/studio")
+    public ResponseEntity<Map<String, Object>> decorate(@RequestBody(required = false) Map<String, Object> body) {
+        SponsorPolicy.Frame frame = SponsorPolicy.frame(str(body, "style"), str(body, "color"), str(body, "deco"));
+        return fresh(Map.of("sponsor", sponsors.decorate(str(body, "key"), frame)));
+    }
+
+    private static String str(Map<String, Object> body, String key) { return body != null && body.get(key) instanceof String s ? s : null; }
+    private static <T> ResponseEntity<T> fresh(T body) { return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body); }
 
     private static ResponseEntity<byte[]> image(Optional<SponsorService.Image> image) {
         SponsorService.Image img = image.orElseThrow(() -> ApiException.notFound("not found"));

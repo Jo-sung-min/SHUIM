@@ -2,7 +2,13 @@ package kr.co.shuim.sponsor;
 
 import kr.co.shuim.config.ApiException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -29,7 +35,49 @@ public final class SponsorPolicy {
     private static final Pattern LINK = Pattern.compile("^https?://[^\\s<>\"']+$", Pattern.CASE_INSENSITIVE);
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
+    /** 꾸미기 액자: 테 모양 · 포인트 색 · 모서리 장식. 프론트 lib/sponsor-frames.ts 와 같은 목록 */
+    public static final List<String> FRAME_STYLES = List.of("glass", "gold", "wood", "neon", "aurora", "polaroid", "stamp", "ink");
+    public static final List<String> FRAME_COLORS = List.of("violet", "navy", "teal", "green", "gold", "coral", "pink", "ink");
+    public static final List<String> FRAME_DECOS = List.of("none", "ribbon", "star", "leaf", "flame", "heart", "sparkle");
+    /** 꾸미기 링크의 키: 32바이트 난수의 base64url (패딩 없이 43자) */
+    private static final Pattern STUDIO_KEY = Pattern.compile("^[A-Za-z0-9_-]{43}$");
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     public record Image(String type, String base64, int bytes) {}
+    public record Frame(String style, String color, String deco) {
+        public static final Frame DEFAULT = new Frame("glass", "violet", "none");
+    }
+
+    /** 저장할 액자: 목록에 없는 값은 400 */
+    public static Frame frame(String style, String color, String deco) {
+        if (style == null || !FRAME_STYLES.contains(style)) throw ApiException.badRequest("액자를 다시 골라 주세요.");
+        if (color == null || !FRAME_COLORS.contains(color)) throw ApiException.badRequest("색을 다시 골라 주세요.");
+        if (deco == null || !FRAME_DECOS.contains(deco)) throw ApiException.badRequest("장식을 다시 골라 주세요.");
+        return new Frame(style, color, deco);
+    }
+
+    /** DB 에서 읽은 액자: 목록에서 빠진 값은 기본값으로 */
+    public static Frame frameOrDefault(String style, String color, String deco) {
+        return new Frame(known(FRAME_STYLES, style) ? style : Frame.DEFAULT.style(),
+            known(FRAME_COLORS, color) ? color : Frame.DEFAULT.color(),
+            known(FRAME_DECOS, deco) ? deco : Frame.DEFAULT.deco());
+    }
+
+    /** List.of(..).contains(null) 은 예외를 던지므로 null 을 먼저 거른다 */
+    private static boolean known(List<String> list, String value) { return value != null && list.contains(value); }
+
+    public static String newStudioKey() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /** 키의 SHA-256(hex). 모양이 다르면 null (DB 를 보지 않고 거절한다) */
+    public static String studioKeyHash(String key) {
+        if (key == null || !STUDIO_KEY.matcher(key).matches()) return null;
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.US_ASCII))); }
+        catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+    }
 
     public static int fireworksFor(long amountWon) {
         if (amountWon < WON_PER_FIREWORK || amountWon > MAX_CONTRIBUTION_WON) throw ApiException.badRequest("후원 금액은 1,000원 이상 1억원 이하로 넣어 주세요.");

@@ -77,4 +77,28 @@ class SponsorAdminControllerTest {
         assertTrue(withLogo.logo().change());
         assertEquals(400, assertThrows(ApiException.class, () -> SponsorAdminController.sponsorInput(Map.of("name", ""))).status());
     }
+
+    @Test void sponsorFramesAreOptionalButNeverPartlyUnknown() {
+        assertNull(SponsorAdminController.sponsorInput(Map.of("name", "청우헌")).frame());
+        var framed = SponsorAdminController.sponsorInput(Map.of("name", "청우헌", "frame", Map.of("style", "neon", "color", "pink", "deco", "heart")));
+        assertEquals(new SponsorPolicy.Frame("neon", "pink", "heart"), framed.frame());
+        assertEquals(400, assertThrows(ApiException.class, () -> SponsorAdminController.sponsorInput(Map.of("name", "청우헌", "frame", "neon"))).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> SponsorAdminController.sponsorInput(Map.of("name", "청우헌", "frame", Map.of("style", "neon", "color", "pink")))).status());
+        assertEquals(400, assertThrows(ApiException.class, () -> SponsorAdminController.sponsorInput(Map.of("name", "청우헌", "frame", Map.of("style", "url(x)", "color", "pink", "deco", "heart")))).status());
+    }
+
+    @Test void studioLinksAreIssuedAndClosedByAdministratorsOnly() {
+        when(auth.isAdmin(any())).thenCallRealMethod();
+        when(auth.currentUser(any())).thenReturn(Optional.of(user("user", false)));
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.issueStudioKey("x", request)).status());
+        assertEquals(403, assertThrows(ApiException.class, () -> controller.revokeStudioKey("x", request)).status());
+        verifyNoInteractions(sponsors);
+
+        when(auth.currentUser(any())).thenReturn(Optional.of(user("admin", false)));
+        var sponsor = new SponsorService.AdminSponsor("id", "청우헌", "", null, null, 0, 0, 0, 0, 0, true, 0, 1, 2, java.util.List.of(), SponsorPolicy.Frame.DEFAULT, 2L);
+        when(sponsors.issueStudioKey("id")).thenReturn(new SponsorService.StudioKey("k".repeat(43), 2L, sponsor));
+        var issued = controller.issueStudioKey("id", request);
+        assertEquals(Map.of("key", "k".repeat(43), "issuedAt", 2L, "sponsor", sponsor), issued.getBody());
+        assertEquals("no-store", issued.getHeaders().getCacheControl());
+    }
 }

@@ -92,6 +92,20 @@ public class SponsorAdminController {
         return fresh(Map.of("sponsor", sponsors.contribute(id, lng(b.get("amountWon"), "후원 금액"), str(b.get("note")), me.id())));
     }
 
+    /** POST /api/admin/sponsors/{id}/studio-key → { key, issuedAt, sponsor }. 키 원문은 이 응답에만 있다. 다시 부르면 옛 링크는 무효. */
+    @PostMapping("/api/admin/sponsors/{id}/studio-key")
+    public ResponseEntity<Map<String, Object>> issueStudioKey(@PathVariable String id, HttpServletRequest request) {
+        requireAdmin(request);
+        SponsorService.StudioKey issued = sponsors.issueStudioKey(id);
+        return fresh(Map.of("key", issued.key(), "issuedAt", issued.issuedAt(), "sponsor", issued.sponsor()));
+    }
+
+    @DeleteMapping("/api/admin/sponsors/{id}/studio-key")
+    public ResponseEntity<Map<String, Object>> revokeStudioKey(@PathVariable String id, HttpServletRequest request) {
+        requireAdmin(request);
+        return fresh(Map.of("sponsor", sponsors.revokeStudioKey(id)));
+    }
+
     @GetMapping("/api/admin/sponsors/settings")
     public ResponseEntity<Map<String, Object>> settings(HttpServletRequest request) {
         requireAdmin(request);
@@ -130,7 +144,15 @@ public class SponsorAdminController {
             SponsorPolicy.link(str(b.get("linkUrl")), false),
             bool(b.get("published"), true),
             position(b.get("position")),
-            SponsorService.ImageChange.of(b.containsKey("logo"), str(b.get("logo"))));
+            SponsorService.ImageChange.of(b.containsKey("logo"), str(b.get("logo"))),
+            frame(b.get("frame")));
+    }
+
+    /** frame 이 없으면 null(그대로), 있으면 { style, color, deco } 모두 허용 목록 안이어야 한다 */
+    private static SponsorPolicy.Frame frame(Object o) {
+        if (o == null) return null;
+        if (!(o instanceof Map<?, ?> f)) throw ApiException.badRequest("액자를 다시 골라 주세요.");
+        return SponsorPolicy.frame(str(f.get("style")), str(f.get("color")), str(f.get("deco")));
     }
 
     private static String str(Object o) { return o instanceof String s ? s : null; }

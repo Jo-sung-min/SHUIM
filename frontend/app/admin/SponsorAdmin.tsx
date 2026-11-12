@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Hero, LoadError, Segmented, Sheet, SkeletonScreen } from "@/components/ui";
 import { IconImage, IconPlus, IconSparkle } from "@/components/Icons";
+import { SponsorFramePicker, SponsorFrameView } from "@/components/SponsorFrame";
+import { DEFAULT_FRAME, FRAME_COLOR_LABELS, FRAME_DECO_LABELS, FRAME_STYLE_LABELS, sameFrame, studioLink, type SponsorFrame } from "@/lib/sponsor-frames";
 import { toastSuccess } from "@/lib/toast";
 import { bannerImageHref, fmtSponsorWon, sponsorInquiryMailto, sponsorLogoHref, type SponsorContact, WON_PER_FIREWORK } from "@/lib/sponsors";
 import {
   AMOUNT_MAX_WON, AdminBanner, AdminBannerInput, AdminSponsor, AdminSponsorInput, BANNER_STATUS_LABELS, DAY_MS, NOTE_MAX, TAGLINE_MAX, TITLE_MAX,
   addAdminContribution, createAdminBanner, createAdminSponsor, deleteAdminBanner, deleteAdminSponsor, fetchAdminBanners, fetchAdminSponsors,
-  fetchSponsorSettings, fireworksFor, fmtAdminDate, fromLocalInput, prepareSponsorImage, saveSponsorSettings, toLocalInput,
+  fetchSponsorSettings, fireworksFor, fmtAdminDate, fromLocalInput, issueSponsorStudioKey, prepareSponsorImage, revokeSponsorStudioKey, saveSponsorSettings, toLocalInput,
   updateAdminBanner, updateAdminSponsor, validateAmount, validateBanner, validateSponsor,
 } from "@/lib/admin-sponsors";
 import styles from "./SponsorAdmin.module.css";
@@ -19,7 +21,7 @@ type ImageDraft = { dataUrl: string; name: string } | null | undefined; // undef
 const initial = (name: string) => (name.trim().charAt(0) || "·").toUpperCase();
 const message = (cause: unknown, fallback: string) => (cause instanceof Error ? cause.message : fallback);
 
-/** 관리자 › 후원: PC 양옆 배너, 후원 기업(멋져요 → 폭죽 이용권), "+" 카드 안내 설정 */
+/** 관리자 › 후원: PC 양옆 배너, 후원 기업(멋져요 → 폭죽 이용권 · 순위 화면의 꾸미기 액자와 꾸미기 링크), "+" 카드 안내 설정 */
 export default function SponsorAdmin() {
   const [view, setView] = useState<View>("banners");
   return <section aria-label="기업 후원 관리">
@@ -241,6 +243,8 @@ function SponsorsAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdminSponsor | "new" | null>(null);
   const [deleting, setDeleting] = useState<AdminSponsor | null>(null);
+  const [links, setLinks] = useState<Record<string, string>>({}); // 방금 만든 꾸미기 링크. 키 원문은 발급 응답에만 있어 새로고침하면 사라진다
+  const [relinking, setRelinking] = useState<{ sponsor: AdminSponsor; close: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const mounted = useRef(false);
   const lock = useRef(false);
@@ -280,6 +284,26 @@ function SponsorsAdmin() {
     setDeleting(null);
   });
 
+  const issueLink = async (sponsor: AdminSponsor) => {
+    if (lock.current) return;
+    lock.current = true; setBusy(true); setError(null);
+    try {
+      const issued = await issueSponsorStudioKey(sponsor.id);
+      if (!mounted.current) return;
+      const link = studioLink(window.location.origin, issued.key);
+      replace(issued.sponsor); setLinks((current) => ({ ...current, [sponsor.id]: link })); setRelinking(null);
+      const copied = await copyText(link);
+      if (mounted.current) toastSuccess(copied ? "꾸미기 링크를 만들고 복사했어요." : "꾸미기 링크를 만들었어요.");
+    } catch (cause) { if (mounted.current) setError(message(cause, "링크를 만들지 못했어요. 잠시 후 다시 시도해 주세요.")); }
+    finally { lock.current = false; if (mounted.current) setBusy(false); }
+  };
+  const closeLink = (sponsor: AdminSponsor) => act("꾸미기 링크를 닫았어요.", async () => {
+    const saved = await revokeSponsorStudioKey(sponsor.id);
+    if (!mounted.current) return;
+    replace(saved); setRelinking(null);
+    setLinks((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== sponsor.id)));
+  });
+
   if (!sponsors) return error ? <LoadError message={error} onRetry={() => void load()} /> : <SkeletonScreen count={2} lines={3} label="후원 기업을 확인하고 있어요" />;
   const total = sponsors.reduce((sum, sponsor) => sum + sponsor.amountWon, 0);
   const remaining = sponsors.reduce((sum, sponsor) => sum + sponsor.remaining, 0);
@@ -298,8 +322,17 @@ function SponsorsAdmin() {
       {sponsors.map((sponsor) => editing !== "new" && editing?.id === sponsor.id
         ? <SponsorForm key={sponsor.id} sponsor={sponsor} nextPosition={sponsor.position} busy={busy} onCancel={() => setEditing(null)} onSubmit={(input) => void submit(input)} />
         : <SponsorCard key={sponsor.id} sponsor={sponsor} busy={busy || editing !== null} onEdit={() => setEditing(sponsor)} onDelete={() => setDeleting(sponsor)}
-          onContribute={(amountWon, note) => void contribute(sponsor, amountWon, note)} />)}
+          onContribute={(amountWon, note) => void contribute(sponsor, amountWon, note)} link={links[sponsor.id] ?? null}
+          onIssueLink={() => { if (sponsor.studioKeyAt) setRelinking({ sponsor, close: false }); else void issueLink(sponsor); }} onCloseLink={() => setRelinking({ sponsor, close: true })} />)}
     </div>}
+    <Sheet open={relinking !== null} onClose={() => { if (!lock.current) setRelinking(null); }} title={relinking?.close ? "꾸미기 링크를 닫을까요?" : "꾸미기 링크를 다시 만들까요?"}>
+      <p className="sheet-text">{relinking?.close ? "지금 링크로는 더 이상 액자를 바꿀 수 없어요. 고른 액자는 그대로 남아요." : "새 링크를 만들면 전에 보낸 링크는 열리지 않아요. 기업 담당자에게 새 링크를 다시 전해 주세요."}</p>
+      <div className="sheet-actions">
+        <button type="button" className="btn ghost" disabled={busy} onClick={() => setRelinking(null)}>취소</button>
+        <button type="button" className={`btn ${relinking?.close ? "danger" : ""}`} disabled={busy} aria-busy={busy}
+          onClick={() => { if (!relinking) return; if (relinking.close) void closeLink(relinking.sponsor); else void issueLink(relinking.sponsor); }}>{busy ? "처리 중…" : relinking?.close ? "링크 닫기" : "다시 만들기"}</button>
+      </div>
+    </Sheet>
     <Sheet open={deleting !== null} onClose={() => { if (!lock.current) setDeleting(null); }} title={deleting ? `'${deleting.name}'을 삭제할까요?` : "후원 기업 삭제"}>
       <p className="sheet-text">후원 내역과 멋져요 기록이 함께 사라지고 되돌릴 수 없어요. 이미 받은 이용권은 그대로 남아요. 잠시 가리려면 삭제 대신 공개를 꺼 주세요.</p>
       <div className="sheet-actions">
@@ -310,8 +343,13 @@ function SponsorsAdmin() {
   </>;
 }
 
-function SponsorCard({ sponsor, busy, onEdit, onDelete, onContribute }: {
-  sponsor: AdminSponsor; busy: boolean; onEdit: () => void; onDelete: () => void; onContribute: (amountWon: number, note: string) => void;
+async function copyText(value: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(value); return true; } catch { return false; }
+}
+
+function SponsorCard({ sponsor, busy, link, onEdit, onDelete, onContribute, onIssueLink, onCloseLink }: {
+  sponsor: AdminSponsor; busy: boolean; link: string | null; onEdit: () => void; onDelete: () => void; onContribute: (amountWon: number, note: string) => void;
+  onIssueLink: () => void; onCloseLink: () => void;
 }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -326,12 +364,10 @@ function SponsorCard({ sponsor, busy, onEdit, onDelete, onContribute }: {
     onContribute(won, note);
     setAmount(""); setNote("");
   };
+  const copy = async () => { if (link && await copyText(link)) toastSuccess("꾸미기 링크를 복사했어요."); };
   return <article className={`card ${styles.item}`} aria-label={`${sponsor.name} 후원 기업`}>
     <div className={styles.head}>
-      <span className={styles.thumb} aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {logo ? <img src={logo} alt="" /> : initial(sponsor.name)}
-      </span>
+      <SponsorFrameView frame={sponsor.frame} name={sponsor.name} logo={logo} size={56} />
       <span style={{ minWidth: 0, flex: 1 }}>
         <h3 className={styles.title}>{sponsor.name}</h3>
         {sponsor.tagline && <p className={styles.tagline}>{sponsor.tagline}</p>}
@@ -344,7 +380,18 @@ function SponsorCard({ sponsor, busy, onEdit, onDelete, onContribute }: {
       <div className={styles.stat}><b>{sponsor.remaining.toLocaleString("ko-KR")}<span className="tiny muted"> / {sponsor.fireworksTotal.toLocaleString("ko-KR")}</span></b><small>남은 폭죽 / 충전</small></div>
       <div className={styles.stat}><b>{sponsor.cheers.toLocaleString("ko-KR")}</b><small>멋져요</small></div>
     </div>
-    <p className={styles.hint}>노출 순서 {sponsor.position} · 등록 {fmtAdminDate(sponsor.createdAt)}</p>
+    <p className={styles.hint}>노출 순서 {sponsor.position} · 등록 {fmtAdminDate(sponsor.createdAt)} · 액자 {FRAME_STYLE_LABELS[sponsor.frame.style]}·{FRAME_COLOR_LABELS[sponsor.frame.color]}·{FRAME_DECO_LABELS[sponsor.frame.deco]}</p>
+    <div className={styles.studio}>
+      <div className={styles.studioHead}><b>꾸미기 링크</b><span className="tiny muted">{sponsor.studioKeyAt ? `${fmtAdminDate(sponsor.studioKeyAt)} 발급` : "아직 없어요"}</span></div>
+      {link && <input className={styles.studioLink} readOnly value={link} aria-label={`${sponsor.name} 꾸미기 링크`} onFocus={(event) => event.currentTarget.select()} />}
+      <p className={styles.hint}>{link ? "이 주소는 지금만 보여요. 기업 담당자에게 전해 주세요." : "기업 담당자가 로그인 없이 순위 화면의 액자·색·장식을 고르는 주소예요. 이름·로고·링크는 바꿀 수 없어요."}</p>
+      <div className={styles.actions}>
+        <span />
+        {link && <button type="button" className="btn sm" disabled={busy} onClick={() => void copy()}>복사</button>}
+        <button type="button" className="btn ghost sm" disabled={busy} onClick={onIssueLink}>{sponsor.studioKeyAt ? "다시 만들기" : "링크 만들기"}</button>
+        {sponsor.studioKeyAt && <button type="button" className="text-btn muted" disabled={busy} onClick={onCloseLink}>닫기</button>}
+      </div>
+    </div>
     <form className={styles.contribute} onSubmit={submit} aria-label={`${sponsor.name} 후원액 추가`}>
       <div className={styles.row}>
         <div className="field"><label htmlFor={`contribute-${sponsor.id}`}>후원액 추가 (원)</label>
@@ -378,16 +425,20 @@ function SponsorForm({ sponsor, nextPosition, busy, onCancel, onSubmit }: {
   const [position, setPosition] = useState(String(sponsor?.position ?? nextPosition));
   const [published, setPublished] = useState(sponsor?.published ?? true);
   const [logo, setLogo] = useState<ImageDraft>(undefined);
+  const [frame, setFrame] = useState<SponsorFrame>(sponsor?.frame ?? DEFAULT_FRAME);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const prefix = sponsor ? `sponsor-${sponsor.id}` : "sponsor-new";
+  const shownLogo = logo === undefined ? (sponsor ? sponsorLogoHref(sponsor) : null) : logo ? logo.dataUrl : null;
   const won = Number(amount.replace(/[^0-9]/g, ""));
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const input: AdminSponsorInput = { name: name.trim(), tagline: tagline.trim(), linkUrl: linkUrl.trim() || null, published, position: Number(position),
-      ...(logo === undefined ? {} : { logo: logo ? logo.dataUrl : null }) };
+      ...(logo === undefined ? {} : { logo: logo ? logo.dataUrl : null }),
+      // 기업이 꾸미기 링크로 방금 바꾼 액자를 덮어쓰지 않게, 여기서 바꿨을 때만 보낸다
+      ...(sameFrame(frame, sponsor?.frame ?? DEFAULT_FRAME) ? {} : { frame }) };
     const problem = validateSponsor(input) ?? (!sponsor && amount ? validateAmount(won) : null);
     if (problem) { setError(problem); return; }
     setError(null);
@@ -403,6 +454,10 @@ function SponsorForm({ sponsor, nextPosition, busy, onCancel, onSubmit }: {
       <div className="field"><label htmlFor={`${prefix}-link`}>링크 <span className="tiny muted" style={{ fontWeight: 500 }}>선택</span></label>
         <input id={`${prefix}-link`} type="url" inputMode="url" value={linkUrl} placeholder="https://" onChange={(event) => setLinkUrl(event.target.value)} /></div>
       <ImageField id={`${prefix}-logo`} label="로고" hint="정사각형 로고를 추천해요. 384×384 로 줄여 저장해요." current={sponsor ? sponsorLogoHref(sponsor) : null} draft={logo} busy={busy} onDraft={setLogo} />
+      <div className={styles.framePick}>
+        <span className="tiny" style={{ fontWeight: 700, color: "var(--text-2)" }}>순위 화면의 액자 <span className="muted" style={{ fontWeight: 500 }}>기업이 꾸미기 링크로 직접 고를 수도 있어요</span></span>
+        <SponsorFramePicker value={frame} onPick={(patch) => setFrame((current) => ({ ...current, ...patch }))} name={name || "기업"} logo={shownLogo} disabled={busy} />
+      </div>
       <div className={styles.row}>
         <div className="field"><label htmlFor={`${prefix}-position`}>노출 순서</label><input id={`${prefix}-position`} type="number" inputMode="numeric" step={1} value={position} onChange={(event) => setPosition(event.target.value)} /></div>
         <label className={styles.check} style={{ alignSelf: "end" }}><input type="checkbox" checked={published} onChange={(event) => setPublished(event.target.checked)} />공개</label>

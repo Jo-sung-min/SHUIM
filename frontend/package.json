@@ -22,6 +22,7 @@
     "test:admin-quotes": "node --test scripts/admin-quotes.test.mjs",
     "test:admin-users": "node --test scripts/admin-users.test.mjs",
     "test:today": "node --test scripts/today-context.test.mjs",
+    "test:sponsors": "node --test scripts/sponsor-frames.test.mjs",
     "check:release": "node scripts/check-release.mjs"
   },
   "dependencies": {

@@ -1,0 +1,208 @@
+/*
+ * 후원 기업 꾸미기 액자. 그림(로고) 둘레의 테를 CSS 만으로 그린다 — 이미지 자산 없음.
+ * 크기는 --s 하나(바깥에서 --frame-size 로 정한다)이고 테 두께·속지·장식은 모두 그 비율이라 34px 줄에서도 150px 카드에서도 같은 모양이다.
+ * 색은 --fc(포인트 색). 라이트·나이트는 토큰과 color-mix 로만 따라간다.
+ * 움직임(네온 숨·오로라 회전)은 data-live 일 때만 — 긴 목록의 작은 액자는 멈춰 있다.
+ */
+@property --sf-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+.frame {
+  --s: var(--frame-size, 56px);
+  --fc: #7c6be0;
+  /* 그림이 테 안쪽으로 들어가는 깊이 (위 · 옆 · 아래) */
+  --it: calc(var(--s) * .075); --is: var(--it); --ib: var(--it);
+  --ar: calc(var(--s) * .19); /* 그림 모서리 */
+  position: relative; display: inline-block; flex: none; width: var(--s); height: var(--s);
+  border-radius: calc(var(--s) * .26); isolation: isolate; vertical-align: middle;
+}
+:is(.frame, .swatch, .sticker)[data-color="violet"] { --fc: #7c6be0; }
+:is(.frame, .swatch, .sticker)[data-color="navy"] { --fc: #4263b8; }
+:is(.frame, .swatch, .sticker)[data-color="teal"] { --fc: #1f9d94; }
+:is(.frame, .swatch, .sticker)[data-color="green"] { --fc: #4f9a52; }
+:is(.frame, .swatch, .sticker)[data-color="gold"] { --fc: #d69b2d; }
+:is(.frame, .swatch, .sticker)[data-color="coral"] { --fc: #e2714d; }
+:is(.frame, .swatch, .sticker)[data-color="pink"] { --fc: #dc5f8f; }
+/* 먹: 라이트에선 짙은 먹, 나이트에선 흰 먹 */
+:is(.frame, .swatch, .sticker)[data-color="ink"] { --fc: color-mix(in srgb, var(--text) 82%, var(--surface)); }
+
+/* ---------- 그림 ---------- */
+.art {
+  position: absolute; inset: var(--it) var(--is) var(--ib); display: grid; place-items: center; overflow: hidden;
+  border-radius: var(--ar); background: var(--surface-2);
+}
+.art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* 로고가 없을 때: 이름 첫 글자로 그린 추상화 (SponsorRails 의 색조와 같은 결) */
+.art[data-tone="0"] { --a: #b7a6f1; --b: #f6cfd9; --c: #7f6ed8; }
+.art[data-tone="1"] { --a: #8cc4bd; --b: #e4f0dc; --c: #4f8f8c; }
+.art[data-tone="2"] { --a: #f1ad95; --b: #f9e4c4; --c: #cf7c6c; }
+.art[data-tone="3"] { --a: #7183c2; --b: #cdd5f3; --c: #3f4f93; }
+.art[data-tone="4"] { --a: #a4bc90; --b: #eef0d4; --c: #6f8c64; }
+.art[data-tone="5"] { --a: #dba2b4; --b: #f8e0d6; --c: #b0708a; }
+.art[data-tone] {
+  background:
+    radial-gradient(64% 56% at 80% 16%, rgba(255, 255, 255, .56), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(95% 85% at 4% 104%, var(--c), transparent 68%),
+    linear-gradient(158deg, var(--a), var(--b));
+}
+.initial {
+  position: relative; color: rgba(255, 255, 255, .97); font-size: calc(var(--s) * .4); font-weight: 300; line-height: 1;
+  letter-spacing: -.04em; text-shadow: 0 1px calc(var(--s) * .1) rgba(30, 20, 60, .26);
+}
+
+/* ---------- 1. 글라스: 색을 머금은 유리 테 ---------- */
+.frame[data-style="glass"] {
+  background-color: color-mix(in srgb, var(--fc) 20%, var(--lg-fill-strong)); background-image: var(--lg-sheen);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc) 22%, var(--lg-line)), inset 0 1px 0 var(--lg-rim), var(--lg-shadow);
+}
+.frame[data-style="glass"] .art { box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent); }
+
+/* ---------- 2. 금박: 포인트 색이 비치는 금속 테 (분홍이면 로즈골드) ---------- */
+.frame[data-style="gold"] {
+  --g: color-mix(in srgb, var(--fc) 40%, #d9a53a);
+  --it: calc(var(--s) * .09); --ar: calc(var(--s) * .07);
+  border-radius: calc(var(--s) * .15);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--g) 46%, #fff) 0%, var(--g) 20%, color-mix(in srgb, var(--g) 66%, #2e1c00) 44%,
+    color-mix(in srgb, var(--g) 36%, #fff) 56%, var(--g) 76%, color-mix(in srgb, var(--g) 72%, #2e1c00) 100%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--g) 62%, #2e1c00), inset 0 1px 0 rgba(255, 255, 255, .65),
+    0 calc(var(--s) * .03) calc(var(--s) * .12) calc(var(--s) * -.02) color-mix(in srgb, var(--g) 70%, transparent);
+}
+.frame[data-style="gold"] .art { box-shadow: 0 0 0 1px color-mix(in srgb, var(--g) 55%, #2e1c00), 0 0 0 calc(var(--s) * .022) color-mix(in srgb, var(--g) 40%, #fff); }
+
+/* ---------- 3. 원목: 나뭇결 테 + 색 속지 ---------- */
+.frame[data-style="wood"] {
+  --w: calc(var(--s) * .095); /* 나무 두께 */
+  --it: calc(var(--s) * .155); --ar: 1px;
+  border-radius: calc(var(--s) * .06);
+  background:
+    repeating-linear-gradient(94deg, rgba(50, 26, 8, 0) 0 2px, rgba(50, 26, 8, .2) 2px 3px, rgba(255, 224, 176, .1) 3px 6px),
+    linear-gradient(135deg, #b07a45, #7b4b23 50%, #976434);
+  box-shadow: inset 0 0 0 1px rgba(40, 20, 5, .5), inset 0 1px 0 rgba(255, 228, 186, .4), 0 calc(var(--s) * .03) calc(var(--s) * .1) calc(var(--s) * -.02) rgba(40, 22, 8, .6);
+}
+.frame[data-style="wood"]::before {
+  content: ""; position: absolute; inset: var(--w); z-index: -1;
+  background: color-mix(in srgb, var(--fc) 22%, #f7f1e6); box-shadow: inset 0 1px calc(var(--s) * .03) rgba(40, 20, 5, .45);
+}
+.frame[data-style="wood"] .art { box-shadow: 0 0 0 1px rgba(40, 20, 5, .18); }
+
+/* ---------- 4. 네온: 어두운 판 위의 빛나는 관 ---------- */
+.frame[data-style="neon"] {
+  --it: calc(var(--s) * .115); --ar: calc(var(--s) * .14);
+  --tube: color-mix(in srgb, var(--fc) 58%, #fff);
+  border-radius: calc(var(--s) * .25); background: #15141d;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09), 0 0 calc(var(--s) * .18) calc(var(--s) * -.03) color-mix(in srgb, var(--fc) 75%, transparent);
+}
+.frame[data-style="neon"]::before {
+  content: ""; position: absolute; inset: calc(var(--s) * .048); z-index: 1; pointer-events: none;
+  border-radius: calc(var(--s) * .2); border: max(1.25px, calc(var(--s) * .028)) solid var(--tube);
+  box-shadow: 0 0 calc(var(--s) * .07) var(--fc), inset 0 0 calc(var(--s) * .07) var(--fc);
+}
+.frame[data-style="neon"][data-live]::before { animation: neon 3.4s ease-in-out infinite; }
+@keyframes neon { 0%, 100% { opacity: 1; } 46% { opacity: .78; } 50% { opacity: .96; } 54% { opacity: .82; } }
+
+/* ---------- 5. 오로라: 천천히 도는 무지갯빛 테 ---------- */
+.frame[data-style="aurora"] {
+  --it: calc(var(--s) * .08);
+  background: conic-gradient(from var(--sf-angle), var(--fc), #7fe3d0, #ffd9a6, #f7a8d0, #8fb3ff, var(--fc));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4), 0 calc(var(--s) * .03) calc(var(--s) * .16) calc(var(--s) * -.03) color-mix(in srgb, var(--fc) 70%, transparent);
+}
+.frame[data-style="aurora"][data-live] { animation: aurora 9s linear infinite; }
+.frame[data-style="aurora"] .art { box-shadow: 0 0 0 1px rgba(255, 255, 255, .55); }
+@keyframes aurora { to { --sf-angle: 360deg; } }
+
+/* ---------- 6. 폴라로이드: 살짝 기운 인화지 + 색 마스킹테이프 ---------- */
+.frame[data-style="polaroid"] {
+  --it: calc(var(--s) * .07); --is: calc(var(--s) * .07); --ib: calc(var(--s) * .21); --ar: 1px;
+  border-radius: calc(var(--s) * .035); background: #fbfaf5; rotate: -3deg;
+  box-shadow: 0 0 0 1px rgba(20, 20, 30, .08), 0 calc(var(--s) * .04) calc(var(--s) * .12) calc(var(--s) * -.02) rgba(20, 20, 40, .42);
+}
+.frame[data-style="polaroid"]::before {
+  content: ""; position: absolute; top: calc(var(--s) * -.065); left: 50%; z-index: 2; width: calc(var(--s) * .38); height: calc(var(--s) * .13);
+  translate: -50% 0; rotate: -3deg;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .22) 0 2px, rgba(255, 255, 255, 0) 2px 5px),
+    color-mix(in srgb, var(--fc) 72%, transparent);
+  box-shadow: 0 1px 1px rgba(20, 20, 40, .12);
+}
+.frame[data-style="polaroid"] .art { box-shadow: inset 0 0 0 1px rgba(20, 20, 30, .1); }
+
+/* ---------- 7. 우표: 톱니 가장자리 + 색 안선 ---------- */
+.frame[data-style="stamp"] {
+  --d: calc(var(--s) / 11); /* 톱니 한 칸 (한 변이 딱 11칸이라 모서리에서 어긋나지 않는다) */
+  --it: calc(var(--s) * .16); --ar: 0px;
+  border-radius: 0; filter: drop-shadow(0 calc(var(--s) * .02) calc(var(--s) * .035) rgba(20, 20, 40, .34));
+}
+.frame[data-style="stamp"]::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; background: #fbf8ef;
+  -webkit-mask:
+    linear-gradient(#000 0 0) center / calc(100% - var(--d)) calc(100% - var(--d)) no-repeat,
+    radial-gradient(circle at center, transparent 0 calc(var(--d) * .3), #000 calc(var(--d) * .34)) calc(var(--d) / -2) calc(var(--d) / -2) / var(--d) var(--d);
+  mask:
+    linear-gradient(#000 0 0) center / calc(100% - var(--d)) calc(100% - var(--d)) no-repeat,
+    radial-gradient(circle at center, transparent 0 calc(var(--d) * .3), #000 calc(var(--d) * .34)) calc(var(--d) / -2) calc(var(--d) / -2) / var(--d) var(--d);
+}
+.frame[data-style="stamp"] .art { outline: max(1px, calc(var(--s) * .016)) solid var(--fc); outline-offset: calc(var(--s) * .028); }
+
+/* ---------- 8. 먹선: 두 줄 선만 ---------- */
+.frame[data-style="ink"] {
+  --it: calc(var(--s) * .11); --ar: 0px;
+  border-radius: 0; background: var(--surface);
+  box-shadow:
+    inset 0 0 0 max(1.25px, calc(var(--s) * .024)) var(--fc),
+    inset 0 0 0 calc(var(--s) * .058) var(--surface),
+    inset 0 0 0 calc(var(--s) * .058 + 1px) color-mix(in srgb, var(--fc) 60%, transparent);
+}
+
+/* ---------- 모서리 장식: 포인트 색 스티커 ---------- */
+.deco {
+  position: absolute; top: calc(var(--s) * -.11); right: calc(var(--s) * -.11); z-index: 3;
+  width: calc(var(--s) * .36); height: calc(var(--s) * .36); rotate: 12deg; color: var(--fc); pointer-events: none;
+  filter: drop-shadow(0 1px 1.5px rgba(20, 20, 40, .38));
+}
+.deco svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.deco path { fill: currentColor; stroke: #fff; stroke-width: 2.6; stroke-linejoin: round; paint-order: stroke; }
+
+/* ---------- 빈 액자 ("+") ---------- */
+.vacant {
+  --s: var(--frame-size, 56px);
+  position: relative; display: inline-grid; place-items: center; flex: none; width: var(--s); height: var(--s);
+  border-radius: calc(var(--s) * .26); color: var(--text-3);
+  background: color-mix(in srgb, var(--lg-fill) 70%, transparent);
+  border: max(1px, calc(var(--s) * .018)) dashed color-mix(in srgb, var(--text) 22%, transparent);
+}
+.vacant svg { width: calc(var(--s) * .34); height: calc(var(--s) * .34); }
+
+/* ---------- 고르기 (꾸미기 화면 · 관리자) ---------- */
+.picker { display: grid; gap: 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.group { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.group legend { padding: 0; margin-bottom: 10px; font-size: 13px; font-weight: 700; color: var(--text-2); }
+.styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; }
+.option {
+  --frame-size: 50px;
+  display: grid; justify-items: center; gap: 8px; min-width: 0; padding: 12px 2px 8px; border-radius: 16px;
+  border: 1.5px solid transparent; font-size: 12px; font-weight: 600; color: var(--text-2);
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.option[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.option:focus-visible, .swatch:focus-visible, .sticker:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+/* 360px 에서도 한 줄: 색 8칸 · 장식 7칸 */
+.colors { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); justify-items: center; gap: 2px; }
+.decos { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.swatch { display: grid; place-items: center; width: 100%; max-width: 40px; aspect-ratio: 1; border-radius: 50%; border: 1.5px solid transparent; transition: border-color var(--dur) var(--ease); }
+.swatch i { display: block; width: 68%; aspect-ratio: 1; border-radius: 50%; background: var(--fc); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent); }
+.swatch[aria-checked="true"] { border-color: var(--text); }
+.sticker {
+  display: grid; place-items: center; min-width: 0; height: 44px; border-radius: 14px; border: 1.5px solid transparent;
+  background: var(--surface-2); color: var(--fc); transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.sticker svg { width: 22px; height: 22px; overflow: visible; }
+.sticker path { fill: currentColor; }
+.sticker[data-deco="none"] { color: var(--text-3); font-size: 12px; font-weight: 600; }
+.sticker[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.picker:disabled { opacity: .6; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* 위의 [data-style][data-live] 규칙과 같은 무게로 덮는다 */
+  .frame[data-style][data-live], .frame[data-style][data-live]::before { animation: none; }
+  .option, .swatch, .sticker { transition: none; }
+}

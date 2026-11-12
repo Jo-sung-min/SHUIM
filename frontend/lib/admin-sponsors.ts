@@ -3,6 +3,7 @@
 /** 관리자 › 후원: 배너·후원 기업·안내 설정 API (관리자 세션만). 공개 조회는 lib/sponsors.ts. */
 import { DEFAULT_SPONSOR_CONTACT, SponsorContact, WON_PER_FIREWORK, parseSponsorContact } from "./sponsors";
 import { imageToDataUrl } from "./siteImage";
+import { parseFrame, type SponsorFrame } from "./sponsor-frames";
 
 export type BannerStatus = "live" | "scheduled" | "ended" | "hidden";
 export interface AdminBanner {
@@ -21,8 +22,12 @@ export interface AdminSponsor {
   id: string; name: string; tagline: string; linkUrl: string | null; logoAt: number | null;
   amountWon: number; fireworksTotal: number; fireworksGiven: number; remaining: number; cheers: number;
   published: boolean; position: number; createdAt: number; updatedAt: number; contributions: AdminContribution[];
+  frame: SponsorFrame;
+  /** 꾸미기 링크를 발급한 시각. null 이면 열려 있는 링크가 없다 */
+  studioKeyAt: number | null;
 }
-export interface AdminSponsorInput { name: string; tagline: string; linkUrl: string | null; published: boolean; position: number; logo?: string | null }
+/** frame 을 생략하면 액자는 그대로 둔다 */
+export interface AdminSponsorInput { name: string; tagline: string; linkUrl: string | null; published: boolean; position: number; logo?: string | null; frame?: SponsorFrame }
 
 export const BANNER_STATUS_LABELS: Record<BannerStatus, string> = { live: "게시 중", scheduled: "예정", ended: "종료", hidden: "비공개" };
 export const TITLE_MAX = 40;
@@ -60,7 +65,8 @@ function parseSponsor(value: unknown): AdminSponsor {
     logoAt: value.logoAt ?? null, amountWon: value.amountWon, fireworksTotal: value.fireworksTotal, fireworksGiven: value.fireworksGiven,
     remaining: value.remaining, cheers: value.cheers, published: value.published, position: value.position, createdAt: value.createdAt, updatedAt: value.updatedAt,
     contributions: (contributions as Record<string, unknown>[]).map((item) => ({ id: item.id as string, amountWon: item.amountWon as number, fireworks: item.fireworks as number,
-      note: text(item.note) ? item.note : null, createdAt: item.createdAt as number })) };
+      note: text(item.note) ? item.note : null, createdAt: item.createdAt as number })),
+    frame: parseFrame(value.frame), studioKeyAt: count(value.studioKeyAt) && value.studioKeyAt > 0 ? value.studioKeyAt : null };
 }
 
 async function request(path: string, options: RequestInit = {}): Promise<unknown> {
@@ -162,6 +168,21 @@ export async function deleteAdminSponsor(id: string): Promise<void> {
 }
 export async function addAdminContribution(id: string, amountWon: number, note: string): Promise<AdminSponsor> {
   const result = await request(`/${encodeURIComponent(id)}/contributions`, json("POST", { amountWon, note: note.trim() || undefined }));
+  const sponsor = parseSponsor(object(result) ? result.sponsor : null);
+  if (sponsor.id !== id) throw new Error(GENERIC);
+  return sponsor;
+}
+
+/** 꾸미기 링크 발급. 키 원문은 이 응답에만 있고, 다시 발급하면 옛 링크는 닫힌다. */
+export async function issueSponsorStudioKey(id: string): Promise<{ key: string; sponsor: AdminSponsor }> {
+  const result = await request(`/${encodeURIComponent(id)}/studio-key`, { method: "POST" });
+  if (!object(result) || !text(result.key) || !/^[A-Za-z0-9_-]{43}$/.test(result.key)) throw new Error(GENERIC);
+  const sponsor = parseSponsor(result.sponsor);
+  if (sponsor.id !== id) throw new Error(GENERIC);
+  return { key: result.key, sponsor };
+}
+export async function revokeSponsorStudioKey(id: string): Promise<AdminSponsor> {
+  const result = await request(`/${encodeURIComponent(id)}/studio-key`, { method: "DELETE" });
   const sponsor = parseSponsor(object(result) ? result.sponsor : null);
   if (sponsor.id !== id) throw new Error(GENERIC);
   return sponsor;

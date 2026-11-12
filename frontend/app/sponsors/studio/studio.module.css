@@ -1,0 +1,38 @@
+/* 액자 꾸미기 (꾸미기 링크로 여는 화면): 위는 미리보기(큰 액자 + 순위 줄 모양), 아래는 고르기, 저장은 탭바 위에 붙어 있다. */
+.screen { display: grid; gap: 18px; padding-top: 12px; }
+
+.preview { overflow: hidden; border-radius: 24px; border: 1px solid var(--border); background: var(--surface); }
+.showcase {
+  --frame-size: 112px;
+  display: grid; place-items: center; height: 168px;
+  background:
+    radial-gradient(90% 84% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%),
+    var(--surface-2);
+}
+/* 순위 화면의 한 줄과 같은 모양 */
+.sample {
+  --frame-size: 34px;
+  display: grid; grid-template-columns: 26px var(--frame-size) minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  height: 54px; padding: 0 14px; border-top: var(--hairline-w) solid var(--hairline);
+}
+.rank { font-size: 14px; font-weight: 800; color: var(--text-3); text-align: center; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
+.amount { font-size: 13px; font-weight: 600; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.actions {
+  position: sticky; bottom: calc(var(--tabbar-space) + 8px); z-index: 6; display: flex; gap: 8px; padding: 8px; border-radius: 999px;
+  background-color: var(--lg-bar); background-image: var(--lg-sheen); border: 1px solid var(--lg-line);
+  box-shadow: inset 0 1px 0 var(--lg-rim), var(--lg-shadow-float);
+  -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+}
+.actions :global(.btn) { flex: 1; }
+.actions :global(.btn.ghost) { flex: 0 0 auto; }
+.more { display: inline-flex; align-items: center; justify-self: center; gap: 2px; min-height: 40px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.more svg { width: 14px; height: 14px; }
+
+.skShow { height: 222px; border-radius: 24px; }
+.skPick { height: 300px; border-radius: 20px; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .actions { -webkit-backdrop-filter: none; backdrop-filter: none; background-color: var(--surface); }
+}
