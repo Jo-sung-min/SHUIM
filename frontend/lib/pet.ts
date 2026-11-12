@@ -28,8 +28,10 @@ export interface PetView {
   weatherSeen?: string[]; newWeather?: string[];
   /** 오늘의 돌봄 할 일 셋과 다 해서 보상을 받았는지 */
   tasks?: { id: string; done: boolean }[]; tasksRewarded?: boolean;
-  /** 꾸미기 (V47 서버부터): 살 수 있는 가구, 산 가구, 지금 공간의 자리마다 놓인 가구 (자리 → 가구) */
-  furniture?: PetFurniture[]; ownedFurniture?: string[]; decor?: Record<string, string>;
+  /** 꾸미기: 살 수 있는 가구, 산 가구 (V47 서버부터), 지금 공간에 놓인 가구와 위치 (V49 서버부터, 무대 480×700 위 가운데) */
+  furniture?: PetFurniture[]; ownedFurniture?: string[]; placed?: { item: string; x: number; y: number }[];
+  /** V47 서버의 자리 다섯 배치 (자리 → 가구). V49 부터는 placed 를 쓴다 */
+  decor?: Record<string, string>;
 }
 export interface PetFurniture { id: string; kind: string; cost: number }
 export interface PetHome { id: number; name: string; level: number; cost: number; available: boolean }

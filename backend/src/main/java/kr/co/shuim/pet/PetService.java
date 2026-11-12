@@ -25,7 +25,9 @@ public class PetService {
                        int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow,
                        List<String> appearances,
                        PetDays.Sky sky, List<String> weatherSeen, List<String> newWeather, List<Task> tasks, boolean tasksRewarded,
-                       List<PetDecor.Item> furniture, List<String> ownedFurniture, Map<String, String> decor) {}
+                       List<PetDecor.Item> furniture, List<String> ownedFurniture, List<Placed> placed) {}
+    /** 이 공간에 놓인 가구 하나: 무대(480×700) 위 그림의 가운데 */
+    public record Placed(String item, int x, int y) {}
     /** 오늘의 돌봄 한 칸 */
     public record Task(String id, boolean done) {}
     private record DayTasks(List<String> tasks, int done, boolean rewarded) {}
@@ -153,31 +155,34 @@ public class PetService {
             dayTasks(uid, s.date()).map(t -> { var list = new ArrayList<Task>(); for (int i = 0; i < t.tasks().size(); i++) list.add(new Task(t.tasks().get(i), (t.done() & (1 << i)) != 0)); return (List<Task>) list; }).orElse(List.of()),
             dayTasks(uid, s.date()).map(DayTasks::rewarded).orElse(false),
             PetDecor.ITEMS, jdbc.sql("SELECT item FROM pet_furniture WHERE user_id = ? ORDER BY bought_at, item").param(uid).query(String.class).list(),
-            decor(uid, homeId));
+            placed(uid, homeId));
     }
-    /** 이 공간의 자리마다 놓인 가구 (자리 → 가구) */
-    private Map<String, String> decor(String uid, int homeId) {
-        var placed = new TreeMap<String, String>();
-        for (var row : jdbc.sql("SELECT slot, item FROM pet_decor WHERE user_id = ? AND home_id = ?").param(uid).param(homeId)
-            .query((rs, i) -> List.of(rs.getString("slot"), rs.getString("item"))).list()) placed.put(row.get(0), row.get(1));
-        return placed;
+    /** 이 공간에 놓인 가구 (위에서 아래로: 화면은 아래쪽 것을 앞에 그린다) */
+    private List<Placed> placed(String uid, int homeId) {
+        return jdbc.sql("SELECT item, x, y FROM pet_decor WHERE user_id = ? AND home_id = ? ORDER BY y, item").param(uid).param(homeId)
+            .query((rs, i) -> new Placed(rs.getString("item"), rs.getInt("x"), rs.getInt("y"))).list();
     }
-    public record DecorInput(String slot, String item) {}
+    /** 꾸미기 입력: 가구와 놓을 곳(가운데). remove 면 이 공간에서 넣어 둔다 (산 가구는 남는다) */
+    public record DecorInput(String item, Integer x, Integer y, Boolean remove) {}
     /**
-     * 꾸미기: 지금 머무는 공간의 한 자리에 가구를 놓는다. 아직 없는 가구는 방문포인트로 사서 놓고(장부 furniture:가구, 한 번만),
-     * 같은 공간의 다른 자리에 있던 같은 가구는 이 자리로 옮긴다. item 이 비어 있으면 그 자리를 비운다 (산 가구는 남는다).
+     * 꾸미기: 지금 머무는 공간의 원하는 곳에 가구를 놓거나 옮긴다. 아직 없는 가구는 방문포인트로 사서 놓는다(장부 furniture:가구, 한 번만).
+     * 위치는 보이는 상자 안으로 맞추고, 한 공간에는 같은 가구 하나, 모두 PetDecor.MAX_PER_HOME 개까지.
      */
     @Transactional public View decorate(String uid, DecorInput in) {
-        String slot = in == null ? null : in.slot();
-        PetDecor.slotKind(slot);
+        var item = PetDecor.item(in == null ? null : in.item());
+        boolean remove = Boolean.TRUE.equals(in.remove());
+        if (!remove && (in.x() == null || in.y() == null)) throw ApiException.badRequest("놓을 곳을 골라 주세요.");
         var p = lock(uid, ZonedDateTime.now(clock)); // 포인트 차감과 배치를 기기 사이에서 한 줄로 세운다
         int homeId = jdbc.sql("SELECT home_id FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
-        String id = in.item() == null || in.item().isBlank() ? null : in.item();
-        if (id == null) {
-            jdbc.sql("DELETE FROM pet_decor WHERE user_id = ? AND home_id = ? AND slot = ?").param(uid).param(homeId).param(slot).update();
+        if (remove) {
+            jdbc.sql("DELETE FROM pet_decor WHERE user_id = ? AND home_id = ? AND item = ?").param(uid).param(homeId).param(item.id()).update();
             return save(uid, p, 0);
         }
-        var item = PetDecor.check(slot, id);
+        int x = PetDecor.clampX(in.x()), y = PetDecor.clampY(in.y());
+        int moved = jdbc.sql("UPDATE pet_decor SET x = ?, y = ? WHERE user_id = ? AND home_id = ? AND item = ?").param(x).param(y).param(uid).param(homeId).param(item.id()).update();
+        if (moved > 0) return save(uid, p, 0);
+        int count = jdbc.sql("SELECT COUNT(*) FROM pet_decor WHERE user_id = ? AND home_id = ?").param(uid).param(homeId).query(Integer.class).single();
+        if (count >= PetDecor.MAX_PER_HOME) throw ApiException.badRequest("한 공간에는 가구를 " + PetDecor.MAX_PER_HOME + "개까지 놓을 수 있어요.");
         boolean owned = jdbc.sql("SELECT COUNT(*) FROM pet_furniture WHERE user_id = ? AND item = ?").param(uid).param(item.id()).query(Integer.class).single() > 0;
         if (!owned) {
             int points = jdbc.sql("SELECT visit_points FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
@@ -186,9 +191,7 @@ public class PetService {
             jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,?)").param(uid).param("furniture:" + item.id()).param(-item.cost()).update();
             jdbc.sql("UPDATE user_pets SET visit_points=visit_points-? WHERE user_id=?").param(item.cost()).param(uid).update();
         }
-        jdbc.sql("DELETE FROM pet_decor WHERE user_id = ? AND home_id = ? AND item = ? AND slot <> ?").param(uid).param(homeId).param(item.id()).param(slot).update();
-        jdbc.sql("INSERT INTO pet_decor(user_id, home_id, slot, item) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, home_id, slot) DO UPDATE SET item = EXCLUDED.item")
-            .param(uid).param(homeId).param(slot).param(item.id()).update();
+        jdbc.sql("INSERT INTO pet_decor(user_id, home_id, item, x, y) VALUES (?, ?, ?, ?, ?)").param(uid).param(homeId).param(item.id()).param(x).param(y).update();
         return save(uid, p, 0);
     }
     private List<Integer> owned(String uid) {

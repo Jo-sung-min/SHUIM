@@ -6,8 +6,8 @@ import { Sheet } from "./ui";
 import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoruCompanion, { companionChoices } from "./MoruCompanion";
 import MoruHomeScene, { HOME_NAMES } from "./MoruHomeScene";
-import { NO_DECOR, type Sky } from "./MoruScene";
-import { DecorLayer, DecorSheet, FURNITURE } from "./MoruDecor";
+import type { Sky } from "./MoruScene";
+import { DECOR_MAX, DecorBox, DecorLayer, FURNITURE, firstSpot, placedOf, type Placed } from "./MoruDecor";
 import MoruMindSheet from "./MoruMindSheet";
 import { IconBook, IconBubble, IconMoon, IconSmile, IconSun } from "./Icons";
 import MoruWeatherBook, { weatherName } from "./MoruWeatherBook";
@@ -51,7 +51,9 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | "decor" | null>(null);
   // 꾸미기: 꾸미는 중이면 방의 자리마다 동그라미가 뜨고, 자리를 누르면 가구 고르기 시트가 열린다
   const [decorating, setDecorating] = useState(false);
-  const [decorSlot, setDecorSlot] = useState<string | null>(null);
+  const [decorPick, setDecorPick] = useState<string | null>(null); // 꾸미는 중에 고른 가구 (넣어 두기 판이 뜬다)
+  const [moves, setMoves] = useState<Record<string, Placed & { token: number }>>({}); // 저장 중인 옮김: 서버가 답하기 전에도 놓은 자리에 보이게
+  const moveToken = useRef(0);
   const [chosenAppearance, setChosenAppearance] = useState("moru");
   const [ownerName, setOwnerName] = useState("");
   const [name, setName] = useState("");
@@ -391,7 +393,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       return panel !== null || decorating || full;
     }
     if (panel !== null) { setPanel(null); return decorating || full; }
-    if (decorating) { setDecorating(false); return full; }
+    if (decorating) { setDecorating(false); setDecorPick(null); return full; }
     setFull(false);
     return false;
   });
@@ -401,19 +403,45 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const togglePanel = (next: NonNullable<typeof panel>) => { haptic(8); setPanel((v) => (v === next ? null : next)); };
   const snackShort = !pet ? "" : pet.snacked ? "오늘 줬어요" : pet.food === 0 ? "마음밥 없음" : asleep ? "자는 중" : "마음밥 1개";
   const bathShort = !pet ? "" : pet.bathed ? "오늘 했어요" : asleep ? "자는 중" : "하루 한 번";
-  // 꾸미기 (V47 서버): 옛 서버면 버튼이 없다. 개발용 공간 보기(?moruHome)로 다른 공간을 볼 때는 놓인 가구를 그리지 않는다
-  const canDecorate = Boolean(pet?.furniture);
-  const decor = pet && homeId === pet.homeId ? pet.decor ?? NO_DECOR : NO_DECOR;
-  const place = async (slot: string, item: string | null) => {
+  // 꾸미기 (V49 서버): 방 안 원하는 곳에 끌어다 놓는다. 옛 서버면 버튼이 없다(V47 의 자리 배치는 보여 주기만).
+  // 개발용 공간 보기(?moruHome)로 다른 공간을 볼 때는 놓인 가구를 그리지 않는다
+  const canDecorate = Boolean(pet?.placed && pet.furniture);
+  const placed = canUse ? placedOf(pet, homeId).map((p) => moves[p.item] ?? p) : []; // 손님 방(닫힌 창)에는 가구가 없다
+  /** 꾸미기 저장: 앞선 저장이 끝나기를 잠깐 기다렸다가 보낸다 (끌어 놓기를 빨리 이어 해도 마지막 자리가 남게) */
+  const saveDecor = async (body: { item: string; x?: number; y?: number; remove?: boolean }) => {
+    for (let i = 0; i < 30 && lock.current; i++) await new Promise((r) => setTimeout(r, 100));
+    return mutate("/decor", body);
+  };
+  /** 끌어 놓은 곳을 저장한다. 실패하면 원래 자리로 돌아가고 방에 이유가 뜬다 */
+  const dropDecor = async (item: string, x: number, y: number) => {
+    haptic(6);
+    const token = ++moveToken.current;
+    setMoves((m) => ({ ...m, [item]: { item, x, y, token } }));
+    await saveDecor({ item, x, y });
+    if (alive.current) setMoves((m) => {
+      if (m[item]?.token !== token) return m;
+      const next = { ...m };
+      delete next[item];
+      return next;
+    });
+  };
+  /** 가구 상자에서 고르면: (없으면 사서) 방의 첫 자리에 놓고 골라 둔다. 그다음 끌어서 옮긴다 */
+  const pickDecor = async (item: string, kind: string) => {
     haptic(10);
-    const bought = item !== null && !(pet?.ownedFurniture ?? []).includes(item);
-    const data = await mutate("/decor", { slot, item });
+    const bought = !(pet?.ownedFurniture ?? []).includes(item);
+    const data = await saveDecor({ item, ...firstSpot(kind, placed.length) });
     if (!data) return;
-    setSheet(null);
-    if (!item) return;
+    setSheet(null); setDecorPick(item);
     react("happy", say(DECOR_LINES));
     if (bought) setCelebration({ id: Date.now(), food: 0, level: null, text: `새 가구 · ${FURNITURE[item]?.name ?? "가구"}` });
   };
+  /** 넣어 두기: 이 방에서만 빼고, 산 가구는 남는다 */
+  const putAway = async (item: string) => {
+    haptic(8);
+    const data = await saveDecor({ item, remove: true });
+    if (data) setDecorPick(null);
+  };
+  const stopDecorating = () => { haptic(8); setDecorating(false); setDecorPick(null); };
   const speech = thinking ? thinking[thinkIndex % thinking.length] : mood !== "idle" ? message : murmur;
 
   if (!canUse) return <section className={styles.card} aria-label="모루를 만나기">
@@ -436,8 +464,9 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     <div className={styles.room} ref={roomRef} onPointerDownCapture={() => { if (rainWanted.current) { rainWanted.current = false; setRainOn(true); } }}>
       <SketchFilter />
       <div className={styles.world} ref={worldRef}>
-        <MoruHomeScene homeId={homeId} sky={sky} decor={decor} />
-        <DecorLayer homeId={homeId} decor={decor} editing={decorating} onPick={(slot) => { setDecorSlot(slot); openSheet("decor"); }} />
+        <MoruHomeScene homeId={homeId} sky={sky} />
+        <DecorLayer placed={placed} editing={decorating} selected={decorPick} onSelect={setDecorPick}
+          onDrop={(item, x, y) => void dropDecor(item, x, y)} onPutAway={(item) => void putAway(item)} />
         {dustSpots.map((spot) => <button key={spot} type="button" className={styles.dust} data-spot={spot} data-poof={poof === spot ? "" : undefined}
           disabled={poof !== null} aria-label="먼지 치우기" onClick={() => sweep(spot)}><DustIcon /></button>)}
         <button type="button" className={styles.petButton} data-touch={touch ?? undefined} data-glow={glow && !asleep ? "" : undefined}
@@ -514,9 +543,10 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       </div>}
       {error && !sheet && <div className={styles.alert} role="alert"><span>{error}</span>{!needsLogin && <button type="button" onClick={() => void load()}>다시 연결</button>}</div>}
       {decorating ? <div className={styles.pad} role="group" aria-label="방 꾸미기">
-        <p className={styles.status}><span>꾸미기 · 자리를 눌러 골라요</span><span>{pet?.points ?? 0} P</span></p>
+        <p className={styles.status}><span>꾸미기 · {placed.length ? "가구를 끌어서 옮겨요" : "가구 상자에서 골라요"}</span><span>{placed.length}/{DECOR_MAX} · {pet?.points ?? 0} P</span></p>
         <div className={styles.keys}>
-          <button type="button" className={`${styles.key} ${styles.keyMain}`} onClick={() => { haptic(8); setDecorating(false); }}><DoneIcon /><span>다 꾸몄어요</span></button>
+          <button type="button" className={styles.key} disabled={!pet} onClick={() => { setDecorPick(null); openSheet("decor"); }}><BoxIcon /><span>가구 상자</span></button>
+          <button type="button" className={`${styles.key} ${styles.keyMain}`} onClick={stopDecorating}><DoneIcon /><span>다 꾸몄어요</span></button>
         </div>
       </div> : <div className={styles.pad} role="group" aria-label={`${petName}와 오늘`}>
         <p className={styles.status}>{loading ? <span role="status">방을 정리하는 중…</span> : pet ? <><span>마음 {pet.earned}/{DAILY_FOOD_MAX} · 식사 {pet.meals}/3</span><span>{asleep ? "자는 중" : napping ? "낮잠 중" : phase === "sleepy" ? "졸려 해요" : mealStatus(pet.meals, pet.food, hour)}</span></> : <span>잠시 후 다시 만나요</span>}</p>
@@ -528,7 +558,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         </div>
       </div>}
     </div>
-    <DecorSheet open={sheet === "decor"} slot={decorSlot} homeId={homeId} pet={pet} busy={busy} error={error} onPlace={(slot, item) => void place(slot, item)} onClose={() => { if (!busy) setSheet(null); }} />
+    <DecorBox open={sheet === "decor"} pet={pet} placed={placed} busy={busy} error={error} onPick={(item, kind) => void pickDecor(item, kind)} onClose={() => { if (!busy) setSheet(null); }} />
     <MoruWeatherBook open={sheet === "book"} onClose={() => setSheet(null)} seen={pet?.weatherSeen ?? []} />
     <MoruMindSheet open={sheet === "mind"} name={petName} closeRef={closeMindRef} onClose={(changed) => void closeMind(changed)} />
     <Sheet open={sheet === "companions"} title="우리 친구" onClose={() => { if (!busy) setSheet(null); }} className={styles.handSheet}>
@@ -667,6 +697,10 @@ function SnackIcon() {
 /** 꾸미기: 작은 액자와 화분 */
 function DecorIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.500h9v7H4Z" /><path d="m4.500 11 2.800-2.800 2 2 1.400-1.400 2.300 2.300" /><path d="M15 15.500h5l-.8 4h-3.400Z" /><path d="M17.500 15.500c0-2 .5-3.300 2-4.300M17.500 15.500c-.3-1.600-1.300-2.500-2.700-2.800" /></svg>;
+}
+/** 가구 상자: 뚜껑이 열린 상자 */
+function BoxIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4.500 10h15v9.500h-15Z" /><path d="M4.500 10 7 5.500h10L19.500 10" /><path d="M10 13.500h4" /></svg>;
 }
 /** 다 꾸몄어요: 체크 */
 function DoneIcon() {

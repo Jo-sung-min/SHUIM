@@ -258,35 +258,65 @@ class PetPostgresTest {
         var other = tx.execute(s -> later.get(uid));
         assertEquals(other.weatherSeen().size() * PetDays.WEATHER_POINTS, ledger("weather:%"));
     }
-    @Test void furnitureIsBoughtOnceAndPlacedPerHome() {
+    PetService.View put(String item, int x, int y) { return tx.execute(s -> pets.decorate(uid, new PetService.DecorInput(item, x, y, null))); }
+    @Test void furnitureIsBoughtOnceAndMovedFreelyPerHome() {
         tx.execute(s -> pets.get(uid));
         jdbc.sql("UPDATE user_pets SET visit_points=100, xp=60 WHERE user_id=?").param(uid).update();
-        // 없는 자리·없는 가구·종류가 맞지 않는 자리는 거절하고 포인트도 그대로
-        for (var bad : List.of(new PetService.DecorInput("wallL", "heart"), new PetService.DecorInput("roof", "frame"), new PetService.DecorInput("wallL", "sofa")))
-            assertThrows(Exception.class, () -> tx.execute(s -> pets.decorate(uid, bad)));
-        var placed = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("wallL", "frame")));
-        assertEquals(70, placed.points()); assertEquals(Map.of("wallL", "frame"), placed.decor());
-        assertEquals(List.of("frame"), placed.ownedFurniture()); assertEquals(-30, ledger("furniture:%"));
+        // 없는 가구, 놓을 곳 없는 요청은 거절하고 포인트도 그대로
+        assertThrows(Exception.class, () -> put("sofa", 200, 300));
+        assertThrows(Exception.class, () -> tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("rug", null, null, null))));
+        var placed = put("rug", 240, 520);
+        assertEquals(55, placed.points()); assertEquals(List.of(new PetService.Placed("rug", 240, 520)), placed.placed());
+        assertEquals(List.of("rug"), placed.ownedFurniture()); assertEquals(-45, ledger("furniture:%"));
         assertEquals(PetDecor.ITEMS, placed.furniture());
-        // 같은 가구를 다른 자리로 옮기면 다시 사지 않고, 앞 자리는 빈다
-        var moved = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("wallR", "frame")));
-        assertEquals(70, moved.points()); assertEquals(Map.of("wallR", "frame"), moved.decor());
+        // 옮기면 다시 사지 않고, 화면 밖은 보이는 상자 안으로 맞춘다
+        var moved = put("rug", -40, 999);
+        assertEquals(55, moved.points());
+        assertEquals(List.of(new PetService.Placed("rug", PetDecor.X_MIN, PetDecor.Y_MAX)), moved.placed());
         // 포인트가 모자라면 사지도 놓지도 않는다
-        assertEquals(15, tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("hang", "lantern"))).points());
-        assertThrows(Exception.class, () -> tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("bedL", "bear"))));
+        assertEquals(15, put("cat", 120, 480).points());
+        assertThrows(Exception.class, () -> put("record", 300, 400));
         var after = tx.execute(s -> pets.get(uid));
-        assertEquals(15, after.points()); assertEquals(Map.of("wallR", "frame", "hang", "lantern"), after.decor());
-        assertEquals(-85, ledger("furniture:%"));
-        // 비우면 자리만 비고 산 가구는 남는다
-        var cleared = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("hang", null)));
-        assertEquals(Map.of("wallR", "frame"), cleared.decor()); assertEquals(Set.of("frame", "lantern"), Set.copyOf(cleared.ownedFurniture()));
+        assertEquals(15, after.points()); assertEquals(List.of("cat", "rug"), after.placed().stream().map(PetService.Placed::item).toList()); // 위에서 아래로
+        // 넣어 두면 방에서만 빠지고 산 가구는 남는다
+        var stored = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("cat", null, null, true)));
+        assertEquals(List.of("rug"), stored.placed().stream().map(PetService.Placed::item).toList());
+        assertEquals(Set.of("rug", "cat"), Set.copyOf(stored.ownedFurniture()));
         // 공간마다 따로 꾸미고, 산 가구는 다른 공간에도 그냥 놓는다
         jdbc.sql("UPDATE user_pets SET visit_points=60 WHERE user_id=?").param(uid).update();
         var attic = tx.execute(s -> pets.home(uid, new PetService.HomeInput(1)));
-        assertEquals(1, attic.homeId()); assertTrue(attic.decor().isEmpty());
-        var atticFrame = tx.execute(s -> pets.decorate(uid, new PetService.DecorInput("wallL", "frame")));
-        assertEquals(0, atticFrame.points()); assertEquals(Map.of("wallL", "frame"), atticFrame.decor());
-        assertEquals(Map.of("wallR", "frame"), tx.execute(s -> pets.home(uid, new PetService.HomeInput(0))).decor());
+        assertEquals(1, attic.homeId()); assertTrue(attic.placed().isEmpty());
+        assertEquals(0, put("cat", 200, 300).points());
+        assertEquals(List.of("rug"), tx.execute(s -> pets.home(uid, new PetService.HomeInput(0))).placed().stream().map(PetService.Placed::item).toList());
         assertEquals(-85, ledger("furniture:%"));
+    }
+    @Test void oneHomeHoldsAtMostTwelvePieces() {
+        tx.execute(s -> pets.get(uid));
+        jdbc.sql("UPDATE user_pets SET visit_points=5000 WHERE user_id=?").param(uid).update();
+        var ids = PetDecor.ITEMS.stream().map(PetDecor.Item::id).toList();
+        for (int i = 0; i < PetDecor.MAX_PER_HOME; i++) put(ids.get(i), 100 + i * 20, 300 + i * 20);
+        assertThrows(Exception.class, () -> put(ids.get(PetDecor.MAX_PER_HOME), 200, 400));
+        // 이미 놓인 것은 옮길 수 있다
+        assertEquals(PetDecor.MAX_PER_HOME, put(ids.get(0), 300, 500).placed().size());
+    }
+    /** V47 의 자리 다섯에 놓아 둔 가구는 V49 에서 그 자리의 가운데로 옮겨 적힌다 */
+    @Test void slotPlacementsMoveToStagePositions() {
+        String old = "moru_old_" + UUID.randomUUID().toString().replace("-", "");
+        var ds = new DriverManagerDataSource(System.getenv("SOROW_TEST_DATABASE_URL") + "?currentSchema=" + old, "sorow_test", "");
+        try {
+            Flyway.configure().dataSource(ds).schemas(old).defaultSchema(old).locations("classpath:db/migration").target("48").load().migrate();
+            var db = JdbcClient.create(ds);
+            String oldUser = UUID.randomUUID().toString(); // 마이그레이션의 예시 글이 u1 같은 id 를 이미 쓴다
+            db.sql("INSERT INTO users(id,nick,role,is_anonymous) VALUES (?,?,?,false)").param(oldUser).param("old").param("user").update();
+            for (var item : List.of("frame", "heart", "ivy")) db.sql("INSERT INTO pet_furniture(user_id,item) VALUES (?,?)").param(oldUser).param(item).update();
+            for (var row : List.of(List.of("0", "wallL", "frame"), List.of("0", "bedL", "heart"), List.of("2", "hang", "ivy")))
+                db.sql("INSERT INTO pet_decor(user_id,home_id,slot,item) VALUES (?,?,?,?)").param(oldUser).param(Integer.parseInt(row.get(0))).param(row.get(1)).param(row.get(2)).update();
+            Flyway.configure().dataSource(ds).schemas(old).defaultSchema(old).locations("classpath:db/migration").load().migrate();
+            var rows = db.sql("SELECT home_id, item, x, y FROM pet_decor ORDER BY home_id, item")
+                .query((rs, i) -> rs.getInt("home_id") + ":" + rs.getString("item") + "@" + rs.getInt("x") + "," + rs.getInt("y")).list();
+            assertEquals(List.of("0:frame@100,300", "0:heart@136,493", "2:ivy@300,260"), rows);
+        } finally {
+            JdbcClient.create(ds).sql("DROP SCHEMA IF EXISTS " + old + " CASCADE").update();
+        }
     }
 }

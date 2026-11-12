@@ -111,8 +111,6 @@ const SNOW_FAR: Ink = { line: "#94a2ae", width: 1.3 }, SNOW_MID: Ink = { line: "
 const GREEN_FAR: Ink = { line: "#86958c", width: 1.3 }, GREEN_MID: Ink = { line: "#4f5f55", width: 1.7 }, GREEN_NEAR: Ink = { line: "#33302a", width: 2.1 };
 
 /** 창밖의 하늘: 풍경(도시·숲) × 날씨(비·눈·맑음) × 낮밤. 날씨는 날마다 무작위로 정해진다 (moru-rules 의 dailySky) */
-/** 꾸미기 자리에 놓인 가구가 없을 때 */
-export const NO_DECOR: Record<string, string> = {};
 export interface Sky { land: "city" | "forest"; weather: "rain" | "snow" | "clear"; night: boolean; /** 드문 하늘: rainbow·shootingStar·aurora·firstSnow (서버가 정한다) */ rare?: string | null }
 export const DEFAULT_SKY: Sky = { land: "city", weather: "rain", night: false };
 

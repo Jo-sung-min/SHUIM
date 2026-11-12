@@ -1,4 +1,4 @@
-import { DEFAULT_SKY, NO_DECOR, Outside, Stage, type Sky } from "./MoruScene";
+import { DEFAULT_SKY, Outside, Stage, type Sky } from "./MoruScene";
 import styles from "./MoruRoom.module.css";
 
 /** 초 하나: 몸통과 불꽃, 둘레의 빛 */
@@ -12,7 +12,7 @@ function Candle({ x, y, h = 14 }: { x: number; y: number; h?: number }) {
 const BOOKS: [number, number, number, string][] = [[362, 10, 22, "#b5694f"], [372, 8, 28, "#e5b65f"], [380, 11, 24, "#7f9d78"], [391, 9, 20, "#fff3dc"], [400, 10, 26, "#cfbdf2"], [410, 12, 22, "#b5694f"], [422, 9, 28, "#8fa3bd"], [431, 10, 22, "#e5b65f"], [441, 11, 25, "#fff3dc"], [452, 9, 21, "#7f9d78"], [461, 12, 27, "#b5694f"]];
 
 /** 창가 침대방: 천장까지 닿는 큰 창 옆에 붙인 침대, 창턱의 책과 촛불. 창밖은 멈춰 있고 비·눈만 내린다 */
-export default function MoruWindowBedScene({ sky = DEFAULT_SKY, decor = NO_DECOR }: { sky?: Sky; decor?: Record<string, string> }) {
+export default function MoruWindowBedScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
   return <Stage view={<Outside sky={sky} width={330} height={352} className={styles.viewBed} />}>{(glow) => <>
     {/* 벽과 천장: 큰 창 자리만 비운다 */}
     <path stroke="none" fill="#667089" fillRule="evenodd" d="M-10-10H490V710H-10ZM158 128H490V468H158Z" />
@@ -25,11 +25,11 @@ export default function MoruWindowBedScene({ sky = DEFAULT_SKY, decor = NO_DECOR
     <path stroke="none" fill="#ffffff" opacity=".06" d="M170 440L300 140H340L210 460Z" /><path stroke="none" fill="#ffffff" opacity=".04" d="M372 460L470 220V320L410 460Z" />
     <path fill="#9aa3b8" d="M144 468H490V481H144Z" />
     {/* 창턱에 세워 둔 책과 촛불 */}
-    {!decor.bedR && BOOKS.map(([x, w, h, fill]) => <path key={x} fill={fill} d={`M${x} ${468 - h}H${x + w}V468H${x}Z`} />)}
-    <Candle x={338} y={468} />{!decor.bedR && <Candle x={396} y={448} h={10} />}
+    {BOOKS.map(([x, w, h, fill]) => <path key={x} fill={fill} d={`M${x} ${468 - h}H${x + w}V468H${x}Z`} />)}
+    <Candle x={338} y={468} /><Candle x={396} y={448} h={10} />
     {/* 왼쪽 벽의 액자들 */}
-    {!decor.wallL && <><path fill="#d9a55e" d="M86 248H140V318H86Z" /><path fill="#fff3dc" d="M92 254H134V312H92Z" /><path stroke="none" fill="#a9c6d6" d="M95 257H131V309H95Z" /><path stroke="none" fill="#f4f8fa" d="M95 309L108 286L116 296L122 289L131 302V309Z" /></>}
-    {!decor.wallR && <><path fill="#8f5f44" d="M90 330H136V382H90Z" /><path fill="#fff3dc" d="M95 335H131V377H95Z" /><circle cx="113" cy="356" r="9" fill="#ffe2a0" strokeWidth="1.6" /></>}
+    <path fill="#d9a55e" d="M86 248H140V318H86Z" /><path fill="#fff3dc" d="M92 254H134V312H92Z" /><path stroke="none" fill="#a9c6d6" d="M95 257H131V309H95Z" /><path stroke="none" fill="#f4f8fa" d="M95 309L108 286L116 296L122 289L131 302V309Z" />
+    <path fill="#8f5f44" d="M90 330H136V382H90Z" /><path fill="#fff3dc" d="M95 335H131V377H95Z" /><circle cx="113" cy="356" r="9" fill="#ffe2a0" strokeWidth="1.6" />
     <path fill="#d9a55e" d="M94 394H132V436H94Z" /><path fill="#fff3dc" d="M99 399H127V431H99Z" /><path fill="#7f9d78" strokeWidth="1.4" d="M113 427C104 420 106 408 113 404C120 408 122 420 113 427Z" />
     {/* 침대 옆 나무 상자: 병에 든 초 */}
     <circle cx="108" cy="436" r="52" fill={glow} stroke="none" />

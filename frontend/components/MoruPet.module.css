@@ -405,12 +405,22 @@
 /* ---------- 꾸미기 (V47): 무대와 같은 480×700 판 위에 가구를 얹는다. 꾸미는 중에는 자리마다 점선 동그라미 (빈 자리는 +) ---------- */
 .decor{position:absolute;left:50%;bottom:-100px;width:480px;height:700px;margin-left:-240px;z-index:1;pointer-events:none}
 .decor[data-editing]{z-index:5}
-.decorArt{position:absolute;inset:0;display:block;overflow:visible}
-.decorSlot{position:absolute;display:grid;place-items:center;padding:0 0 2px;border:2.4px dashed #fff6e0;border-radius:50%;background:#2a1b1340;color:#fff6e0;font-size:22px;line-height:1;cursor:pointer;pointer-events:auto;box-shadow:0 0 0 2px #4a352873;animation:decorPulse 1.8s ease-in-out infinite;-webkit-tap-highlight-color:transparent}
-.decorSlot[data-filled]{background:none}
-.card .decorSlot:focus-visible{outline:2px solid #fff6e0;outline-offset:3px}
-@keyframes decorPulse{50%{transform:scale(1.07)}}
-@media(prefers-reduced-motion:reduce){.decorSlot{animation:none}}
+/* 놓인 가구: 무대 px 로 자리를 잡는 그림. 꾸미는 중에는 버튼이 되어 끌어 옮긴다 (가구 위에서만 스크롤·확대를 막는다) */
+.decorItem{position:absolute;display:block;padding:0;border:0;background:none;line-height:0;pointer-events:none}
+.decorItem img{display:block;width:100%;height:100%;object-fit:contain;-webkit-user-drag:none;user-select:none}
+button.decorItem{pointer-events:auto;cursor:grab;touch-action:none;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none;border-radius:12px;outline:2px dashed #fff6e0b3;outline-offset:3px}
+button.decorItem[data-selected]{outline:2.4px solid #fff6e0;box-shadow:0 0 0 5px #4a352866}
+button.decorItem[data-dragging]{z-index:2;cursor:grabbing;filter:drop-shadow(0 6px 4px #2a1b1366)}
+.card button.decorItem:focus-visible{outline:2.4px solid #fff6e0;outline-offset:3px}
+/* 고른 가구 위의 작은 판: 넣어 두기 */
+.decorTools{position:absolute;z-index:3;transform:translate(-50%,-100%);pointer-events:auto}
+.decorTools button{min-height:34px;padding:5px 12px 8px;border:2.2px solid #4a3528;border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:#fff6e0;color:#4a3528;box-shadow:inset 0 -3px 0 #e6c48d;font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+.decorTools button:active{transform:translateY(2px);box-shadow:none}
+/* 가구 상자의 칸: 가로로 넘기는 칩 */
+.decorKinds{display:flex;gap:6px;margin:12px -2px 0;padding:2px 2px 4px;overflow-x:auto;scrollbar-width:none}
+.decorKinds::-webkit-scrollbar{display:none}
+.decorKinds button{flex:none;min-height:36px;padding:6px 13px 8px;border:2px solid #4a3528;border-radius:999px;background:#fffaf0;color:#4a3528;font:inherit;font-size:13px;cursor:pointer}
+.decorKinds button[aria-selected="true"]{background:#cfbdf2;box-shadow:inset 0 -3px 0 #a890d8}
 .decorShop{padding-bottom:20px}
 .decorGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 14px;padding:0;list-style:none}
 .decorGrid li{display:grid;justify-items:center;align-content:start;gap:3px;min-width:0;padding:10px 6px;border:2.2px solid #4a3528;border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background:#fffaf0;text-align:center}
