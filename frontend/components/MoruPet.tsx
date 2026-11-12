@@ -618,7 +618,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       </Link>
       <div className={styles.pad} role="group" aria-label="오늘의 마음">
         <div className={styles.keys}>
-          <Link href="/log" className={`${styles.key} ${styles.keyMain}`} onClick={() => haptic(8)}><PenIcon /><span>마음 기록</span></Link>
+          <Link href="/log?view=today" className={`${styles.key} ${styles.keyMain}`} onClick={() => haptic(8)}><PenIcon /><span>마음 기록</span></Link>
         </div>
       </div>
     </div>

@@ -1,0 +1,39 @@
+/* 기록 탭 › 나 돌보기: 작은 한 걸음 (components/StepCare.tsx). 색·간격은 앱의 토큰만 쓴다 */
+.wrap { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.wrap > * { min-width: 0; }
+.line { margin: 0; }
+
+.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.head :global(.text-btn) { flex: none; color: var(--text-2); font-size: 13px; margin-right: -6px; }
+.title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.35; word-break: keep-all; }
+.sub { margin: 4px 0 14px; color: var(--text-2); font-size: 14px; line-height: 1.55; word-break: keep-all; }
+
+.options { display: grid; gap: 8px; }
+.option { align-items: center; min-height: 56px; }
+.option > span:first-child { flex: 1; min-width: 0; word-break: keep-all; }
+.on { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.check { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
+.check svg { width: 13px; height: 13px; stroke-width: 3; }
+
+.links { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.links :global(.text-btn) { color: var(--text-2); }
+.actions { display: flex; gap: 8px; margin-top: 14px; }
+.actions > * { flex: 1; min-width: 0; padding: 0 12px; }
+.preview { margin: 6px 0 0; font-size: 16px; font-weight: 700; line-height: 1.5; word-break: keep-all; }
+
+.doing { display: grid; justify-items: center; gap: 8px; padding: 10px 0 4px; text-align: center; }
+.doing small { max-width: 30ch; color: var(--text-2); font-size: 13px; line-height: 1.6; word-break: keep-all; }
+.big { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.35; word-break: keep-all; }
+.doneMark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: color-mix(in srgb, var(--tone-mint) 16%, var(--surface)); color: var(--tone-mint); }
+.doneMark svg { width: 22px; height: 22px; stroke-width: 2.6; }
+
+.plan { display: grid; gap: 8px; }
+.planLine { font-size: 16px; line-height: 1.5; word-break: keep-all; }
+.planActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+
+.list { display: grid; gap: 8px; margin: 0; list-style: none; font-size: 14px; }
+.list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.list li > span:first-child { min-width: 0; word-break: keep-all; }
+.list li > span:last-child { flex: none; font-size: 13px; }
+
+.note { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.6; word-break: keep-all; }

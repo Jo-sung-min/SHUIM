@@ -98,7 +98,7 @@ export default function SummaryPage() {
       <TopBar
         title="흐름 정리"
         right={
-          <Link href="/log" className="icon-btn" aria-label="기록으로">
+          <Link href="/log?view=today" className="icon-btn" aria-label="기록으로">
             <IconChevronL />
           </Link>
         }

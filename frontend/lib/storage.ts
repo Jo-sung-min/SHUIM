@@ -154,6 +154,7 @@ const K = {
   notif: "maeum-accel:notif:v1",
   cats: "maeum-accel:cats:v1",
   catOrder: "maeum-accel:cat-order:v1",
+  steps: "maeum-accel:steps:v1",
 } as const;
 /** 계정과 무관하게 기기 전체에서 공유하는 키 (커뮤니티 샘플 세계, 프롬프트, 계정 목록, 세션) */
 export const SESSION_KEY = "maeum-accel:session:v1";
@@ -222,7 +223,7 @@ export const writeShared = writeRaw;
  */
 export function adoptGuestData(userId: string) {
   if (!userId || sessionUserId() !== userId) return;
-  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review, K.profile, K.notif, K.cats, K.catOrder];
+  const personal = [K.journal, K.log, K.memos, K.goals, K.schedule, K.briefing, K.moments, K.review, K.profile, K.notif, K.cats, K.catOrder, K.steps];
   const adopted = new Map<string, { raw: string; value: unknown }>();
   for (const key of personal) {
     if (sessionUserId() !== userId) break;
@@ -441,6 +442,10 @@ export function saveCategoryOrder(ids: string[]) {
   write(K.catOrder, ids);
   pushRecords(["categories"], "category-order", "PUT", "/api/records/categories", { order: ids });
 }
+
+/* ---------- 작은 한 걸음 (기록 탭 › 나 돌보기). 이 기기에만 둔다: 서버로 보내지 않는다. 모양은 lib/steps.ts 가 다듬는다 ---------- */
+export const loadStepsRaw = () => read<unknown>(K.steps, null);
+export const saveStepsRaw = (value: unknown) => write(K.steps, value);
 
 export const loadNotifSeen = () => read<number>(K.notif, 0);
 export const markNotifSeen = () => write(K.notif, Date.now());

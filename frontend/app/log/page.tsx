@@ -11,18 +11,29 @@ import { IconClose, IconPlus } from "@/components/Icons";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import MemoPad from "@/components/MemoPad";
+import StepCare from "@/components/StepCare";
 
 /** 어제 대비 변화 선택지: -DELTA_MAX(많이 내려감) ~ +DELTA_MAX(많이 올라옴) */
 const DELTA_MAX = 5;
 const DELTAS = Array.from({ length: DELTA_MAX * 2 + 1 }, (_, i) => i - DELTA_MAX);
 const clamp = (v: number) => Math.max(SCORE_MIN, Math.min(SCORE_MAX, v));
 const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-/** 오늘 쓰기 = 오늘 한 일 + 카테고리별 어제 대비 점수, 기록하기 = 메모장. 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다 */
-type View = "today" | "memo";
+/**
+ * 나 돌보기 = 작은 한 걸음 (components/StepCare), 오늘 쓰기 = 오늘 한 일 + 카테고리별 어제 대비 점수, 기록하기 = 메모장.
+ * 오늘 쓰기는 홈의 모루에게 마음 들려주기와 같은 기록이라, 탭을 열면 나 돌보기가 먼저 보인다.
+ * 다른 화면에서 쓰러 올 때는 /log?view=today 로 바로 연다. 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다
+ */
+type View = "care" | "today" | "memo";
+const VIEWS: View[] = ["care", "today", "memo"];
 
-/** 상단 현황(연속 일수·채운 수)은 메인 페이지에서 보여주고, 여기선 바로 쓰기부터 시작 */
+/** 상단 현황(연속 일수·채운 수)은 메인 페이지에서 보여주고, 여기선 바로 시작 */
 export default function LogPage() {
-  const [view, setView] = useState<View>("today");
+  // 주소의 ?view= 는 화면이 뜬 뒤에 읽는다 (정적 빌드에서도 같은 첫 화면). 읽기 전에는 본문을 비워 둬 칸이 깜빡 바뀌지 않게
+  const [view, setView] = useState<View | null>(null);
+  useEffect(() => {
+    const asked = new URLSearchParams(window.location.search).get("view");
+    setView(VIEWS.includes(asked as View) ? (asked as View) : "care");
+  }, []);
 
   return (
     <>
@@ -30,15 +41,16 @@ export default function LogPage() {
       <div className="screen">
         <div>
           <Segmented
-            value={view}
+            value={view ?? "care"}
             onChange={setView}
             options={[
+              { value: "care", label: "나 돌보기" },
               { value: "today", label: "오늘 쓰기" },
               { value: "memo", label: "기록하기" },
             ]}
           />
         </div>
-        {view === "today" ? <TodayWrite /> : <MemoPad scrollKey="/log:memo" />}
+        {view === "care" ? <StepCare /> : view === "today" ? <TodayWrite /> : view === "memo" ? <MemoPad scrollKey="/log:memo" /> : null}
       </div>
     </>
   );

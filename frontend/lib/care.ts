@@ -41,6 +41,7 @@ export const CARE_BUILTIN: CareAction[] = [
 export const CARE_CATALOG: CareAction[] = [
   { id: "review", label: "분석하기", desc: "메모 전체로 그때와 오늘을 AI 가 비교", kind: "ai", icon: "note", tone: "plum" },
   { id: "breath", label: "숨 고르기", desc: "1분 동안 천천히 숨 쉬어요", kind: "breath", icon: "lotus", tone: "mint" },
+  { id: "step", label: "작은 한 걸음", desc: "기운에 맞는 아주 작은 행동 하나", kind: "link", icon: "leaf", tone: "mint", href: "/log" },
   { id: "memo", label: "메모 남기기", desc: "스쳐 가는 마음을 한 줄로", kind: "link", icon: "book", tone: "plum", href: "/memo" },
   { id: "goals", label: "목표 한 걸음", desc: "목표의 다음 단계 하나 체크", kind: "link", icon: "flag", tone: "review", href: "/goals" },
   { id: "schedule", label: "오늘 일정", desc: "다가오는 일정 보기", kind: "link", icon: "calendar", tone: "briefing", href: "/schedule" },

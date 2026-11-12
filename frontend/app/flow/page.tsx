@@ -11,7 +11,7 @@ export default function FlowPage() {
     <>
       <TopBar title="흐름" eyebrow="최근 7·14·30일" />
       <div className="screen">
-        <FlowView onWrite={() => router.push("/log")} />
+        <FlowView onWrite={() => router.push("/log?view=today")} />
       </div>
     </>
   );
