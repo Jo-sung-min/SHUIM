@@ -126,3 +126,14 @@ See [MORU_TAMAGOTCHI.md](MORU_TAMAGOTCHI.md) for the Tamagotchi-style direction 
 
 ## Stage 2 (applied)
 `V42__moru_care.sql` adds eight additive columns to `user_pets` (warmth, clean, energy 0-4, daily warmth counter, care/bath dates, the chosen light state of a night). `POST /api/pet/care {action}` handles hug, tickle, talk, breath, dust, bath, lightsOff and lightsOn; `GET /api/pet` returns `warmth`, `clean`, `energy`, `bathed`, `lightsOff` and `glow`. The daily settlement is keyed on `care_date`, so it runs once per date even when a request ends without saving.
+
+## Hand-drawn room (applied 2026-11-12)
+
+The room's pixel-art UI looked detached from its background, so the whole room was redrawn as one hand-drawn scene. See MORU_TAMAGOTCHI.md section 9 for the rules.
+
+- UI: cream panels, slightly wobbly dark-brown outlines (an SVG displacement filter applied only to the panel faces, never to text), rounded corners, the Jua typeface (SIL OFL 1.1, loaded from jsDelivr like Pretendard). Sheets opened from the room (journal, homes, appearance, guide) use the same paper through a `className` on the shared `Sheet`; they override the app's colour tokens inside the sheet only.
+- Spaces: the first three homes are now cozy hideouts drawn on a fixed 480x700 stage: train sleeper (id 0, scenery scrolls past the window), attic (id 1), window-side bedroom (id 2). Levels and prices are unchanged. The Unsplash window photographs listed above are no longer used.
+- Characters: Moru, Noa, Leo and Lumi were redrawn in the same line style. A new companion, Moring (a round white bird modelled on the long-tailed tit), was added.
+- Server: `V45__moru_moring.sql` widens the `user_pets.appearance` check to include `moring`. `GET /api/pet` now returns `appearances` (the IDs the server accepts); the client shows a companion only if it is in that list, so Moring stays hidden against an older backend. `PetHomes` names for ids 0-2 were renamed to match the new art; the client also keeps its own display names (`HOME_NAMES`) so names and art agree before the backend is redeployed.
+- Verified: frontend `tsc`, 28 Moru client tests (the guest-window test's stale module mock was fixed), 31 backend pet tests including the Postgres integration test for choosing Moring. Browser-checked at 340, 360 and 412 px wide: three spaces, three window scenes, day/evening/night, lights off, sheets, the guest window, full-screen view, and saving Moring through the real API on a local database.
+- Dev-only URL parameters (ignored in production builds): `?moruHome=1`, `?moruLook=moring`, alongside the existing `?moruHour=22` and `?moruQuick=1`.

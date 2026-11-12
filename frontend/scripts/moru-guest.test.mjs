@@ -13,6 +13,8 @@ test("guests see only a closed window linking to login, without pet stats or jou
   const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
   const module = { exports: {} };
   const empty = () => null;
+  // 손님 화면에서 쓰이지 않는 모듈의 대역: 기본 내보내기는 아무것도 그리지 않는 컴포넌트, 이름 붙은 내보내기는 null 을 돌려주는 함수
+  const stub = new Proxy(empty, { get: (target, key) => key === "__esModule" ? false : key === "default" ? target : empty });
   const mockRequire = (name) => {
     if (name === "react" || name === "react/jsx-runtime") return require(name);
     if (name === "next/link") return ({ children, ...props }) => React.createElement("a", props, children);
@@ -21,7 +23,7 @@ test("guests see only a closed window linking to login, without pet stats or jou
     if (name === "./MoruRoom") return { ROOM_SCENES: [] };
     if (name === "@/lib/pet") return { EMPTY_ANSWERS: {} };
     if (name === "@/lib/storage" || name === "@/lib/auth") return {};
-    return empty;
+    return stub;
   };
   vm.runInNewContext(js, { require: mockRequire, module, exports: module.exports });
   const html = renderToStaticMarkup(React.createElement(module.exports.default, { userId: null }));
