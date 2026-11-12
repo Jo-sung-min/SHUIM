@@ -30,8 +30,12 @@ const LOOKS: Record<string, { hair: string; dress: string }> = {
  * stage 는 오늘의 기분(docs/MORU_MOOD_SYNC.md, 1 울적해 … 5 행복해): 깨어 있는 평소(idle)의 얼굴만 바꾼다.
  * 가라앉은 날은 눈꺼풀이 내려오고(1단계는 이불을 두른다), 가벼운 날은 입꼬리가 올라간다. 손길·식사·잠의 얼굴은 어느 날이나 같다
  */
-export default function MoruCompanion({ appearance = "moru", mood, level = 1, stage = 3 }: { appearance?: string; mood: MoruMood; level?: number; stage?: MoodStage }) {
-  if (appearance === "moring") return <MoringSprite mood={mood} level={level} stage={stage} />;
+export default function MoruCompanion({ appearance = "moru", mood, level = 1, stage = 3, talk = null }: {
+  appearance?: string; mood: MoruMood; level?: number; stage?: MoodStage;
+  /** 말 걸기에서 고른 기분(TALK_TOPICS id). 감정마다 얼굴이 따로 있는 모링만 쓴다 */
+  talk?: string | null;
+}) {
+  if (appearance === "moring") return <MoringSprite mood={mood} level={level} stage={stage} talk={talk} />;
   const look = LOOKS[appearance];
   if (!look) return <MoruSprite mood={mood} level={level} stage={stage} />;
   const boy = appearance === "leo";

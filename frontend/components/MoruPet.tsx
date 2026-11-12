@@ -63,6 +63,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [needsLogin, setNeedsLogin] = useState(false);
   const [message, setMessage] = useState(IDLE_LINE);
   const [mood, setMood] = useState<MoruMood>("idle");
+  const [talkFeel, setTalkFeel] = useState<string | null>(null); // 말 걸기에서 고른 기분: 감정마다 얼굴이 있는 친구(모링)가 그 얼굴로 답한다
   const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | "decor" | "mood" | null>(null);
   // 꾸미기: 꾸미는 중이면 방의 자리마다 동그라미가 뜨고, 자리를 누르면 가구 고르기 시트가 열린다
   const [decorating, setDecorating] = useState(false);
@@ -115,7 +116,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   }, [celebration]);
   const react = useCallback((next: MoruMood, text: string) => {
     if (reactionTimer.current) clearTimeout(reactionTimer.current);
-    setMood(next); setMessage(text);
+    setMood(next); setMessage(text); setTalkFeel(null);
     setMurmur(null);
     reactionTimer.current = setTimeout(() => { setMood("idle"); setMessage(IDLE_LINE); }, 4200);
   }, []);
@@ -350,7 +351,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const endPress = () => { press.current = null; if (hugTimer.current) clearTimeout(hugTimer.current); };
 
   /** 말 걸기: 기분을 고르면 모루가 한 줄 답한다 */
-  const talk = (replies: string[]) => { setPanel(null); if (whileSleeping()) return; haptic(8); react("pet", say(replies)); void care("talk"); };
+  const talk = (replies: string[], feel: string) => { setPanel(null); if (whileSleeping()) return; haptic(8); react("pet", say(replies)); setTalkFeel(feel); void care("talk"); };
   /** 먼지 뭉치를 톡 눌러 치운다 (말끔함 한 칸). 화면에서 먼저 사라지고 서버가 뒤따른다 */
   const sweep = (spot: number) => {
     haptic(6);
@@ -529,7 +530,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           onPointerCancel={endPress}
           onClick={(e) => { if (e.detail === 0) gesture("tap"); /* 키보드·보조 기기 */ }}
           onContextMenu={(e) => e.preventDefault()}>
-          <MoruCompanion appearance={appearance} mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} stage={stage} />
+          <MoruCompanion appearance={appearance} mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} stage={stage} talk={thinking ? null : talkFeel} />
           {touch === "bath" && <span className={styles.bubbles} aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>}
         </button>
         <span className={styles.dusk} data-phase={phase} data-off={nightly && off ? "" : undefined} aria-hidden="true" />
@@ -560,7 +561,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         {meters.map(([label, value]) => <span key={label} role="img" aria-label={`${label} ${value}/4`}><b>{label}</b>{[0, 1, 2, 3].map((i) => <HeartIcon key={i} on={i < value} />)}</span>)}
       </div>}
       {panel === "talk" && <div className={styles.talk} role="group" aria-label={`${petName}에게 말 걸기`}>
-        {TALK_TOPICS.map((topic) => <button key={topic.id} type="button" onClick={() => talk(talkReplies(appearance, topic))}>{topic.label}</button>)}
+        {TALK_TOPICS.map((topic) => <button key={topic.id} type="button" onClick={() => talk(talkReplies(appearance, topic), topic.id)}>{topic.label}</button>)}
       </div>}
       {/* 돌보기: 간식·목욕·안아 주기·불. 할 수 없는 것은 이유를 한 줄로 */}
       {panel === "care" && pet && <div className={styles.care} role="group" aria-label={`${petName} 돌보기`}>

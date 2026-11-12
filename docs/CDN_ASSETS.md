@@ -90,6 +90,7 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 - **모루 꾸미기 가구 36개, 모링 4프레임 띠 4개:** 컴포넌트 옆에 두고 번들로 내보내던 WebP를 S3 `moru/decor/<id>-v1.webp`, `moru/moring/moring-<표정>-v1.webp`로 옮겼습니다. 코드는 `assetUrl()`로 읽고 원본 픽셀 크기는 `MoruDecor.tsx`의 `ART_SIZE`에 둡니다. 컴포넌트 폴더의 그림 확장자는 `.gitignore`에 넣어, 그림이 다시 번들로 들어가지 않게 했습니다.
 - **명화 큐레이션 10장(V39):** 피드가 메트로폴리탄 미술관 원본 JPG(장당 2.2~6.2MB, 합계 44.5MB)를 바로 읽고 있었습니다. 9:16 상자에 cover로 보이던 가운데 영역을 sRGB로 맞춰 1080x1920 WebP로 만들고(합계 4.0MB), S3 `feed/curation/met-<작품ID>-v1.webp`에 올렸습니다. V50 마이그레이션이 글의 주소를 바꿉니다. 원본 주소는 `frontend/lib/curation-nov11.json`의 `image`에, CDN 주소는 `cdnImage`에 있습니다. V39 생성 스크립트 `--check` 결과는 그대로입니다.
 - 50개 모두 `--verify`로 SHA256·형식·CORS를 확인한 뒤 로컬 사본을 지웠습니다.
+- **모링 감정 띠 6개(같은 날 추가):** `moru/moring/moring-{gloomy,light,joy,cozy,worry,curious}-v1.webp`(한 칸 300×350, 51~72KB). `--apply --only moru/moring/`로 올리고 `--verify`로 확인한 뒤 로컬 사본을 지웠습니다. 만든 법은 [MORU_TAMAGOTCHI.md](MORU_TAMAGOTCHI.md)의 "캐릭터".
 
 ### 업로드 스크립트 변경
 
