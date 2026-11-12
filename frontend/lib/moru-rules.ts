@@ -111,6 +111,8 @@ export function hasBatchim(word: string): boolean {
 export const callName = (name: string): string => (name.trim() ? `${name.trim()}${hasBatchim(name) ? "아" : "야"}, ` : "");
 /** 모루가 / 콩이가 / 별님이 … */
 export const subject = (name: string): string => `${name}${hasBatchim(name) ? "이" : "가"}`;
+/** 친근하게 부르는 주어: 먕먕 → 먕먕이가, 모루 → 모루가 */
+export const nickSubject = (name: string): string => `${name}${hasBatchim(name) ? "이가" : "가"}`;
 
 /* ---------- 오늘의 하늘: 날씨는 사용자가 고르지 않고 날마다 무작위로 정해진다 ---------- */
 

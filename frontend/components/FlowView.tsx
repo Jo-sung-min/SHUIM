@@ -10,6 +10,7 @@ import { IconChart, IconSparkle } from "./Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
 import MoruCompanion from "./MoruCompanion";
 import { flowLine, loadCompanion } from "@/lib/moru";
+import { nickSubject } from "@/lib/moru-rules";
 import moruStyles from "./MoruPet.module.css";
 
 /**
@@ -111,7 +112,7 @@ export default function FlowView({ onWrite, scrollKey }: { onWrite: () => void; 
       </div>
 
       <Link className="btn block ghost" href="/summary" style={{ marginTop: 16 }}>
-        <IconSparkle style={{ width: 18, height: 18 }} /> 이 흐름 AI로 정리하기
+        <IconSparkle style={{ width: 18, height: 18 }} /> {nickSubject(companion.name)} 정리해 줄게
       </Link>
     </>
   );

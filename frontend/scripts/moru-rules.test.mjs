@@ -8,7 +8,7 @@ const typed = await readFile(new URL("../lib/moru-rules.ts", import.meta.url), "
 const source = stripTypeScriptTypes(typed, { mode: "transform" }).replace(/\bexport\s+/g, "");
 const context = { Intl, Date, Math, Number };
 vm.runInNewContext(`${source}\nglobalThis.rules = { koreaHour, dueMeals, mealStatus, dayPhase, isNightOutside, nightKey, lightsOff, isAsleep,
-  rubStats, isTickle, isStartle, touchSpot, pickLine, hasBatchim, callName, subject, HUG_MS, STARTLE_TAPS, fullness, dustCount, dailySky, unitHash };`, context);
+  rubStats, isTickle, isStartle, touchSpot, pickLine, hasBatchim, callName, subject, nickSubject, HUG_MS, STARTLE_TAPS, fullness, dustCount, dailySky, unitHash };`, context);
 const r = context.rules;
 
 test("the clock is Korea time regardless of the device zone", () => {
@@ -105,6 +105,8 @@ test("names are called with the right particle", () => {
   assert.equal(r.callName(""), "");
   assert.equal(r.subject("모루"), "모루가");
   assert.equal(r.subject("별님"), "별님이");
+  assert.equal(r.nickSubject("먕먕"), "먕먕이가");
+  assert.equal(r.nickSubject("모루"), "모루가");
   assert.equal(r.hasBatchim("Moru"), false);
 });
 
