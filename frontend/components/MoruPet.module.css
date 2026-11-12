@@ -356,3 +356,29 @@
 .petButton[data-touch="hug"] .sprite[data-moring]{animation:moringPuff 1.8s ease both}
 @keyframes moringPuff{0%,100%{transform:scale(1)}20%{transform:scale(1.08,1.05)}45%{transform:scale(1.04,1.02)}70%{transform:scale(1.06,1.03)}}
 @media(prefers-reduced-motion:reduce){.moringLoop{animation:none}}
+/* ---------- ☰ 메뉴 · 돌보기 판 (양옆 기둥 대신) ----------
+   메뉴는 오른쪽 위 ☰ 아래에, 돌보기·말 걸기 판은 아래 패널 바로 위에 뜬다. 한 번에 하나만 열리고, 바깥(투명 막)을 누르면 닫힌다 */
+.panelScrim{position:absolute;inset:0;z-index:5;padding:0;border:0;background:transparent;cursor:default;-webkit-tap-highlight-color:transparent}
+.menu,.care{position:absolute;z-index:6;color:var(--hd-ink);isolation:isolate}
+.menu::before,.care::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--hd-paper);border:2.5px solid var(--hd-ink);border-radius:18px 22px 17px 21px/21px 17px 22px 18px;box-shadow:0 3px 0 var(--hd-shadow);filter:url(#moru-sketch)}
+.menu{top:calc(var(--edge) + var(--hud-h) + 6px);right:var(--edge);display:grid;min-width:172px;padding:6px;animation:talkIn .2s var(--ease)}
+.menu button{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px 0 10px;border:0;border-radius:12px;background:none;color:var(--hd-ink);font:inherit;font-size:14px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.menu button+button{border-top:1.5px dashed #e6d3b3;border-radius:0}
+.menu button svg{width:21px;height:21px;flex:none}
+.menu button:active{background:var(--hd-key)}
+.menu button:disabled{opacity:.45;cursor:default}
+.care{left:var(--edge);right:var(--edge);bottom:calc(var(--edge) + var(--pad-h) + 8px);display:grid;grid-template-columns:1fr 1fr;gap:9px 8px;padding:12px;animation:talkIn .25s var(--ease)}
+.care button{position:relative;isolation:isolate;display:flex;align-items:center;gap:8px;min-height:52px;padding:4px 10px 7px;border:0;background:none;color:var(--hd-ink);font:inherit;font-size:13px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s ease}
+.care button::before{content:"";position:absolute;inset:0;z-index:-1;border:2.5px solid var(--hd-ink);border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background:var(--hd-key);box-shadow:inset 0 -4px 0 var(--hd-lip);filter:url(#moru-sketch)}
+.care button svg{width:22px;height:22px;flex:none}
+.care button span{display:grid;line-height:1.25}
+.care button small{color:var(--hd-ink-2);font-size:11px}
+.care button:not(:disabled):active{transform:translateY(2px)}
+.care button:not(:disabled):active::before{box-shadow:inset 0 -1px 0 var(--hd-lip)}
+.card .care button:disabled{opacity:.55;cursor:default}
+.card .care button:disabled::before{background:#f6ecd8;box-shadow:none}
+.hudIcon svg{width:17px;height:17px}
+.card[data-full] .menu{top:calc(var(--edge) + env(safe-area-inset-top) + var(--hud-h) + 6px)}
+.card[data-full] .care{bottom:calc(var(--edge) + env(safe-area-inset-bottom) + var(--pad-h) + 8px)}
+/* 양옆 기둥이 없어져 하트 줄은 위쪽 줄 아래에 폭 전체로 */
+.card[data-full] .meters{left:var(--edge);right:var(--edge)}

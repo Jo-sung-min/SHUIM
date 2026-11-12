@@ -20,7 +20,6 @@ test("guests see only a closed window linking to login, without pet stats or jou
     if (name === "next/link") return ({ children, ...props }) => React.createElement("a", props, children);
     if (name.endsWith(".module.css")) return new Proxy({}, { get: (_, key) => key === "__esModule" ? false : String(key) });
     if (name === "./ui") return { Sheet: empty };
-    if (name === "./MoruRoom") return { ROOM_SCENES: [] };
     if (name === "@/lib/pet") return { EMPTY_ANSWERS: {} };
     if (name === "@/lib/storage" || name === "@/lib/auth") return {};
     return stub;

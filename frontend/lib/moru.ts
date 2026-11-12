@@ -30,6 +30,14 @@ function devParam(name: string): string | null {
   return new URLSearchParams(window.location.search).get(name);
 }
 export const devLook = (): string | null => devParam("moruLook");
+/** 개발 확인용: ?moruWeather=rain|snow|clear, ?moruLand=city|forest 로 오늘의 하늘을 바꿔 본다 */
+export function devSky(): { weather?: "rain" | "snow" | "clear"; land?: "city" | "forest" } {
+  const weather = devParam("moruWeather"), land = devParam("moruLand");
+  return {
+    ...(weather === "rain" || weather === "snow" || weather === "clear" ? { weather } : {}),
+    ...(land === "city" || land === "forest" ? { land } : {}),
+  };
+}
 export function devHome(): number | null {
   const raw = devParam("moruHome");
   return raw !== null && /^[0-8]$/.test(raw) ? Number(raw) : null;

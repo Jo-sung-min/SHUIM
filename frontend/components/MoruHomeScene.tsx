@@ -1,4 +1,5 @@
 import MoruAtticScene from "./MoruAtticScene";
+import { DEFAULT_SKY, type Sky } from "./MoruScene";
 import MoruTrainScene from "./MoruTrainScene";
 import MoruWindowBedScene from "./MoruWindowBedScene";
 
@@ -8,9 +9,9 @@ export const HOME_NAMES: Record<number, string> = {
   3: "이불 요새", 4: "캠핑카", 5: "숲속 오두막", 6: "유리 온실", 7: "책방 창가", 8: "관람차 칸",
 };
 
-/** 공간마다의 그림: 0 기차 침대칸 · 1 다락방 · 2 창가 침대방 (그 뒤는 아직 준비 중이라 창가 침대방을 쓴다) */
-export default function MoruHomeScene({ homeId = 0, scene = 0 }: { homeId?: number; scene?: number }) {
-  if (homeId === 0) return <MoruTrainScene scene={scene} />;
-  if (homeId === 1) return <MoruAtticScene scene={scene} />;
-  return <MoruWindowBedScene scene={scene} />;
+/** 공간마다의 그림: 0 기차 침대칸 · 1 다락방 · 2 창가 침대방 (그 뒤는 아직 준비 중이라 창가 침대방을 쓴다). 창밖은 오늘의 하늘 */
+export default function MoruHomeScene({ homeId = 0, sky = DEFAULT_SKY }: { homeId?: number; sky?: Sky }) {
+  if (homeId === 0) return <MoruTrainScene sky={sky} />;
+  if (homeId === 1) return <MoruAtticScene sky={sky} />;
+  return <MoruWindowBedScene sky={sky} />;
 }

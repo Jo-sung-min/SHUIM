@@ -108,48 +108,82 @@ function Weather({ snow, color, width, height, moving }: { snow: boolean; color:
 const FAR: Ink = { line: "#8b8f9c", width: 1.3 }, MID: Ink = { line: "#5d5f6c", width: 1.7 }, NEAR: Ink = { line: "#3d2f2c", width: 2.1 };
 const NIGHT_FAR: Ink = { line: "#0e1226", width: 1.3 }, NIGHT_MID: Ink = { line: "#080a18", width: 1.7 }, NIGHT_NEAR: Ink = { line: "#05060f", width: 2.1 };
 const SNOW_FAR: Ink = { line: "#94a2ae", width: 1.3 }, SNOW_MID: Ink = { line: "#4c5a66", width: 1.7 }, SNOW_NEAR: Ink = { line: "#2f3a43", width: 2.1 };
+const GREEN_FAR: Ink = { line: "#86958c", width: 1.3 }, GREEN_MID: Ink = { line: "#4f5f55", width: 1.7 }, GREEN_NEAR: Ink = { line: "#33302a", width: 2.1 };
+
+/** 창밖의 하늘: 풍경(도시·숲) × 날씨(비·눈·맑음) × 낮밤. 날씨는 날마다 무작위로 정해진다 (moru-rules 의 dailySky) */
+export interface Sky { land: "city" | "forest"; weather: "rain" | "snow" | "clear"; night: boolean }
+export const DEFAULT_SKY: Sky = { land: "city", weather: "rain", night: false };
+
+/** 해·달·별: 띠와 함께 흐르지 않고 하늘에 붙어 있다 */
+function Lights({ sky, width }: { sky: Sky; width: number }) {
+  if (sky.weather !== "clear") return null;
+  const x = width - 42;
+  if (!sky.night) return <svg className={styles.skyLights} viewBox={`0 0 ${width} 90`} width={width} height={90}>
+    <circle cx={x} cy={38} r="26" fill="#fff4c6" opacity=".45" />
+    <circle cx={x} cy={38} r="14" fill="#ffe9a8" stroke="#d9a55e" strokeWidth="1.8" />
+  </svg>;
+  const rnd = seeded(91), stars: ReactNode[] = [];
+  for (let i = 0; i < Math.round(width / 26); i++) {
+    const sx = 10 + rnd() * (width - 20), sy = 8 + rnd() * 80, r = 1.6 + rnd() * 1.6;
+    stars.push(<path key={i} d={`M${sx} ${sy - r * 2}Q${sx + r * 0.3} ${sy - r * 0.3} ${sx + r * 2} ${sy}Q${sx + r * 0.3} ${sy + r * 0.3} ${sx} ${sy + r * 2}Q${sx - r * 0.3} ${sy + r * 0.3} ${sx - r * 2} ${sy}Q${sx - r * 0.3} ${sy - r * 0.3} ${sx} ${sy - r * 2}Z`} fill="#fff3cf" opacity={0.55 + rnd() * 0.4} />);
+  }
+  return <svg className={styles.skyLights} viewBox={`0 0 ${width} 110`} width={width} height={110}>
+    {stars}
+    <circle cx={x} cy={36} r="22" fill="#fff3cf" opacity=".18" />
+    <path d={`M${x + 6} ${22}A14 14 0 1 0 ${x + 8} ${50}A11 11 0 1 1 ${x + 6} ${22}Z`} fill="#fff1c4" stroke="#c9a96a" strokeWidth="1.6" strokeLinejoin="round" />
+  </svg>;
+}
 
 /**
- * 창밖: 0 비 오는 도시 · 1 눈 내리는 숲 · 2 비 오는 밤. 방과 같은 손그림: 겹마다 외곽선, 살짝 떨리는 선, 둥근 모서리, 차분한 색.
+ * 창밖. 방과 같은 손그림: 겹마다 외곽선, 살짝 떨리는 선, 둥근 모서리, 차분한 색.
  * moving 이면 먼 곳·가운데·가까운 곳이 서로 다른 빠르기로 지나간다 (기차). 아니면 풍경은 멈춰 있고 비·눈만 내린다.
  */
-export function Outside({ scene, moving = false, width, height, className }: { scene: number; moving?: boolean; width: number; height: number; className: string }) {
+export function Outside({ sky, moving = false, width, height, className }: { sky: Sky; moving?: boolean; width: number; height: number; className: string }) {
   const lamp = useId();
-  const view = scene === 1 || scene === 2 ? scene : 0;
   const pass = (seconds: number) => (moving ? seconds : undefined);
-  return <div className={`${styles.view} ${className}`} data-scene={view}>
-    {view === 1 ? <>
+  const { land, weather, night } = sky;
+  const snowy = weather === "snow";
+  const cloudFill = night ? "#2c3460" : weather === "clear" ? "#f4f7f8" : "#d6dde2";
+  return <div className={`${styles.view} ${className}`} data-sky={`${weather}-${night ? "night" : "day"}`}>
+    <Lights sky={sky} width={width} />
+    {weather !== "snow" && <Strip pass={pass(120)}>{clouds(night ? 41 : 13, night ? 40 : 30, cloudFill, night ? NIGHT_FAR : FAR)}</Strip>}
+    {land === "forest" ? (night ? <>
+      <Strip pass={pass(80)}>{hill("M-4 132C50 116 96 140 150 128S262 112 324 132", snowy ? "#2a3356" : "#1d2442", NIGHT_FAR)}{pines(5, 134, 20, 32, 26, "#1f2747", NIGHT_FAR, snowy ? "#8e9bc0" : undefined)}</Strip>
+      <Strip pass={pass(30)}>{hill("M-4 162C70 150 120 170 190 158S280 150 324 162", snowy ? "#323c63" : "#171d38", NIGHT_FAR)}{pines(9, 164, 46, 84, 40, "#161b35", NIGHT_MID, snowy ? "#aab5d6" : undefined)}</Strip>
+      <Strip pass={pass(9)}>{hill("M-4 190C80 182 150 196 230 186C270 182 300 186 324 190", snowy ? "#3b4670" : "#10142b", NIGHT_FAR)}{moving ? pines(13, 196, 110, 170, 150, "#0f1329", NIGHT_NEAR, snowy ? "#b8c2e0" : undefined) : pines(13, 198, 40, 70, 120, "#0f1329", NIGHT_NEAR, snowy ? "#b8c2e0" : undefined)}</Strip>
+    </> : snowy ? <>
       <Strip pass={pass(80)}>{hill("M-4 132C50 116 96 140 150 128S262 112 324 132", "#e4ebf0", SNOW_FAR)}{pines(5, 134, 20, 32, 26, "#b7c5d0", SNOW_FAR, "#f3f7f9")}</Strip>
       <Strip pass={pass(30)}>{hill("M-4 162C70 150 120 170 190 158S280 150 324 162", "#f0f4f7", SNOW_FAR)}{pines(9, 164, 46, 84, 40, "#7d93a1", SNOW_MID, "#f6f9fb")}</Strip>
       <Strip pass={pass(9)}>{hill("M-4 190C80 182 150 196 230 186C270 182 300 186 324 190", "#fbfcfd", SNOW_FAR)}{moving ? pines(13, 196, 110, 170, 150, "#5a6f7c", SNOW_NEAR, "#eef3f6") : pines(13, 198, 40, 70, 120, "#5a6f7c", SNOW_NEAR, "#eef3f6")}</Strip>
-      <Weather snow color="#ffffff" width={width} height={height} moving={moving} />
-    </> : view === 2 ? <>
-      <Strip pass={pass(120)}>{clouds(41, 40, "#2c3460", NIGHT_FAR)}</Strip>
+    </> : <>
+      <Strip pass={pass(80)}>{hill("M-4 132C50 116 96 140 150 128S262 112 324 132", "#bccbc0", GREEN_FAR)}{pines(5, 134, 20, 32, 26, "#a2b7a8", GREEN_FAR)}</Strip>
+      <Strip pass={pass(30)}>{hill("M-4 162C70 150 120 170 190 158S280 150 324 162", "#a9bda9", GREEN_FAR)}{pines(9, 164, 46, 84, 40, "#6f8f7b", GREEN_MID)}</Strip>
+      <Strip pass={pass(9)}>{hill("M-4 190C80 182 150 196 230 186C270 182 300 186 324 190", "#8ca58f", GREEN_FAR)}{moving ? pines(13, 196, 110, 170, 150, "#4f6d5b", GREEN_NEAR) : pines(13, 198, 40, 70, 120, "#4f6d5b", GREEN_NEAR)}</Strip>
+    </>) : night ? <>
       <Strip pass={pass(90)}>{skyline(21, 150, 34, 96, "#232a4d", NIGHT_FAR, ["#ffd98a", "#ffc46b", "#a8d6e4"], 0.22)}</Strip>
       <Strip pass={pass(32)}>{skyline(27, 172, 22, 60, "#181d3a", NIGHT_MID, ["#ffe2a0", "#ffb86a"], 0.34)}</Strip>
       <Strip pass={pass(7)}>
         <defs><radialGradient id={lamp}><stop offset="0" stopColor="#ffe2a0" stopOpacity=".85" /><stop offset="1" stopColor="#ffe2a0" stopOpacity="0" /></radialGradient></defs>
-        {hill("M-4 192C90 186 220 196 324 192", "#10132a", NIGHT_NEAR)}
+        {hill("M-4 192C90 186 220 196 324 192", snowy ? "#3b4670" : "#10132a", NIGHT_NEAR)}
         {(moving ? [70, 230] : [150]).map((x) => <g key={x} fill="#10132a" stroke={NIGHT_NEAR.line} strokeWidth={NIGHT_NEAR.width} strokeLinejoin="round">
           <path d={moving ? `M${x - 2.5} 60h5v140h-5zM${x} 59h20v4.500H${x}z` : `M${x - 2} 140h4v60h-4zM${x} 139h13v3.500H${x}z`} />
           <circle cx={x + (moving ? 17 : 11)} cy={moving ? 66 : 145} r={moving ? 26 : 16} fill={`url(#${lamp})`} stroke="none" />
           <circle cx={x + (moving ? 17 : 11)} cy={moving ? 66 : 145} r={moving ? 3.5 : 2.5} fill="#fff3cf" strokeWidth="1.2" />
         </g>)}
       </Strip>
-      <Weather snow={false} color="#c9d8ff" width={width} height={height} moving={moving} />
     </> : <>
-      <Strip pass={pass(120)}>{clouds(13, 30, "#d6dde2", FAR)}</Strip>
-      <Strip pass={pass(90)}>{skyline(3, 146, 30, 92, "#adbbc6", FAR)}</Strip>
-      <Strip pass={pass(34)}>{skyline(8, 170, 20, 62, "#8d9fad", MID, ["#f7e3a8"], 0.14)}{pines(4, 176, 16, 26, 70, "#7f9a8b", MID)}</Strip>
+      <Strip pass={pass(90)}>{skyline(3, 146, 30, 92, weather === "clear" ? "#b6c6d2" : "#adbbc6", FAR)}</Strip>
+      <Strip pass={pass(34)}>{skyline(8, 170, 20, 62, weather === "clear" ? "#95a9b8" : "#8d9fad", MID, ["#f7e3a8"], 0.14)}{pines(4, 176, 16, 26, 70, "#7f9a8b", MID)}</Strip>
       <Strip pass={pass(8)}>
-        {hill("M-4 192C60 184 110 196 170 188S270 184 324 192", "#74867f", NEAR)}
+        {hill("M-4 192C60 184 110 196 170 188S270 184 324 192", snowy ? "#eef3f6" : weather === "clear" ? "#7e9886" : "#74867f", NEAR)}
         {moving && <g stroke={NEAR.line} strokeLinejoin="round" strokeLinecap="round">
           <path fill="none" strokeWidth="1.3" d="M-70 47Q10 61 90 47T250 47T410 47" />
           {[90, 250].map((x) => <path key={x} fill="#5b5452" strokeWidth={NEAR.width} d={`M${x - 2.5} 30h5v170h-5zM${x - 15} 43h30v4.500h-30z`} />)}
         </g>}
       </Strip>
-      <Weather snow={false} color="#eef4f8" width={width} height={height} moving={moving} />
     </>}
+    {weather === "rain" && <Weather snow={false} color={night ? "#c9d8ff" : "#eef4f8"} width={width} height={height} moving={moving} />}
+    {weather === "snow" && <Weather snow color="#ffffff" width={width} height={height} moving={moving} />}
   </div>;
 }
 

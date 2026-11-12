@@ -1,4 +1,4 @@
-import { Bulb, Outside, Stage } from "./MoruScene";
+import { Bulb, DEFAULT_SKY, Outside, Stage, type Sky } from "./MoruScene";
 import styles from "./MoruRoom.module.css";
 
 /** 묶어 둔 커튼 한 쪽 (오른쪽은 뒤집어 쓴다) */
@@ -13,8 +13,8 @@ function Curtain() {
 }
 
 /** 기차 침대칸: 창밖 풍경이 천천히 지나가고, 모루는 창가 침대에 앉아 쉰다 */
-export default function MoruTrainScene({ scene = 0 }: { scene?: number }) {
-  return <Stage view={<Outside scene={scene} moving width={208} height={208} className={styles.viewTrain} />}>{(glow) => <>
+export default function MoruTrainScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
+  return <Stage view={<Outside sky={sky} moving width={208} height={208} className={styles.viewTrain} />}>{(glow) => <>
     {/* 나무 벽: 창 자리만 비운다 */}
     <path stroke="none" fill="#8c5f47" fillRule="evenodd" d="M-10-10H490V710H-10ZM158 238h164a18 18 0 0 1 18 18v164a18 18 0 0 1-18 18H158a18 18 0 0 1-18-18V256a18 18 0 0 1 18-18Z" />
     <path stroke="none" fill="#7a4f3c" d="M-10-10H490V198H-10Z" />

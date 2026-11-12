@@ -8,7 +8,7 @@ const typed = await readFile(new URL("../lib/moru-rules.ts", import.meta.url), "
 const source = stripTypeScriptTypes(typed, { mode: "transform" }).replace(/\bexport\s+/g, "");
 const context = { Intl, Date, Math, Number };
 vm.runInNewContext(`${source}\nglobalThis.rules = { koreaHour, dueMeals, mealStatus, dayPhase, isNightOutside, nightKey, lightsOff, isAsleep,
-  rubStats, isTickle, isStartle, touchSpot, pickLine, hasBatchim, callName, subject, HUG_MS, STARTLE_TAPS, fullness, dustCount };`, context);
+  rubStats, isTickle, isStartle, touchSpot, pickLine, hasBatchim, callName, subject, HUG_MS, STARTLE_TAPS, fullness, dustCount, dailySky, unitHash };`, context);
 const r = context.rules;
 
 test("the clock is Korea time regardless of the device zone", () => {
@@ -106,4 +106,16 @@ test("names are called with the right particle", () => {
   assert.equal(r.subject("모루"), "모루가");
   assert.equal(r.subject("별님"), "별님이");
   assert.equal(r.hasBatchim("Moru"), false);
+});
+
+test("today's sky is random per account and day, but fixed within a day", () => {
+  assert.deepEqual(r.dailySky("user-a", "2026-11-12"), r.dailySky("user-a", "2026-11-12"));
+  const seen = { rain: 0, clear: 0, snow: 0, city: 0, forest: 0 };
+  for (let d = 1; d <= 400; d++) {
+    const sky = r.dailySky("user-a", `2026-day-${d}`);
+    seen[sky.weather]++; seen[sky.land]++;
+  }
+  for (const key of Object.keys(seen)) assert.ok(seen[key] > 30, `${key} appears ${seen[key]} times`);
+  const people = new Set(Array.from({ length: 12 }, (_, i) => JSON.stringify(r.dailySky(`user-${i}`, "2026-11-12"))));
+  assert.ok(people.size > 1, "different accounts can get different skies on the same day");
 });

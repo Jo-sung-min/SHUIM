@@ -111,3 +111,26 @@ export function hasBatchim(word: string): boolean {
 export const callName = (name: string): string => (name.trim() ? `${name.trim()}${hasBatchim(name) ? "아" : "야"}, ` : "");
 /** 모루가 / 콩이가 / 별님이 … */
 export const subject = (name: string): string => `${name}${hasBatchim(name) ? "이" : "가"}`;
+
+/* ---------- 오늘의 하늘: 날씨는 사용자가 고르지 않고 날마다 무작위로 정해진다 ---------- */
+
+export type Weather = "rain" | "snow" | "clear";
+export type Land = "city" | "forest";
+/** 글자에서 0~1 사이 수 (FNV-1a). 같은 글자면 늘 같은 수 */
+export function unitHash(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 4294967296;
+}
+/**
+ * 오늘의 날씨와 창밖 풍경: 계정과 날짜(한국 날짜)로 정해서 하루 동안은 같고, 사람마다 다르다.
+ * 비 40% · 맑음 35% · 눈 25%. 눈 오는 날은 숲이 조금 더 잦다. 낮·밤은 시계를 따른다 (isNightOutside)
+ */
+export function dailySky(who: string, date: string): { land: Land; weather: Weather } {
+  const w = unitHash(`${who}|${date}|weather`), l = unitHash(`${who}|${date}|land`);
+  const weather: Weather = w < 0.4 ? "rain" : w < 0.75 ? "clear" : "snow";
+  const land: Land = l < (weather === "snow" ? 0.55 : 0.35) ? "forest" : "city";
+  return { land, weather };
+}
+/** 한국 날짜 (YYYY-MM-DD). 서버가 날짜를 주기 전에도 오늘의 하늘을 정할 수 있게 */
+export const koreaDate = (now: Date = new Date()): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(now);

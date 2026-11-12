@@ -1,4 +1,4 @@
-import { Outside, Stage } from "./MoruScene";
+import { DEFAULT_SKY, Outside, Stage, type Sky } from "./MoruScene";
 import styles from "./MoruRoom.module.css";
 
 /** 초 하나: 몸통과 불꽃, 둘레의 빛 */
@@ -12,8 +12,8 @@ function Candle({ x, y, h = 14 }: { x: number; y: number; h?: number }) {
 const BOOKS: [number, number, number, string][] = [[362, 10, 22, "#b5694f"], [372, 8, 28, "#e5b65f"], [380, 11, 24, "#7f9d78"], [391, 9, 20, "#fff3dc"], [400, 10, 26, "#cfbdf2"], [410, 12, 22, "#b5694f"], [422, 9, 28, "#8fa3bd"], [431, 10, 22, "#e5b65f"], [441, 11, 25, "#fff3dc"], [452, 9, 21, "#7f9d78"], [461, 12, 27, "#b5694f"]];
 
 /** 창가 침대방: 천장까지 닿는 큰 창 옆에 붙인 침대, 창턱의 책과 촛불. 창밖은 멈춰 있고 비·눈만 내린다 */
-export default function MoruWindowBedScene({ scene = 0 }: { scene?: number }) {
-  return <Stage view={<Outside scene={scene} width={330} height={352} className={styles.viewBed} />}>{(glow) => <>
+export default function MoruWindowBedScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
+  return <Stage view={<Outside sky={sky} width={330} height={352} className={styles.viewBed} />}>{(glow) => <>
     {/* 벽과 천장: 큰 창 자리만 비운다 */}
     <path stroke="none" fill="#667089" fillRule="evenodd" d="M-10-10H490V710H-10ZM158 128H490V468H158Z" />
     <path stroke="none" fill="#535c73" d="M-10-10H490V96H-10Z" />

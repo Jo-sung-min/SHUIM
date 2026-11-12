@@ -1,9 +1,9 @@
-import { Bulb, Outside, Stage } from "./MoruScene";
+import { Bulb, DEFAULT_SKY, Outside, Stage, type Sky } from "./MoruScene";
 import styles from "./MoruRoom.module.css";
 
 /** 다락방: 기울어진 지붕 아래 둥근 창, 바닥에 깐 요와 두꺼운 이불. 창밖은 멈춰 있고 비·눈만 내린다 */
-export default function MoruAtticScene({ scene = 0 }: { scene?: number }) {
-  return <Stage view={<Outside scene={scene} width={188} height={188} className={styles.viewAttic} />}>{(glow) => <>
+export default function MoruAtticScene({ sky = DEFAULT_SKY }: { sky?: Sky }) {
+  return <Stage view={<Outside sky={sky} width={188} height={188} className={styles.viewAttic} />}>{(glow) => <>
     {/* 박공벽: 둥근 창 자리만 비운다 */}
     <path stroke="none" fill="#dbb78f" fillRule="evenodd" d="M-10-10H490V710H-10ZM150 332a90 90 0 1 0 180 0a90 90 0 1 0-180 0Z" />
     <path fill="none" stroke="#b98f66" strokeWidth="1.6" opacity=".75" d="M-10 226C120 223 330 229 490 225M-10 262C60 260 120 264 172 262M308 262C360 260 430 264 490 261M-10 298C50 296 100 300 148 298M332 298C380 296 440 300 490 297M-10 334C50 332 100 336 142 334M338 334C380 332 440 336 490 333M-10 370C50 368 100 372 150 370M330 370C380 368 440 372 490 369M-10 406C60 404 120 408 177 406M303 406C360 404 430 408 490 405M-10 442C120 439 330 445 490 441" />

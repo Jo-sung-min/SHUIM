@@ -4,8 +4,12 @@
 .stage{position:absolute;left:50%;bottom:-100px;width:480px;height:700px;margin-left:-240px;overflow:hidden;pointer-events:none}
 .cabin{position:absolute;inset:0;display:block;will-change:transform}
 .view{position:absolute;overflow:hidden;background:linear-gradient(#a7b6c2,#cdd6da 68%,#bcc5c3)}
-.view[data-scene="1"]{background:linear-gradient(#bfcdd9,#e6edf1 70%)}
-.view[data-scene="2"]{background:linear-gradient(#1b2142,#2c3460 66%,#1f2546)}
+.view[data-sky="snow-day"]{background:linear-gradient(#bfcdd9,#e6edf1 70%)}
+.view[data-sky="clear-day"]{background:linear-gradient(#93c3e2,#cfe6f2 68%,#e8f2f2)}
+.view[data-sky="rain-night"]{background:linear-gradient(#1b2142,#2c3460 66%,#1f2546)}
+.view[data-sky="snow-night"]{background:linear-gradient(#1e2648,#34416d 70%)}
+.view[data-sky="clear-night"]{background:linear-gradient(#121834,#222c56 70%)}
+.skyLights{position:absolute;left:0;top:0;display:block}
 .viewTrain{left:136px;top:234px;width:208px;height:208px}
 .viewAttic{left:146px;top:238px;width:188px;height:188px;border-radius:50%}
 .viewBed{left:150px;top:120px;width:330px;height:352px}
