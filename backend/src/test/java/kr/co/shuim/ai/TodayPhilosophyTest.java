@@ -27,7 +27,7 @@ class TodayPhilosophyTest {
     private Request request(String mode, String note) {
         return new Request(mode, null, "2026-11-04", Map.of("mind", new Entry(2, null, note)), List.of("오늘 산책"),
             List.of(new RecentDay("2026-11-01", Map.of("mind", new Entry(-1, null, "과거의 걱정")), List.of())),
-            List.of(), List.of(), List.of(), List.of(), Map.of(mode, "관리자 말투 지침"));
+            List.of(), List.of(), List.of(), List.of(), Map.of(mode, "관리자 말투 지침"), null);
     }
 
     private void configureAi(String mode) {

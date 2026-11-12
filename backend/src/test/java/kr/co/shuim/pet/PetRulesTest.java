@@ -7,6 +7,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PetRulesTest {
     final LocalDate day = LocalDate.of(2026, 11, 11);
+    @Test void todaysRecordsFillFiveSlotsOnceAndNeverTakeThemBack() {
+        assertEquals(0, PetRules.fillRecords(0, 0));
+        assertEquals(0b00111, PetRules.fillRecords(0, 3));
+        assertEquals(0b11111, PetRules.fillRecords(0, 9));
+        assertEquals(0b00111, PetRules.fillRecords(0b00111, 1)); // 지워도 받은 칸은 그대로
+        assertEquals(0b01011, PetRules.fillRecords(0b01001, 3)); // 예전 5문항 칸도 다섯 칸 안에 센다
+        assertEquals(1, PetRules.reward(0b01001, PetRules.fillRecords(0b01001, 3)));
+    }
     @Test void automaticMealSlotsAreEightThirteenNineteen() {
         assertEquals(0, PetRules.due(7)); assertEquals(1, PetRules.due(8));
         assertEquals(1, PetRules.due(12)); assertEquals(2, PetRules.due(13));

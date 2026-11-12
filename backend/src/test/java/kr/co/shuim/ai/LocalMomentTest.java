@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Local fallback keeps today's facts separate from historical context. */
 class LocalMomentTest {
     private static Request req(String mode, Map<String, Entry> today, List<RecentDay> recent, List<String> todayDid) {
-        return new Request(mode, null, "2026-11-04", today, todayDid, recent, List.of(), List.of(), List.of(), List.of(), Map.of()).normalized();
+        return new Request(mode, null, "2026-11-04", today, todayDid, recent, List.of(), List.of(), List.of(), List.of(), Map.of(), null).normalized();
     }
 
     private static final List<RecentDay> RECENT = List.of(
@@ -67,11 +67,19 @@ class LocalMomentTest {
     }
 
     @Test
+    void companionNameIsTrimmedAndFallsBackToMoru() {
+        assertEquals("모루", TodayDtos.Request.companionName(null));
+        assertEquals("모루", TodayDtos.Request.companionName("  \n "));
+        assertEquals("콩이", TodayDtos.Request.companionName(" 콩\"이\n"));
+        assertEquals(20, TodayDtos.Request.companionName("가".repeat(40)).length());
+    }
+
+    @Test
     void localLoveUsesTodaysMemoEvenWhenNoDailyScoreExists() {
         Request b = new Request("love", null, "2026-11-04", Map.of(), List.of(), RECENT,
             List.of(new MemoIn("mind", "오늘 메모 속 이야기", false, "2026-11-04"),
                 new MemoIn("mind", "옛날 고정 메모", true, "2026-10-01")),
-            List.of(), List.of(), List.of(), Map.of()).normalized();
+            List.of(), List.of(), List.of(), Map.of(), null).normalized();
         Moment m = TodayService.localLove(b);
         assertTrue(m.lines().get(0).contains("오늘 메모 속 이야기"));
         assertFalse(m.toString().contains("옛날 고정 메모"));

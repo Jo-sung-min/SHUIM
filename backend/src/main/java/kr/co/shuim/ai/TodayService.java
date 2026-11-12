@@ -50,6 +50,8 @@ public class TodayService {
         // Saved administrator prompts must also preserve the dates of the supplied evidence.
         String system = override != null && !override.isBlank()
             ? cut(override, Prompts.MAX_LEN) + "\n\n" + Prompts.TEMPORAL_GROUNDING : Prompts.DEFAULTS.get(mode);
+        // 정리·칭찬·사랑은 모루가 건넨다: 관리자 프롬프트를 덮어써도 화자와 말투는 서버가 붙인다 (분석하기는 그대로)
+        if (!"review".equals(mode)) system += "\n\n" + Prompts.companion(b.companion());
         if (quote != null) {
             system += "\n\n" + PHILOSOPHY_CONTEXT_RULES;
             text += "\n\n" + quoteContext(quote);
@@ -261,54 +263,54 @@ public class TodayService {
                         bestD = a - p;
                     }
                 }
-                if (bestLabel != null && bestD != 0) moved = " 가장 크게 움직인 건 " + bestLabel + "(" + fmtScore(bestD) + ")이에요.";
+                if (bestLabel != null && bestD != 0) moved = " 가장 크게 움직인 건 " + bestLabel + "(" + fmtScore(bestD) + ")이야.";
             }
         }
 
         String momentumText = diff == null
-            ? "오늘 점수와 비교할 이전 점수가 함께 있을 때 오늘의 흐름을 살펴볼 수 있어요. 지금은 변화를 단정하지 않을게요."
-            : direction.equals("up") ? base + "보다 평균 +" + fmt1(diff) + " 올라왔어요." + moved
-            : direction.equals("down") ? base + "보다 평균 " + fmt1(diff) + " 내려갔어요." + moved + " 내려간 날도 기록했다는 게 이미 한 걸음이에요."
-            : base + "와 비슷한 자리를 지키고 있어요." + moved + " 흔들리지 않은 것도 힘이에요.";
+            ? "오늘 점수와 비교할 이전 점수가 함께 있으면 오늘의 흐름을 같이 볼 수 있어. 지금은 변화를 단정하지 않을게."
+            : direction.equals("up") ? base + "보다 평균 +" + fmt1(diff) + " 올라왔어." + moved
+            : direction.equals("down") ? base + "보다 평균 " + fmt1(diff) + " 내려갔어." + moved + " 내려간 날도 기록했다는 게 이미 한 걸음이야."
+            : base + "와 비슷한 자리를 지키고 있어." + moved + " 흔들리지 않은 것도 힘이야.";
 
-        String headline = diff == null ? "오늘의 이야기를 오늘의 속도로 살펴봐요"
-            : (direction.equals("up") ? "직전 기록보다 조금 올라온 오늘이에요" : direction.equals("down") ? "내려갔지만, 오늘의 기록을 남겼어요" : "직전 기록과 비슷한 오늘이에요");
+        String headline = diff == null ? "오늘의 이야기를 오늘의 속도로 같이 볼게"
+            : (direction.equals("up") ? "직전 기록보다 조금 올라온 오늘이야" : direction.equals("down") ? "내려갔지만, 오늘의 기록을 남겼어" : "직전 기록과 비슷한 오늘이야");
 
         List<String> highlights = new ArrayList<>();
-        if (!b.todayDid().isEmpty()) highlights.add("오늘 한 행동: " + String.join(", ", TodayDtos.head(b.todayDid(), 4)) + ". 오늘 직접 남긴 행동을 먼저 살펴봤어요.");
+        if (!b.todayDid().isEmpty()) highlights.add("오늘 한 행동: " + String.join(", ", TodayDtos.head(b.todayDid(), 4)) + ". 오늘 직접 남긴 행동을 먼저 살펴봤어.");
         for (Category c : b.cats()) {
             String n = note(b.today(), c.id());
-            if (n != null) highlights.add("오늘 " + c.label() + " 기록에 남긴 말이에요: \"" + cut(n, 120) + "\"");
+            if (n != null) highlights.add("오늘 " + c.label() + " 기록에 남긴 말이야: \"" + cut(n, 120) + "\"");
             if (highlights.size() >= 2) break;
         }
         List<DatedMemo> currentMemos = todayMemos(b);
-        if (!currentMemos.isEmpty()) highlights.add("오늘 작성한 메모예요: \"" + cut(currentMemos.get(0).text(), 120) + "\"");
-        if (highlights.isEmpty()) highlights.add("오늘의 이야기를 서둘러 판단하지 않을게요. 지금 마음에 떠오르는 한 줄부터 시작해도 괜찮아요.");
+        if (!currentMemos.isEmpty()) highlights.add("오늘 쓴 메모야: \"" + cut(currentMemos.get(0).text(), 120) + "\"");
+        if (highlights.isEmpty()) highlights.add("오늘의 이야기를 서둘러 판단하지 않을게. 지금 마음에 떠오르는 한 줄부터 시작해도 괜찮아.");
 
         List<ScheduleIn> todaySched = b.schedule().stream().filter(s -> b.date().equals(s.date())).toList();
         List<ScheduleIn> left = todaySched.stream().filter(s -> !Boolean.TRUE.equals(s.done())).toList();
         String schedule = todaySched.isEmpty()
-            ? "오늘은 일정이 비어 있어요. 여유도 일정이에요."
+            ? "오늘은 일정이 비어 있어. 여유도 일정이야."
             : "오늘 일정 " + todaySched.size() + "개" + (left.size() < todaySched.size() ? " 중 " + (todaySched.size() - left.size()) + "개에 완료 표시" : "") + ": "
               + String.join(", ", todaySched.stream().map(s -> (s.time() != null ? s.time() + " " : "") + s.title()).toList()) + ".";
 
         String goalsText = b.goals().isEmpty()
-            ? "진행 중인 목표가 없어요. 작게 하나 세워두면 하루에 방향이 생겨요."
+            ? "진행 중인 목표가 없어. 작게 하나 세워 두면 하루에 방향이 생겨."
             : String.join(", ", TodayDtos.head(b.goals(), 2).stream().map(g -> {
                 long done = g.steps().stream().filter(s -> Boolean.TRUE.equals(s.done())).count();
-                return "'" + g.title() + "' " + (g.steps().isEmpty() ? "아직 시작 단계예요" : "지금까지 누적 " + done + "/" + g.steps().size() + " 단계에 완료 표시가 있어요");
+                return "'" + g.title() + "' " + (g.steps().isEmpty() ? "아직 시작 단계야" : "지금까지 누적 " + done + "/" + g.steps().size() + " 단계에 완료 표시가 있어");
             }).toList()) + ".";
 
-        String nextStep = "오늘 기분을 한 줄만 기록해 봐요.";
+        String nextStep = "오늘 기분을 한 줄만 들려줄래?";
         String firstGoalStep = b.goals().stream().flatMap(g -> g.steps().stream().filter(s -> !Boolean.TRUE.equals(s.done())).map(s -> "'" + g.title() + "'의 다음 단계, " + s.text())).findFirst().orElse(null);
-        if (!left.isEmpty()) nextStep = (left.get(0).time() != null ? left.get(0).time() + "에 " : "") + left.get(0).title() + ", 이것 하나만 해보는 건 어때요.";
-        else if (firstGoalStep != null) nextStep = firstGoalStep + "부터 시작해 보는 건 어때요.";
+        if (!left.isEmpty()) nextStep = (left.get(0).time() != null ? left.get(0).time() + "에 " : "") + left.get(0).title() + ", 이것 하나만 해 보는 건 어때?";
+        else if (firstGoalStep != null) nextStep = firstGoalStep + "부터 시작해 보는 건 어때?";
 
         String[] questions = {
-            "오늘 하루 중 가장 작게라도 올라온 순간은 언제였나요?",
-            "오늘 내가 지켜낸 원칙이 하나 있다면 무엇인가요?",
-            "어제의 나에게 오늘 한 행동 하나를 말해준다면요?",
-            "오늘 내려간 게 있다면, 그 옆에 있던 것은 무엇이었나요?",
+            "오늘 하루 중 가장 작게라도 올라온 순간은 언제였어?",
+            "오늘 네가 지켜 낸 원칙이 하나 있다면 뭐야?",
+            "어제의 너에게 오늘 한 행동 하나를 말해 준다면?",
+            "오늘 내려간 게 있다면, 그 옆에 있던 건 뭐였어?",
         };
         int dom;
         try { dom = LocalDate.parse(b.date()).getDayOfMonth(); } catch (Exception e) { dom = 0; }
@@ -323,12 +325,12 @@ public class TodayService {
         for (Category c : b.cats()) {
             String n = note(b.today(), c.id());
             if (n != null) {
-                parts.add("오늘 " + c.label() + " 기록에는 \"" + cut(n, 160) + "\"이라고 적었네.");
+                parts.add("오늘 " + c.label() + " 기록에는 \"" + cut(n, 160) + "\"라고 적었네.");
                 break;
             }
         }
         if (parts.isEmpty() && !todayMemos(b).isEmpty())
-            parts.add("오늘 작성한 메모에는 \"" + cut(todayMemos(b).get(0).text(), 160) + "\"이라고 적었네.");
+            parts.add("오늘 작성한 메모에는 \"" + cut(todayMemos(b).get(0).text(), 160) + "\"라고 적었네.");
         if (parts.isEmpty() && !b.today().isEmpty()) {
             Category c = b.cats().stream().filter(cat -> b.today().containsKey(cat.id())).findFirst().orElse(null);
             if (c != null) parts.add("오늘 " + c.label() + " 점수를 " + fmtScore(b.today().get(c.id()).score()) + "로 남겼네.");
@@ -344,7 +346,7 @@ public class TodayService {
                 String currentNote = note(b.today(), c.id());
                 String previousNote = note(past.record(), c.id());
                 if (currentNote != null && previousNote != null)
-                    return "이전 " + past.date() + "의 " + c.label() + " 기록에는 \"" + cut(previousNote, 100) + "\"이라고 적었었지. "
+                    return "이전 " + past.date() + "의 " + c.label() + " 기록에는 \"" + cut(previousNote, 100) + "\"라고 적었었지. "
                         + "그건 그날의 이야기이고, 오늘 남긴 말은 오늘의 말로 듣고 있어.";
             }
         }
@@ -367,10 +369,10 @@ public class TodayService {
             lines.add("오늘 네 이야기를 기록으로 남긴 걸 알아봐 주고 싶어. 네가 직접 고른 말과 점수에는 네 목소리가 있어. "
                 + "그 목소리를 그냥 지나치지 않고 소중하게 읽고 있어.");
         } else {
-            lines.add("오늘 칭찬받기를 눌렀다는 그 작은 선택을 알아봐 주고 싶어. 너에게 다정한 말을 건넬 자리가 생겼잖아. "
+            lines.add("나한테 와서 칭찬받기를 눌러 준 그 작은 선택을 알아봐 주고 싶어. 너에게 다정한 말을 건넬 자리가 생겼잖아. "
                 + "무엇을 해냈는지와 별개로 너는 존중받을 사람이야.");
         }
-        return new Moment("오늘의 너를 다정하게 바라봐도 괜찮아", lines, "네가 남긴 오늘의 이야기를 소중하게 읽고 있어.");
+        return new Moment("오늘의 너를 다정하게 바라봐도 괜찮아", lines, "네가 남긴 오늘 이야기, 내가 소중하게 간직할게.");
     }
 
     /** 사랑받기: 공감 → 위로 → 조건 없는 사랑. 날짜가 다른 사실을 한 하루로 합치지 않는다. */

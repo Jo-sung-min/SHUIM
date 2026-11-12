@@ -72,9 +72,45 @@ public class PetService {
         if (inserted == 1) jdbc.sql("UPDATE user_pets SET visit_points=visit_points+? WHERE user_id=?").param(amount).param(uid).update();
     }
     @Transactional public View get(String uid) {
-        var p = lock(uid, ZonedDateTime.now(clock));
+        var now = ZonedDateTime.now(clock);
+        var p = lock(uid, now);
         grant(uid, "visit:" + p.state().date(), 10);
-        return save(uid, p, 0);
+        int reward = fillRecords(uid, p.state().date()); // 기록이 다른 경로로 들어온 날도 여기서 맞춘다
+        return save(uid, reward == 0 ? p : fed(p, reward, now), reward);
+    }
+    /** 새 마음밥: 재고·경험치를 더하고 오늘 아직 못 먹은 끼니를 채운다 (지난 끼니는 빚이 아니다) */
+    private static Pet fed(Pet p, int reward, ZonedDateTime now) {
+        var s = p.state();
+        return new Pet(p.name(), PetRules.settle(new PetRules.State(s.food() + reward, Math.min(720, s.xp() + reward * 4), s.date(), s.meals()), now.toLocalDate(), now.getHour()));
+    }
+    /** 오늘의 기록에 남은 카테고리 수만큼 보상 칸을 채우고 새로 채운 칸마다 방문포인트 +4. 새로 생긴 마음밥 수를 돌려준다 */
+    private int fillRecords(String uid, LocalDate date) {
+        int recorded = jdbc.sql("SELECT COUNT(DISTINCT cat) FROM journal_entries WHERE user_id = ? AND date = ?")
+            .param(uid).param(date).query(Integer.class).single();
+        int old = mask(uid, date), next = PetRules.fillRecords(old, recorded);
+        if (next == old) return 0;
+        for (int bit = 0; bit < 5; bit++) {
+            if ((next & (1 << bit)) != 0 && (old & (1 << bit)) == 0) grant(uid, "journal:" + date + ":" + bit, 4);
+        }
+        jdbc.sql("INSERT INTO pet_daily_rewards(user_id, date, rewarded) VALUES (?, ?, ?) ON CONFLICT(user_id, date) DO UPDATE SET rewarded = EXCLUDED.rewarded")
+            .param(uid).param(date).param(next).update();
+        return PetRules.reward(old, next);
+    }
+    /**
+     * 오늘의 기록이 저장된 직후(같은 트랜잭션): 오늘(한국 시간) 날짜면 모루에게 마음밥을 준다. 지난 날짜는 주지 않는다.
+     * 모루 행을 잠그므로 여러 기기에서 동시에 저장해도 한 칸은 한 번만 채워진다.
+     */
+    @Transactional public int rewardRecords(String uid, LocalDate date) {
+        var now = ZonedDateTime.now(clock);
+        if (!now.toLocalDate().equals(date)) return 0;
+        var p = lock(uid, now);
+        int reward = fillRecords(uid, p.state().date());
+        if (reward > 0) save(uid, fed(p, reward, now), reward);
+        return reward;
+    }
+    /** 기록 전체 교체(가져오기 등) 뒤: 오늘 날짜 기록만 본다 */
+    @Transactional public int rewardToday(String uid) {
+        return rewardRecords(uid, ZonedDateTime.now(clock).toLocalDate());
     }
     public record HomeInput(int homeId) {}
     public record AppearanceInput(String appearance) {}

@@ -1,6 +1,7 @@
 package kr.co.shuim.pet;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kr.co.shuim.records.RecordsDtos;
 import kr.co.shuim.records.RecordsService;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -81,6 +82,39 @@ class PetPostgresTest {
         assertEquals(14, view.food()); assertEquals(20, view.xp()); assertEquals(5, view.earned());
         assertEquals(1L, jdbc.sql("SELECT count(*) FROM memos WHERE user_id=?").param(uid).query(Long.class).single());
         assertEquals(full, view.answers());
+    }
+    static Map<String, RecordsDtos.Entry> cats(String... ids) {
+        var out = new LinkedHashMap<String, RecordsDtos.Entry>();
+        for (String id : ids) out.put(id, new RecordsDtos.Entry(1, 1, "조금 나아졌어"));
+        return out;
+    }
+    @Test void todaysRecordsFeedMoruOncePerCategoryUpToFive() {
+        var withPet = new RecordsService(jdbc, new ObjectMapper(), pets);
+        var today = LocalDate.parse(date);
+        var start = tx.execute(s -> pets.get(uid));
+        assertEquals(9, start.food()); assertEquals(0, start.earned()); assertEquals(10, start.points());
+        tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind", "body", "work"), null)));
+        var three = tx.execute(s -> pets.get(uid));
+        assertEquals(12, three.food()); assertEquals(3, three.earned()); assertEquals(12, three.xp()); assertEquals(22, three.points());
+        // Saving the same day again, or after deleting an entry, never pays twice.
+        tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind"), null)));
+        tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind", "body", "work"), null)));
+        assertEquals(12, tx.execute(s -> pets.get(uid)).food());
+        // Seven categories still stop at five; a past date earns nothing.
+        tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind", "body", "work", "money", "relation", "c_a", "c_b"), null)));
+        tx.executeWithoutResult(s -> withPet.saveDay(uid, today.minusDays(1), new RecordsDtos.DayInput(cats("mind", "body"), null)));
+        var five = tx.execute(s -> pets.get(uid));
+        assertEquals(14, five.food()); assertEquals(5, five.earned()); assertEquals(30, five.points());
+        // The older five-question diary shares the same five slots.
+        assertEquals(0, write().reward());
+        assertEquals(14, tx.execute(s -> pets.get(uid)).food());
+    }
+    @Test void journalRowsWrittenElsewhereAreSettledOnTheNextVisit() {
+        jdbc.sql("INSERT INTO journal_entries (user_id, date, cat, score, delta, note) VALUES (?, ?, 'mind', 1, 1, ''), (?, ?, 'body', 0, 0, '')")
+            .param(uid).param(LocalDate.parse(date)).param(uid).param(LocalDate.parse(date)).update();
+        var view = tx.execute(s -> pets.get(uid));
+        assertEquals(2, view.reward()); assertEquals(11, view.food()); assertEquals(2, view.earned());
+        assertEquals(0, tx.execute(s -> pets.get(uid)).reward());
     }
     @Test void repeatedFeedClicksUseCompareAndSet() {
         var click = new PetService.FeedInput(date, 0);

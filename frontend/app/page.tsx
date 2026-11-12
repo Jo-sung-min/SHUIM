@@ -3,6 +3,8 @@ import { requestAiProcessing } from "@/lib/safety";
 import SafetyReport from "@/components/SafetyReport";
 import DailyQuote from "@/components/DailyQuote";
 import MoruPet from "@/components/MoruPet";
+import MoruCompanion from "@/components/MoruCompanion";
+import { BRIEFING_WAITING, LOVE_WAITING, PRAISE_WAITING, loadCompanion, type Companion } from "@/lib/moru";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -34,7 +36,7 @@ import { allCategories, orderCategories } from "@/lib/categories";
 import HelpBanner from "@/components/HelpBanner";
 import { SkeletonCard, SkeletonHero, fmtRelative } from "@/components/ui";
 import { useScrollMemory } from "@/lib/scroll-memory";
-import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus, IconHeart, IconStar, IconPen } from "@/components/Icons";
+import { IconChevronR, IconCheck, IconNote, IconBubble, IconPlus, IconSquarePlus } from "@/components/Icons";
 import { useRouter } from "next/navigation";
 import { CARE_BUILTIN, CARE_CATALOG, type CareAction, type CareTone, careDoneToday, loadCareExtras, markCareDone, saveCareExtras } from "@/lib/care";
 import { BreathSheet, CareAddSheet, CareIcon } from "@/components/CareSheets";
@@ -94,10 +96,14 @@ export default function HomePage() {
   const [careDone, setCareDone] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState(false);
   const [breathing, setBreathing] = useState(false);
+  // 정리·칭찬·사랑을 건네는 모루 (이름·모습은 MoruPet 이 서버에서 받아 알려 준다)
+  const [companion, setCompanion] = useState<Companion>({ name: "모루", appearance: "moru" });
+  const [answeredAt, setAnsweredAt] = useState<number | null>(null);
+  useEffect(() => { setCompanion(loadCompanion()); }, []);
   const refreshCare = useCallback(() => {
     const ids = loadCareExtras();
     setCareExtras(ids);
-    setCareDone(Object.fromEntries(ids.map((id) => [id, careDoneToday(id, today)])));
+    setCareDone(Object.fromEntries([...ids, "flow"].map((id) => [id, careDoneToday(id, today)])));
   }, [today]);
 
   useEffect(() => {
@@ -156,12 +162,13 @@ export default function HomePage() {
         credentials: "same-origin",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, ...buildTodayContext(records, requestDay, mode === "review"),
+        body: JSON.stringify({ mode, companion: companion.name, ...buildTodayContext(records, requestDay, mode === "review"),
           categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()), prompts: loadPrompts() }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
       const json = await res.json();
       if (!isCurrent()) return;
+      if (mode !== "review") setAnsweredAt(Date.now());
       const base = { date: requestDay, contextVersion: AI_CONTEXT_VERSION, generatedAt: Date.now(), source: json.source, crisis: json.crisis };
       if (mode === "briefing") {
         const b: Briefing = { ...base, data: json.briefing };
@@ -211,16 +218,12 @@ export default function HomePage() {
   if (!data) return <><HomeHeader /><div className="screen" role="status" aria-label="오늘의 기록을 불러오고 있어요"><SkeletonHero /><div style={{ height: 16 }} /><SkeletonCard lines={2} head /></div></>;
 
   const d = briefing?.data;
-  const categories = orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder());
-  const total = categories.length;
-  const filled = categories.filter((category) => data.journal[today]?.[category.id] !== undefined).length;
-  const didCount = data.log[today]?.did.length ?? 0;
-  const logDone = filled >= total && total > 0;
   const dirLabel = { up: "▲ 올라오는 중", flat: "→ 유지 중", down: "▼ 내려간 날" } as const;
   const crisis = briefing?.crisis || moments.praise?.crisis || moments.love?.crisis || review?.crisis;
   const openMoment = open ? moments[open] : undefined;
+  const briefingShown = Boolean(d && !open && !reviewOpen);
   // 지금 화면에 보이는 결과의 출처 (없으면 안내 줄도 없음)
-  const shownSource: "ai" | "local" | null = open && openMoment ? openMoment.source : reviewOpen && review ? review.source : d && !open && !reviewOpen ? briefing!.source : null;
+  const shownSource: "ai" | "local" | null = open && openMoment ? openMoment.source : reviewOpen && review ? review.source : briefingShown ? briefing!.source : null;
   // 기본 4칸: AI 상태(오늘 캐시)로 done/busy 를 정한다
   const aiState: Record<string, { done: boolean; on: boolean; aria: string; busyLabel: string; doneLabel?: string }> = {
     briefing: { done: Boolean(briefing), on: false, aria: "오늘의 나 정리", busyLabel: "정리 중…", doneLabel: "정리 완료" },
@@ -254,6 +257,7 @@ export default function HomePage() {
     ...CARE_BUILTIN.map(tileOf),
     ...careExtras.flatMap((id) => { const action = CARE_CATALOG.find((c) => c.id === id); return action ? [tileOf(action)] : []; }),
   ];
+  const thinking = loading === "praise" ? PRAISE_WAITING : loading === "love" ? LOVE_WAITING : loading === "briefing" ? BRIEFING_WAITING : null;
 
   return (
     <>
@@ -261,23 +265,8 @@ export default function HomePage() {
       <div className="screen home">
 
         <DailyQuote />
-        <MoruPet userId={sessionUserId()} />
-
-        {/* 오늘의 기록: 버튼 하나 (글라스). 아직 아무것도 안 썼으면 빨간 점, 다 채우면 체크 */}
-        <Link
-          href="/log"
-          className={`${styles.recordBtn} ${logDone ? styles.recordDone : ""}`}
-          aria-label={logDone ? `오늘의 기록 돌아보기, 마음 ${filled}/${total}, 한 일 ${didCount}개` : filled || didCount ? `오늘의 기록 이어 쓰기, 마음 ${filled}/${total}, 한 일 ${didCount}개` : "오늘의 마음 기록하기, 아직 쓴 기록이 없어요"}
-        >
-          <span className={styles.recordIcon}>{logDone ? <IconCheck /> : <IconPen />}</span>
-          <span className={styles.recordText}>
-            <b>오늘의 기록</b>
-            <small>마음 {filled}/{total} · 한 일 {didCount}개</small>
-            <span className={styles.recordBar} aria-hidden="true"><i style={{ width: `${total ? Math.round((filled / total) * 100) : 0}%` }} /></span>
-          </span>
-          <span className={styles.recordCta}>{logDone ? "돌아보기" : filled || didCount ? "이어 쓰기" : "기록하기"}<IconChevronR /></span>
-          {!filled && !didCount && <span className={styles.careDot} aria-hidden="true" />}
-        </Link>
+        <MoruPet userId={sessionUserId()} thinking={thinking} answeredAt={answeredAt}
+          onCompanion={setCompanion} onRecordsChange={() => setData(readTodayRecords())} />
 
         {/* 처음 온 날: 위의 오늘의 문장처럼, 문구는 명언과 시적인 한 줄로. 카드는 인용 + 출처 + 무엇을 하는 곳인지 */}
         {empty && <section aria-labelledby="home-start-title">
@@ -296,7 +285,7 @@ export default function HomePage() {
           </div>
         </section>}
 
-        {/* 나를 위한 시간: 기본 4칸 + 사용자가 추가한 칸 (lib/care.ts) */}
+        {/* 나를 위한 시간: 기본 4칸(정리·칭찬·사랑·흐름, 모루가 건넨다) + 사용자가 추가한 칸 (lib/care.ts) */}
         {!empty && (
           <section aria-labelledby="home-care-title">
           <div className={styles.sectionHeading}>
@@ -348,13 +337,13 @@ export default function HomePage() {
         {(briefing || openMoment || review) && <SafetyReport kind="ai" />}
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
-        {/* 칭찬 / 사랑 */}
+        {/* 모루가 건네는 말: 칭찬 / 사랑 (기다리는 동안 방 안의 모루도 같은 말을 한다) */}
         {loading === "praise" && <Skeleton messages={PRAISE_WAITING} />}
         {loading === "love" && <Skeleton messages={LOVE_WAITING} />}
         {open && openMoment && !loading && (
           <section className="card moment" style={{ marginTop: 12 }}>
             <div className="head">
-              <span className="label">{open === "praise" ? <IconStar /> : <IconHeart />} {MOMENTS[open].heading}</span>
+              <MoruSays companion={companion} what={open === "praise" ? "칭찬" : "사랑"} />
               <span className="tiny muted">{fmtRelative(openMoment.generatedAt)}</span>
             </div>
             <h3><Highlighted text={openMoment.data.title} fallback="none" /></h3>
@@ -377,7 +366,7 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* 점검 */}
+        {/* 점검 (직접 추가한 "분석하기") */}
         {loading === "review" && <Skeleton />}
         {reviewOpen && review && !loading && (
           <section className="card review" style={{ marginTop: 12 }}>
@@ -423,18 +412,19 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* 정리하기: 결과는 모두 타일 아래로 (불러오는 동안도) */}
+        {/* 모루의 정리: 결과는 모두 타일 아래로 (불러오는 동안도) */}
         {loading === "briefing" && (
-          <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘의 기록을 정리하고 있어요">
+          <section className={`hero ${styles.homeHero}`} aria-busy="true" aria-label="오늘을 정리하고 있어요">
             <div className="skeleton" style={{ height: 22, width: "70%", margin: "4px 0 12px" }} />
             <div className="skeleton" style={{ height: 14, width: "100%" }} />
             <div className="skeleton" style={{ height: 14, width: "60%", marginTop: 8 }} />
           </section>
         )}
-        {d && !open && !reviewOpen && (
+        {d && briefingShown && !loading && (
           <>
             <section className={`hero ${styles.homeHero}`}>
-              <div className="row" style={{ justifyContent: "space-between" }}>
+              <MoruSays companion={companion} what="정리" />
+              <div className="row" style={{ justifyContent: "space-between", marginTop: 10 }}>
                 <span className="pill">{dirLabel[d.momentum.direction]}</span>
                 <span className="label">{fmtRelative(briefing!.generatedAt)}</span>
               </div>
@@ -469,15 +459,20 @@ export default function HomePage() {
             <span>AI 응답은 의료 진단·치료가 아니에요. <Link href="/info/ai">AI 이용 안내</Link></span>
           </p>
         )}
+
         <HelpBanner />
       </div>
     </>
   );
 }
 
-/** 칭찬받기·사랑받기를 기다리는 동안 한 줄씩 바꿔 보여 주는 말: 곁에서 천천히 읽고 있다는 느낌으로 */
-const PRAISE_WAITING = ["네 하루를 천천히 읽고 있어", "힘든 날도 있었지, 알아", "네가 당연하게 넘긴 좋은 점을 찾고 있어", "조금만 기다려 줘, 곧 알려 줄게"];
-const LOVE_WAITING = ["네 하루를 천천히 읽고 있어", "그동안 많이 애썼지", "네 마음에 닿을 말을 고르고 있어", "조금만 기다려 줘, 곧 따뜻하게 닿을게"];
+/** 모루가 건네는 말의 머리: 작은 얼굴 + "모루의 칭찬" */
+function MoruSays({ companion, what }: { companion: Companion; what: string }) {
+  return <span className={styles.moruSays}>
+    <span className={styles.moruFace} aria-hidden="true"><MoruCompanion appearance={companion.appearance} mood="happy" /></span>
+    {companion.name}의 {what}
+  </span>;
+}
 
 function Skeleton({ messages }: { messages?: string[] }) {
   const [i, setI] = useState(0);

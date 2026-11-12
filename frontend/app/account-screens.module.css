@@ -195,3 +195,9 @@
 .waitLine { margin: 0 0 14px; color: var(--tone-love); font-size: 15px; font-weight: 650; line-height: 1.5; animation: wait-line 2.6s ease-in-out both; }
 @keyframes wait-line { 0% { opacity: 0; transform: translateY(4px); } 18%, 82% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .waitLine { animation: none; } }
+/* 모루가 건네는 말의 머리: 작은 얼굴 + "모루의 칭찬" (정리·칭찬·사랑 결과 위) */
+.moruSays { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--text-2); letter-spacing: -.01em; }
+.moruFace { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 50%; overflow: hidden; background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.moruFace svg { width: 30px; height: 28px; margin-top: 4px; }
+/* 나를 위한 시간에 아직 추가한 칸이 없을 때 */
+.careEmpty { margin: 0 2px; font-size: 13px; color: var(--text-2); }

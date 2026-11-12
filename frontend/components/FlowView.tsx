@@ -8,6 +8,9 @@ import AccelChart from "./AccelChart";
 import { Empty, fmtDate } from "./ui";
 import { IconChart, IconSparkle } from "./Icons";
 import { useScrollMemory } from "@/lib/scroll-memory";
+import MoruCompanion from "./MoruCompanion";
+import { flowLine, loadCompanion } from "@/lib/moru";
+import moruStyles from "./MoruPet.module.css";
 
 /**
  * 흐름 보기: 최근 7·14·30일의 전체 평균 위치와 직전 대비 변화, 크게 흔들린 날·다시 올라온 날.
@@ -27,6 +30,8 @@ export default function FlowView({ onWrite, scrollKey }: { onWrite: () => void; 
   const { drops, rises } = biggestShifts(points);
   const vol = volatility(points);
   const color = "var(--text)";
+  const ups = points.filter((p) => (p.accel ?? 0) > 0).length;
+  const downs = points.filter((p) => (p.accel ?? 0) < 0).length;
 
   if (!journal) {
     return (
@@ -45,9 +50,15 @@ export default function FlowView({ onWrite, scrollKey }: { onWrite: () => void; 
     );
   }
 
+  const companion = loadCompanion();
   return (
     <>
-      <section className="card" style={{ marginTop: 14 }}>
+      {/* 모루의 한 줄: 최근 흐름을 규칙으로 고른 문장 (AI 아님) */}
+      <p className={moruStyles.flowLine}>
+        <span className={moruStyles.flowFace} aria-hidden="true"><MoruCompanion appearance={companion.appearance} mood="happy" /></span>
+        <span><b>{companion.name}</b>{flowLine(range, recorded, ups, downs)}</span>
+      </p>
+      <section className="card" style={{ marginTop: 10 }}>
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
           <span className="tiny muted">전체 평균 · 위는 그날 위치, 아래는 직전 대비 변화</span>
           <div className="segmented" style={{ padding: 3 }}>
@@ -69,7 +80,7 @@ export default function FlowView({ onWrite, scrollKey }: { onWrite: () => void; 
       <div className="tiles" style={{ marginTop: 10 }}>
         <div className="tile"><b>{recorded}</b><small>기록한 날</small></div>
         <div className="tile"><b>{vol}</b><small>평균 변화폭</small></div>
-        <div className="tile"><b style={{ color: "var(--up)" }}>{points.filter((p) => (p.accel ?? 0) > 0).length}</b><small>올라간 날</small></div>
+        <div className="tile"><b style={{ color: "var(--up)" }}>{ups}</b><small>올라간 날</small></div>
       </div>
 
       <div className="stack" style={{ marginTop: 10 }}>

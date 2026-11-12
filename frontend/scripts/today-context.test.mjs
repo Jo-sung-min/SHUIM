@@ -181,7 +181,7 @@ function requestHarness(source, { consent = async () => true, network = async ()
   const requests = [];
   const state = {};
   const ctx = {
-    Date, data: records(), inFlight: { current: false }, running: { current: false }, lifecycle: { current: 0 },
+    Date, data: records(), companion: { name: "콩이", appearance: "moru" }, inFlight: { current: false }, running: { current: false }, lifecycle: { current: 0 },
     selection: { current: { sel: "all", range: 7 } }, sel: "all", range: 7,
     todayKey: () => day, refreshToday: () => day, sessionUserId: () => user,
     readTodayRecords: () => latest, loadJournal: () => latest.journal,
@@ -190,7 +190,7 @@ function requestHarness(source, { consent = async () => true, network = async ()
     fetch: async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return network(); },
     saveMoment: (value) => saved.push(value), saveBriefing: (value) => saved.push(value), saveReview: (value) => saved.push(value),
   };
-  for (const name of ["Loading", "Error", "Data", "Journal", "Briefing", "Moments", "Review", "ReviewOpen", "Open", "Result"]) {
+  for (const name of ["Loading", "Error", "Data", "Journal", "Briefing", "Moments", "Review", "ReviewOpen", "Open", "Result", "AnsweredAt"]) {
     ctx[`set${name}`] = (value) => { state[name] = typeof value === "function" ? value(state[name] ?? {}) : value; };
   }
   vm.runInNewContext(source, ctx);
@@ -205,6 +205,7 @@ test("each newly generated moment stores the server-selected reference with its 
   }) }) });
   await harness.run("love");
   await harness.run("love");
+  assert.equal(harness.requests[0].body.companion, "콩이"); // 칭찬·사랑·정리는 사용자가 지어 준 이름의 모루가 건넨다
   assert.equal(harness.saved[0].quote.id, "reviewed-1");
   assert.equal(harness.saved[1].quote.id, "reviewed-2");
   assert.equal(harness.saved[1].contextVersion, AI_CONTEXT_VERSION);

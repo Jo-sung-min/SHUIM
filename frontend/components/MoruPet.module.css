@@ -49,13 +49,8 @@
 .bottom{margin-top:13px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:10px;color:var(--text-2)}.bottom a{color:var(--accent);text-decoration:none}
 .adopt{display:flex;flex-direction:column;gap:5px;background:#75608e;color:#fff;margin-top:17px}.adopt span{font-size:10px;font-weight:400;color:#eee3f4}
 .error{font-size:12px;line-height:1.6;color:var(--danger);margin:12px 0;padding:10px;border:1px solid var(--danger);border-radius:10px}.error button{display:block;border:0;background:transparent;color:inherit;text-decoration:underline;padding:6px 0;cursor:pointer;font-size:12px}
-.journal{padding:0 2px 12px}.intro{font-size:15px;line-height:1.8;color:var(--text);margin:5px 0 18px}.intro small{color:var(--text-2);font-size:11px}
-.steps{display:flex;gap:4px;justify-content:space-between;padding:0 0 20px;border-bottom:1px solid var(--border)}.steps button{background:none;border:0;color:var(--text-2);display:flex;align-items:center;flex-direction:column;gap:7px;font-size:10px;padding:4px;cursor:pointer;min-width:40px}.steps b{border-radius:50%;height:27px;width:27px;background:var(--surface-2);display:grid;place-items:center;font-size:11px}.steps [aria-current="step"]{color:var(--accent);font-weight:750}.steps [aria-current="step"] b{background:var(--accent);color:white}
-.stepContent{min-height:200px;padding:22px 0}.stepContent h4{font-size:18px;font-weight:700;margin:0 0 17px;letter-spacing:-.5px}.stepContent p{color:var(--text-2);font-size:12px;margin:-7px 0 17px}
-.choices{display:flex;flex-wrap:wrap;gap:9px}.choices button{border:1px solid var(--border);border-radius:12px;padding:12px 16px;min-height:44px;background:var(--surface);color:var(--text);font-size:13px;cursor:pointer}.choices button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
-.rangeLabels{display:flex;justify-content:space-between;color:var(--text-2);font-size:10px;gap:12px;margin:12px 0}.rangeLabels button{border:0;color:var(--accent);background:transparent;padding:0;font:inherit;font-size:11px;text-decoration:underline;cursor:pointer}
 .noteLabel{display:block;font-size:12px;color:var(--text-2)}.noteLabel textarea,.noteLabel input{display:block;box-sizing:border-box;width:100%;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--surface-2);color:var(--text);font:inherit;font-size:16px;margin:10px 0 16px}.noteLabel textarea{min-height:115px;resize:vertical}
-.journalActions{display:grid;grid-template-columns:1fr 1.4fr;gap:9px}.footnote{font-size:10px;line-height:1.6;color:var(--text-2);margin:14px 0 0}
+.footnote{font-size:10px;line-height:1.6;color:var(--text-2);margin:14px 0 0}
 .guide{padding:0 2px 20px;font-size:13px;line-height:1.8}.guide>.sprite{display:block;width:100px;height:95px;margin:auto}.guide>p{text-align:center}.guide dt{font-weight:700;margin-top:18px}.guide dd{margin:4px 0;color:var(--text-2);font-size:12px}.guide a{display:inline-block;margin-top:20px;color:var(--accent)}
 @keyframes breathe{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(1px) scaleY(.97)}}
 @keyframes sway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(4deg)}}
@@ -65,13 +60,13 @@
 @keyframes float{0%,100%{transform:translateY(0);opacity:.7}50%{transform:translateY(-4px);opacity:1}}
 @media(max-width:360px){.heading{padding-left:16px;padding-right:16px}.heading h2{font-size:17px}.speech{font-size:11px}.window{right:22px}.primary{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.card *,.guide *{animation:none!important;transition:none!important}}
-.foodIntro{font-size:13px;line-height:1.7;color:var(--text-2);margin:4px 0 20px}
 .shop{padding-bottom:20px}.shopBalance{font-size:13px;color:var(--text-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}.shopBalance b{color:var(--text);font-size:19px}.shopBalance small{flex-basis:100%;font-size:11px;line-height:1.7}
 .homeCard{display:flex;gap:16px;margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:16px;background:var(--surface-2)}
 .homePreview{position:relative;flex:0 0 110px;height:120px;overflow:hidden;border-radius:10px;background:#292733;pointer-events:none}.homePreview>span{display:grid;place-items:center;height:100%;font-size:42px;color:#8e7f9d}.homePreview svg:not(:first-child){display:none}
 .homeInfo{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px}.homeInfo strong{font-size:15px}.homeInfo small{font-size:11px;color:var(--text-2)}.homeInfo button{border:0;border-radius:9px;padding:9px 12px;background:var(--accent);color:white;font:inherit;font-size:11px;cursor:pointer}.homeInfo button:disabled{background:var(--border);color:var(--text-2);cursor:default}
-.closedRoom{display:flex;position:relative;height:420px;overflow:hidden;align-items:center;justify-content:center;flex-direction:column;gap:38px;text-decoration:none;background:radial-gradient(ellipse at 50% 40%,#4b405b 0%,#282637 55%,#20212c 100%);color:#f0e4f3}
-.closedRoom:focus-visible{outline:3px solid #ceb6df;outline-offset:-5px}.closedRain{position:absolute;inset:-30px 0;background:repeating-linear-gradient(105deg,transparent 0 30px,#9bafc511 31px 32px,transparent 33px 62px);animation:closedDrizzle 4s linear infinite}
+.closedRoom{--edge:12px;--pad-h:78px;position:relative;height:420px;overflow:hidden;background:radial-gradient(ellipse at 50% 40%,#4b405b 0%,#282637 55%,#20212c 100%);color:#f0e4f3}
+.closedLink{position:absolute;inset:0 0 calc(var(--pad-h) + var(--edge));display:flex;align-items:center;justify-content:center;flex-direction:column;gap:30px;text-decoration:none;color:inherit}
+.closedLink:focus-visible{outline:3px solid #ceb6df;outline-offset:-5px}.closedRain{position:absolute;inset:-30px 0;background:repeating-linear-gradient(105deg,transparent 0 30px,#9bafc511 31px 32px,transparent 33px 62px);animation:closedDrizzle 4s linear infinite}
 .closedWindow{position:relative;display:flex;width:182px;height:205px;padding:7px;background:#9b8199;border:7px solid #493b51;box-shadow:0 0 45px #d2a67516,0 10px 25px #17152388;gap:4px}
 .closedWindow i{position:relative;flex:1;background:repeating-linear-gradient(0deg,#67516b 0 17px,#7d6480 18px 20px,#4e3e55 21px 23px);box-shadow:inset 3px 0 #a0889e66,inset -3px 0 #342b3c66}
 .closedWindow i::after{content:"";position:absolute;top:50%;right:8px;width:5px;height:17px;background:#d2b897;border-radius:2px}.closedWindow i:nth-child(2)::after{left:8px;right:auto}
@@ -107,11 +102,11 @@
 .pad{left:var(--edge);right:var(--edge);bottom:var(--edge);padding:8px;border-radius:26px}
 .status{display:flex;justify-content:space-between;gap:8px;margin:0 8px 7px;font-size:12px;line-height:16px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
 .status span{overflow:hidden;text-overflow:ellipsis}
-.keys{display:grid;grid-template-columns:1.45fr 1fr 1fr 1fr;gap:6px}
-.key{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;height:60px;padding:0 4px;border-radius:19px;background:var(--surface);color:var(--text);border:1px solid var(--glass-edge);box-shadow:inset 0 1px 0 var(--glass-hi),0 6px 14px -10px rgba(30,24,80,.5);font:inherit;font-size:12px;font-weight:650;letter-spacing:-.02em;line-height:1.2;text-decoration:none;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform var(--dur-fast) var(--ease),background-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+.keys{display:flex;gap:6px}
+.key{position:relative;flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;height:60px;padding:0 4px;border-radius:19px;background:var(--surface);color:var(--text);border:1px solid var(--glass-edge);box-shadow:inset 0 1px 0 var(--glass-hi),0 6px 14px -10px rgba(30,24,80,.5);font:inherit;font-size:12px;font-weight:650;letter-spacing:-.02em;line-height:1.2;text-decoration:none;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform var(--dur-fast) var(--ease),background-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
 .key svg{width:24px;height:24px;flex:none}
 .key span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.keyMain{background:var(--accent);color:var(--on-accent);border-color:color-mix(in srgb,var(--accent) 55%,transparent);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 18px -10px color-mix(in srgb,var(--accent) 85%,transparent);font-size:13px;font-weight:750}
+.keyMain{flex-grow:1.45;background:var(--accent);color:var(--on-accent);border-color:color-mix(in srgb,var(--accent) 55%,transparent);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 18px -10px color-mix(in srgb,var(--accent) 85%,transparent);font-size:13px;font-weight:750}
 /* 누름: 눌린 키는 0.94배로 들어가고 색이 진해진다 (짧은 진동은 MoruPet 의 haptic) */
 .key:not(:disabled):active{transform:scale(.94);background:var(--surface-2);box-shadow:inset 0 1px 0 var(--glass-hi)}
 .keyMain:not(:disabled):active{background:var(--accent-strong)}
@@ -122,7 +117,34 @@
 .alert span{flex:1;min-width:0}
 .alert button{flex:none;min-height:36px;padding:0 12px;border-radius:999px;background:var(--lg-lens);color:var(--text);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 /* 마음밥 시트: 저장·다음 버튼은 시트 아래에 붙어 있다 (globals.css 의 .sheet-actions) */
-.journalActions>.secondary{flex:1}.journalActions>.primary{flex:1.4}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert{background-color:var(--surface)}}
 @media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert{background-color:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
-@media(max-width:340px){.keys{grid-template-columns:1.3fr 1fr 1fr 1fr;gap:5px}.key{font-size:11px}.food{padding:0 4px}.points{padding:0 8px}}
+@media(max-width:340px){.keys{gap:5px}.key{font-size:11px}.food{padding:0 4px}.points{padding:0 8px}}
+.speech[data-thinking]{background:#efe7f6;color:#5b4766;animation:speechIn .35s var(--ease)}
+@keyframes speechIn{from{opacity:0;transform:translate(-50%,4px)}to{opacity:1;transform:translate(-50%,0)}}
+/* 우리 친구 시트: 이름 바꾸기 줄 */
+.nameForm{display:grid;grid-template-columns:1fr auto;align-items:end;gap:8px;margin:0 0 18px}
+.nameForm .noteLabel input{margin:8px 0 0}
+.nameForm .secondary{min-height:48px;white-space:nowrap}
+/* ---------- 마음 기록 시트: 카테고리를 한 단계씩 (기록 탭 "오늘 쓰기"와 같은 데이터) ---------- */
+.mind{padding:0 0 4px}
+.mindLoading{display:grid;gap:12px;padding:8px 0 24px}.mindLoading .skeleton{height:56px;border-radius:14px}
+.mindIntro{margin:-6px 0 12px;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.mindSteps{display:flex;gap:6px;overflow-x:auto;margin:0 calc(-1 * var(--gutter)) 4px;padding:2px var(--gutter) 12px;scrollbar-width:none;border-bottom:1px solid var(--border)}
+.mindSteps::-webkit-scrollbar{display:none}
+.mindSteps button{flex:none;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:52px;padding:4px 2px;border-radius:12px;color:var(--text-2);font-size:11px;cursor:pointer}
+.mindSteps b{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--surface-2);font-size:12px}
+.mindSteps [data-done] b{background:var(--accent-soft);color:var(--accent)}
+.mindSteps [aria-current="step"]{color:var(--accent);font-weight:750}
+.mindSteps [aria-current="step"] b{background:var(--accent);color:var(--on-accent)}
+.mindStep{min-height:236px;padding:18px 0 4px}
+.mindHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px}
+.mindHead h4{display:flex;align-items:center;gap:8px;margin:0;font-size:18px;font-weight:750;letter-spacing:-.02em}
+.mindHead .delta{font-size:14px;font-weight:700;color:var(--text-2)}
+.mindChips{margin:14px 0 0}
+.mindNote{display:block;width:100%;margin-top:14px;min-height:72px}
+/* 흐름 보기 위 모루의 한 줄 */
+.flowLine{display:flex;align-items:center;gap:12px;margin:14px 0 0;padding:12px 14px;border-radius:18px;background:var(--surface);border:1px solid var(--glass-edge);box-shadow:inset 0 1px 0 var(--glass-hi),var(--glass-shadow);font-size:14px;line-height:1.5;color:var(--text);word-break:keep-all}
+.flowLine b{display:block;font-size:12px;color:var(--text-2);margin-bottom:1px}
+.flowFace{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;overflow:hidden;background:color-mix(in srgb,var(--accent) 16%,var(--surface))}
+.flowFace svg{width:42px;height:40px;margin-top:6px}

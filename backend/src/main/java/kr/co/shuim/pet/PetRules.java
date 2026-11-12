@@ -34,4 +34,14 @@ public final class PetRules {
     public static int reward(int previousMask, int nextMask) {
         return Integer.bitCount(nextMask & ~previousMask & 31);
     }
+    /**
+     * 오늘의 기록: 기록한 카테고리 수만큼 하루 보상 칸(5개)을 앞에서부터 채운 새 칸. 이미 받은 칸은 그대로 두고,
+     * 기록을 지워 수가 줄어도 거두지 않는다 (예전 5문항으로 받은 칸도 같은 다섯 칸 안에 센다).
+     */
+    public static int fillRecords(int mask, int recorded) {
+        int next = mask & 31;
+        int target = Math.max(0, Math.min(5, recorded));
+        for (int bit = 0; bit < 5 && Integer.bitCount(next) < target; bit++) next |= 1 << bit;
+        return next;
+    }
 }

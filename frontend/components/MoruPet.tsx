@@ -7,38 +7,50 @@ import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoruCompanion, { COMPANIONS } from "./MoruCompanion";
 import { ROOM_SCENES } from "./MoruRoom";
 import MoruHomeScene from "./MoruHomeScene";
+import MoruMindSheet from "./MoruMindSheet";
 import { IconBook, IconSmile } from "./Icons";
 import { fetchMe } from "@/lib/auth";
 import { haptic } from "@/lib/haptics";
 import { useBackLayer } from "@/lib/use-back-layer";
-import { EMPTY_ANSWERS, PET_MOODS, PET_NEEDS, PET_REASONS, PET_STEPS, PetError, answerCount, petRequest, type PetAnswers, type PetView } from "@/lib/pet";
+import { PetError, petRequest, type PetView } from "@/lib/pet";
+import { DAILY_FOOD_MAX, HUNGRY_LINE, IDLE_LINE, MEAL_LINES, RESULT_LINE, dueMeals, koreaHour, mealStatus, petLine, recordLine, saveCompanion, takeNewMeal, type Companion } from "@/lib/moru";
 import { sessionUserId, syncRecords, loadProfile } from "@/lib/storage";
 import styles from "./MoruPet.module.css";
 
-export default function MoruPet({ userId }: { userId: string | null }) {
-  return <PetRoom key={userId || "guest"} userId={userId} />;
+interface Props {
+  userId: string | null;
+  /** 칭찬·사랑·정리를 기다리는 동안 모루가 돌려 말할 문장 (버튼은 홈의 "나를 위한 시간") */
+  thinking?: string[] | null;
+  /** 새 결과가 나온 시각: 바뀌면 모루가 "다 적었어" */
+  answeredAt?: number | null;
+  onCompanion?: (companion: Companion) => void;
+  /** 마음 기록으로 오늘의 기록이 바뀌었을 때 (홈이 다시 읽는다) */
+  onRecordsChange?: () => void;
 }
-function PetRoom({ userId }: { userId: string | null }) {
+
+export default function MoruPet(props: Props) {
+  return <PetRoom key={props.userId || "guest"} {...props} />;
+}
+
+function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRecordsChange }: Props) {
   const [pet, setPet] = useState<PetView | null>(null);
   const [loading, setLoading] = useState(Boolean(userId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [needsLogin, setNeedsLogin] = useState(false);
-  const [message, setMessage] = useState("말없이 곁에 있어도 좋아.");
+  const [message, setMessage] = useState(IDLE_LINE);
   const [mood, setMood] = useState<MoruMood>("idle");
-  const [sheet, setSheet] = useState<"journal" | "name" | "guide" | "homes" | "companions" | null>(null);
+  const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | null>(null);
   const [chosenAppearance, setChosenAppearance] = useState("moru");
   const [ownerName, setOwnerName] = useState("");
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<PetAnswers>({ ...EMPTY_ANSWERS });
-  const [draftDate, setDraftDate] = useState("");
   const [name, setName] = useState("");
   const [scene, setScene] = useState(0);
+  const [thinkIndex, setThinkIndex] = useState(0);
   const [celebration, setCelebration] = useState<{ id: number; food: number; level: number | null } | null>(null);
   const lock = useRef(false);
   const alive = useRef(true);
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const draftDirty = useRef(false);
+  const greeted = useRef(false);
   const canUse = Boolean(userId && !needsLogin);
   useEffect(() => {
     if (!celebration) return;
@@ -48,7 +60,7 @@ function PetRoom({ userId }: { userId: string | null }) {
   const react = useCallback((next: MoruMood, text: string) => {
     if (reactionTimer.current) clearTimeout(reactionTimer.current);
     setMood(next); setMessage(text);
-    reactionTimer.current = setTimeout(() => { setMood("idle"); setMessage("말없이 곁에 있어도 좋아."); }, 4200);
+    reactionTimer.current = setTimeout(() => { setMood("idle"); setMessage(IDLE_LINE); }, 4200);
   }, []);
   useEffect(() => {
     alive.current = true;
@@ -57,17 +69,24 @@ function PetRoom({ userId }: { userId: string | null }) {
     }).catch(() => {});
     return () => { alive.current = false; if (reactionTimer.current) clearTimeout(reactionTimer.current); };
   }, [userId]);
-  const load = useCallback(async () => {
-    if (!userId || lock.current) return;
+  /** 서버에서 방을 받는다. 끼니를 새로 먹었으면 처음 보는 순간 한마디, 밥이 없어 끼니를 거르고 있으면 한 번 말한다 */
+  const load = useCallback(async (): Promise<PetView | null> => {
+    if (!userId || lock.current) return null;
     lock.current = true;
     try {
       const data = await petRequest();
-      if (!alive.current || sessionUserId() !== userId) return;
+      if (!alive.current || sessionUserId() !== userId) return null;
       setPet(data); setError(""); setNeedsLogin(false);
+      const meal = takeNewMeal(data.date, data.meals);
+      if (meal !== null) react("eat", MEAL_LINES[meal]);
+      else if (!greeted.current && data.food === 0 && dueMeals(koreaHour()) > data.meals) react("sleep", HUNGRY_LINE);
+      greeted.current = true;
+      return data;
     } catch (e) {
       if (alive.current) { setError(e instanceof Error ? e.message : "방을 불러오지 못했어요."); if (e instanceof PetError && e.status === 401) setNeedsLogin(true); }
+      return null;
     } finally { lock.current = false; if (alive.current) setLoading(false); }
-  }, [userId]);
+  }, [userId, react]);
   useEffect(() => {
     void load();
     const refresh = () => { if (!document.hidden) void load(); };
@@ -80,75 +99,100 @@ function PetRoom({ userId }: { userId: string | null }) {
     if (!canUse || lock.current || sessionUserId() !== userId) return null;
     lock.current = true; setBusy(true); setError("");
     try {
-      if (path === "/journal" && !await syncRecords()) throw new Error("아직 저장 중인 기록이 있어요. 연결을 확인한 뒤 다시 저장해 주세요.");
-      if (!alive.current || sessionUserId() !== userId) return null;
       const data = await petRequest(path, body, method);
       if (!alive.current || sessionUserId() !== userId) return null;
       setPet(data);
-      if (path === "/journal") await syncRecords();
-      if (!alive.current || sessionUserId() !== userId) return null;
       return data;
     } catch (e) {
       if (alive.current) { setError(e instanceof Error ? e.message : "저장하지 못했어요. 다시 시도해 주세요."); if (e instanceof PetError && e.status === 401) setNeedsLogin(true); }
       return null;
     } finally { lock.current = false; if (alive.current) setBusy(false); }
   };
-  const openJournal = () => {
-    if (!pet) return;
-    if (!draftDirty.current) {
-      setDraft({ ...EMPTY_ANSWERS, ...pet.answers });
-      setDraftDate(pet.date);
-      const answers = pet.answers;
-      const firstEmpty = [answers.mood, answers.intensity, answers.reason, answers.note?.trim(), answers.need].findIndex((value) => !value);
-      setStep(firstEmpty < 0 ? 4 : firstEmpty);
-    }
-    setSheet("journal"); setError("");
-  };
-  const change = (patch: Partial<PetAnswers>) => { setDraft((a) => ({ ...a, ...patch })); draftDirty.current = true; };
-  const saveJournal = async () => {
-    const previousLevel = pet?.level ?? 1;
-    const data = await mutate("/journal", { date: draftDate, answers: draft });
-    if (!data) return;
-    if (data.reward > 0 || data.level > previousLevel) setCelebration({ id: Date.now(), food: data.reward, level: data.level > previousLevel ? data.level : null });
-    draftDirty.current = false; setSheet(null);
-    react("happy", data.reward ? `마음을 남겨줘서 고마워. 마음밥 +${data.reward}` : "네 마음, 잘 간직해 둘게.");
-  };
-  const progress = pet ? pet.level === 10 ? 100 : (pet.xp - pet.levelStart) / (pet.levelEnd - pet.levelStart) * 100 : 0;
+
   const petName = pet?.name || "모루";
-  const staleDraft = Boolean(pet && draftDate !== pet.date);
-  const address = ownerName ? `${ownerName}님, ` : "";
+  const appearance = pet?.appearance ?? "moru";
+  useEffect(() => {
+    if (!pet) return;
+    const companion = { name: petName, appearance };
+    saveCompanion(companion);
+    onCompanion?.(companion);
+  }, [pet, petName, appearance, onCompanion]);
+
+  // 칭찬·사랑·정리를 기다리는 동안 말풍선이 천천히 바뀐다. 결과가 오면 "다 적었어"
+  useEffect(() => {
+    if (!thinking) return;
+    setThinkIndex(0);
+    const timer = setInterval(() => setThinkIndex((i) => i + 1), 2600);
+    return () => clearInterval(timer);
+  }, [thinking]);
+  const lastAnswer = useRef(answeredAt);
+  useEffect(() => {
+    if (answeredAt && answeredAt !== lastAnswer.current) react("happy", RESULT_LINE);
+    lastAnswer.current = answeredAt;
+  }, [answeredAt, react]);
+
+  /** 마음 기록을 닫으면: 보낼 기록을 먼저 보내고(서버가 그때 마음밥을 준다) 방을 다시 받아 늘어난 밥만큼 축하 */
+  const closeMind = async (changed: boolean) => {
+    setSheet(null);
+    if (!changed) return;
+    const before = pet;
+    await syncRecords();
+    onRecordsChange?.();
+    for (let i = 0; i < 20 && lock.current; i++) await new Promise((r) => setTimeout(r, 100));
+    const data = await load();
+    if (!data || !alive.current) return;
+    const gained = Math.max(0, data.earned - (before?.earned ?? 0));
+    const level = before && data.level > before.level ? data.level : null;
+    if (gained > 0 || level) setCelebration({ id: Date.now(), food: gained, level });
+    react("happy", recordLine(gained, data.earned));
+  };
+
+  const progress = pet ? pet.level === 10 ? 100 : (pet.xp - pet.levelStart) / (pet.levelEnd - pet.levelStart) * 100 : 0;
   const homeId = pet?.homeId ?? 0;
   const ownedHomes = pet?.ownedHomes ?? [0];
-  const homeName = pet?.homes?.find((home) => home.id === homeId)?.name ?? "동굴";
-  const moodLabel = mood === "pet" ? "반가움" : mood === "happy" || mood === "eat" ? "포근함" : "고요함";
   const ready = Boolean(pet) && !busy;
-  // 안드로이드 뒤로 가기는 열린 시트만 닫는다 (저장 중이면 그대로)
-  useBackLayer(sheet !== null, () => { if (busy) return true; setSheet(null); return false; });
+  // 안드로이드 뒤로 가기는 열린 시트만 닫는다 (저장 중이면 그대로). 마음 기록은 남은 입력을 저장하고 닫는다
+  const closeMindRef = useRef<(() => void) | null>(null);
+  useBackLayer(sheet !== null, () => {
+    if (busy) return true;
+    if (sheet === "mind" && closeMindRef.current) closeMindRef.current();
+    else setSheet(null);
+    return false;
+  });
   const openSheet = (next: NonNullable<typeof sheet>) => { haptic(8); setError(""); setSheet(next); };
+  const speech = thinking ? thinking[thinkIndex % thinking.length] : mood !== "idle" ? message : null;
+
   if (!canUse) return <section className={styles.card} aria-label="모루를 만나기">
-    <Link href="/auth" className={styles.closedRoom} aria-label="나를 찾아줘 — 로그인하고 모루 만나기">
-      <span className={styles.closedRain} aria-hidden="true" />
-      <span className={styles.closedWindow} aria-hidden="true"><i /><i /><b /><em>✦</em></span>
-      <span className={styles.findMe}>나를 찾아줘<span>창문을 두드려 주세요</span></span>
-    </Link>
+    <div className={styles.closedRoom}>
+      <Link href="/auth" className={styles.closedLink} aria-label="나를 찾아줘 — 로그인하고 모루 만나기">
+        <span className={styles.closedRain} aria-hidden="true" />
+        <span className={styles.closedWindow} aria-hidden="true"><i /><i /><b /><em>✦</em></span>
+        <span className={styles.findMe}>나를 찾아줘<span>창문을 두드려 주세요</span></span>
+      </Link>
+      <div className={styles.pad} role="group" aria-label="오늘의 마음">
+        <div className={styles.keys}>
+          <Link href="/log" className={`${styles.key} ${styles.keyMain}`} onClick={() => haptic(8)}><PenIcon /><span>마음 기록</span></Link>
+        </div>
+      </div>
+    </div>
   </section>;
   // 모루의 방 한 장 = 게임 화면: 위에는 상태 HUD, 가운데는 모루, 아래에는 조작 패드. 버튼이 모두 이 안에 있다
   return <section className={styles.card} aria-label="나의 소로우 모루 키우기">
     <div className={styles.room}>
       <div className={styles.world}>
         <MoruHomeScene homeId={homeId} scene={scene} />
-        {mood !== "idle" && <div className={styles.speech} aria-live="polite">{message}</div>}
-        <button type="button" className={styles.petButton} aria-label={`${petName} 쓰다듬기`} onClick={() => { haptic(8); react("pet", `${address}와 줘서 좋아.`); }}>
-          <MoruCompanion appearance={pet?.appearance} mood={mood === "idle" && pet?.food === 0 ? "sleep" : mood} level={pet?.level} />
+        {speech && <div className={styles.speech} aria-live="polite" data-thinking={thinking ? "" : undefined}>{speech}</div>}
+        <button type="button" className={styles.petButton} aria-label={`${petName} 쓰다듬기`} onClick={() => { haptic(8); react("pet", petLine(ownerName)); }}>
+          <MoruCompanion appearance={pet?.appearance} mood={thinking ? "pet" : mood === "idle" && pet?.food === 0 ? "sleep" : mood} level={pet?.level} />
         </button>
       </div>
       <div className={styles.hud}>
         <div className={styles.nameplate}>
-          <button type="button" disabled={!pet} onClick={() => { setName(petName); openSheet("name"); }} aria-label={`${petName} 이름 바꾸기`}><b>{petName}</b><span>Lv.{pet?.level ?? 1}</span></button>
-          <span className={styles.xp} role="progressbar" aria-label="모루 성장" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }} /></span>
+          <button type="button" disabled={!pet} onClick={() => { setName(petName); setChosenAppearance(appearance); openSheet("companions"); }} aria-label={`${petName}, 이름과 모습 바꾸기`}><b>{petName}</b><span>Lv.{pet?.level ?? 1}</span></button>
+          <span className={styles.xp} role="progressbar" aria-label={`${petName} 성장`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }} /></span>
         </div>
         <span className={styles.food} title="마음밥"><span aria-hidden="true">🍚</span><b aria-hidden="true">{pet?.food ?? 0}</b><span className="sr-only">마음밥 {pet?.food ?? 0}개</span></span>
-        {pet && <button type="button" className={styles.points} onClick={() => openSheet("homes")} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 공간 상점 열기`}>{pet.points ?? 0} P</button>}
+        {pet && <button type="button" className={styles.points} onClick={() => openSheet("homes")} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 이사하기`}>{pet.points ?? 0} P</button>}
         <button type="button" className={styles.hudIcon} aria-label="돌봄 안내" onClick={() => openSheet("guide")}>?</button>
       </div>
       <div className={styles.scenePicker} role="group" aria-label="창밖 풍경">
@@ -159,34 +203,23 @@ function PetRoom({ userId }: { userId: string | null }) {
         <span role="status">{celebration.level ? `Lv.${celebration.level} ↑` : `🍚 +${celebration.food}`}</span>
       </div>}
       {error && !sheet && <div className={styles.alert} role="alert"><span>{error}</span>{!needsLogin && <button type="button" onClick={() => void load()}>다시 연결</button>}</div>}
-      <div className={styles.pad} role="group" aria-label={`${petName} 돌보기`}>
-        <p className={styles.status}>{loading ? <span role="status">방을 정리하는 중…</span> : pet ? <><span>{moodLabel} · 식사 {pet.meals}/3</span><span>{homeName}</span></> : <span>잠시 후 다시 만나요</span>}</p>
+      <div className={styles.pad} role="group" aria-label={`${petName}와 오늘`}>
+        <p className={styles.status}>{loading ? <span role="status">방을 정리하는 중…</span> : pet ? <><span>마음 {pet.earned}/{DAILY_FOOD_MAX} · 식사 {pet.meals}/3</span><span>{mealStatus(pet.meals, pet.food)}</span></> : <span>잠시 후 다시 만나요</span>}</p>
         <div className={styles.keys}>
-          <button type="button" className={`${styles.key} ${styles.keyMain}`} disabled={!ready} onClick={() => { haptic(12); openJournal(); }} aria-label={pet?.earned === 5 ? "오늘의 마음 보기" : `${petName} 밥 주기`}><BowlIcon /><span>{pet?.earned === 5 ? "오늘의 마음" : "밥 주기"}</span></button>
+          <button type="button" className={`${styles.key} ${styles.keyMain}`} disabled={!ready} onClick={() => { haptic(12); setError(""); setSheet("mind"); }} aria-label={`${petName}에게 오늘 마음 들려주기`}><PenIcon /><span>마음 기록</span></button>
           <button type="button" className={styles.key} disabled={!ready} onClick={() => openSheet("homes")} aria-label="이사하기, 공간 고르기"><HouseIcon /><span>이사</span></button>
-          <button type="button" className={styles.key} disabled={!ready} onClick={() => { setChosenAppearance(pet?.appearance ?? "moru"); openSheet("companions"); }} aria-label="친구 모습 고르기"><IconSmile /><span>모습</span></button>
+          <button type="button" className={styles.key} disabled={!ready} onClick={() => { setName(petName); setChosenAppearance(appearance); openSheet("companions"); }} aria-label="이름과 모습 바꾸기"><IconSmile /><span>모습</span></button>
           <Link href="/memo" className={styles.key} onClick={() => haptic(8)} aria-label="마음기록장 열기"><IconBook /><span>기록장</span></Link>
         </div>
       </div>
     </div>
-    <Sheet open={sheet === "journal"} title="모루의 마음밥" onClose={() => { if (!busy) setSheet(null); }}>
-      <div className={styles.journal}>
-        <p className={styles.foodIntro}>{address}모루는 마음의 양식을 먹고 자라요.</p>
-        <div className={styles.steps}>{PET_STEPS.map((label, i) => <button type="button" key={label} aria-current={step === i ? "step" : undefined} onClick={() => setStep(i)} disabled={busy}><b>{i + 1}</b><span>{label}</span></button>)}</div>
-        <div className={styles.stepContent}>
-          {step === 0 && <><h4>지금 마음은 어떤가요?</h4><Choices values={PET_MOODS} value={draft.mood} onChange={(mood) => change({ mood })} disabled={busy} /></>}
-          {step === 1 && <><h4>그 마음은 얼마나 큰가요?</h4><p>좋고 나쁨이 아닌, 감정의 크기예요.</p><Choices values={["1", "2", "3", "4", "5"]} value={draft.intensity?.toString() ?? null} onChange={(v) => change({ intensity: Number(v) })} disabled={busy} /><div className={styles.rangeLabels}><span>아주 작게</span><span>아주 크게</span></div></>}
-          {step === 2 && <><h4>어디에서 온 마음일까요?</h4><Choices values={PET_REASONS} value={draft.reason} onChange={(reason) => change({ reason })} disabled={busy} /></>}
-          {step === 3 && <><h4>오늘의 한 조각을 남겨 주세요.</h4><label className={styles.noteLabel}>짧은 한 줄도 충분해요<textarea maxLength={500} value={draft.note || ""} onChange={(e) => change({ note: e.target.value })} placeholder="오늘은 어떤 하루였나요?" disabled={busy} /></label><div className={styles.rangeLabels}><button type="button" disabled={busy} onClick={() => change({ note: "오늘은 말 대신 조용히 쉬고 싶어요." })}>오늘은 말 대신 쉬고 싶어요</button><span>{draft.note?.length || 0}/500</span></div></>}
-          {step === 4 && <><h4>지금 나에게 필요한 것은?</h4><Choices values={PET_NEEDS} value={draft.need} onChange={(need) => change({ need })} disabled={busy} /></>}
-        </div>
-        {staleDraft && <div className={styles.error} role="alert">한국 시간으로 날짜가 바뀌었어요. 작성한 내용은 그대로예요.<button type="button" onClick={() => setDraftDate(pet!.date)}>이 내용을 오늘의 기록으로 남기기</button></div>}
-        {error && <p className={styles.error} role="alert">{error}</p>}
-        <div className={`sheet-actions ${styles.journalActions}`}><button type="button" className={styles.secondary} disabled={busy || answerCount(draft) === 0 || staleDraft} onClick={() => void saveJournal()}>{busy ? "저장 중…" : "여기까지 저장"}</button>{step < 4 ? <button type="button" className={styles.primary} disabled={busy} onClick={() => setStep((v) => v + 1)}>다음 마음 →</button> : <button type="button" className={styles.primary} disabled={busy || answerCount(draft) === 0 || staleDraft} onClick={() => void saveJournal()}>{busy ? "저장 중…" : "마음 남기고 밥 모으기"}</button>}</div>
-      </div>
-    </Sheet>
-    <Sheet open={sheet === "companions"} title="나의 작은 친구" onClose={() => { if (!busy) setSheet(null); }}>
+    <MoruMindSheet open={sheet === "mind"} name={petName} closeRef={closeMindRef} onClose={(changed) => void closeMind(changed)} />
+    <Sheet open={sheet === "companions"} title="우리 친구" onClose={() => { if (!busy) setSheet(null); }}>
       <div className={styles.companionGallery}>
+        <form className={styles.nameForm} onSubmit={async (e) => { e.preventDefault(); const data = await mutate("/name", { name }); if (data) { setSheet(null); react("happy", `${data.name}, 그게 내 이름이구나.`); } }}>
+          <label className={styles.noteLabel}>부르고 싶은 이름<input maxLength={20} value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required /></label>
+          <button type="submit" className={styles.secondary} disabled={busy || !name.trim() || name.trim() === petName}>이름 바꾸기</button>
+        </form>
         <div className={styles.companionHero}><MoruCompanion appearance={chosenAppearance} mood="idle" level={pet?.level} /></div>
         <div className={styles.companionChoices} role="group" aria-label="캐릭터 선택">
           {COMPANIONS.map((friend) => <button key={friend.id} type="button" disabled={busy} aria-pressed={chosenAppearance === friend.id} onClick={() => setChosenAppearance(friend.id)}>
@@ -196,15 +229,15 @@ function PetRoom({ userId }: { userId: string | null }) {
         </div>
         <p className={styles.footnote}>모습만 바뀌어요. 이름과 함께 쌓은 기록은 그대로예요.</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
-        <button type="button" className={styles.primary} disabled={busy || !pet || chosenAppearance === (pet.appearance ?? "moru")} onClick={async () => {
+        <button type="button" className={styles.primary} disabled={busy || !pet || chosenAppearance === appearance} onClick={async () => {
           const data = await mutate("/appearance", { appearance: chosenAppearance });
           if (data) { setSheet(null); setMood("idle"); if (reactionTimer.current) clearTimeout(reactionTimer.current); }
-        }}>{busy ? "저장 중…" : !pet ? "연결 후 선택할 수 있어요" : chosenAppearance === (pet.appearance ?? "moru") ? "함께하는 중" : "이 모습으로 함께하기"}</button>
+        }}>{busy ? "저장 중…" : !pet ? "연결 후 선택할 수 있어요" : chosenAppearance === appearance ? "함께하는 중" : "이 모습으로 함께하기"}</button>
       </div>
     </Sheet>
-    <Sheet open={sheet === "homes"} title="모루의 공간" onClose={() => { if (!busy) setSheet(null); }}>
+    <Sheet open={sheet === "homes"} title={`${petName}의 공간`} onClose={() => { if (!busy) setSheet(null); }}>
       <div className={styles.shop}>
-        <p className={styles.shopBalance}>방문포인트 <b>{pet?.points ?? 0} P</b><small>첫 방문 +10 · 마음기록 최대 +20 / 하루</small></p>
+        <p className={styles.shopBalance}>방문포인트 <b>{pet?.points ?? 0} P</b><small>첫 방문 +10 · 마음밥 하나에 +4 (하루 +20까지)</small></p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         {pet?.homes?.map((home) => {
           const owned = ownedHomes.includes(home.id);
@@ -223,29 +256,19 @@ function PetRoom({ userId }: { userId: string | null }) {
         })}
       </div>
     </Sheet>
-    <Sheet open={sheet === "name"} title="우리 친구의 이름" onClose={() => { if (!busy) setSheet(null); }}>
-      <form className={styles.journal} onSubmit={async (e) => { e.preventDefault(); const data = await mutate("/name", { name }); if (data) { setSheet(null); react("happy", `${data.name}, 그게 내 이름이구나!`); } }}>
-        <label className={styles.noteLabel}>부르고 싶은 이름<input maxLength={20} value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required /></label>
-        {error && <p role="alert" className={styles.error}>{error}</p>}<button type="submit" disabled={busy || !name.trim()} className={styles.primary}>이름 불러주기</button>
-      </form>
-    </Sheet>
-    <Sheet open={sheet === "guide"} title="모루와 천천히, 함께" onClose={() => setSheet(null)}>
+    <Sheet open={sheet === "guide"} title={`${petName}와 천천히, 함께`} onClose={() => setSheet(null)}>
       <div className={styles.guide}>
         <MoruSprite mood="happy" />
-        <p>마음 기록하면 +5 🍚<br />하루 세 끼 −3 🍚<br />쉬어 가도 괜찮아요.</p>
+        <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />쉬어 가도 괜찮아요.</p>
         <Link href="/memo">기록장 ↗</Link>
       </div>
     </Sheet>
   </section>;
 }
-/** 조작 패드 아이콘: Icons.tsx 와 같은 선 굵기의 밥그릇·집 */
-const padIcon = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;
-function BowlIcon() {
-  return <svg {...padIcon}><path d="M3.5 12h17a8.5 8 0 0 1-17 0Z" /><path d="M7 12a5 4.2 0 0 1 10 0" /><path d="M9.5 6.5c0-1 1-1.3 1-2.4M13.5 6.5c0-1 1-1.3 1-2.4" /></svg>;
-}
+
 function HouseIcon() {
-  return <svg {...padIcon}><path d="M3.5 11.5 12 4.5l8.5 7" /><path d="M6 10v9.5h12V10" /><path d="M10 19.5V15h4v4.5" /></svg>;
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.5 11.5 12 4.5l8.5 7" /><path d="M6 10v9.5h12V10" /><path d="M10 19.5V15h4v4.5" /></svg>;
 }
-function Choices({ values, value, onChange, disabled }: { values: string[]; value: string | null; onChange: (v: string) => void; disabled: boolean }) {
-  return <div className={styles.choices}>{values.map((v) => <button type="button" key={v} aria-pressed={value === v} disabled={disabled} onClick={() => onChange(v)}>{v}</button>)}</div>;
+function PenIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg>;
 }

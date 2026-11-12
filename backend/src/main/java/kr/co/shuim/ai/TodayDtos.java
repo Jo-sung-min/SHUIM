@@ -31,7 +31,16 @@ public final class TodayDtos {
 
     public record Request(String mode, List<Category> categories, String date, Map<String, Entry> today, List<String> todayDid,
                           List<RecentDay> recent, List<MemoIn> memos, List<GoalIn> goals, List<ScheduleIn> schedule,
-                          List<DatedMemo> allMemos, Map<String, String> prompts) {
+                          List<DatedMemo> allMemos, Map<String, String> prompts, String companion) {
+
+        /** 정리·칭찬·사랑의 화자 이름 (사용자가 지어 준 모루의 이름). 비었거나 이상하면 "모루" */
+        static String companionName(String raw) {
+            if (raw == null) return "모루";
+            String name = raw.codePoints().filter(c -> !Character.isISOControl(c) && c != '"' && c != '\\')
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString().strip();
+            if (name.isEmpty()) return "모루";
+            return name.codePointCount(0, name.length()) > Prompts.COMPANION_MAX ? name.substring(0, name.offsetByCodePoints(0, Prompts.COMPANION_MAX)) : name;
+        }
 
         /** 비어 있는 값은 기본값으로, 목록은 서버가 감당할 길이로 자른다 */
         public Request normalized() {
@@ -57,7 +66,8 @@ public final class TodayDtos {
             if (all.size() > 300) all = all.subList(all.size() - 300, all.size());
             String md = "praise".equals(mode) || "love".equals(mode) || "review".equals(mode) ? mode : "briefing";
             return new Request(md, Categories.of(categories), day,
-                today == null ? Map.of() : clean(today), todayDid == null ? List.of() : todayDid, r, m, g, s, all, prompts == null ? Map.of() : prompts);
+                today == null ? Map.of() : clean(today), todayDid == null ? List.of() : todayDid, r, m, g, s, all, prompts == null ? Map.of() : prompts,
+                companionName(companion));
         }
 
         private static boolean validDate(String value) {

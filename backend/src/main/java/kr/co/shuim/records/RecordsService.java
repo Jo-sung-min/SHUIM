@@ -3,6 +3,8 @@ package kr.co.shuim.records;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.co.shuim.common.Db;
+import kr.co.shuim.pet.PetService;
+import org.springframework.beans.factory.annotation.Autowired;
 import kr.co.shuim.records.RecordsDtos.*;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -24,10 +26,23 @@ public class RecordsService {
     static final String ORDER_KEY = "category_order";
     private final JdbcClient jdbc;
     private final ObjectMapper json;
+    /** 오늘의 기록 = 모루의 마음밥. 손으로 만든 테스트 인스턴스에서는 없다 */
+    private final PetService pets;
 
     public RecordsService(JdbcClient jdbc, ObjectMapper json) {
+        this(jdbc, json, null);
+    }
+
+    @Autowired
+    public RecordsService(JdbcClient jdbc, ObjectMapper json, PetService pets) {
         this.jdbc = jdbc;
         this.json = json;
+        this.pets = pets;
+    }
+
+    /** 오늘(한국 시간) 기록이 바뀌었으면 같은 트랜잭션에서 모루에게 마음밥을 준다 (오늘 기록한 카테고리 하나 = 1개, 하루 5개까지) */
+    private void feedPet(String userId, LocalDate date) {
+        if (pets != null) pets.rewardRecords(userId, date);
     }
 
     private static LocalDateTime ts(Long ms) { return ms == null ? null : LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneOffset.UTC); }
@@ -101,7 +116,10 @@ public class RecordsService {
     /** 그 날의 기록(record)과 오늘 한 일(did)을 저장. null 인 쪽은 건드리지 않는다 */
     @Transactional
     public void saveDay(String userId, LocalDate date, DayInput in) {
-        if (in.record() != null) writeDay(userId, date, RecordsLogic.cleanDay(in.record()));
+        if (in.record() != null) {
+            writeDay(userId, date, RecordsLogic.cleanDay(in.record()));
+            feedPet(userId, date);
+        }
         if (in.did() != null) writeDid(userId, date, RecordsLogic.cleanDid(in.did()));
     }
 
@@ -129,6 +147,7 @@ public class RecordsService {
         if (journal != null) {
             jdbc.sql("DELETE FROM journal_entries WHERE user_id = ?").param(userId).update();
             for (var e : RecordsLogic.cleanJournal(journal).entrySet()) writeDay(userId, LocalDate.parse(e.getKey()), e.getValue());
+            if (pets != null) pets.rewardToday(userId);
         }
         if (log != null) {
             jdbc.sql("DELETE FROM day_logs WHERE user_id = ?").param(userId).update();

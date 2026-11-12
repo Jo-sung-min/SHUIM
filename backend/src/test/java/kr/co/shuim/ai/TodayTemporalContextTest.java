@@ -26,7 +26,7 @@ class TodayTemporalContextTest {
             List.of(new GoalIn("누적 목표", "work", "", null, List.of(new GoalStep("완료 단계", true)))),
             List.of(new ScheduleIn("2026-11-05", null, "내일의 일정", "work", true)),
             List.of(new DatedMemo("2026-10-01", "mind", "과거 전체 메모", false),
-                new DatedMemo(DAY, "mind", "오늘 전체 메모", false)), Map.of(mode, "관리자 저장 프롬프트"));
+                new DatedMemo(DAY, "mind", "오늘 전체 메모", false)), Map.of(mode, "관리자 저장 프롬프트"), null);
     }
 
     @ParameterizedTest
@@ -49,6 +49,8 @@ class TodayTemporalContextTest {
         verify(claude).complete(anyString(), anyInt(), system.capture(), user.capture());
         assertTrue(system.getValue().startsWith("관리자 저장 프롬프트"));
         assertTrue(system.getValue().contains(Prompts.TEMPORAL_GROUNDING));
+        // 정리·칭찬·사랑은 관리자 프롬프트를 덮어써도 모루가 말한다. 분석하기는 그대로
+        assertEquals(!mode.equals("review"), system.getValue().contains("새싹 친구 \"모루\""));
         String input = user.getValue();
         int historyStart = input.indexOf("[이전 기록");
         assertTrue(input.contains("응답 기준일: " + DAY));
@@ -78,7 +80,7 @@ class TodayTemporalContextTest {
     void filtersFutureMemosAndKeepsUnknownMemoDatesUnknown() {
         Request b = new Request("love", null, DAY, Map.of(), List.of(), List.of(),
             List.of(new MemoIn("mind", "future", false, "2026-11-05"), new MemoIn("mind", "unknown", true, "invalid")),
-            List.of(), List.of(), List.of(new DatedMemo("2026-11-05", "mind", "future", false)), Map.of()).normalized();
+            List.of(), List.of(), List.of(new DatedMemo("2026-11-05", "mind", "future", false)), Map.of(), null).normalized();
         assertEquals(1, b.memos().size());
         assertNull(b.memos().get(0).date());
         assertTrue(b.allMemos().isEmpty());
@@ -110,7 +112,7 @@ class TodayTemporalContextTest {
     @Test
     void reviewWithOnlyPastMemosCannotClaimTodayHasNoConflictOrChanges() {
         Request b = new Request("review", null, DAY, Map.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(new DatedMemo("2026-10-01", "mind", "첫 메모", false), new DatedMemo("2026-10-03", "mind", "다음 메모", false)), Map.of()).normalized();
+            List.of(new DatedMemo("2026-10-01", "mind", "첫 메모", false), new DatedMemo("2026-10-03", "mind", "다음 메모", false)), Map.of(), null).normalized();
         Review result = TodayService.localReview(b);
         assertTrue(result.cautions().isEmpty());
         assertTrue(result.changes().isEmpty());
@@ -122,7 +124,7 @@ class TodayTemporalContextTest {
         List<MemoIn> memos = new ArrayList<>();
         for (int i = 0; i < 20; i++) memos.add(new MemoIn("mind", "과거 " + i, true, "2026-10-01"));
         memos.add(new MemoIn("mind", "오늘의 유일한 메모", false, DAY));
-        Request b = new Request("love", null, DAY, Map.of(), List.of(), List.of(), memos, List.of(), List.of(), List.of(), Map.of()).normalized();
+        Request b = new Request("love", null, DAY, Map.of(), List.of(), List.of(), memos, List.of(), List.of(), List.of(), Map.of(), null).normalized();
         assertEquals(20, b.memos().size());
         assertTrue(TodayService.localLove(b).lines().get(0).contains("오늘의 유일한 메모"));
     }
@@ -132,7 +134,7 @@ class TodayTemporalContextTest {
         MemoIn current = new MemoIn("body", "어제 커피 3잔을 마셨다", false, DAY);
         Request b = new Request("review", null, DAY, Map.of(), List.of(), List.of(), List.of(current), List.of(), List.of(),
             List.of(new DatedMemo("2026-10-01", "body", "커피 2잔 넘기지 말기", true),
-                new DatedMemo(DAY, "body", current.text(), false)), Map.of()).normalized();
+                new DatedMemo(DAY, "body", current.text(), false)), Map.of(), null).normalized();
         Review result = TodayService.localReview(b);
         assertEquals(1, result.cautions().size());
         assertTrue(result.cautions().get(0).now().contains("오늘 남긴 말: \"어제 커피"));
@@ -144,13 +146,13 @@ class TodayTemporalContextTest {
     @Test
     void reviewAcceptsDatedMemosWithoutTheAllMemosField() {
         Request b = new Request("review", null, DAY, Map.of(), List.of(), List.of(),
-            List.of(new MemoIn("mind", "오늘의 메모", false, DAY)), List.of(), List.of(), null, Map.of()).normalized();
+            List.of(new MemoIn("mind", "오늘의 메모", false, DAY)), List.of(), List.of(), null, Map.of(), null).normalized();
         assertFalse(TodayService.localReview(b).growth().contains("아직 메모가 없어요"));
     }
 
     @Test
     void invalidExplicitReferenceDateIsNotSilentlyRelabeledAsToday() {
-        Request b = new Request("love", null, "2026-10-1", Map.of(), List.of("그날의 행동"), List.of(), List.of(), List.of(), List.of(), List.of(), Map.of());
+        Request b = new Request("love", null, "2026-10-1", Map.of(), List.of("그날의 행동"), List.of(), List.of(), List.of(), List.of(), List.of(), Map.of(), null);
         assertThrows(kr.co.shuim.config.ApiException.class, b::normalized);
     }
 
