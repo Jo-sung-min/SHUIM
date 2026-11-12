@@ -31,13 +31,16 @@ function devParam(name: string): string | null {
 }
 export const devLook = (): string | null => devParam("moruLook");
 /** 개발 확인용: ?moruWeather=rain|snow|clear, ?moruLand=city|forest 로 오늘의 하늘을 바꿔 본다 */
-export function devSky(): { weather?: "rain" | "snow" | "clear"; land?: "city" | "forest" } {
-  const weather = devParam("moruWeather"), land = devParam("moruLand");
+export function devSky(): { weather?: "rain" | "snow" | "clear"; land?: "city" | "forest"; rare?: string } {
+  const weather = devParam("moruWeather"), land = devParam("moruLand"), rare = devParam("moruRare");
   return {
     ...(weather === "rain" || weather === "snow" || weather === "clear" ? { weather } : {}),
     ...(land === "city" || land === "forest" ? { land } : {}),
+    ...(rare && ["rainbow", "shootingStar", "aurora", "firstSnow"].includes(rare) ? { rare } : {}),
   };
 }
+/** 오늘의 돌봄 할 일 이름 (서버 PetDays 의 id) */
+export const CHORE_NAMES: Record<string, string> = { record: "마음 기록", hug: "안아 주기", tickle: "간질이기", talk: "말 걸기", dust: "먼지 치우기", bath: "목욕", snack: "간식 주기" };
 export function devHome(): number | null {
   const raw = devParam("moruHome");
   return raw !== null && /^[0-8]$/.test(raw) ? Number(raw) : null;
