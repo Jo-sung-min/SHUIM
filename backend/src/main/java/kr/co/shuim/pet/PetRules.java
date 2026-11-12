@@ -31,6 +31,30 @@ public final class PetRules {
         if (s.food() == 0) return s;
         return new State(s.food() - 1, Math.min(720, s.xp() + 1), s.date(), s.meals());
     }
+    /* ---------- 돌봄 상태 (2단계): 온기·말끔함·기운, 0~4 칸. 낮아도 잃는 것은 없다 ---------- */
+    public static final int CARE_MAX = 4;
+    public static final int WARM_DAILY = 3;
+    public record Care(int warmth, int clean, int energy, int warmthToday) {}
+    /** 날짜가 바뀌면: 온기는 하루에 절반, 말끔함은 하루에 한 칸(먼지 한 뭉치). 기운은 어젯밤 불을 꺼 줬으면 가득, 아니면 스스로 자서 절반 */
+    public static Care careRollover(Care c, long days, boolean sleptDark) {
+        if (days <= 0) return c;
+        int warmth = days >= 3 ? 0 : c.warmth() >> (int) days;
+        int clean = (int) Math.max(0, c.clean() - Math.min(days, CARE_MAX));
+        return new Care(warmth, clean, sleptDark ? CARE_MAX : 2, 0);
+    }
+    /** 안아 주기·간질이기·말 걸기·간식: 온기 한 칸, 하루 세 칸까지 (이미 가득이면 오늘 몫을 쓰지 않는다) */
+    public static Care warm(Care c) {
+        if (c.warmth() >= CARE_MAX || c.warmthToday() >= WARM_DAILY) return c;
+        return new Care(c.warmth() + 1, c.clean(), c.energy(), c.warmthToday() + 1);
+    }
+    /** 먼지 한 뭉치 치우기 */
+    public static Care dust(Care c) { return c.clean() >= CARE_MAX ? c : new Care(c.warmth(), c.clean() + 1, c.energy(), c.warmthToday()); }
+    public static Care bath(Care c) { return new Care(c.warmth(), CARE_MAX, c.energy(), c.warmthToday()); }
+    public static Care rested(Care c, boolean dark) { return new Care(c.warmth(), c.clean(), dark ? CARE_MAX : 2, c.warmthToday()); }
+    /** 셋 다 가득이면 반짝인다 */
+    public static boolean glow(Care c) { return c.warmth() == CARE_MAX && c.clean() == CARE_MAX && c.energy() == CARE_MAX; }
+    /** 불을 끄고 켤 수 있는 밤의 열쇠: 22~23시는 그날, 0~6시는 전날. 그 밖의 시간에는 밤이 아니다(null) */
+    public static LocalDate night(LocalDate today, int hour) { return hour >= 22 ? today : hour < 7 ? today.minusDays(1) : null; }
     public static int level(int xp) {
         int level = 1;
         while (level < LEVELS.length && xp >= LEVELS[level]) level++;

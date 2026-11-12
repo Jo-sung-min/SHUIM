@@ -21,7 +21,9 @@ public class PetService {
     public record JournalInput(String date, Answers answers) {}
     public record View(String name, int food, int xp, int level, int levelStart, int levelEnd,
                        String date, int meals, int earned, Answers answers, int reward,
-                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked) {}
+                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked,
+                       int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow) {}
+    private record CareRow(PetRules.Care care, LocalDate careDate, LocalDate bathDate, LocalDate lightsNight, boolean lightsOff) {}
     private record Pet(String name, PetRules.State state) {}
     private static final Answers EMPTY = new Answers(null, null, null, null, null);
     private static final Set<String> MOODS = Set.of("편안해", "기뻐", "그저 그래", "지쳤어", "슬퍼", "불안해", "잘 모르겠어");
@@ -31,9 +33,32 @@ public class PetService {
     private Pet lock(String uid, ZonedDateTime now) {
         jdbc.sql("INSERT INTO user_pets(user_id, meal_date) VALUES (?, ?) ON CONFLICT DO NOTHING")
             .param(uid).param(now.toLocalDate()).update();
-        return jdbc.sql("SELECT name, food, xp, meal_date, meals FROM user_pets WHERE user_id = ? FOR UPDATE")
+        var pet = jdbc.sql("SELECT name, food, xp, meal_date, meals FROM user_pets WHERE user_id = ? FOR UPDATE")
             .param(uid).query((rs, i) -> new Pet(rs.getString("name"), PetRules.settle(new PetRules.State(
                 rs.getInt("food"), rs.getInt("xp"), rs.getObject("meal_date", LocalDate.class), rs.getInt("meals")), now.toLocalDate(), now.getHour()))).single();
+        settleCare(uid, now.toLocalDate());
+        return pet;
+    }
+    private CareRow readCare(String uid) {
+        return jdbc.sql("SELECT warmth, clean, energy, warmth_today, care_date, bath_date, lights_night, lights_off FROM user_pets WHERE user_id = ?")
+            .param(uid).query((rs, i) -> new CareRow(
+                new PetRules.Care(rs.getInt("warmth"), rs.getInt("clean"), rs.getInt("energy"), rs.getInt("warmth_today")),
+                rs.getObject("care_date", LocalDate.class), rs.getObject("bath_date", LocalDate.class),
+                rs.getObject("lights_night", LocalDate.class), rs.getBoolean("lights_off"))).single();
+    }
+    private void writeCare(String uid, PetRules.Care c) {
+        jdbc.sql("UPDATE user_pets SET warmth = ?, clean = ?, energy = ?, warmth_today = ? WHERE user_id = ?")
+            .param(c.warmth()).param(c.clean()).param(c.energy()).param(c.warmthToday()).param(uid).update();
+    }
+    /** 돌봄 상태의 하루 정산. 행을 잠근 뒤에만 부른다. care_date 로 날짜마다 한 번만 깎는다 (저장 없이 끝나는 요청이 있어도 두 번 깎이지 않게) */
+    private void settleCare(String uid, LocalDate today) {
+        var row = readCare(uid);
+        if (row.careDate() != null && !row.careDate().isBefore(today)) return;
+        if (row.careDate() != null) {
+            boolean sleptDark = row.lightsOff() && today.minusDays(1).equals(row.lightsNight());
+            writeCare(uid, PetRules.careRollover(row.care(), java.time.temporal.ChronoUnit.DAYS.between(row.careDate(), today), sleptDark));
+        }
+        jdbc.sql("UPDATE user_pets SET care_date = ? WHERE user_id = ?").param(today).param(uid).update();
     }
     private int mask(String uid, LocalDate date) {
         return jdbc.sql("SELECT rewarded FROM pet_daily_rewards WHERE user_id = ? AND date = ?")
@@ -54,12 +79,16 @@ public class PetService {
         jdbc.sql("UPDATE user_pets SET name = ?, food = ?, xp = ?, meal_date = ?, meals = ? WHERE user_id = ?")
             .param(p.name()).param(s.food()).param(s.xp()).param(s.date()).param(s.meals()).param(uid).update();
         int level = PetRules.level(s.xp());
+        var care = readCare(uid);
+        var night = PetRules.night(s.date(), ZonedDateTime.now(clock).getHour());
         int points = jdbc.sql("SELECT visit_points FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
         int homeId = jdbc.sql("SELECT home_id FROM user_pets WHERE user_id=?").param(uid).query(Integer.class).single();
         String appearance = jdbc.sql("SELECT appearance FROM user_pets WHERE user_id=?").param(uid).query(String.class).single();
         return new View(p.name(), s.food(), s.xp(), level, PetRules.LEVELS[level - 1],
             level == 10 ? 720 : PetRules.LEVELS[level], s.date().toString(), s.meals(),
-            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, snacked(uid, s.date()));
+            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, snacked(uid, s.date()),
+            care.care().warmth(), care.care().clean(), care.care().energy(), s.date().equals(care.bathDate()),
+            night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()));
     }
     private List<Integer> owned(String uid) {
         var result = new ArrayList<Integer>(); result.add(0);
@@ -153,7 +182,45 @@ public class PetService {
         int marked = jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,0) ON CONFLICT DO NOTHING")
             .param(uid).param("snack:" + s.date()).update();
         if (marked == 0) throw ApiException.badRequest("오늘 간식은 이미 줬어요.");
-        return save(uid, new Pet(p.name(), PetRules.snack(s)), 0);
+        writeCare(uid, PetRules.warm(readCare(uid).care()));
+        return save(uid, glowBonus(uid, new Pet(p.name(), PetRules.snack(s))), 0);
+    }
+    /** 온기·말끔함·기운이 모두 가득 찬 날은 한 번 성장 +1 (장부의 0점 표시 glow:날짜 로 하루 한 번) */
+    private Pet glowBonus(String uid, Pet p) {
+        if (!PetRules.glow(readCare(uid).care())) return p;
+        int marked = jdbc.sql("INSERT INTO pet_point_ledger(user_id,event_key,amount) VALUES (?,?,0) ON CONFLICT DO NOTHING")
+            .param(uid).param("glow:" + p.state().date()).update();
+        if (marked == 0) return p;
+        var s = p.state();
+        return new Pet(p.name(), new PetRules.State(s.food(), Math.min(720, s.xp() + 1), s.date(), s.meals()));
+    }
+    public record CareInput(String action) {}
+    private static final Set<String> WARM_ACTIONS = Set.of("hug", "tickle", "talk", "breath");
+    /**
+     * 돌봄: hug·tickle·talk·breath(온기), dust(먼지 한 뭉치), bath(하루 한 번), lightsOff·lightsOn(밤에만).
+     * 상한을 넘은 손길은 거절하지 않고 그대로 둔다 (반응은 화면이 하고, 서버는 칸만 지킨다).
+     */
+    @Transactional public View care(String uid, CareInput in) {
+        String action = in == null || in.action() == null ? "" : in.action();
+        var now = ZonedDateTime.now(clock);
+        var p = lock(uid, now);
+        var row = readCare(uid);
+        var today = p.state().date();
+        if (WARM_ACTIONS.contains(action)) writeCare(uid, PetRules.warm(row.care()));
+        else if (action.equals("dust")) writeCare(uid, PetRules.dust(row.care()));
+        else if (action.equals("bath")) {
+            if (today.equals(row.bathDate())) throw ApiException.badRequest("오늘은 이미 씻었어요.");
+            writeCare(uid, PetRules.bath(row.care()));
+            jdbc.sql("UPDATE user_pets SET bath_date = ? WHERE user_id = ?").param(today).param(uid).update();
+        } else if (action.equals("lightsOff") || action.equals("lightsOn")) {
+            var night = PetRules.night(today, now.getHour());
+            if (night == null) throw ApiException.badRequest("불은 밤에만 끄고 켤 수 있어요.");
+            boolean off = action.equals("lightsOff");
+            jdbc.sql("UPDATE user_pets SET lights_night = ?, lights_off = ? WHERE user_id = ?").param(night).param(off).param(uid).update();
+            // 자정을 넘긴 뒤라면 오늘의 기운은 이미 정산됐다: 지금 고른 대로 바로 맞춘다
+            if (night.isBefore(today)) writeCare(uid, PetRules.rested(row.care(), off));
+        } else throw ApiException.badRequest("할 수 없는 돌봄이에요.");
+        return save(uid, glowBonus(uid, p), 0);
     }
     public record FeedInput(String date, int meals) {}
     @Transactional public View feed(String uid, FeedInput input) {

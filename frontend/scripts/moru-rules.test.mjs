@@ -8,7 +8,7 @@ const typed = await readFile(new URL("../lib/moru-rules.ts", import.meta.url), "
 const source = stripTypeScriptTypes(typed, { mode: "transform" }).replace(/\bexport\s+/g, "");
 const context = { Intl, Date, Math, Number };
 vm.runInNewContext(`${source}\nglobalThis.rules = { koreaHour, dueMeals, mealStatus, dayPhase, isNightOutside, nightKey, lightsOff, isAsleep,
-  rubStats, isTickle, isStartle, touchSpot, pickLine, hasBatchim, callName, subject, HUG_MS, STARTLE_TAPS };`, context);
+  rubStats, isTickle, isStartle, touchSpot, pickLine, hasBatchim, callName, subject, HUG_MS, STARTLE_TAPS, fullness, dustCount };`, context);
 const r = context.rules;
 
 test("the clock is Korea time regardless of the device zone", () => {
@@ -56,6 +56,17 @@ test("the status line names the next meal and never invents a debt", () => {
   assert.equal(r.mealStatus(0, 0, 9), "밥 기다리는 중");
   assert.equal(r.mealStatus(2, 0, 14), "다음 저녁 19시");
   assert.equal(r.mealStatus(3, 0, 20), "오늘 식사 끝");
+});
+
+test("fullness empties two hearts per skipped meal and dust never exceeds three", () => {
+  assert.equal(r.fullness(0, 7), 4, "nothing is due before breakfast");
+  assert.equal(r.fullness(1, 9), 4);
+  assert.equal(r.fullness(0, 9), 2);
+  assert.equal(r.fullness(0, 14), 0);
+  assert.equal(r.fullness(3, 23), 4);
+  assert.equal(r.dustCount(4), 0);
+  assert.equal(r.dustCount(3), 1);
+  assert.equal(r.dustCount(0), 3);
 });
 
 test("rubbing back and forth tickles, a straight drag or a tremble does not", () => {

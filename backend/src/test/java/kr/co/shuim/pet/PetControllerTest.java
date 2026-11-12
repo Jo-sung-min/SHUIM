@@ -19,6 +19,7 @@ class PetControllerTest {
         when(auth.currentUser(req)).thenReturn(Optional.of(new DbUser("blocked", null, "b", "user", false, 1L, "", 0)));
         assertThrows(ApiException.class, () -> controller.journal(null, req));
         assertThrows(ApiException.class, () -> controller.snack(req));
+        assertThrows(ApiException.class, () -> controller.care(new PetService.CareInput("hug"), req));
         verifyNoInteractions(pets);
     }
     @Test void authenticatedIdentityIsTakenFromSessionAndResponseIsPrivate() {

@@ -116,6 +116,47 @@ class PetPostgresTest {
         assertEquals(2, view.reward()); assertEquals(11, view.food()); assertEquals(2, view.earned());
         assertEquals(0, tx.execute(s -> pets.get(uid)).reward());
     }
+    PetService at(String instant) { return new PetService(jdbc, new ObjectMapper(), Clock.fixed(Instant.parse(instant), ZoneId.of("Asia/Seoul"))); }
+    PetService.View care(PetService service, String action) { return tx.execute(s -> service.care(uid, new PetService.CareInput(action))); }
+    @Test void careStatesFollowTouchDustBathAndANightWithTheLightsOff() {
+        var start = tx.execute(s -> pets.get(uid)); // 2026-11-11 07:00 KST
+        assertEquals(2, start.warmth()); assertEquals(3, start.clean()); assertEquals(3, start.energy());
+        assertFalse(start.bathed()); assertNull(start.lightsOff()); assertFalse(start.glow());
+        for (String action : List.of("hug", "tickle", "talk", "hug")) care(pets, action);
+        assertEquals(4, tx.execute(s -> pets.get(uid)).warmth());
+        assertEquals(4, care(pets, "dust").clean());
+        assertTrue(care(pets, "bath").bathed());
+        assertThrows(Exception.class, () -> care(pets, "bath"));
+        assertThrows(Exception.class, () -> care(pets, "lightsOff"), "7 a.m. is not night");
+        assertThrows(Exception.class, () -> care(pets, "fly"));
+        // 23:00 the same day: lights off for the night.
+        var night = at("2026-11-11T14:00:00Z");
+        assertEquals(Boolean.TRUE, care(night, "lightsOff").lightsOff());
+        // 08:00 next morning: warmth halves, one dust returns, energy is full, and the day is settled only once.
+        var morning = at("2026-11-11T23:00:00Z");
+        var next = tx.execute(s -> morning.get(uid));
+        assertEquals(2, next.warmth()); assertEquals(3, next.clean()); assertEquals(4, next.energy());
+        assertFalse(next.bathed()); assertNull(next.lightsOff());
+        assertEquals(2, tx.execute(s -> morning.get(uid)).warmth());
+        // Filling all three once that day adds exactly one growth point.
+        care(morning, "hug"); care(morning, "talk");
+        int before = tx.execute(s -> morning.get(uid)).xp();
+        var glowing = care(morning, "dust");
+        assertTrue(glowing.glow()); assertEquals(before + 1, glowing.xp());
+        assertEquals(before + 1, care(morning, "tickle").xp());
+        // Two days away without lights off: nothing is lost but the states are low, never negative.
+        var later = tx.execute(s -> at("2026-11-13T23:00:00Z").get(uid));
+        assertEquals(1, later.warmth()); assertEquals(2, later.clean()); assertEquals(2, later.energy());
+    }
+    @Test void lightsChosenAfterMidnightSetTodaysEnergyDirectly() {
+        tx.execute(s -> pets.get(uid));
+        var lateNight = at("2026-11-11T16:30:00Z"); // 2026-11-12 01:30 KST, the day has already rolled over
+        assertEquals(2, tx.execute(s -> lateNight.get(uid)).energy());
+        var off = care(lateNight, "lightsOff");
+        assertEquals(4, off.energy()); assertEquals(Boolean.TRUE, off.lightsOff());
+        var on = care(lateNight, "lightsOn");
+        assertEquals(2, on.energy()); assertEquals(Boolean.FALSE, on.lightsOff());
+    }
     @Test void snackIsOncePerDayAndNeverCountsAsAMeal() throws Exception {
         var start = tx.execute(s -> pets.get(uid));
         assertFalse(start.snacked());

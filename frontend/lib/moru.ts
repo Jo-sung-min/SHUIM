@@ -56,6 +56,11 @@ export const NAP_WAKE_LINES = ["…음? 왔구나.", "잠깐 졸았어. 반가�
 export const LIGHTS_OFF_LINE = "잘 자. 너도 푹 자.";
 export const LIGHTS_ON_LINE = "…눈부셔. 조금만 더 있을까.";
 export const SNACK_LINES = ["냠. 고마워, 맛있어.", "마음밥이다. 아껴 먹을게.", "…냠냠. 네가 주니까 더 좋아."];
+/** 돌봄 (2단계): 먼지 치우기 · 목욕 · 푹 잔 아침 · 온기·말끔함·기운이 모두 가득 찼을 때 */
+export const DUST_LINES = ["방이 조금 넓어졌어.", "먼지가 갔다. 고마워.", "…개운해."];
+export const BATH_LINES = ["보글보글. 따뜻해.", "새싹까지 말끔해졌어.", "…비누 냄새, 좋다."];
+export const RESTED_GREETING = "푹 잤어. 어젯밤 불 꺼 줘서 고마워.";
+export const GLOW_LINE = "오늘은 다 좋아. 네 덕분이야.";
 
 /** 말 걸기: 기분을 고르면 모루가 성격대로 한 줄 답한다 (AI 아님). 조언·평가 없이 곁에 있는 말로 */
 export const TALK_TOPICS: { id: string; label: string; replies: string[] }[] = [
@@ -100,14 +105,6 @@ export function takeNewMeal(date: string, meals: number): number | null {
   return meals > before && meals > 0 ? meals - 1 : null; // 방금 먹은 끼니의 번호 (0 아침 · 1 점심 · 2 저녁)
 }
 
-/** 오늘 밤 불을 껐는지·켰는지 (이 기기에만. 기운 상태는 2단계에서 서버로). 고르지 않았으면 null */
-const LIGHTS_KEY = "moru:lights:v1";
-export function loadLights(night: string): boolean | null {
-  const saved = read<{ night?: string; off?: boolean }>(LIGHTS_KEY, {});
-  return saved.night === night && typeof saved.off === "boolean" ? saved.off : null;
-}
-export const saveLights = (night: string, off: boolean) => write(LIGHTS_KEY, { night, off });
-
 /* ---------- 비 오는 작은 방: 혼잣말과 빗소리 ---------- */
 
 /**
@@ -119,7 +116,10 @@ const MURMURS: { minLevel: number; lines: string[] }[] = [
   { minLevel: 3, lines: ["창에 빗방울이 줄을 서 있어.", "오늘은 이불이 유난히 좋아.", "네가 오면 방이 조금 따뜻해져."] },
   { minLevel: 5, lines: ["비 오는 날엔 마음이 느려져서 좋아.", "혼자 있어도, 네 생각을 하면 덜 혼자야.", "가끔은 아무 말 안 해도 괜찮지?"] },
 ];
-export const murmurPool = (level: number): string[] => MURMURS.filter((m) => level >= m.minLevel).flatMap((m) => m.lines);
+/** 기운이 낮은 날에는 하품이 섞인다 (탓하는 말은 없다) */
+const DROWSY = ["…하암.", "오늘은 조금 졸려."];
+export const murmurPool = (level: number, energy = 4): string[] =>
+  [...MURMURS.filter((m) => level >= m.minLevel).flatMap((m) => m.lines), ...(energy <= 2 ? DROWSY : [])];
 /** 다음 혼잣말까지: 45~75초. 개발 중에는 ?moruQuick=1 로 3.5초 (운영 빌드에서는 무시) */
 export function murmurDelay(): number {
   if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("moruQuick")) return 3500;

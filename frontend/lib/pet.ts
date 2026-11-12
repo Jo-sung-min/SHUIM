@@ -12,6 +12,14 @@ export interface PetView {
   appearance: string;
   /** 오늘 간식을 줬는지 (하루 한 번) */
   snacked?: boolean;
+  /** 돌봄 상태 0~4 (2단계). 예전 서버 응답에는 없다 */
+  warmth?: number; clean?: number; energy?: number;
+  /** 오늘 목욕을 했는지 */
+  bathed?: boolean;
+  /** 이번 밤에 고른 불 상태 (밤이 아니거나 아직 안 골랐으면 없음) */
+  lightsOff?: boolean;
+  /** 온기·말끔함·기운이 모두 가득 */
+  glow?: boolean;
 }
 export interface PetHome { id: number; name: string; level: number; cost: number; available: boolean }
 export const EMPTY_ANSWERS: PetAnswers = { mood: null, intensity: null, reason: null, note: null, need: null };

@@ -26,6 +26,14 @@ export function mealStatus(meals: number, food: number, hour: number): string {
   return `다음 ${next.label} ${next.hour}시`;
 }
 
+/* ---------- 상태 네 가지 (docs/MORU_TAMAGOTCHI.md 3장): 0~4 칸. 온기·말끔함·기운은 서버가 지키고, 배부름은 끼니에서 읽는다 ---------- */
+
+export const CARE_MAX = 4;
+/** 배부름: 지금까지 먹었어야 할 끼니를 한 번 거를 때마다 두 칸이 빈다 (밥이 생기면 그날 거른 끼니는 바로 채워진다) */
+export const fullness = (meals: number, hour: number): number => Math.max(0, CARE_MAX - 2 * Math.max(0, dueMeals(hour) - meals));
+/** 방에 굴러다니는 먼지 뭉치: 말끔함에서 빠진 칸만큼, 많아도 셋 */
+export const dustCount = (clean: number): number => Math.max(0, Math.min(3, CARE_MAX - clean));
+
 /* ---------- 하루 리듬 (docs/MORU_TAMAGOTCHI.md 2장) ---------- */
 
 /** 0~6 잠 · 7 기상 · 8~14 낮 · 15 낮잠 · 16~18 낮 · 19~21 저녁 · 22~23 졸림 */

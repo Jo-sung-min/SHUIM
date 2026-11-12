@@ -20,6 +20,7 @@ public class PetController {
     @GetMapping public ResponseEntity<PetService.View> get(HttpServletRequest req) { return result(pets.get(user(req))); }
     @PostMapping("/feed") public ResponseEntity<PetService.View> feed(@RequestBody PetService.FeedInput in, HttpServletRequest req) { return result(pets.feed(user(req), in)); }
     @PostMapping("/snack") public ResponseEntity<PetService.View> snack(HttpServletRequest req) { return result(pets.snack(user(req))); }
+    @PostMapping("/care") public ResponseEntity<PetService.View> care(@RequestBody PetService.CareInput in, HttpServletRequest req) { return result(pets.care(user(req), in)); }
     public record NameInput(String name) {}
     @PutMapping("/name") public ResponseEntity<PetService.View> name(@RequestBody NameInput in, HttpServletRequest req) { return result(pets.rename(user(req), in.name())); }
     @PutMapping("/journal") public ResponseEntity<PetService.View> journal(@RequestBody PetService.JournalInput in, HttpServletRequest req) { return result(pets.journal(user(req), in)); }

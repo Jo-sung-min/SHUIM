@@ -15,6 +15,30 @@ class PetRulesTest {
         assertEquals(0b01011, PetRules.fillRecords(0b01001, 3)); // 예전 5문항 칸도 다섯 칸 안에 센다
         assertEquals(1, PetRules.reward(0b01001, PetRules.fillRecords(0b01001, 3)));
     }
+    @Test void careStatesDecayGentlyAndNeverBelowZero() {
+        var c = new PetRules.Care(4, 4, 3, 3);
+        assertEquals(c, PetRules.careRollover(c, 0, true));
+        assertEquals(new PetRules.Care(2, 3, 4, 0), PetRules.careRollover(c, 1, true));
+        assertEquals(new PetRules.Care(1, 2, 2, 0), PetRules.careRollover(c, 2, false));
+        assertEquals(new PetRules.Care(0, 0, 2, 0), PetRules.careRollover(c, 400, false));
+    }
+    @Test void touchWarmsThreeTimesADayAndAFullHeartSpendsNothing() {
+        var c = new PetRules.Care(0, 2, 2, 0);
+        for (int i = 0; i < 5; i++) c = PetRules.warm(c);
+        assertEquals(3, c.warmth()); assertEquals(3, c.warmthToday());
+        var full = new PetRules.Care(4, 2, 2, 0);
+        assertEquals(full, PetRules.warm(full));
+        assertEquals(3, PetRules.dust(new PetRules.Care(0, 2, 2, 0)).clean());
+        assertEquals(4, PetRules.dust(new PetRules.Care(0, 4, 2, 0)).clean());
+        assertEquals(4, PetRules.bath(new PetRules.Care(0, 0, 2, 0)).clean());
+        assertTrue(PetRules.glow(new PetRules.Care(4, 4, 4, 1)));
+        assertFalse(PetRules.glow(new PetRules.Care(4, 3, 4, 1)));
+    }
+    @Test void aNightRunsFromTenToSevenUnderTheDateItStarted() {
+        assertEquals(day, PetRules.night(day, 22)); assertEquals(day, PetRules.night(day, 23));
+        assertEquals(day.minusDays(1), PetRules.night(day, 0)); assertEquals(day.minusDays(1), PetRules.night(day, 6));
+        assertNull(PetRules.night(day, 7)); assertNull(PetRules.night(day, 21));
+    }
     @Test void snackEatsOneFoodWithoutUsingAMealSlot() {
         var s = PetRules.snack(new PetRules.State(3, 10, day, 1));
         assertEquals(2, s.food()); assertEquals(11, s.xp()); assertEquals(1, s.meals());
