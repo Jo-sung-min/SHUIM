@@ -12,10 +12,10 @@ const TABS = [
   { href: "/shout", label: "광장", match: (p: string) => p === "/shout" },
   { href: "/ranking", label: "불행 랭킹", match: (p: string) => p === "/ranking" },
   { href: "/fund", label: "불행 모금", match: (p: string) => p === "/fund" },
-].filter((t) => !IS_AIT || t.href !== "/fund"); // 미니앱: 모금 탭은 검수 오해를 피하려 뺀다 (빛은 랭킹·글 화면의 빛 주기로 주고받는다)
+].filter((t) => !IS_AIT || t.href !== "/fund"); // 미니앱: 모금 탭은 검수 오해를 피하려 뺀다 (별은 랭킹·글 화면의 별 주기로 주고받는다)
 
 /**
- * 외침 영역 맨 위 (소로우 / 광장 / 불행 랭킹 / 불행 모금 = 빛 모으기). 따로 제목 줄 없이 이 탭 줄이 화면 머리 역할을 한다.
+ * 외침 영역 맨 위 (소로우 / 광장 / 불행 랭킹 / 불행 모금 = 별 모으기). 따로 제목 줄 없이 이 탭 줄이 화면 머리 역할을 한다.
  * 블라인드처럼 글자 탭 + 선택된 탭 아래 밑줄, 오른쪽에 화면별 버튼(right). 세 화면 모두 같은 높이에 있다.
  */
 export default function ShoutTabs({ right }: { right?: ReactNode }) {

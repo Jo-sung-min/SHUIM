@@ -24,7 +24,7 @@ import { route, useRouteParam } from "@/lib/routes";
 type Sort = "top" | "new";
 
 /**
- * 외침 글 화면 (블라인드 글 화면처럼). 경로 → 제목(첫 문장) → 닉네임·시간·댓글 수 → 본문·사진 → 힘내요/댓글/빛(광장 글),
+ * 외침 글 화면 (블라인드 글 화면처럼). 경로 → 제목(첫 문장) → 닉네임·시간·댓글 수 → 본문·사진 → 힘내요/댓글/별(광장 글),
  * 회색 띠 아래 "댓글 N"과 정렬, 평평한 댓글 목록. 댓글마다 "답글 달기"로 대댓글(한 단계), 댓글 입력은 화면 아래 고정.
  */
 export default function ShoutPostPage() {
@@ -42,7 +42,7 @@ export default function ShoutPostPage() {
   const [acceptBusy, setAcceptBusy] = useState(false);
   const acceptLock = useRef(false);
   const [lightTarget, setLightTarget] = useState<LightTarget | null>(null);
-  const light = useLight(false); // 지갑은 빛 주기 시트를 열 때 읽는다
+  const light = useLight(false); // 지갑은 별 주기 시트를 열 때 읽는다
   const barHidden = useHideOnScroll();
 
   const load = useCallback(async () => {
@@ -185,11 +185,11 @@ export default function ShoutPostPage() {
             <div className={`post-foot ${styles.detailFoot}`}>
               <CheerButton count={post.cheers.length} on={post.cheers.includes(s.me.id)} onClick={() => run(setS, () => api.toggleCheer({ kind: "post", id: post.id }))} />
               <LineAction icon={<IconBubble style={{ width: 22, height: 22 }} />} label={total} onClick={scrollToComments} ariaLabel="위로 댓글로 이동" />
-              {/* 빛: 광장 글만 (소로우 사연은 보낸 사람이 가려져 있다). 내 글은 받은 빛만 보인다 */}
+              {/* 별: 광장 글만 (소로우 사연은 보낸 사람이 가려져 있다). 내 글은 받은 별만 보인다 */}
               {canGiveLight(s, post) ? (
-                <LineAction icon={<IconLight style={{ width: 22, height: 22 }} />} label={lightOf(post)} onClick={() => setLightTarget({ postId: post.id, nick: author })} ariaLabel={`빛 주기, 지금 ${lightOf(post)}빛`} />
+                <LineAction icon={<IconLight style={{ width: 22, height: 22 }} />} label={lightOf(post)} onClick={() => setLightTarget({ postId: post.id, nick: author })} ariaLabel={`별 주기, 지금 ${lightOf(post)}별`} />
               ) : !post.communityId && lightOf(post) > 0 && (
-                <span className={`lact ${lightStyles.static}`} aria-label={`받은 빛 ${lightOf(post)}`}><span className="ico"><IconLight style={{ width: 22, height: 22 }} /></span><span className="lbl">{lightOf(post)}</span></span>
+                <span className={`lact ${lightStyles.static}`} aria-label={`받은 별 ${lightOf(post)}`}><span className="ico"><IconLight style={{ width: 22, height: 22 }} /></span><span className="lbl">{lightOf(post)}</span></span>
               )}
             </div>
           </article>

@@ -6,10 +6,10 @@ import kr.co.shuim.points.PointsPolicy;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/** 빛의 숫자 규칙. 화면은 이 값을 /api/light/me 로 받아 쓴다. */
+/** 별의 숫자 규칙. 화면은 이 값을 /api/light/me 로 받아 쓴다. */
 public final class LightPolicy {
     private LightPolicy() {}
-    /** 오늘의 빛: 하루 한 번 받는 양 */
+    /** 오늘의 별: 하루 한 번 받는 양 */
     public static final int DAILY_LIGHT = 10;
     /** 한 번에 줄 수 있는 가장 큰 양 */
     public static final int MAX_GIFT = 10;
@@ -21,7 +21,7 @@ public final class LightPolicy {
     /** The client only picks a whole amount from 1 to MAX_GIFT; anything else is rejected, never rounded. */
     public static int giftAmount(Object raw) {
         long value = raw instanceof Integer || raw instanceof Long || raw instanceof Short ? ((Number) raw).longValue() : -1;
-        if (value < 1 || value > MAX_GIFT) throw ApiException.badRequest("빛은 한 번에 1~" + MAX_GIFT + "빛까지 줄 수 있어요.");
+        if (value < 1 || value > MAX_GIFT) throw ApiException.badRequest("별은 한 번에 1~" + MAX_GIFT + "별까지 줄 수 있어요.");
         return (int) value;
     }
 

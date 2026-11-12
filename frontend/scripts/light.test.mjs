@@ -1,4 +1,4 @@
-// 빛: 지갑 클라이언트(lib/light.ts)와 화면이 쓰는 순위 계산(lib/community-core.ts)
+// 별: 지갑 클라이언트(lib/light.ts)와 화면이 쓰는 순위 계산(lib/community-core.ts)
 import { readFile } from "node:fs/promises";
 import { stripTypeScriptTypes } from "node:module";
 import vm from "node:vm";
@@ -48,19 +48,19 @@ test("malformed balances, bad history and HTML outages never become a wallet", (
   const broken = [null, {}, "<html>", { ...valid(), balance: -1 }, { ...valid(), balance: 1.5 }, { ...valid(), dailyClaimed: "yes" }, { ...valid(), dailyLight: 0 },
     { ...valid(), history: [{ ...valid().history[0], amount: 0 }] }, { ...valid(), history: [{ ...valid().history[0], balanceAfter: -1 }] },
     { ...valid(), history: [{ ...valid().history[0], nick: { html: "<b>" } }] }, { ...valid(), history: "none" }];
-  for (const value of broken) assert.throws(() => api.parseLightWallet(value), /빛 정보를 확인/);
+  for (const value of broken) assert.throws(() => api.parseLightWallet(value), /별 정보를 확인/);
   const empty = { ...valid(), balance: 0, history: [] };
   assert.equal(api.parseLightWallet(empty), empty);
 });
 
 test("errors and account switches are reported instead of showing a zero balance", async () => {
-  await assert.rejects(light(async () => ({ ok: false, json: async () => ({ error: "로그인하면 빛을 모을 수 있어요." }) })).fetchLight("alice"), /로그인/);
+  await assert.rejects(light(async () => ({ ok: false, json: async () => ({ error: "로그인하면 별을 모을 수 있어요." }) })).fetchLight("alice"), /로그인/);
   await assert.rejects(light(async () => ({ ok: false, json: async () => { throw new Error("html"); } })).fetchLight("alice"), /불러오지 못했어요/);
-  // 빛이 아직 없는 옛 서버: 서버의 "not found" 를 그대로 보여 주지 않는다
+  // 별이 아직 없는 옛 서버: 서버의 "not found" 를 그대로 보여 주지 않는다
   const old = light(async () => ({ ok: false, status: 404, json: async () => ({ error: "not found" }) }));
-  await assert.rejects(old.fetchLight("alice"), (cause) => cause.message === "빛을 준비하고 있어요. 잠시 뒤에 다시 열어 주세요.");
+  await assert.rejects(old.fetchLight("alice"), (cause) => cause.message === "별을 준비하고 있어요. 잠시 뒤에 다시 열어 주세요.");
   await assert.rejects(old.claimDailyLight("alice"), /준비하고 있어요/);
-  await assert.rejects(light(async () => ({ ok: false, status: 401, json: async () => ({ error: "로그인하면 빛을 모을 수 있어요." }) })).fetchLight("alice"), /로그인/);
+  await assert.rejects(light(async () => ({ ok: false, status: 401, json: async () => ({ error: "로그인하면 별을 모을 수 있어요." }) })).fetchLight("alice"), /로그인/);
   let id = "alice", resolve;
   const api = light(() => new Promise((done) => { resolve = done; }), () => id);
   const pending = api.fetchLight("alice");
@@ -72,12 +72,12 @@ test("errors and account switches are reported instead of showing a zero balance
 
 test("history lines name the other person when known and stay plain text otherwise", () => {
   const { lightReason } = light();
-  assert.equal(lightReason({ reason: "daily" }), "오늘의 빛");
+  assert.equal(lightReason({ reason: "daily" }), "오늘의 별");
   assert.equal(lightReason({ reason: "gift_sent", nick: "받는 이" }), "받는 이 님에게 건넸어요");
   assert.equal(lightReason({ reason: "gift_received", nick: "주는 이" }), "주는 이 님이 건넸어요");
-  assert.equal(lightReason({ reason: "gift_sent", nick: null }), "빛을 건넸어요");
-  assert.equal(lightReason({ reason: "gift_received", nick: "  " }), "빛을 받았어요");
-  for (const reason of ["__proto__", "constructor", "future_reason"]) assert.equal(lightReason({ reason }), "빛");
+  assert.equal(lightReason({ reason: "gift_sent", nick: null }), "별을 건넸어요");
+  assert.equal(lightReason({ reason: "gift_received", nick: "  " }), "별을 받았어요");
+  for (const reason of ["__proto__", "constructor", "future_reason"]) assert.equal(lightReason({ reason }), "별");
 });
 
 test("a retried gift reuses its request id and a new gift gets a new one", () => {
@@ -138,12 +138,12 @@ test("light can be offered only on visible plaza posts by other registered membe
   const post = (extra) => ({ id: "p", authorId: "member", cat: "misfortune", text: "t", createdAt: 0, cheers: [], reports: [], ...extra });
   const flagged = Array.from({ length: 5 }, (_, i) => ({ by: `r${i}`, reason: "abuse", at: 1 }));
   assert.equal(api.canGiveLight(s, post({})), true);
-  assert.equal(api.canGiveLight(s, post({ cat: "free" })), true); // 순위는 불행광장만 세지만 빛은 광장 글이면 건넬 수 있다
+  assert.equal(api.canGiveLight(s, post({ cat: "free" })), true); // 순위는 불행광장만 세지만 별은 광장 글이면 건넬 수 있다
   for (const extra of [{ authorId: "me" }, { authorId: "guest" }, { authorId: "blocked" }, { authorId: "unknown" }, { communityId: "c1" }, { hidden: true }, { reports: flagged }]) {
     assert.equal(api.canGiveLight(s, post(extra)), false, JSON.stringify(extra));
   }
   assert.equal(api.canGiveLight(s, undefined), false);
-  assert.equal(api.fmtLight(1234), "1,234빛");
+  assert.equal(api.fmtLight(1234), "1,234별");
   assert.equal(api.lightOf({}), 0);
   assert.deepEqual([...api.LIGHT_CHOICES], [1, 3, 5, 10]);
 });

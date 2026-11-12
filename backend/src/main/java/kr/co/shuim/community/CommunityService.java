@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 public class CommunityService {
     private static final List<String> SAMPLE_USER_IDS = List.of("u1", "u2", "u3", "u4", "u5", "u6", "u7");
     private static final Pattern URL = Pattern.compile("^(/|https?://)");
-    /** 화면에 내려보내는 "최근 오간 빛" 개수 */
+    /** 화면에 내려보내는 "최근 오간 별" 개수 */
     static final int RECENT_GIFTS = 30;
 
     private final JdbcClient jdbc;
@@ -114,7 +114,7 @@ public class CommunityService {
         User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null, null, false));
         List<User> users = new ArrayList<>(allUsers.stream().filter(u -> !u.id().equals(me.id())).toList());
 
-        // 빛: 집계에는 전부 쓰고, 화면에는 forViewer 가 최근 것만 추려 내려보낸다
+        // 별: 집계에는 전부 쓰고, 화면에는 forViewer 가 최근 것만 추려 내려보낸다
         List<Gift> gifts = jdbc.sql("SELECT id::text AS id, from_user, to_user, post_id, amount, created_at FROM light_gifts WHERE post_id IS NOT NULL ORDER BY created_at DESC, id")
             .query((rs, i) -> new Gift(rs.getString("id"), rs.getString("from_user"), rs.getString("to_user"), rs.getString("post_id"), rs.getInt("amount"), rs.getLong("created_at"))).list();
         Map<String, Integer> lightByPost = CommunityLogic.lightByPost(gifts);
@@ -215,7 +215,7 @@ public class CommunityService {
             .forEach(p -> rankablePostIds.add(p.id()));
         store.weekly().forEach((key, w) -> weekly.put(key, new WeeklyBatch(w.week(), w.computedAt(), w.finalized(),
             w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund(), w.light())));
-        // 최근 오간 빛: 이 사람이 볼 수 있는 광장 글에 건넨 것만, 차단한·차단된 사람과 정지된 계정은 빼고
+        // 최근 오간 별: 이 사람이 볼 수 있는 광장 글에 건넨 것만, 차단한·차단된 사람과 정지된 계정은 빼고
         Set<String> plazaPostIds = new HashSet<>();
         posts.stream().filter(p -> !p.inCircle()).forEach(p -> plazaPostIds.add(p.id()));
         List<Gift> gifts = store.gifts().stream()
@@ -564,7 +564,7 @@ public class CommunityService {
     }
 
     /**
-     * 광장 글에 빛 주기. 받는 사람·금액·잔액·하루 한도는 LightService 가 정하고 옮긴다.
+     * 광장 글에 별 주기. 받는 사람·금액·잔액·하루 한도는 LightService 가 정하고 옮긴다.
      * 같은 트랜잭션에서 이번 주 잠정 순위를 다시 세어, 준 사람 화면에 바로 반영된다.
      */
     @Transactional

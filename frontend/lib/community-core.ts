@@ -1,5 +1,5 @@
 /**
- * 외침·위로 피드·랭킹·빛의 타입과 순수 계산 로직.
+ * 외침·위로 피드·랭킹·별의 타입과 순수 계산 로직.
  * 서버(API 라우트)와 클라이언트가 함께 쓰므로 브라우저 전용 코드("use client", localStorage)는 두지 않는다.
  */
 
@@ -101,7 +101,7 @@ export interface Post extends Base {
   /** 소로우 이름·주소 (화면 표시용) */
   circle?: string;
   circleSlug?: string;
-  /** 이 글이 받은 빛 합계 */
+  /** 이 글이 받은 별 합계 */
   light?: number;
 }
 
@@ -144,7 +144,7 @@ export const FEED_MAX_PAGES = 10;
 export const pagesOf = (f: FeedPost): FeedPage[] =>
   f.pages?.length ? f.pages : [{ image: f.image, title: f.title, text: f.text }];
 
-/** 광장 글에 건넨 빛 한 건 (by = 준 사람, to = 글쓴이) */
+/** 광장 글에 건넨 별 한 건 (by = 준 사람, to = 글쓴이) */
 export interface Gift {
   id: string;
   by: string;
@@ -162,7 +162,7 @@ export interface RankRow {
   posts: number;
   topPostId: string;
   topPostText: string;
-  /** 그 주 불행광장 글이 받은 빛 (순위 기준). 빛이 생기기 전에 확정된 주에는 없다 */
+  /** 그 주 불행광장 글이 받은 별 (순위 기준). 별이 생기기 전에 확정된 주에는 없다 */
   light?: number;
 }
 
@@ -171,7 +171,7 @@ export interface WeeklyBatch {
   computedAt: number;
   finalized: boolean;
   rows: RankRow[];
-  /** 그 주 불행광장 글이 받은 빛: 합계, 건수, 준 사람 수 */
+  /** 그 주 불행광장 글이 받은 별: 합계, 건수, 준 사람 수 */
   light?: { total: number; count: number; givers: number };
 }
 
@@ -183,7 +183,7 @@ export interface CommunityStore {
   feed: FeedPost[];
   creators: Record<string, Creator>;
   following: string[];
-  /** 최근 오간 빛 (볼 수 있는 광장 글의 것만, 최신순) */
+  /** 최근 오간 별 (볼 수 있는 광장 글의 것만, 최신순) */
   gifts: Gift[];
   weekly: Record<string, WeeklyBatch>;
 }
@@ -250,7 +250,7 @@ export function weekLabel(week: string): string {
   return `${m1}/${d1} ~ ${m2}/${d2}`;
 }
 
-/** 그 주에 쓴 불행광장 글이 받은 빛을 사람별로 더한 순위. 빛이 같으면 힘내요, 그래도 같으면 먼저 쓴 사람 (서버 CommunityLogic 과 같다) */
+/** 그 주에 쓴 불행광장 글이 받은 별을 사람별로 더한 순위. 별이 같으면 힘내요, 그래도 같으면 먼저 쓴 사람 (서버 CommunityLogic 과 같다) */
 export function computeWeekly(s: CommunityStore, week: string, finalized: boolean): WeeklyBatch {
   const inWeek = (ts: number) => weekKeyOf(ts) === week;
   const posts = s.posts.filter((p) => !p.communityId && p.cat === "misfortune" && inWeek(p.createdAt) && isVisible(s, p));
@@ -297,13 +297,13 @@ export function weeksNeedingCompute(s: CommunityStore): { week: string; finalize
 export const weeklyOf = (s: CommunityStore, week: string): WeeklyBatch | undefined => s.weekly?.[week];
 export const pastWeeks = (s: CommunityStore) => Object.keys(s.weekly ?? {}).filter((w) => w < currentWeekKey()).sort().reverse();
 
-/* ---------- 빛 ---------- */
+/* ---------- 별 ---------- */
 
-/** 한 번에 건넬 수 있는 빛 (서버는 1~10 사이 정수만 받는다) */
+/** 한 번에 건넬 수 있는 별 (서버는 1~10 사이 정수만 받는다) */
 export const LIGHT_CHOICES = [1, 3, 5, 10];
 export const lightOf = (x: { light?: number }) => x.light ?? 0;
-export const fmtLight = (n: number) => `${n.toLocaleString("ko-KR")}빛`;
-/** 이 글에 내가 빛을 줄 수 있는지: 광장 글, 가입한 다른 사람의 글, 가려지지 않은 글 (잔액·하루 한도는 서버가 본다) */
+export const fmtLight = (n: number) => `${n.toLocaleString("ko-KR")}별`;
+/** 이 글에 내가 별을 줄 수 있는지: 광장 글, 가입한 다른 사람의 글, 가려지지 않은 글 (잔액·하루 한도는 서버가 본다) */
 export function canGiveLight(s: CommunityStore, post: Post | undefined): boolean {
   if (!post || post.communityId || post.authorId === s.me.id) return false;
   return userById(s, post.authorId).registered === true && isVisible(s, post) && !isFlagged(post);

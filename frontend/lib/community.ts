@@ -72,7 +72,7 @@ export const api = {
   updateBio: (bio: string) => call("/api/community/bio", { bio }),
   toggleFollow: (creatorId: string) => call("/api/community/follow", { creatorId }),
   toggleSave: (feedId: string) => call("/api/community/save", { feedId }),
-  /** 광장 글에 빛 주기. 받는 사람은 글이 정하고, requestId 가 같은 요청은 한 번만 반영된다 */
+  /** 광장 글에 별 주기. 받는 사람은 글이 정하고, requestId 가 같은 요청은 한 번만 반영된다 */
   giveLight: (postId: string, amount: number, requestId: string) => call("/api/community/light.give", { postId, amount, requestId }),
   refreshCurrentWeek: () => call("/api/community/weekly.refresh", {}),
   adminHide: (t: Target) => call("/api/community/admin.hide", t),

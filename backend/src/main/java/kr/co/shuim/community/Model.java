@@ -41,7 +41,7 @@ public final class Model {
      */
     public record Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
                        String communityId, Integer postNo, String circle, String circleSlug, String acceptedCommentId, int light) implements Item {
-        /** 아직 빛을 받지 않은 글 */
+        /** 아직 별을 받지 않은 글 */
         public Post(String id, String cat, String text, String authorId, long createdAt, List<String> cheers, List<Report> reports, Boolean hidden, Long reviewedAt, List<String> images,
                     String communityId, Integer postNo, String circle, String circleSlug, String acceptedCommentId) {
             this(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, 0);
@@ -63,7 +63,7 @@ public final class Model {
         public Post withAuthor(String author, List<Report> reports) {
             return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, light);
         }
-        /** 같은 글, 받은 빛 합계만 채워서 */
+        /** 같은 글, 받은 별 합계만 채워서 */
         public Post withLight(int light) {
             return new Post(id, cat, text, authorId, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, light);
         }
@@ -97,11 +97,11 @@ public final class Model {
 
     public record Creator(String bio, List<String> followers, long since) {}
 
-    /** 광장 글에 건넨 빛 한 건. by 는 준 사람(떠난 계정이면 null), to 는 글쓴이 */
+    /** 광장 글에 건넨 별 한 건. by 는 준 사람(떠난 계정이면 null), to 는 글쓴이 */
     public record Gift(String id, String by, String to, String postId, int amount, long at) {}
 
     /**
-     * 주간 순위 한 줄. light = 그 주 불행광장 글이 받은 빛(순위 기준), cheers = 힘내요(동률일 때).
+     * 주간 순위 한 줄. light = 그 주 불행광장 글이 받은 별(순위 기준), cheers = 힘내요(동률일 때).
      * share·payout 은 원화 모의 모금 때의 값이라 이제 늘 0 이다 (옛 화면·옛 집계 행이 읽는 자리만 남겼다).
      */
     public record RankRow(int rank, String userId, String nick, int cheers, int posts, String topPostId, String topPostText, double share, long payout, int light) {
@@ -113,7 +113,7 @@ public final class Model {
     /** 원화 모의 모금의 자리. 옛 화면이 깨지지 않게 늘 0 으로 내려간다 */
     public record Fund(long total, int count, int donors) {}
 
-    /** 그 주 불행광장 글이 받은 빛: 합계, 건수, 준 사람 수 */
+    /** 그 주 불행광장 글이 받은 별: 합계, 건수, 준 사람 수 */
     public record Light(long total, int count, int givers) {}
 
     public record WeeklyBatch(String week, long computedAt, boolean finalized, List<RankRow> rows, Fund fund, Light light) {

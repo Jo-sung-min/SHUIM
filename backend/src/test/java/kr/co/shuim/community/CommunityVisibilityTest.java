@@ -68,7 +68,7 @@ class CommunityVisibilityTest {
         assertTrue(filtered.users().isEmpty());
         assertTrue(filtered.creators().isEmpty());
         assertTrue(filtered.following().isEmpty());
-        // 최근 오간 빛: 차단한 사람이 주거나 받은 것, 떠난 계정이 준 것, 가려진 글에 준 것은 내려가지 않는다
+        // 최근 오간 별: 차단한 사람이 주거나 받은 것, 떠난 계정이 준 것, 가려진 글에 준 것은 내려가지 않는다
         assertEquals(List.of("seen"), filtered.gifts().stream().map(Gift::id).toList());
         assertEquals(5, source.gifts().size());
         assertTrue(filtered.weekly().get(weekly.week()).rows().isEmpty());

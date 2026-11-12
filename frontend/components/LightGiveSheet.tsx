@@ -10,18 +10,18 @@ import { Sheet } from "./ui";
 import { IconLight } from "./Icons";
 import styles from "./Light.module.css";
 
-/** 빛을 받을 글 (받는 사람은 서버가 글에서 찾는다. nick 은 문구용) */
+/** 별을 받을 글 (받는 사람은 서버가 글에서 찾는다. nick 은 문구용) */
 export interface LightTarget { postId: string; nick: string }
 
 /**
- * 빛 주기 시트. 1·3·5·10빛 가운데 골라 광장 글에 건넨다.
- * 잔액·하루 한도는 서버가 판단하고, 여기서는 가진 빛보다 큰 양만 미리 막는다.
+ * 별 주기 시트. 1·3·5·10별 가운데 골라 광장 글에 건넨다.
+ * 잔액·하루 한도는 서버가 판단하고, 여기서는 가진 별보다 큰 양만 미리 막는다.
  */
 export default function LightGiveSheet({ target, light, onClose, onGiven }: {
   target: LightTarget | null;
   light: Light;
   onClose: () => void;
-  /** 건넨 뒤의 최신 커뮤니티 상태 (순위·글의 빛이 반영돼 있다) */
+  /** 건넨 뒤의 최신 커뮤니티 상태 (순위·글의 별이 반영돼 있다) */
   onGiven: (store: CommunityStore) => void;
 }) {
   const [amount, setAmount] = useState(LIGHT_CHOICES[0]);
@@ -38,7 +38,7 @@ export default function LightGiveSheet({ target, light, onClose, onGiven }: {
     if (open) void refresh(state.kind === "ready");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 열릴 때 한 번만
   }, [open]);
-  // 가진 빛보다 큰 양이 골라져 있으면 줄 수 있는 가장 큰 양으로
+  // 가진 별보다 큰 양이 골라져 있으면 줄 수 있는 가장 큰 양으로
   useEffect(() => {
     if (!wallet || amount <= wallet.balance) return;
     const fit = [...LIGHT_CHOICES].reverse().find((n) => n <= wallet.balance);
@@ -66,10 +66,10 @@ export default function LightGiveSheet({ target, light, onClose, onGiven }: {
   };
 
   return (
-    <Sheet open={open} onClose={() => { if (!locked.current) onClose(); }} title={target ? `${target.nick} 님에게 빛 주기` : "빛 주기"}>
+    <Sheet open={open} onClose={() => { if (!locked.current) onClose(); }} title={target ? `${target.nick} 님에게 별 주기` : "별 주기"}>
       {state.kind === "guest" ? (
         <>
-          <p className={styles.sheetNote}>로그인하면 빛을 모으고 건넬 수 있어요.</p>
+          <p className={styles.sheetNote}>로그인하면 별을 모으고 건넬 수 있어요.</p>
           <div className="sheet-actions">
             <button type="button" className="btn ghost" onClick={onClose}>닫기</button>
             <Link href="/auth?next=fund" className="btn">로그인하기</Link>
@@ -84,25 +84,25 @@ export default function LightGiveSheet({ target, light, onClose, onGiven }: {
           </div>
         </>
       ) : !wallet ? (
-        <p className={styles.sheetNote} role="status">내 빛을 확인하고 있어요…</p>
+        <p className={styles.sheetNote} role="status">내 별을 확인하고 있어요…</p>
       ) : (
         <>
-          <p className={styles.sheetBalance}><IconLight aria-hidden="true" />내 빛 <b>{balance.toLocaleString("ko-KR")}</b></p>
+          <p className={styles.sheetBalance}><IconLight aria-hidden="true" />내 별 <b>{balance.toLocaleString("ko-KR")}</b></p>
           {balance === 0 ? (
             <>
-              <p className={styles.sheetNote}>{wallet.dailyClaimed ? "오늘은 건넬 빛이 없어요. 내일 다시 받을 수 있어요." : "오늘의 빛을 먼저 받아 주세요."}</p>
+              <p className={styles.sheetNote}>{wallet.dailyClaimed ? "오늘은 건넬 별이 없어요. 내일 다시 받을 수 있어요." : "오늘의 별을 먼저 받아 주세요."}</p>
               <div className="sheet-actions">
                 <button type="button" className="btn ghost" onClick={onClose}>닫기</button>
                 {!wallet.dailyClaimed && (
                   <button type="button" className="btn" disabled={light.claiming} aria-busy={light.claiming} onClick={() => void light.claim()}>
-                    오늘의 빛 받기 +{wallet.dailyLight}
+                    오늘의 별 받기 +{wallet.dailyLight}
                   </button>
                 )}
               </div>
             </>
           ) : (
             <>
-              <div className={styles.choices} role="radiogroup" aria-label="건넬 빛">
+              <div className={styles.choices} role="radiogroup" aria-label="건넬 별">
                 {LIGHT_CHOICES.map((n) => (
                   <button key={n} type="button" role="radio" aria-checked={amount === n} className={`chip ${amount === n ? "on" : ""}`} disabled={n > balance || busy} onClick={() => setAmount(n)}>
                     {fmtLight(n)}

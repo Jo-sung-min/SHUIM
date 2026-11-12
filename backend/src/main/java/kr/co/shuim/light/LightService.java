@@ -15,7 +15,7 @@ import java.util.UUID;
 import java.util.function.LongSupplier;
 
 /**
- * 빛 지갑. 서버가 잔액을 소유하고, 클라이언트는 "어느 글에 몇 빛"만 고른다 (받는 사람은 글이 정한다).
+ * 별 지갑. 서버가 잔액을 소유하고, 클라이언트는 "어느 글에 몇 별"만 고른다 (받는 사람은 글이 정한다).
  * 주기는 한 트랜잭션에서 두 지갑을 id 순서로 잠가 옮기고, 요청 번호(= light_gifts.id)가 같은 요청은 한 번만 반영한다.
  */
 @Service
@@ -35,15 +35,15 @@ public class LightService {
 
     @Transactional
     public Account me(DbUser user) {
-        requireMember(user, "로그인하면 빛을 모을 수 있어요.");
+        requireMember(user, "로그인하면 별을 모을 수 있어요.");
         long now = clock.getAsLong();
         return account(user.id(), lock(user.id(), now), now);
     }
 
-    /** 오늘의 빛. 하루(한국 시간)에 한 번만 들어가고, 다시 눌러도 그대로다. */
+    /** 오늘의 별. 하루(한국 시간)에 한 번만 들어가고, 다시 눌러도 그대로다. */
     @Transactional
     public Account claimDaily(DbUser user) {
-        requireMember(user, "로그인하면 오늘의 빛을 받을 수 있어요.");
+        requireMember(user, "로그인하면 오늘의 별을 받을 수 있어요.");
         long now = clock.getAsLong();
         Wallet wallet = lock(user.id(), now);
         String eventKey = dailyKey(user.id(), LightPolicy.day(now));
@@ -56,10 +56,10 @@ public class LightService {
         return account(user.id(), wallet, now);
     }
 
-    /** 광장 글에 빛 주기 → 글쓴이 지갑으로. 금액·잔액·하루 한도는 모두 여기서 검사한다. */
+    /** 광장 글에 별 주기 → 글쓴이 지갑으로. 금액·잔액·하루 한도는 모두 여기서 검사한다. */
     @Transactional
     public void give(DbUser user, String postId, Object rawAmount, Object rawRequestId) {
-        requireMember(user, "로그인하면 빛을 줄 수 있어요.");
+        requireMember(user, "로그인하면 별을 줄 수 있어요.");
         UUID giftId = LightPolicy.requestKey(rawRequestId);
         int amount = LightPolicy.giftAmount(rawAmount);
         long now = clock.getAsLong();
@@ -72,11 +72,11 @@ public class LightService {
             """).param(postId).query((rs, i) -> new Target(rs.getString("author_id"), rs.getBoolean("circle"),
                 rs.getBoolean("hidden"), rs.getLong("reports"))).optional().orElse(null);
         if (post == null || post.circle() || post.hidden() || post.reports() >= CommunityLogic.REPORT_THRESHOLD) {
-            throw ApiException.notFound("빛을 줄 수 있는 글을 찾지 못했어요.");
+            throw ApiException.notFound("별을 줄 수 있는 글을 찾지 못했어요.");
         }
         String to = post.author();
-        if (user.id().equals(to)) throw ApiException.badRequest("내 글에는 빛을 줄 수 없어요.");
-        if (!registered(to)) throw ApiException.badRequest("가입한 이웃의 글에만 빛을 줄 수 있어요.");
+        if (user.id().equals(to)) throw ApiException.badRequest("내 글에는 별을 줄 수 없어요.");
+        if (!registered(to)) throw ApiException.badRequest("가입한 이웃의 글에만 별을 줄 수 있어요.");
         if (blocked(user.id(), to)) throw ApiException.forbidden("차단된 사용자와는 소통할 수 없어요.");
 
         // 두 지갑을 언제나 id 순서로 잠근다 → 서로에게 동시에 줘도 교착이 없다.
@@ -95,9 +95,9 @@ public class LightService {
             .param(user.id()).param(to).param(day).query(Long.class).single();
         int left = LightPolicy.leftForPerson(givenToday);
         if (amount > left) {
-            throw new ApiException(409, left == 0 ? "이분께는 오늘 줄 수 있는 빛을 다 건넸어요." : "이분께는 오늘 " + left + "빛까지 더 줄 수 있어요.");
+            throw new ApiException(409, left == 0 ? "이분께는 오늘 줄 수 있는 별을 다 건넸어요." : "이분께는 오늘 " + left + "별까지 더 줄 수 있어요.");
         }
-        if (giver.balance() < amount) throw new ApiException(409, "빛이 부족해요.");
+        if (giver.balance() < amount) throw new ApiException(409, "별이 부족해요.");
 
         jdbc.sql("INSERT INTO light_gifts(id,from_user,to_user,post_id,amount,given_on,created_at) VALUES (?,?,?,?,?,?,?)")
             .param(giftId).param(user.id()).param(to).param(postId).param(amount).param(day).param(now).update();
@@ -146,7 +146,7 @@ public class LightService {
 
     private void requireMember(DbUser user, String guestMessage) {
         if (user == null || user.anonymous()) throw ApiException.unauthorized(guestMessage);
-        if (user.blocked() || !registered(user.id())) throw ApiException.forbidden("현재 계정에서는 빛을 이용할 수 없어요.");
+        if (user.blocked() || !registered(user.id())) throw ApiException.forbidden("현재 계정에서는 별을 이용할 수 없어요.");
     }
 
     /** A registered, unblocked, non-sample account: the only kind that may hold or receive light. */

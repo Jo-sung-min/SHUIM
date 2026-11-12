@@ -119,7 +119,7 @@ class LightPostgresTest {
         assertEquals(3, wallet(author).balance());
         assertEquals(3, wallet(author).totalReceived());
         assertEquals(3, after.posts().stream().filter(p -> p.id().equals(lit)).findFirst().orElseThrow().light());
-        // 빛 3 이 힘내요 3 을 앞선다
+        // 별 3 이 힘내요 3 을 앞선다
         assertEquals(List.of(author.id(), cheered.id()), rows(after).stream().map(RankRow::userId).filter(id -> id.equals(cheered.id()) || id.equals(author.id())).toList());
         assertEquals(3, rows(after).stream().filter(r -> r.userId().equals(author.id())).findFirst().orElseThrow().light());
         Light week = after.weekly().get(Dates.currentWeekKey()).light();
@@ -131,7 +131,7 @@ class LightPostgresTest {
         var sent = wallet(giver).history().getFirst(); var received = wallet(author).history().getFirst();
         assertEquals(List.of("gift_sent", -3, 7L, "받는 이"), List.of(sent.reason(), sent.amount(), sent.balanceAfter(), sent.nick()));
         assertEquals(List.of("gift_received", 3, 3L, "주는 이"), List.of(received.reason(), received.amount(), received.balanceAfter(), received.nick()));
-        // 받은 빛은 다시 다른 사람에게 줄 수 있다
+        // 받은 별은 다시 다른 사람에게 줄 수 있다
         give(author, plain, 2);
         assertEquals(1, wallet(author).balance());
         assertEquals(2, wallet(cheered).balance());
@@ -163,7 +163,7 @@ class LightPostgresTest {
         assertEquals(409, status(() -> give(giver, post, 1))); // 잔액 0
         daily(giver);
         clock.addAndGet(60_000);
-        daily(giver); // 다음 날: 잔액 20, 오늘 준 빛 0
+        daily(giver); // 다음 날: 잔액 20, 오늘 준 별 0
         give(giver, post, 7);
         assertEquals(409, status(() -> give(giver, another, 5))); // 같은 사람의 다른 글도 같은 한도
         give(giver, another, 3);
@@ -172,7 +172,7 @@ class LightPostgresTest {
         assertEquals(409, status(() -> give(giver, elsewhere, 1)));
         assertEquals(0, wallet(giver).balance());
         assertEquals(10, wallet(author).balance());
-        // 둘이 주고받기를 되풀이해도 하루에 쌓이는 빛은 늘지 않는다
+        // 둘이 주고받기를 되풀이해도 하루에 쌓이는 별은 늘지 않는다
         String mine = post(giver);
         give(author, mine, 10);
         assertEquals(409, status(() -> give(giver, post, 10)));
@@ -203,10 +203,10 @@ class LightPostgresTest {
         for (int i = 0; i < 5; i++) jdbc.sql("INSERT INTO reports(id,reporter_id,target_kind,target_id,reason) VALUES (?,?,'post',?,'abuse')")
             .param(UUID.randomUUID().toString()).param(member("신고 " + i).id()).param(flagged).update();
         assertEquals(404, status(() -> give(giver, flagged, 1)));
-        // 소로우 사연은 보낸 사람이 가려져 있다: 빛으로도 드러나지 않게 없는 글처럼 답한다
+        // 소로우 사연은 보낸 사람이 가려져 있다: 별로도 드러나지 않게 없는 글처럼 답한다
         String circle = UUID.randomUUID().toString(); circles.add(circle);
         jdbc.sql("INSERT INTO communities(id,slug,name,name_key,kind,visibility,created_by) VALUES (?,?,?,?,'interest','public',?)")
-            .param(circle).param(circle).param("빛 테스트 소로우").param(circle.substring(0, 24)).param(author.id()).update();
+            .param(circle).param(circle).param("별 테스트 소로우").param(circle.substring(0, 24)).param(author.id()).update();
         String story = post(author);
         jdbc.sql("UPDATE shout_posts SET community_id=? WHERE id=?").param(circle).param(story).update();
         assertEquals(404, status(() -> give(giver, story, 1)));

@@ -10,7 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 불행 랭킹은 그 주 불행광장 글이 받은 빛으로 정한다. 돈 분배는 없다. */
+/** 불행 랭킹은 그 주 불행광장 글이 받은 별 수로 정한다. 돈 분배는 없다. */
 class WeeklyLightRankingTest {
     private static final long NOW = System.currentTimeMillis() - 60_000;
     private static final String WEEK = Dates.weekKeyOf(NOW);
@@ -45,13 +45,13 @@ class WeeklyLightRankingTest {
         assertEquals(List.of(8, 3, 3, 0), batch.rows().stream().map(RankRow::light).toList());
         assertEquals(List.of(1, 2, 3, 4), batch.rows().stream().map(RankRow::rank).toList());
         RankRow first = batch.rows().get(0);
-        assertEquals("lit-b", first.topPostId()); // 빛을 가장 많이 받은 글이 대표 글
+        assertEquals("lit-b", first.topPostId()); // 별을 가장 많이 받은 글이 대표 글
         assertEquals(4, first.cheers());
         assertEquals(2, first.posts());
         // 준 순간 글쓴이에게 갔으니 순위대로 나눌 돈은 없다
         assertTrue(batch.rows().stream().allMatch(r -> r.payout() == 0 && r.share() == 0));
         assertEquals(new Fund(0, 0, 0), batch.fund());
-        assertEquals(new Light(14, 5, 2), batch.light()); // 떠난 계정이 준 빛은 합계에 남고 준 사람 수에서는 빠진다
+        assertEquals(new Light(14, 5, 2), batch.light()); // 떠난 계정이 준 별은 합계에 남고 준 사람 수에서는 빠진다
     }
 
     @Test
@@ -69,7 +69,7 @@ class WeeklyLightRankingTest {
         assertEquals(List.of("author"), batch.rows().stream().map(RankRow::userId).toList());
         assertEquals(1, batch.rows().get(0).light());
         assertEquals(new Light(1, 1, 1), batch.light());
-        // 지난 주 글에 이번 주에 준 빛은 지난 주 글의 것이다
+        // 지난 주 글에 이번 주에 준 별은 지난 주 글의 것이다
         assertEquals(new Light(10, 1, 1), CommunityLogic.computeWeekly(store(posts, gifts), Dates.weekKeyOf(lastWeek), true).light());
     }
 

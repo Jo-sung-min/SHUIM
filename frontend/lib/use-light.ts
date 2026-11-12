@@ -12,7 +12,7 @@ export type LightState =
   | { kind: "ready"; userId: string; wallet: LightWallet };
 
 /**
- * 내 빛 지갑. auto 가 false 면 refresh() 를 부를 때까지 읽지 않는다 (글 화면처럼 빛 주기 시트를 열 때만 필요한 곳).
+ * 내 별 지갑. auto 가 false 면 refresh() 를 부를 때까지 읽지 않는다 (글 화면처럼 별 주기 시트를 열 때만 필요한 곳).
  * 계정이 바뀌거나 화면을 떠난 뒤 도착한 응답은 버린다.
  */
 export function useLight(auto = true) {
@@ -48,7 +48,7 @@ export function useLight(auto = true) {
     };
   }, [auto, refresh]);
 
-  /** 오늘의 빛 받기. 성공하면 받은 지갑 상태로 바꾸고 true */
+  /** 오늘의 별 받기. 성공하면 받은 지갑 상태로 바꾸고 true */
   const claim = useCallback(async (): Promise<boolean> => {
     if (state.kind !== "ready" || claimLock.current) return false;
     claimLock.current = true;
@@ -58,7 +58,7 @@ export function useLight(auto = true) {
       const wallet = await claimDailyLight(state.userId);
       if (current !== request.current) return false;
       setState({ kind: "ready", userId: state.userId, wallet });
-      toastSuccess(`오늘의 빛을 받았어요 (+${wallet.dailyLight})`);
+      toastSuccess(`오늘의 별을 받았어요 (+${wallet.dailyLight})`);
       return true;
     } catch (cause) {
       if (current === request.current) setState({ kind: "error", message: cause instanceof Error ? cause.message : "연결을 확인한 뒤 다시 시도해 주세요." });

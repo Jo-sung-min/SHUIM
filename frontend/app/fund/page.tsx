@@ -13,8 +13,8 @@ import { useScrollMemory } from "@/lib/scroll-memory";
 import styles from "@/components/Light.module.css";
 
 /**
- * 불행 모금: 돈이 아니라 빛을 모으고 건네는 곳.
- * 하루 한 번 오늘의 빛을 받고, 이번 주 불행광장 글에 건넨다. 건넨 빛은 바로 글쓴이의 빛이 된다.
+ * 불행 모금: 돈이 아니라 별을 모으고 건네는 곳.
+ * 하루 한 번 오늘의 별을 받고, 이번 주 불행광장 글에 건넨다. 건넨 별은 바로 글쓴이의 별이 된다.
  */
 export default function FundPage() {
   const [s, setS] = useState<CommunityStore | null>(null);
@@ -36,7 +36,7 @@ export default function FundPage() {
   useScrollMemory(s !== null);
 
   if (loadError) return <div className="screen"><ShoutTabs /><LoadError message={loadError} onRetry={load} /></div>;
-  if (!s) return <div className="screen" role="status" aria-label="빛을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div>;
+  if (!s) return <div className="screen" role="status" aria-label="별을 불러오고 있어요"><ShoutTabs /><SkeletonHero /><div style={{ height: 16 }} /><SkeletonList count={2} lines={3} head={false} /></div>;
 
   const cur = currentWeekKey();
   const batch = weeklyOf(s, cur);
@@ -51,14 +51,14 @@ export default function FundPage() {
       <div className="screen">
         <ShoutTabs />
         <div style={{ height: 12 }} />
-        <Hero label={`${weekLabel(cur)} · 이번 주 모인 빛`} title={fmtLight(batch?.light?.total ?? 0)} stats={[`준 사람 ${batch?.light?.givers ?? 0}명`, `받은 사람 ${receivers}명`]} />
+        <Hero label={`${weekLabel(cur)} · 이번 주 모인 별`} title={fmtLight(batch?.light?.total ?? 0)} stats={[`준 사람 ${batch?.light?.givers ?? 0}명`, `받은 사람 ${receivers}명`]} />
 
         <MyLight light={light} />
 
-        <div className="section-title"><span>빛을 기다리는 글</span><Link href="/ranking" className="link">랭킹 보기</Link></div>
+        <div className="section-title"><span>별을 기다리는 글</span><Link href="/ranking" className="link">랭킹 보기</Link></div>
         {rows.length === 0 ? (
           <Empty icon={<IconLight />} title="이번 주 불행광장 글이 아직 없어요" action={<Link href="/shout" className="btn ghost">외침 보러 가기</Link>}>
-            글이 올라오면 여기서 빛을 건넬 수 있어요.
+            글이 올라오면 여기서 별을 건넬 수 있어요.
           </Empty>
         ) : (
           <section className="card" style={{ padding: "4px 16px" }}>
@@ -69,16 +69,16 @@ export default function FundPage() {
                   <span className="rank-no sm">{r.rank}</span>
                   <span className="grow"><b className={styles.rowName}>{r.nick}{r.userId === s.me.id ? " (나)" : ""}<small> · 힘내요 {r.cheers}</small></b></span>
                   <span className={styles.rowLight}>{fmtLight(lightOf(r))}</span>
-                  {giving && <button type="button" className={`btn soft sm ${styles.give}`} aria-label={`${r.nick} 님에게 빛 주기`} onClick={() => setTarget({ postId: r.topPostId, nick: r.nick })}><IconLight />주기</button>}
+                  {giving && <button type="button" className={`btn soft sm ${styles.give}`} aria-label={`${r.nick} 님에게 별 주기`} onClick={() => setTarget({ postId: r.topPostId, nick: r.nick })}><IconLight />주기</button>}
                 </div>
               );
             })}
           </section>
         )}
 
-        <div className="section-title"><span>최근 오간 빛</span></div>
+        <div className="section-title"><span>최근 오간 별</span></div>
         {gifts.length === 0 ? (
-          <p className={styles.quiet}>아직 오간 빛이 없어요. 첫 빛을 건네 볼까요.</p>
+          <p className={styles.quiet}>아직 오간 별이 없어요. 첫 별을 건네 볼까요.</p>
         ) : (
           <ul className={styles.list}>
             {gifts.map((g) => (
@@ -95,7 +95,7 @@ export default function FundPage() {
 
         {wallet && wallet.history.length > 0 && (
           <>
-            <div className="section-title"><span>내 빛 내역</span><span className="tiny muted">최근 {wallet.history.length}건</span></div>
+            <div className="section-title"><span>내 별 내역</span><span className="tiny muted">최근 {wallet.history.length}건</span></div>
             <ul className={styles.list}>
               {wallet.history.map((entry) => (
                 <li key={entry.id}>
@@ -110,12 +110,12 @@ export default function FundPage() {
           </>
         )}
 
-        <div className="section-title"><span>빛은 이렇게 써요</span></div>
+        <div className="section-title"><span>별은 이렇게 써요</span></div>
         <section className="card tint">
           <ul className={styles.guide}>
-            <li>하루 한 번 오늘의 빛 {fmtLight(wallet?.dailyLight ?? 10)}을 받아요.</li>
+            <li>하루 한 번 오늘의 별(+{wallet?.dailyLight ?? 10})을 받아요.</li>
             <li>광장 글에 한 번에 {fmtLight(wallet?.maxGift ?? 10)}까지, 같은 분께는 하루 {fmtLight(wallet?.perPersonDaily ?? 10)}까지 건네요.</li>
-            <li>받은 빛은 다시 건넬 수 있어요. 돈으로 바꿀 수는 없어요.</li>
+            <li>받은 별은 다시 건넬 수 있어요. 돈으로 바꿀 수는 없어요.</li>
           </ul>
         </section>
       </div>
@@ -125,39 +125,39 @@ export default function FundPage() {
   );
 }
 
-/** 내 빛: 잔액, 받은·건넨 합계, 오늘의 빛 받기 */
+/** 내 별: 잔액, 받은·건넨 합계, 오늘의 별 받기 */
 function MyLight({ light }: { light: Light }) {
   const { state } = light;
   if (state.kind === "guest") {
     return (
-      <section className={styles.mine} aria-label="내 빛">
-        <p className={styles.mineLabel}><IconLight />내 빛</p>
-        <p className={styles.mineText}>로그인하면 빛을 모으고 건넬 수 있어요.</p>
+      <section className={styles.mine} aria-label="내 별">
+        <p className={styles.mineLabel}><IconLight />내 별</p>
+        <p className={styles.mineText}>로그인하면 별을 모으고 건넬 수 있어요.</p>
         <Link href="/auth?next=fund" className="btn block">로그인하기</Link>
       </section>
     );
   }
   if (state.kind === "error") {
     return (
-      <section className={styles.mine} aria-label="내 빛" role="alert">
-        <p className={styles.mineLabel}><IconLight />내 빛</p>
+      <section className={styles.mine} aria-label="내 별" role="alert">
+        <p className={styles.mineLabel}><IconLight />내 별</p>
         <p className={styles.mineText}>{state.message}</p>
         <button type="button" className="btn ghost block" onClick={() => void light.refresh()}>다시 확인</button>
       </section>
     );
   }
-  if (state.kind !== "ready") return <div style={{ marginTop: 16 }} role="status" aria-label="내 빛을 불러오고 있어요"><SkeletonCard lines={2} /></div>;
+  if (state.kind !== "ready") return <div style={{ marginTop: 16 }} role="status" aria-label="내 별을 불러오고 있어요"><SkeletonCard lines={2} /></div>;
   const { wallet } = state;
   return (
-    <section className={styles.mine} aria-label="내 빛">
-      <p className={styles.mineLabel}><IconLight />내 빛</p>
-      <p className={styles.mineAmount}>{wallet.balance.toLocaleString("ko-KR")}<span>빛</span></p>
-      <p className={styles.mineMeta}>받은 빛 {wallet.totalReceived.toLocaleString("ko-KR")} · 건넨 빛 {wallet.totalGiven.toLocaleString("ko-KR")}</p>
+    <section className={styles.mine} aria-label="내 별">
+      <p className={styles.mineLabel}><IconLight />내 별</p>
+      <p className={styles.mineAmount}>{wallet.balance.toLocaleString("ko-KR")}<span>별</span></p>
+      <p className={styles.mineMeta}>받은 별 {wallet.totalReceived.toLocaleString("ko-KR")} · 건넨 별 {wallet.totalGiven.toLocaleString("ko-KR")}</p>
       {wallet.dailyClaimed ? (
-        <p className={styles.mineDone}>오늘의 빛을 받았어요. 내일 또 받을 수 있어요.</p>
+        <p className={styles.mineDone}>오늘의 별을 받았어요. 내일 또 받을 수 있어요.</p>
       ) : (
         <button type="button" className="btn block" disabled={light.claiming} aria-busy={light.claiming} onClick={() => void light.claim()}>
-          오늘의 빛 받기 +{wallet.dailyLight}
+          오늘의 별 받기 +{wallet.dailyLight}
         </button>
       )}
     </section>

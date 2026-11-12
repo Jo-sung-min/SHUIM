@@ -68,7 +68,7 @@ public final class CommunityLogic {
 
     private record Agg(int light, int cheers, int posts, Post top, long first) {}
 
-    /** 글마다 받은 빛 합계 (글이 지워진 선물은 빼고) */
+    /** 글마다 받은 별 합계 (글이 지워진 선물은 빼고) */
     public static Map<String, Integer> lightByPost(List<Gift> gifts) {
         Map<String, Integer> out = new HashMap<>();
         for (Gift g : gifts) if (g.postId() != null) out.merge(g.postId(), g.amount(), Integer::sum);
@@ -76,8 +76,8 @@ public final class CommunityLogic {
     }
 
     /**
-     * 그 주에 쓴 불행광장 글이 받은 빛을 사람별로 더해 순위를 매긴다. 빛이 같으면 힘내요, 그래도 같으면 먼저 쓴 사람.
-     * 돈을 모아 순위대로 나누던 모의 모금은 없어졌고, 빛은 준 순간 글쓴이 지갑으로 간다. 여기서는 세기만 한다.
+     * 그 주에 쓴 불행광장 글이 받은 별을 사람별로 더해 순위를 매긴다. 별이 같으면 힘내요, 그래도 같으면 먼저 쓴 사람.
+     * 돈을 모아 순위대로 나누던 모의 모금은 없어졌고, 별은 준 순간 글쓴이 지갑으로 간다. 여기서는 세기만 한다.
      */
     public static WeeklyBatch computeWeekly(Store s, String week, boolean finalized) {
         Map<String, Agg> byUser = new LinkedHashMap<>();
