@@ -19,3 +19,9 @@
 @keyframes scenePass{to{transform:translateX(-320px)}}
 @keyframes sceneFall{to{transform:translate(var(--fall-x),var(--fall-y))}}
 @media(prefers-reduced-motion:reduce){.strip[data-pass],.fall{animation:none}}
+/* 드문 하늘: 오로라는 천천히 일렁이고, 별똥별은 몇 초마다 비스듬히 긋고 사라진다 */
+.aurora{animation:auroraSway 9s ease-in-out infinite alternate}
+@keyframes auroraSway{from{transform:translateX(-6px);opacity:.42}to{transform:translateX(6px);opacity:.62}}
+.shootingStar{opacity:0;animation:shootingStar 6s ease-out infinite}
+@keyframes shootingStar{0%,70%{opacity:0;transform:translate(0,0)}72%{opacity:1}86%{opacity:.9;transform:translate(-44px,26px)}90%,100%{opacity:0;transform:translate(-52px,31px)}}
+@media(prefers-reduced-motion:reduce){.aurora,.shootingStar{animation:none}.shootingStar{opacity:.8}}

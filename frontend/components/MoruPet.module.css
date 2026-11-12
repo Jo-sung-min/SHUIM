@@ -382,3 +382,23 @@
 .card[data-full] .care{bottom:calc(var(--edge) + env(safe-area-inset-bottom) + var(--pad-h) + 8px)}
 /* 양옆 기둥이 없어져 하트 줄은 위쪽 줄 아래에 폭 전체로 */
 .card[data-full] .meters{left:var(--edge);right:var(--edge)}
+/* ---------- 오늘의 돌봄 · 날씨 도감 ---------- */
+.chores{grid-column:1/-1;display:grid;gap:6px;margin:-2px 0 2px;padding:0 2px}
+.chores>b{display:flex;justify-content:space-between;font-size:13px;font-weight:400}
+.chores>b small{color:var(--hd-ink-2);font-size:11px}
+.chores ul{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.chores li{display:flex;align-items:center;gap:5px;padding:4px 9px 5px 6px;border:1.8px solid var(--hd-ink);border-radius:12px 14px 11px 13px/13px 11px 14px 12px;background:#fffaf0;font-size:12px}
+.chores li i{display:grid;place-items:center;width:16px;height:16px;border:1.6px solid var(--hd-ink);border-radius:50%;background:#fff;font-style:normal;font-size:10px;line-height:1}
+.chores li[data-done]{background:#ece2fb}
+.chores li[data-done] i{background:var(--hd-accent-lip);color:#fff}
+.keyBadge{position:absolute;top:-6px;right:-4px;z-index:1;min-width:26px;padding:1px 6px 2px;border:1.8px solid var(--hd-ink);border-radius:9px 10px 8px 10px/10px 8px 10px 9px;background:var(--hd-butter);color:var(--hd-ink);font-size:10px;line-height:13px;text-align:center}
+.keyBadge[data-done]{background:var(--hd-accent)}
+.book{padding:0 0 20px}
+.bookIntro{margin:-4px 0 12px;font-size:13px;color:var(--text-2)}
+.bookGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none}
+.bookGrid li{display:grid;justify-items:center;gap:5px;padding:10px 8px 11px;border:2.2px solid var(--hd-ink);border-radius:15px 18px 14px 17px/17px 14px 18px 15px;background:#fffaf0;text-align:center}
+.bookGrid li:not([data-seen]){border-color:#b89a72;background:#f8efdc}
+.bookGrid svg{width:100%;max-width:150px;height:auto}
+.bookGrid b{font-size:13px;font-weight:400}
+.bookGrid li:not([data-seen]) b{color:#8a7058}
+.bookGrid small{font-size:10px;color:#7a5fc4}

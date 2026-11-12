@@ -90,12 +90,12 @@ function Strip({ pass, children }: { pass?: number; children: ReactNode }) {
   </svg>;
 }
 /** 비·눈: 한 주기(dx, dy)만큼 옮기면 제자리와 겹치도록 같은 무늬를 되풀이한다. 달리는 기차에서는 뒤로 많이 눕는다 */
-function Weather({ snow, color, width, height, moving }: { snow: boolean; color: string; width: number; height: number; moving: boolean }) {
+function Weather({ snow, big = false, color, width, height, moving }: { snow: boolean; big?: boolean; color: string; width: number; height: number; moving: boolean }) {
   const dx = snow ? (moving ? -36 : -12) : moving ? -20 : -5, dy = snow ? 80 : 52;
-  const rnd = seeded(snow ? 77 : 31), span = width + 300, rows = Math.ceil(height / dy) + 2, marks: ReactNode[] = [];
-  const count = Math.round((snow ? 30 : 22) * span / 420);
+  const rnd = seeded(big ? 53 : snow ? 77 : 31), span = width + 300, rows = Math.ceil(height / dy) + 2, marks: ReactNode[] = [];
+  const count = Math.round((big ? 10 : snow ? 30 : 22) * span / 420); // 첫눈은 큰 송이가 드문드문 더 내린다
   for (let i = 0; i < count; i++) {
-    const x = rnd() * span, y = rnd() * dy, size = 1 + rnd() * 1.6, o = 0.35 + rnd() * 0.5;
+    const x = rnd() * span, y = rnd() * dy, size = (big ? 2.4 : 1) + rnd() * 1.6, o = 0.35 + rnd() * 0.5;
     for (let k = -1; k < rows; k++) marks.push(snow
       ? <circle key={`${i}-${k}`} cx={x + dx * k} cy={y + dy * k} r={size} fill={color} opacity={o} />
       : <path key={`${i}-${k}`} d={`M${x + dx * k} ${y + dy * k}l${dx / 4} 13`} stroke={color} strokeWidth={0.8 + size * 0.3} strokeLinecap="round" opacity={o * 0.8} />);
@@ -111,27 +111,42 @@ const SNOW_FAR: Ink = { line: "#94a2ae", width: 1.3 }, SNOW_MID: Ink = { line: "
 const GREEN_FAR: Ink = { line: "#86958c", width: 1.3 }, GREEN_MID: Ink = { line: "#4f5f55", width: 1.7 }, GREEN_NEAR: Ink = { line: "#33302a", width: 2.1 };
 
 /** 창밖의 하늘: 풍경(도시·숲) × 날씨(비·눈·맑음) × 낮밤. 날씨는 날마다 무작위로 정해진다 (moru-rules 의 dailySky) */
-export interface Sky { land: "city" | "forest"; weather: "rain" | "snow" | "clear"; night: boolean }
+export interface Sky { land: "city" | "forest"; weather: "rain" | "snow" | "clear"; night: boolean; /** 드문 하늘: rainbow·shootingStar·aurora·firstSnow (서버가 정한다) */ rare?: string | null }
 export const DEFAULT_SKY: Sky = { land: "city", weather: "rain", night: false };
 
-/** 해·달·별: 띠와 함께 흐르지 않고 하늘에 붙어 있다 */
+/** 해·달·별, 그리고 드문 하늘(무지개·별똥별·오로라·첫눈): 띠와 함께 흐르지 않고 하늘에 붙어 있다 */
 function Lights({ sky, width }: { sky: Sky; width: number }) {
-  if (sky.weather !== "clear") return null;
+  const rare = sky.rare ?? null;
   const x = width - 42;
-  if (!sky.night) return <svg className={styles.skyLights} viewBox={`0 0 ${width} 90`} width={width} height={90}>
-    <circle cx={x} cy={38} r="26" fill="#fff4c6" opacity=".45" />
-    <circle cx={x} cy={38} r="14" fill="#ffe9a8" stroke="#d9a55e" strokeWidth="1.8" />
-  </svg>;
-  const rnd = seeded(91), stars: ReactNode[] = [];
-  for (let i = 0; i < Math.round(width / 26); i++) {
-    const sx = 10 + rnd() * (width - 20), sy = 8 + rnd() * 80, r = 1.6 + rnd() * 1.6;
-    stars.push(<path key={i} d={`M${sx} ${sy - r * 2}Q${sx + r * 0.3} ${sy - r * 0.3} ${sx + r * 2} ${sy}Q${sx + r * 0.3} ${sy + r * 0.3} ${sx} ${sy + r * 2}Q${sx - r * 0.3} ${sy + r * 0.3} ${sx - r * 2} ${sy}Q${sx - r * 0.3} ${sy - r * 0.3} ${sx} ${sy - r * 2}Z`} fill="#fff3cf" opacity={0.55 + rnd() * 0.4} />);
+  const parts: ReactNode[] = [];
+  if (rare === "aurora") {
+    // 오로라: 초록·청록·보라의 물결 띠가 천천히 일렁인다
+    parts.push(<g key="aurora" className={styles.aurora} opacity=".55">
+      {[["#7de0b8", 26, 0], ["#6fc9d6", 42, 9], ["#b79be8", 58, 17]].map(([color, y, k]) => <path key={String(color)} fill="none" stroke={String(color)} strokeWidth="12" strokeLinecap="round"
+        d={`M-10 ${y}C${width * 0.2} ${Number(y) - 18 + Number(k)} ${width * 0.35} ${Number(y) + 16} ${width * 0.55} ${Number(y) - 4}S${width * 0.85} ${Number(y) - 20} ${width + 10} ${Number(y) + 4}`} />)}
+    </g>);
   }
-  return <svg className={styles.skyLights} viewBox={`0 0 ${width} 110`} width={width} height={110}>
-    {stars}
-    <circle cx={x} cy={36} r="22" fill="#fff3cf" opacity=".18" />
-    <path d={`M${x + 6} ${22}A14 14 0 1 0 ${x + 8} ${50}A11 11 0 1 1 ${x + 6} ${22}Z`} fill="#fff1c4" stroke="#c9a96a" strokeWidth="1.6" strokeLinejoin="round" />
-  </svg>;
+  if (sky.weather === "clear" && !sky.night) {
+    if (rare === "rainbow") parts.push(<g key="rainbow" fill="none" strokeWidth="5" opacity=".7" strokeLinecap="round">
+      {["#f3a3a3", "#f6c98a", "#f3e58f", "#a6d9a2", "#9cc4ee", "#c3a8e8"].map((color, i) => <path key={color} stroke={color} d={`M${width * 0.08 + i * 5} 96A${width * 0.42 - i * 5} ${70 - i * 5} 0 0 1 ${width * 0.92 - i * 5} 96`} />)}
+    </g>);
+    parts.push(<g key="sun"><circle cx={x} cy={38} r="26" fill="#fff4c6" opacity=".45" /><circle cx={x} cy={38} r="14" fill="#ffe9a8" stroke="#d9a55e" strokeWidth="1.8" /></g>);
+  }
+  if (sky.night && sky.weather === "clear") {
+    const rnd = seeded(91);
+    for (let i = 0; i < Math.round(width / 26); i++) {
+      const sx = 10 + rnd() * (width - 20), sy = 8 + rnd() * 80, r = 1.6 + rnd() * 1.6;
+      parts.push(<path key={`s${i}`} d={`M${sx} ${sy - r * 2}Q${sx + r * 0.3} ${sy - r * 0.3} ${sx + r * 2} ${sy}Q${sx + r * 0.3} ${sy + r * 0.3} ${sx} ${sy + r * 2}Q${sx - r * 0.3} ${sy + r * 0.3} ${sx - r * 2} ${sy}Q${sx - r * 0.3} ${sy - r * 0.3} ${sx} ${sy - r * 2}Z`} fill="#fff3cf" opacity={0.55 + rnd() * 0.4} />);
+    }
+    parts.push(<g key="moon"><circle cx={x} cy={36} r="22" fill="#fff3cf" opacity=".18" /><path d={`M${x + 6} ${22}A14 14 0 1 0 ${x + 8} ${50}A11 11 0 1 1 ${x + 6} ${22}Z`} fill="#fff1c4" stroke="#c9a96a" strokeWidth="1.6" strokeLinejoin="round" /></g>);
+    // 별똥별: 몇 초마다 하늘을 비스듬히 긋고 사라진다
+    if (rare === "shootingStar") parts.push(<g key="shooting" className={styles.shootingStar}>
+      <path d={`M${width * 0.2} 20L${width * 0.2 - 46} 46`} stroke="#fff3cf" strokeWidth="2" strokeLinecap="round" opacity=".8" />
+      <circle cx={width * 0.2} cy={20} r="2.6" fill="#fffbe8" />
+    </g>);
+  }
+  if (!parts.length) return null;
+  return <svg className={styles.skyLights} viewBox={`0 0 ${width} 110`} width={width} height={110}>{parts}</svg>;
 }
 
 /**
@@ -184,6 +199,7 @@ export function Outside({ sky, moving = false, width, height, className }: { sky
     </>}
     {weather === "rain" && <Weather snow={false} color={night ? "#c9d8ff" : "#eef4f8"} width={width} height={height} moving={moving} />}
     {weather === "snow" && <Weather snow color="#ffffff" width={width} height={height} moving={moving} />}
+    {sky.rare === "firstSnow" && <Weather snow big color="#ffffff" width={width} height={height} moving={moving} />}
   </div>;
 }
 

@@ -22,6 +22,12 @@ export interface PetView {
   glow?: boolean;
   /** 서버가 받아 주는 모습들. 예전 서버 응답에는 없다 (그때는 새 모습을 보여 주지 않는다) */
   appearances?: string[];
+  /** 오늘의 하늘 (V46 서버부터). 없으면 화면이 같은 계산(dailySky)으로 정한다 */
+  sky?: { land: "city" | "forest"; weather: "rain" | "snow" | "clear"; night: boolean; rare: string | null };
+  /** 날씨 도감에서 본 칸들, 이번에 처음 본 칸들 */
+  weatherSeen?: string[]; newWeather?: string[];
+  /** 오늘의 돌봄 할 일 셋과 다 해서 보상을 받았는지 */
+  tasks?: { id: string; done: boolean }[]; tasksRewarded?: boolean;
 }
 export interface PetHome { id: number; name: string; level: number; cost: number; available: boolean }
 export const EMPTY_ANSWERS: PetAnswers = { mood: null, intensity: null, reason: null, note: null, need: null };
