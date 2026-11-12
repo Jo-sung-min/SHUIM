@@ -3,9 +3,9 @@
    창밖(.view)은 창 자리에만 두고, 띠(.strip)와 비·눈(.fall)은 transform 으로만 움직인다 */
 .stage{position:absolute;left:50%;bottom:-100px;width:480px;height:700px;margin-left:-240px;overflow:hidden;pointer-events:none}
 .cabin{position:absolute;inset:0;display:block;will-change:transform}
-.view{position:absolute;overflow:hidden;background:linear-gradient(#9aadbd,#c5d1d6 68%,#b4c0c0)}
+.view{position:absolute;overflow:hidden;background:linear-gradient(#a7b6c2,#cdd6da 68%,#bcc5c3)}
 .view[data-scene="1"]{background:linear-gradient(#bfcdd9,#e6edf1 70%)}
-.view[data-scene="2"]{background:linear-gradient(#141932,#262e52 66%,#1a1f3a)}
+.view[data-scene="2"]{background:linear-gradient(#1b2142,#2c3460 66%,#1f2546)}
 .viewTrain{left:136px;top:234px;width:208px;height:208px}
 .viewAttic{left:146px;top:238px;width:188px;height:188px;border-radius:50%}
 .viewBed{left:150px;top:120px;width:330px;height:352px}

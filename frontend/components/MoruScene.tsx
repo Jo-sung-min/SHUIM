@@ -5,7 +5,7 @@ import styles from "./MoruRoom.module.css";
  * 모루의 공간 그림이 같이 쓰는 부품.
  * 그림은 480×700 고정 무대(방 바닥은 600, 그 아래는 패드 뒤로 이어지는 이불)에 손그림 선으로 그리고 방 아래 가운데에 붙인다:
  * 늘이지 않아 선 굵기가 고르고, 모루(바닥에서 71px)와 침대가 어느 화면에서나 같은 자리에서 만난다.
- * 창밖은 무대 뒤에 따로 깔고 transform 만 움직인다 (합성 단계에서 돈다). 외곽선의 떨림은 멈춰 있는 실내 그림에만 건다.
+ * 창밖은 무대 뒤에 따로 깔고 transform 만 움직인다 (합성 단계에서 돈다). 창밖도 겹마다 손그림 외곽선과 떨림을 갖는다 (떨림은 한 벌마다 같은 자리라 이음매가 없다).
  */
 
 export const INK = "#3d2a20";
@@ -18,37 +18,75 @@ function seeded(seed: number) {
 const TILE = 320; // 풍경 한 벌의 폭. 두 벌을 이어 붙여 끊김 없이 돈다
 const VIEW = 208; // 풍경 띠의 높이. 창이 더 높으면 띠는 창 아래에 붙고 위는 하늘이다
 
-/** 건물 실루엣 한 벌 (불 켜진 창은 lit 색으로 드문드문) */
-function skyline(seed: number, base: number, minH: number, maxH: number, fill: string, lit?: string[], litRate = 0.3): ReactNode[] {
-  const rnd = seeded(seed), out: ReactNode[] = [];
-  for (let x = 0, i = 0; x < TILE; i++) {
-    const w = Math.round(22 + rnd() * 26), h = Math.round(minH + rnd() * (maxH - minH)), top = base - h;
-    out.push(<rect key={`b${i}`} x={x} y={top} width={Math.min(w, TILE - x)} height={VIEW - top} rx="2" fill={fill} />);
-    if (rnd() < 0.3) out.push(<rect key={`r${i}`} x={x + 5} y={top - 6} width="3" height="7" fill={fill} />);
-    if (lit) for (let wy = top + 7; wy < base - 4; wy += 10) for (let wx = x + 4; wx < Math.min(x + w, TILE) - 6; wx += 8) {
-      if (rnd() < litRate) out.push(<rect key={`w${i}-${wx}-${wy}`} x={wx} y={wy} width="4" height="5" rx="1" fill={lit[Math.floor(rnd() * lit.length)]} />);
+/** 창밖 한 겹의 선 색·굵기: 먼 곳일수록 옅고 가늘다 (방 그림과 같은 손그림 외곽선) */
+interface Ink { line: string; width: number }
+
+/** 건물 한 벌: 둥근 모서리 몸통, 가끔 지붕 소품(안테나·물탱크·뾰족 지붕), 창은 외곽선 없이 불빛만 */
+function skyline(seed: number, base: number, minH: number, maxH: number, fill: string, ink: Ink, lit?: string[], litRate = 0.3): ReactNode {
+  const rnd = seeded(seed), bodies: ReactNode[] = [], lights: ReactNode[] = [];
+  for (let x = 2, i = 0; x < TILE - 6; i++) {
+    const w = Math.round(24 + rnd() * 24), h = Math.round(minH + rnd() * (maxH - minH)), top = base - h, right = Math.min(x + w, TILE - 2);
+    const roof = rnd();
+    bodies.push(<g key={`b${i}`}>
+      {roof < 0.18 && <path d={`M${x + 2} ${top}L${(x + right) / 2} ${top - 9}L${right - 2} ${top}Z`} />}
+      <rect x={x} y={top} width={right - x} height={VIEW - top + 4} rx="3" />
+      {roof >= 0.18 && roof < 0.36 && <path fill="none" d={`M${x + 7} ${top}V${top - 9}M${x + 4} ${top - 6}H${x + 10}`} />}
+      {roof >= 0.36 && roof < 0.5 && <><rect x={right - 13} y={top - 8} width="8" height="8" rx="2" /><path fill="none" d={`M${right - 12} ${top - 8}V${top}M${right - 6} ${top - 8}V${top}`} /></>}
+    </g>);
+    if (lit) for (let wy = top + 8; wy < base - 4; wy += 10) for (let wx = x + 5; wx < right - 6; wx += 8) {
+      if (rnd() < litRate) lights.push(<rect key={`w${i}-${wx}-${wy}`} x={wx} y={wy} width="4" height="5" rx="1.2" fill={lit[Math.floor(rnd() * lit.length)]} />);
     }
-    x += w + (rnd() < 0.35 ? 5 : 1);
+    x += w + (rnd() < 0.35 ? 6 : 2);
   }
-  return out;
+  return <><g fill={fill} stroke={ink.line} strokeWidth={ink.width} strokeLinejoin="round" strokeLinecap="round">{bodies}</g><g>{lights}</g></>;
 }
-/** 침엽수 한 벌 (눈 덮인 숲은 cap 색으로 꼭대기를 덮는다) */
-function pines(seed: number, base: number, minH: number, maxH: number, gap: number, fill: string, cap?: string): ReactNode[] {
+/** 침엽수 한 벌: 세 층으로 둥글게 처진 가지, 눈 덮인 숲은 cap 색으로 꼭대기·가지 끝을 덮는다 */
+function pines(seed: number, base: number, minH: number, maxH: number, gap: number, fill: string, ink: Ink, cap?: string): ReactNode {
   const rnd = seeded(seed), out: ReactNode[] = [];
   for (let x = 14, i = 0; x < TILE - 14; i++) {
-    const h = minH + rnd() * (maxH - minH), w = h * 0.46;
+    const h = minH + rnd() * (maxH - minH), w = h * 0.5, t = base - h;
+    const tier = (y0: number, y1: number, half: number) => `M${x} ${y0}Q${x + half * 0.5} ${(y0 + y1) / 2} ${x + half} ${y1}Q${x} ${y1 + h * 0.06} ${x - half} ${y1}Q${x - half * 0.5} ${(y0 + y1) / 2} ${x} ${y0}Z`;
     out.push(<g key={i}>
-      <path fill={fill} d={`M${x} ${base - h}L${x + w * 0.34} ${base - h * 0.56}H${x + w * 0.16}L${x + w / 2} ${base - h * 0.14}H${x + 2}V${base + 4}H${x - 2}V${base - h * 0.14}H${x - w / 2}L${x - w * 0.16} ${base - h * 0.56}H${x - w * 0.34}Z`} />
-      {cap && <path fill={cap} d={`M${x} ${base - h}L${x + w * 0.3} ${base - h * 0.6}Q${x + w * 0.1} ${base - h * 0.66} ${x} ${base - h * 0.6}Q${x - w * 0.12} ${base - h * 0.66} ${x - w * 0.3} ${base - h * 0.6}Z`} />}
+      <path fill="none" d={`M${x} ${base - h * 0.2}V${base + 4}`} />
+      <path d={tier(t + h * 0.38, base - h * 0.12, w / 2)} />
+      <path d={tier(t + h * 0.16, t + h * 0.62, w * 0.38)} />
+      <path d={tier(t, t + h * 0.38, w * 0.26)} />
+      {cap && <path fill={cap} d={`M${x} ${t}Q${x + w * 0.13} ${t + h * 0.14} ${x + w * 0.2} ${t + h * 0.26}Q${x} ${t + h * 0.3} ${x - w * 0.2} ${t + h * 0.26}Q${x - w * 0.13} ${t + h * 0.14} ${x} ${t}Z`} />}
     </g>);
     x += gap * (0.6 + rnd() * 0.9);
   }
-  return out;
+  return <g fill={fill} stroke={ink.line} strokeWidth={ink.width} strokeLinejoin="round" strokeLinecap="round">{out}</g>;
 }
-/** 한 벌을 두 번 이어 붙인 띠. pass(초)가 있으면 그 시간에 한 벌만큼 흘러간다 (기차), 없으면 멈춰 있다 (집) */
+/** 손그림 구름 몇 개 (먼 하늘) */
+function clouds(seed: number, y: number, fill: string, ink: Ink): ReactNode {
+  const rnd = seeded(seed), out: ReactNode[] = [];
+  for (let x = 30, i = 0; x < TILE - 40; i++) {
+    const w = 34 + rnd() * 30, cy = y + rnd() * 26;
+    out.push(<path key={i} d={`M${x} ${cy}Q${x - 4} ${cy - 10} ${x + w * 0.22} ${cy - 9}Q${x + w * 0.3} ${cy - 20} ${x + w * 0.52} ${cy - 15}Q${x + w * 0.72} ${cy - 22} ${x + w * 0.84} ${cy - 10}Q${x + w + 6} ${cy - 8} ${x + w} ${cy}Z`} />);
+    x += w + 50 + rnd() * 60;
+  }
+  return <g fill={fill} stroke={ink.line} strokeWidth={ink.width} strokeLinejoin="round">{out}</g>;
+}
+/** 언덕·땅 한 줄: 아래는 띠 끝까지 채우고, 선은 윗줄만 긋는다 (양 끝의 세로선이 띠 이음매에 보이지 않게) */
+const hill = (d: string, fill: string, ink: Ink) => <>
+  <path d={`${d}V${VIEW + 4}H-4Z`} fill={fill} stroke="none" />
+  <path d={d} fill="none" stroke={ink.line} strokeWidth={ink.width} strokeLinejoin="round" strokeLinecap="round" />
+</>;
+
+/**
+ * 한 벌을 두 번 이어 붙인 띠. pass(초)가 있으면 그 시간에 한 벌만큼 흘러간다 (기차), 없으면 멈춰 있다 (집).
+ * 선의 떨림(손그림)은 한 벌마다 같은 자리에서 걸어서, 두 벌이 이어지는 곳과 다시 처음으로 돌아갈 때 선이 튀지 않는다
+ */
 function Strip({ pass, children }: { pass?: number; children: ReactNode }) {
+  const id = useId();
   return <svg className={styles.strip} data-pass={pass ? "" : undefined} style={pass ? { animationDuration: `${pass}s` } : undefined} viewBox={`0 0 ${TILE * 2} ${VIEW}`} width={TILE * 2} height={VIEW}>
-    {[0, TILE].map((dx) => <g key={dx} transform={`translate(${dx})`}>{children}</g>)}
+    <defs>
+      <filter id={id} x="-3%" y="-6%" width="106%" height="112%" colorInterpolationFilters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.6" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+    {[0, TILE].map((dx) => <g key={dx} transform={`translate(${dx})`}><g filter={`url(#${id})`}>{children}</g></g>)}
   </svg>;
 }
 /** 비·눈: 한 주기(dx, dy)만큼 옮기면 제자리와 겹치도록 같은 무늬를 되풀이한다. 달리는 기차에서는 뒤로 많이 눕는다 */
@@ -66,8 +104,13 @@ function Weather({ snow, color, width, height, moving }: { snow: boolean; color:
   return <svg className={styles.fall} style={style} viewBox={`0 ${-dy} ${span} ${height + dy * 2}`} width={span} height={height + dy * 2}>{marks}</svg>;
 }
 
+/** 겹마다의 선: 먼 곳은 옅고 가늘게, 가까운 곳은 방 그림의 갈색 선에 가깝게 */
+const FAR: Ink = { line: "#8b8f9c", width: 1.3 }, MID: Ink = { line: "#5d5f6c", width: 1.7 }, NEAR: Ink = { line: "#3d2f2c", width: 2.1 };
+const NIGHT_FAR: Ink = { line: "#0e1226", width: 1.3 }, NIGHT_MID: Ink = { line: "#080a18", width: 1.7 }, NIGHT_NEAR: Ink = { line: "#05060f", width: 2.1 };
+const SNOW_FAR: Ink = { line: "#94a2ae", width: 1.3 }, SNOW_MID: Ink = { line: "#4c5a66", width: 1.7 }, SNOW_NEAR: Ink = { line: "#2f3a43", width: 2.1 };
+
 /**
- * 창밖: 0 비 오는 도시 · 1 눈 내리는 숲 · 2 비 오는 밤.
+ * 창밖: 0 비 오는 도시 · 1 눈 내리는 숲 · 2 비 오는 밤. 방과 같은 손그림: 겹마다 외곽선, 살짝 떨리는 선, 둥근 모서리, 차분한 색.
  * moving 이면 먼 곳·가운데·가까운 곳이 서로 다른 빠르기로 지나간다 (기차). 아니면 풍경은 멈춰 있고 비·눈만 내린다.
  */
 export function Outside({ scene, moving = false, width, height, className }: { scene: number; moving?: boolean; width: number; height: number; className: string }) {
@@ -76,25 +119,34 @@ export function Outside({ scene, moving = false, width, height, className }: { s
   const pass = (seconds: number) => (moving ? seconds : undefined);
   return <div className={`${styles.view} ${className}`} data-scene={view}>
     {view === 1 ? <>
-      <Strip pass={pass(80)}><path fill="#dfe8ef" d="M0 132C50 116 96 140 150 128S262 112 320 132V208H0Z" />{pines(5, 134, 18, 30, 26, "#a9bbc8")}</Strip>
-      <Strip pass={pass(30)}><path fill="#eef3f6" d="M0 162C70 150 120 170 190 158S280 150 320 162V208H0Z" />{pines(9, 164, 46, 84, 40, "#6d8898", "#f4f8fa")}</Strip>
-      <Strip pass={pass(9)}><path fill="#f9fbfc" d="M0 190C80 182 150 196 230 186C270 182 300 186 320 190V208H0Z" />{moving ? pines(13, 196, 110, 170, 150, "#465d6c", "#e8eff3") : pines(13, 198, 40, 70, 120, "#465d6c", "#e8eff3")}</Strip>
+      <Strip pass={pass(80)}>{hill("M-4 132C50 116 96 140 150 128S262 112 324 132", "#e4ebf0", SNOW_FAR)}{pines(5, 134, 20, 32, 26, "#b7c5d0", SNOW_FAR, "#f3f7f9")}</Strip>
+      <Strip pass={pass(30)}>{hill("M-4 162C70 150 120 170 190 158S280 150 324 162", "#f0f4f7", SNOW_FAR)}{pines(9, 164, 46, 84, 40, "#7d93a1", SNOW_MID, "#f6f9fb")}</Strip>
+      <Strip pass={pass(9)}>{hill("M-4 190C80 182 150 196 230 186C270 182 300 186 324 190", "#fbfcfd", SNOW_FAR)}{moving ? pines(13, 196, 110, 170, 150, "#5a6f7c", SNOW_NEAR, "#eef3f6") : pines(13, 198, 40, 70, 120, "#5a6f7c", SNOW_NEAR, "#eef3f6")}</Strip>
       <Weather snow color="#ffffff" width={width} height={height} moving={moving} />
     </> : view === 2 ? <>
-      <Strip pass={pass(90)}>{skyline(21, 150, 34, 96, "#141a33", ["#ffd98a", "#ffc46b", "#9fd4e6"], 0.22)}</Strip>
-      <Strip pass={pass(32)}>{skyline(27, 172, 22, 60, "#0c1024", ["#ffe2a0", "#ffb86a"], 0.34)}</Strip>
+      <Strip pass={pass(120)}>{clouds(41, 40, "#2c3460", NIGHT_FAR)}</Strip>
+      <Strip pass={pass(90)}>{skyline(21, 150, 34, 96, "#232a4d", NIGHT_FAR, ["#ffd98a", "#ffc46b", "#a8d6e4"], 0.22)}</Strip>
+      <Strip pass={pass(32)}>{skyline(27, 172, 22, 60, "#181d3a", NIGHT_MID, ["#ffe2a0", "#ffb86a"], 0.34)}</Strip>
       <Strip pass={pass(7)}>
         <defs><radialGradient id={lamp}><stop offset="0" stopColor="#ffe2a0" stopOpacity=".85" /><stop offset="1" stopColor="#ffe2a0" stopOpacity="0" /></radialGradient></defs>
-        <path fill="#070916" d="M0 192C90 186 220 196 320 192V208H0Z" />
-        {(moving ? [70, 230] : [150]).map((x) => <g key={x}><path fill="#070916" d={moving ? `M${x - 2} 60h4v140h-4zM${x} 60h18v3H${x}z` : `M${x - 1.500} 140h3v60h-3zM${x} 140h12v2.500H${x}z`} /><circle cx={x + (moving ? 17 : 11)} cy={moving ? 66 : 145} r={moving ? 26 : 16} fill={`url(#${lamp})`} /><circle cx={x + (moving ? 17 : 11)} cy={moving ? 66 : 145} r={moving ? 3 : 2} fill="#fff3cf" /></g>)}
+        {hill("M-4 192C90 186 220 196 324 192", "#10132a", NIGHT_NEAR)}
+        {(moving ? [70, 230] : [150]).map((x) => <g key={x} fill="#10132a" stroke={NIGHT_NEAR.line} strokeWidth={NIGHT_NEAR.width} strokeLinejoin="round">
+          <path d={moving ? `M${x - 2.5} 60h5v140h-5zM${x} 59h20v4.500H${x}z` : `M${x - 2} 140h4v60h-4zM${x} 139h13v3.500H${x}z`} />
+          <circle cx={x + (moving ? 17 : 11)} cy={moving ? 66 : 145} r={moving ? 26 : 16} fill={`url(#${lamp})`} stroke="none" />
+          <circle cx={x + (moving ? 17 : 11)} cy={moving ? 66 : 145} r={moving ? 3.5 : 2.5} fill="#fff3cf" strokeWidth="1.2" />
+        </g>)}
       </Strip>
       <Weather snow={false} color="#c9d8ff" width={width} height={height} moving={moving} />
     </> : <>
-      <Strip pass={pass(90)}>{skyline(3, 146, 30, 92, "#93a5b5")}</Strip>
-      <Strip pass={pass(34)}>{skyline(8, 170, 20, 62, "#6f8496", ["#f7e3a8"], 0.14)}{pines(4, 176, 14, 24, 70, "#5f7d76")}</Strip>
+      <Strip pass={pass(120)}>{clouds(13, 30, "#d6dde2", FAR)}</Strip>
+      <Strip pass={pass(90)}>{skyline(3, 146, 30, 92, "#adbbc6", FAR)}</Strip>
+      <Strip pass={pass(34)}>{skyline(8, 170, 20, 62, "#8d9fad", MID, ["#f7e3a8"], 0.14)}{pines(4, 176, 16, 26, 70, "#7f9a8b", MID)}</Strip>
       <Strip pass={pass(8)}>
-        <path fill="#4b5c60" d="M0 192C60 184 110 196 170 188S270 184 320 192V208H0Z" />
-        {moving && <>{[90, 250].map((x) => <path key={x} fill="#3c4750" d={`M${x - 2} 30h4v170h-4zM${x - 14} 44h28v3h-28z`} />)}<path fill="none" stroke="#3c4750" strokeWidth="1.2" d="M-70 46Q10 60 90 46T250 46T410 46" /></>}
+        {hill("M-4 192C60 184 110 196 170 188S270 184 324 192", "#74867f", NEAR)}
+        {moving && <g stroke={NEAR.line} strokeLinejoin="round" strokeLinecap="round">
+          <path fill="none" strokeWidth="1.3" d="M-70 47Q10 61 90 47T250 47T410 47" />
+          {[90, 250].map((x) => <path key={x} fill="#5b5452" strokeWidth={NEAR.width} d={`M${x - 2.5} 30h5v170h-5zM${x - 15} 43h30v4.500h-30z`} />)}
+        </g>}
       </Strip>
       <Weather snow={false} color="#eef4f8" width={width} height={height} moving={moving} />
     </>}
