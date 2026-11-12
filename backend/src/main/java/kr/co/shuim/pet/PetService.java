@@ -23,7 +23,11 @@ public class PetService {
                        String date, int meals, int earned, Answers answers, int reward,
                        int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked,
                        int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow,
-                       List<String> appearances) {}
+                       List<String> appearances,
+                       PetDays.Sky sky, List<String> weatherSeen, List<String> newWeather, List<Task> tasks, boolean tasksRewarded) {}
+    /** 오늘의 돌봄 한 칸 */
+    public record Task(String id, boolean done) {}
+    private record DayTasks(List<String> tasks, int done, boolean rewarded) {}
     /** 고를 수 있는 모습. 화면은 이 목록에 있는 것만 보여 준다 (새 모습을 모르는 옛 서버에서는 고르지 못하게) */
     static final List<String> APPEARANCES = List.of("moru", "noa", "leo", "lumi", "moring");
     private record CareRow(PetRules.Care care, LocalDate careDate, LocalDate bathDate, LocalDate lightsNight, boolean lightsOff) {}
@@ -40,7 +44,56 @@ public class PetService {
             .param(uid).query((rs, i) -> new Pet(rs.getString("name"), PetRules.settle(new PetRules.State(
                 rs.getInt("food"), rs.getInt("xp"), rs.getObject("meal_date", LocalDate.class), rs.getInt("meals")), now.toLocalDate(), now.getHour()))).single();
         settleCare(uid, now.toLocalDate());
+        ensureTasks(uid, pet.state().date(), pet.state().food());
         return pet;
+    }
+    /* ---------- 오늘의 돌봄 (PetDays): 날마다 할 일 셋. 첫 조회 때 정해 두고, 돌봄·간식·기록이 칸을 채운다 ---------- */
+    private void ensureTasks(String uid, LocalDate day, int food) {
+        boolean dusty = readCare(uid).care().clean() < PetRules.CARE_MAX;
+        String tasks = String.join(",", PetDays.pick(uid, day, dusty, food > 0));
+        jdbc.sql("INSERT INTO pet_day_tasks(user_id, day, tasks) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").param(uid).param(day).param(tasks).update();
+    }
+    private Optional<DayTasks> dayTasks(String uid, LocalDate day) {
+        return jdbc.sql("SELECT tasks, done, rewarded FROM pet_day_tasks WHERE user_id = ? AND day = ?").param(uid).param(day)
+            .query((rs, i) -> new DayTasks(List.of(rs.getString("tasks").split(",")), rs.getInt("done"), rs.getBoolean("rewarded"))).optional();
+    }
+    /** 오늘의 할 일 중 하나를 했다 (목록에 없는 일이면 아무것도 바뀌지 않는다) */
+    private void markTask(String uid, LocalDate day, String task) {
+        if (!PetDays.MARKABLE.contains(task)) return;
+        dayTasks(uid, day).ifPresent(t -> {
+            int bit = PetDays.bit(t.tasks(), task);
+            if (bit != 0 && (t.done() & bit) == 0)
+                jdbc.sql("UPDATE pet_day_tasks SET done = done | ? WHERE user_id = ? AND day = ?").param(bit).param(uid).param(day).update();
+        });
+    }
+    /** 셋을 다 한 날은 한 번: 방문포인트 +10(장부 tasks:날짜), 성장 +4 */
+    private Pet tasksBonus(String uid, Pet p) {
+        var day = p.state().date();
+        var t = dayTasks(uid, day).orElse(null);
+        if (t == null || t.rewarded() || !PetDays.complete(t.tasks(), t.done())) return p;
+        int marked = jdbc.sql("UPDATE pet_day_tasks SET rewarded = TRUE WHERE user_id = ? AND day = ? AND NOT rewarded").param(uid).param(day).update();
+        if (marked == 0) return p;
+        grant(uid, "tasks:" + day, PetDays.TASK_POINTS);
+        var s = p.state();
+        return new Pet(p.name(), new PetRules.State(s.food(), Math.min(720, s.xp() + PetDays.TASK_XP), s.date(), s.meals()));
+    }
+    /* ---------- 오늘의 하늘과 날씨 도감 (PetDays) ---------- */
+    private boolean neverSawSnow(String uid, LocalDate today) {
+        return jdbc.sql("SELECT COUNT(*) FROM pet_weather_seen WHERE user_id = ? AND weather LIKE 'snow-%' AND first_day < ?")
+            .param(uid).param(today).query(Integer.class).single() == 0;
+    }
+    private PetDays.Sky sky(String uid, LocalDate today) {
+        return PetDays.sky(uid, today, ZonedDateTime.now(clock).getHour(), neverSawSnow(uid, today));
+    }
+    /** 방을 열 때: 지금 하늘을 도감에 적고, 처음 본 칸마다 방문포인트 +5. 처음 본 칸들을 돌려준다 */
+    private List<String> recordWeather(String uid, LocalDate today) {
+        var fresh = new ArrayList<String>();
+        for (var entry : PetDays.entries(sky(uid, today))) {
+            int inserted = jdbc.sql("INSERT INTO pet_weather_seen(user_id, weather, first_day) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")
+                .param(uid).param(entry).param(today).update();
+            if (inserted == 1) { grant(uid, "weather:" + entry, PetDays.WEATHER_POINTS); fresh.add(entry); }
+        }
+        return fresh;
     }
     private CareRow readCare(String uid) {
         return jdbc.sql("SELECT warmth, clean, energy, warmth_today, care_date, bath_date, lights_night, lights_off FROM user_pets WHERE user_id = ?")
@@ -77,7 +130,10 @@ public class PetService {
         try { return json.readValue(raw.get(), Answers.class); }
         catch (Exception e) { throw new IllegalStateException("Invalid stored pet diary", e); }
     }
-    private View save(String uid, Pet p, int reward) {
+    private View save(String uid, Pet p, int reward) { return save(uid, p, reward, List.of()); }
+    private View save(String uid, Pet p0, int reward, List<String> newWeather) {
+        if (mask(uid, p0.state().date()) != 0) markTask(uid, p0.state().date(), "record");
+        var p = tasksBonus(uid, p0);
         var s = p.state();
         jdbc.sql("UPDATE user_pets SET name = ?, food = ?, xp = ?, meal_date = ?, meals = ? WHERE user_id = ?")
             .param(p.name()).param(s.food()).param(s.xp()).param(s.date()).param(s.meals()).param(uid).update();
@@ -91,7 +147,10 @@ public class PetService {
             level == 10 ? 720 : PetRules.LEVELS[level], s.date().toString(), s.meals(),
             Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, snacked(uid, s.date()),
             care.care().warmth(), care.care().clean(), care.care().energy(), s.date().equals(care.bathDate()),
-            night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()), APPEARANCES);
+            night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()), APPEARANCES,
+            sky(uid, s.date()), jdbc.sql("SELECT weather FROM pet_weather_seen WHERE user_id = ? ORDER BY first_day, weather").param(uid).query(String.class).list(), newWeather,
+            dayTasks(uid, s.date()).map(t -> { var list = new ArrayList<Task>(); for (int i = 0; i < t.tasks().size(); i++) list.add(new Task(t.tasks().get(i), (t.done() & (1 << i)) != 0)); return (List<Task>) list; }).orElse(List.of()),
+            dayTasks(uid, s.date()).map(DayTasks::rewarded).orElse(false));
     }
     private List<Integer> owned(String uid) {
         var result = new ArrayList<Integer>(); result.add(0);
@@ -108,7 +167,8 @@ public class PetService {
         var p = lock(uid, now);
         grant(uid, "visit:" + p.state().date(), 10);
         int reward = fillRecords(uid, p.state().date()); // 기록이 다른 경로로 들어온 날도 여기서 맞춘다
-        return save(uid, reward == 0 ? p : fed(p, reward, now), reward);
+        var fresh = recordWeather(uid, p.state().date());
+        return save(uid, reward == 0 ? p : fed(p, reward, now), reward, fresh);
     }
     /** 새 마음밥: 재고·경험치를 더하고 오늘 아직 못 먹은 끼니를 채운다 (지난 끼니는 빚이 아니다) */
     private static Pet fed(Pet p, int reward, ZonedDateTime now) {
@@ -186,6 +246,7 @@ public class PetService {
             .param(uid).param("snack:" + s.date()).update();
         if (marked == 0) throw ApiException.badRequest("오늘 간식은 이미 줬어요.");
         writeCare(uid, PetRules.warm(readCare(uid).care()));
+        markTask(uid, s.date(), "snack");
         return save(uid, glowBonus(uid, new Pet(p.name(), PetRules.snack(s))), 0);
     }
     /** 온기·말끔함·기운이 모두 가득 찬 날은 한 번 성장 +1 (장부의 0점 표시 glow:날짜 로 하루 한 번) */
@@ -223,6 +284,7 @@ public class PetService {
             // 자정을 넘긴 뒤라면 오늘의 기운은 이미 정산됐다: 지금 고른 대로 바로 맞춘다
             if (night.isBefore(today)) writeCare(uid, PetRules.rested(row.care(), off));
         } else throw ApiException.badRequest("할 수 없는 돌봄이에요.");
+        markTask(uid, today, action);
         return save(uid, glowBonus(uid, p), 0);
     }
     public record FeedInput(String date, int meals) {}

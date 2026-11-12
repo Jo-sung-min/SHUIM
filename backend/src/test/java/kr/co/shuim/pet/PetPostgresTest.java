@@ -60,9 +60,10 @@ class PetPostgresTest {
                 () -> tx.execute(s -> pets.get(uid)), () -> tx.execute(s -> pets.get(uid))));
             for (var visit : visits) visit.get();
         }
-        assertEquals(10, tx.execute(s -> pets.get(uid)).points());
-        assertEquals(30, write().points());
-        assertEquals(30, write().points());
+        // 방을 열면 날씨 도감 포인트(처음 본 하늘마다 +5)도 함께 들어온다
+        assertEquals(10 + ledger("weather:%"), tx.execute(s -> pets.get(uid)).points());
+        assertEquals(30 + ledger("weather:%"), write().points());
+        assertEquals(30 + ledger("weather:%"), write().points());
         jdbc.sql("UPDATE user_pets SET xp=60,visit_points=60 WHERE user_id=?").param(uid).update();
         try (var pool = Executors.newFixedThreadPool(2)) {
             var buys = pool.invokeAll(List.of(
@@ -99,10 +100,10 @@ class PetPostgresTest {
         var withPet = new RecordsService(jdbc, new ObjectMapper(), pets);
         var today = LocalDate.parse(date);
         var start = tx.execute(s -> pets.get(uid));
-        assertEquals(9, start.food()); assertEquals(0, start.earned()); assertEquals(10, start.points());
+        assertEquals(9, start.food()); assertEquals(0, start.earned()); assertEquals(10 + ledger("weather:%"), start.points());
         tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind", "body", "work"), null)));
         var three = tx.execute(s -> pets.get(uid));
-        assertEquals(12, three.food()); assertEquals(3, three.earned()); assertEquals(12, three.xp()); assertEquals(22, three.points());
+        assertEquals(12, three.food()); assertEquals(3, three.earned()); assertEquals(12, three.xp()); assertEquals(22 + ledger("weather:%"), three.points());
         // Saving the same day again, or after deleting an entry, never pays twice.
         tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind"), null)));
         tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind", "body", "work"), null)));
@@ -111,7 +112,7 @@ class PetPostgresTest {
         tx.executeWithoutResult(s -> withPet.saveDay(uid, today, new RecordsDtos.DayInput(cats("mind", "body", "work", "money", "relation", "c_a", "c_b"), null)));
         tx.executeWithoutResult(s -> withPet.saveDay(uid, today.minusDays(1), new RecordsDtos.DayInput(cats("mind", "body"), null)));
         var five = tx.execute(s -> pets.get(uid));
-        assertEquals(14, five.food()); assertEquals(5, five.earned()); assertEquals(30, five.points());
+        assertEquals(14, five.food()); assertEquals(5, five.earned()); assertEquals(30 + ledger("weather:%"), five.points());
         // The older five-question diary shares the same five slots.
         assertEquals(0, write().reward());
         assertEquals(14, tx.execute(s -> pets.get(uid)).food());
@@ -212,5 +213,49 @@ class PetPostgresTest {
         jdbc.sql("INSERT INTO users(id,nick,role,is_anonymous) VALUES (?,'other','user',false)").param(other).update();
         assertNull(tx.execute(s -> pets.get(other)).answers().note());
         assertEquals(9, tx.execute(s -> pets.get(other)).food());
+    }
+    int ledger(String like) {
+        return jdbc.sql("SELECT COALESCE(SUM(amount), 0) FROM pet_point_ledger WHERE user_id = ? AND event_key LIKE ?").param(uid).param(like).query(Integer.class).single();
+    }
+    @Test void todaysChoresArePickedOnceAndFinishingAllPaysOnce() {
+        var start = tx.execute(s -> pets.get(uid));
+        assertEquals(3, start.tasks().size());
+        assertEquals("record", start.tasks().get(0).id());
+        assertTrue(start.tasks().stream().noneMatch(PetService.Task::done));
+        assertFalse(start.tasksRewarded());
+        PetService.View last = start;
+        for (var task : start.tasks()) {
+            assertFalse(last.tasksRewarded());
+            last = switch (task.id()) {
+                case "record" -> write();
+                case "snack" -> tx.execute(s -> pets.snack(uid));
+                default -> care(pets, task.id());
+            };
+        }
+        assertTrue(last.tasks().stream().allMatch(PetService.Task::done));
+        assertTrue(last.tasksRewarded());
+        assertEquals(PetDays.TASK_POINTS, ledger("tasks:%"));
+        // 같은 날 다시 열어도 할 일은 그대로, 더 해도 다시 주지 않는다
+        var again = tx.execute(s -> pets.get(uid));
+        assertEquals(start.tasks().stream().map(PetService.Task::id).toList(), again.tasks().stream().map(PetService.Task::id).toList());
+        care(pets, "hug"); write();
+        assertEquals(PetDays.TASK_POINTS, ledger("tasks:%"));
+        assertEquals(last.xp(), tx.execute(s -> pets.get(uid)).xp());
+    }
+    @Test void weatherBookRecordsEachSkyOnceAndPaysOnce() {
+        var first = tx.execute(s -> pets.get(uid));
+        assertNotNull(first.sky());
+        var entry = first.sky().weather() + "-" + first.sky().land();
+        assertTrue(PetDays.WEATHERS.contains(entry));
+        assertTrue(first.weatherSeen().contains(entry));
+        assertTrue(first.newWeather().contains(entry));
+        var second = tx.execute(s -> pets.get(uid));
+        assertTrue(second.newWeather().isEmpty());
+        assertEquals(first.weatherSeen(), second.weatherSeen());
+        assertEquals(first.newWeather().size() * PetDays.WEATHER_POINTS, ledger("weather:%"));
+        // 다른 날의 하늘은 새 칸이 될 수 있고, 이미 본 칸은 다시 주지 않는다
+        var later = at("2026-11-20T03:00:00Z");
+        var other = tx.execute(s -> later.get(uid));
+        assertEquals(other.weatherSeen().size() * PetDays.WEATHER_POINTS, ledger("weather:%"));
     }
 }
