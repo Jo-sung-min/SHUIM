@@ -11,7 +11,7 @@ import { assets } from "./assets-fixture.mjs";
 const read = file => readFile(new URL(file, import.meta.url), "utf8");
 const mapSource = stripTypeScriptTypes(await read("../lib/beach/maps.ts")).replace(/\bexport\s+(?=function|const)/g, "");
 const mapContext = {};
-vm.runInNewContext(`${mapSource}\nglobalThis.api = { MAPS, mapHref };`, mapContext);
+vm.runInNewContext(`${mapSource}\nglobalThis.api = { MAPS, mapHref, mapEyebrow, PUBLIC_SPACE_ID };`, mapContext);
 const maps = mapContext.api;
 const mapIds = Object.keys(maps.MAPS), mapCount = mapIds.length;
 const cardSource = await read("../components/beach/BeachCard.tsx");
@@ -26,8 +26,8 @@ function elements(tree, type) {
 const placeButtons = tree => elements(tree, "button").filter(button => button.props["data-place"]);
 const occupancyLabels = tree => elements(tree,"strong").filter(element => typeof element.props.children === "number");
 
-function cardHarness(customCircles) {
-  const values = [], effects = [], queued = [], requests = [];
+function cardHarness(customCircles, publicSpace) {
+  const values = [], effects = [], queued = [], requests = [], pushed = [], remembered = [], toasts = [], consents = [], saves = [];
   let cursor = 0, refresh;
   const hooks = {
     useId: () => "community-choice",
@@ -46,12 +46,18 @@ function cardHarness(customCircles) {
     },
   };
   const context = {
-    exports: {}, window: { setInterval: callback => { refresh = callback; return 1; }, clearInterval() {} },
+    exports: {}, Error, window: { setInterval: callback => { refresh = callback; return 1; }, clearInterval() {} },
     document: { hidden: false, addEventListener() {}, removeEventListener() {} },
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return jsxRuntime;
       if (name === "next/link") return { default: "a" };
+      if (name === "next/navigation") return { useRouter: () => ({ push: href => pushed.push(href) }) };
+      if (name.endsWith("/consent")) return {
+        requestCommunityConsent: () => { const result = deferred(); consents.push(result); return result.promise; },
+        requireCommunityConsent: () => { const result = deferred(); saves.push(result); return result.promise; },
+      };
+      if (name.endsWith("/toast")) return { showToast: (message, options) => toasts.push([message, options?.kind ?? "error"]) };
       if (name.endsWith("/maps")) return maps;
       if (name.endsWith("/assets")) return assets;
       if (name.endsWith("/daylight")) return { currentHour: () => 12, daylightAt: () => ({ skyTop: [0.5, 0.6, 0.7], stars: 0 }) };
@@ -60,13 +66,13 @@ function cardHarness(customCircles) {
         const result = deferred(); requests.push({ communityId, mapId, ...result }); return result.promise;
       } };
       if (name.endsWith(".css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
-      return { IconCheck: "i", IconChevronL: "i", IconChevronR: "i", IconLock: "i", IconUsers: "i", rememberBeachReturn() {} };
+      return { IconCheck: "i", IconChevronL: "i", IconChevronR: "i", IconLock: "i", IconUsers: "i", rememberBeachReturn() { remembered.push(true); } };
     },
   };
   vm.runInNewContext(compile(cardSource), context);
   let circles = customCircles ?? [{ id: "circle / one", name: "우리", slug: "one", primary: true }, { id: "circle-two", name: "둘", slug: "two" }];
-  return { requests, setCircles(next) { circles = next; }, refresh() { refresh(); }, render() {
-    cursor = 0; const tree = context.exports.default({ circles });
+  return { requests, pushed, remembered, toasts, consents, saves, setCircles(next) { circles = next; }, refresh() { refresh(); }, render() {
+    cursor = 0; const tree = context.exports.default({ circles, publicSpace });
     while (queued.length) queued.shift()();
     return tree;
   } };
@@ -97,11 +103,80 @@ test("a pinned private circle precedes the primary circle and respects its four-
   assert.equal(occupancyLabels(tree)[0].props.children, 4);
 });
 
+const PUBLIC = { id: "public", name: "공용 공간", capacity: 20 };
+const ladder = open => mapIds.map((id, index) => ({ id, open: index < open, members: index === 0 ? 0 : index * 20 + 1 }));
+const texts = tree => elements(tree, "p").map(p => [].concat(p.props.children).join(""));
+
+test("the public space opens every landscape to anyone and asks for the community rules before entering", async () => {
+  const harness = cardHarness([{ id: "mine", name: "우리", slug: "mine", primary: true, spaceMaps: ladder(1) }], PUBLIC);
+  let tree = harness.render();
+  assert.deepEqual(elements(tree, "a").map(link => link.props.href), mapIds.map(id => maps.mapHref(id, "public")), "no landscape is locked and none enters my circle");
+  assert.equal(placeButtons(tree).length, 0);
+  assert.ok(harness.requests.length === mapCount && harness.requests.every(request => request.communityId === "public"));
+  assert.ok(texts(tree).some(text => text.includes("누구나 들어올 수 있어요")));
+  assert.ok(elements(tree, "a").every(link => link.props["aria-label"].startsWith("공용 공간 ")));
+  harness.requests[0].resolve({ communityId: "public", mapId: "beach", count: 20, capacity: 20 });
+  await settle(); tree = harness.render();
+  assert.equal(placeButtons(tree)[0].props["aria-label"], "바닷가, 만석");
+
+  const uyuni = elements(tree, "a").find(link => link.props["data-place"] === "uyuni");
+  const click = extra => { const event = { prevented: false, button: 0, preventDefault() { this.prevented = true; }, ...extra }; uyuni.props.onClick(event); return event; };
+  assert.equal(click({ ctrlKey: true }).prevented, false, "a new-tab click is left to the browser; the server checks consent there");
+  assert.equal(harness.consents.length, 0);
+  assert.equal(click().prevented, true);
+  click();
+  assert.equal(harness.consents.length, 1, "a second tap while the rules sheet is open does not ask twice");
+  assert.deepEqual(harness.pushed, [], "nobody enters before agreeing");
+  harness.consents[0].resolve(false);
+  await settle(); await settle();
+  assert.deepEqual(harness.toasts, [["함께 지킬 약속에 동의하면 들어갈 수 있어요.", "info"]], "closing the rules sheet is a brief notice, not a lingering error");
+  assert.equal(harness.saves.length, 0);
+  assert.deepEqual(harness.pushed, []);
+  click(); harness.consents[1].resolve(true);
+  await settle(); await settle();
+  assert.deepEqual(harness.pushed, [], "the agreement is saved on the server before entering");
+  harness.saves[0].reject(new Error("연결을 확인하지 못했어요. 잠시 후 다시 시도해 주세요."));
+  await settle(); await settle();
+  assert.deepEqual(harness.toasts[1], ["연결을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.", "error"]);
+  assert.deepEqual(harness.pushed, []);
+  click(); harness.consents[2].resolve(true); await settle(); await settle();
+  harness.saves[1].resolve(); await settle(); await settle();
+  assert.deepEqual(harness.pushed, ["/uyuni?communityId=public"]);
+  assert.equal(harness.remembered.length, 1, "leaving the room returns to the page it was entered from");
+});
+
+test("a circle's own space locks the landscapes its members have not grown into yet", async () => {
+  const harness = cardHarness([{ id: "small", name: "작은 소로우", slug: "small", primary: true, memberCount: 3, spaceMaps: ladder(1) }]);
+  let tree = harness.render();
+  assert.deepEqual(elements(tree, "a").map(link => link.props.href), [maps.mapHref("beach", "small")], "a new circle starts with the beach");
+  assert.deepEqual(harness.requests.map(request => request.mapId), ["beach"], "locked rooms are not polled");
+  const locked = placeButtons(tree);
+  assert.deepEqual(locked.map(button => button.props["data-place"]), mapIds.slice(1));
+  assert.ok(locked.every(button => button.props.disabled === true && button.props["data-locked"] === ""));
+  assert.deepEqual(locked.map(button => button.props["aria-label"]), ["우유니, 멤버 21명부터 열려요", "대나무숲, 멤버 41명부터 열려요", "봄물 정원, 멤버 61명부터 열려요", "구름미그린 온천, 멤버 81명부터 열려요", "바이칼, 멤버 101명부터 열려요"]);
+  assert.ok(texts(tree).some(text => text === "멤버만 들어와요. 멤버 21명부터 우유니도 열려요."));
+
+  harness.setCircles([{ id: "small", name: "작은 소로우", slug: "small", primary: true, memberCount: 21, spaceMaps: ladder(2) }]);
+  tree = harness.render();
+  assert.deepEqual(elements(tree, "a").map(link => link.props["data-place"]), ["beach", "uyuni"], "the next landscape opens once the circle grows");
+  assert.deepEqual(harness.requests.slice(1).map(request => request.mapId), ["beach", "uyuni"], "the newly opened room starts reporting who is there");
+  assert.ok(texts(tree).some(text => text === "멤버만 들어와요. 멤버 41명부터 대나무숲도 열려요."));
+
+  harness.setCircles([{ id: "big", name: "큰 소로우", slug: "big", primary: true, spaceMaps: ladder(mapCount) }]);
+  tree = harness.render();
+  assert.equal(elements(tree, "a").length, mapCount);
+  assert.ok(texts(tree).some(text => text === "우리 소로우 멤버만 들어오는 공간이에요."));
+});
+
 test("map links preserve the community and encode it without changing the beach route", () => {
   assert.equal(maps.mapHref("beach", "circle / one"), "/beach?communityId=circle%20%2F%20one");
   assert.equal(maps.mapHref("uyuni", "circle / one"), "/uyuni?communityId=circle%20%2F%20one");
   assert.equal(maps.MAPS.uyuni.eyebrow, "하늘이 머무는 곳");
   assert.equal(maps.MAPS.uyuni.welcome, "발끝에 비치는 별빛");
+  assert.equal(maps.mapHref("baikal", maps.PUBLIC_SPACE_ID), "/baikal?communityId=public");
+  assert.equal(maps.mapEyebrow("beach", false), "우리만의 프라이빗 해변");
+  assert.equal(maps.mapEyebrow("beach", true), "누구나 쉬어 가는 해변", "the public beach is not called ours alone");
+  assert.equal(maps.mapEyebrow("uyuni", true), maps.MAPS.uyuni.eyebrow);
 });
 
 test("all landscape cards enter directly and keep their live counts and effective capacities separate", async () => {
@@ -301,5 +376,6 @@ test("cloud spa is a private fullscreen route with the current capacity and shar
   assert.ok(layout.includes('robots: { index: false, follow: false }'));
   assert.ok(layout.includes("최대 20명"));
   assert.ok(tabs.includes('path === "/cloudspa"'));
-  assert.ok(home.includes('<BeachCard circles=')); assert.ok(circle.includes('<BeachCard circles='));
+  assert.ok(home.includes('<BeachCard publicSpace={mine.publicSpace} circles='), "the home card is the public space, with my circle's space as the fallback for an older server");
+  assert.ok(circle.includes('<BeachCard circles='));
 });

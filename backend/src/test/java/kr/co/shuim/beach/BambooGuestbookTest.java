@@ -35,6 +35,20 @@ class BambooGuestbookTest {
         verifyNoInteractions(store);
     }
 
+    @Test void thePublicBambooForestOpensItsGuestbookToAnyVisitorStandingInIt() {
+        when(auth.currentUser(request)).thenReturn(Optional.of(user));
+        when(beach.requireVisit("owned", user.id())).thenReturn(new BeachService.Visit("public", "bamboo", null));
+        var page = new BambooGuestbook.Page(java.util.List.of(), null);
+        when(store.list("public", user.id(), null)).thenReturn(page);
+        assertSame(page, api.list(first, request).getBody());
+        verifyNoInteractions(circles);
+        // 공용 공간이어도 대나무숲 밖의 방문이나 이용이 제한된 계정은 열지 못한다.
+        when(beach.requireVisit("owned", user.id())).thenReturn(new BeachService.Visit("public", "beach", null));
+        assertEquals(403, assertThrows(ApiException.class, () -> api.list(first, request)).status());
+        when(auth.currentUser(request)).thenReturn(Optional.of(new DbUser("visitor", null, "별", "user", false, 1L, null, 0)));
+        assertEquals(403, assertThrows(ApiException.class, () -> api.list(first, request)).status());
+    }
+
     @Test void personalStoriesKeepHangulLineBreaksAndCountEmojiAsOneCharacter() {
         var input = json.createObjectNode().put("name", "  달🌙  ").put("story", "강가에서\r\n다시 만나요.");
         assertEquals("달🌙", BambooGuestbookController.text(input,"name",24,false));

@@ -13,7 +13,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleService;
+import kr.co.shuim.common.SpaceCapacity;
+import kr.co.shuim.common.SpaceMaps;
 import kr.co.shuim.community.BlockService;
+import kr.co.shuim.community.CommunityConsentService;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.points.FireworkTickets;
 import org.springframework.core.io.Resource;
@@ -35,8 +38,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 소로우 바닷가의 방문과 공유 모닥불 API. 방문은 메모리, 모닥불과 구매 효과는 DB에 저장한다.
- * 위치 폴링은 방문 티켓을 쓰고, 장작을 넣을 때는 로그인과 현재 멤버 자격도 확인한다.
+ * 함께 쉬는 공간(공용 공간과 소로우 공간)의 방문과 공유 모닥불 API. 방문은 메모리, 모닥불과 구매 효과는 DB에 저장한다.
+ * 위치 폴링은 방문 티켓을 쓰고, 장작을 넣을 때는 로그인과 현재 입장 자격도 확인한다.
  */
 @RestController
 public class BeachController {
@@ -79,6 +82,12 @@ public class BeachController {
      * 회원에게는 발사 버튼·이용권 잔액이 내려가지 않는다. 직접 만든(테스트) 컨트롤러는 열린 상태로 시작한다.
      */
     private boolean memberFireworks = true;
+
+    /** 공용 공간에 들어올 때 확인하는 커뮤니티 이용규칙 동의. 직접 만든(테스트) 컨트롤러는 동의 저장소 없이 시작한다. */
+    private CommunityConsentService consent;
+
+    @Autowired(required = false)
+    void setConsent(CommunityConsentService consent) { this.consent = consent; }
 
     @Value("${app.fireworks.members-enabled:false}")
     void setMemberFireworks(boolean enabled) { this.memberFireworks = enabled; }
@@ -176,15 +185,35 @@ public class BeachController {
         }
     }
 
-    private CircleService.Circle requireMember(String communityId, DbUser me) {
-        if (communityId == null || communityId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
+    /**
+     * 방이 속한 공간. 공용 공간은 누구나 들어오고 모든 풍경이 열려 있다.
+     * 소로우 공간은 그 소로우의 멤버만 들어오고, 멤버가 늘수록 풍경이 하나씩 열린다 (SpaceMaps).
+     */
+    record Space(String id, String slug, String name, int capacity, boolean privateTest, boolean shared, CircleService.Circle circle) {
+        static final Space PUBLIC = new Space(SpaceMaps.PUBLIC_ID, "", SpaceMaps.PUBLIC_NAME, SpaceCapacity.MAX, false, true, null);
+        static Space of(CircleService.Circle circle) {
+            return new Space(circle.id(), circle.slug(), circle.name(), circle.spaceCapacity(), circle.privateTest(), false, circle);
+        }
+        boolean opens(BeachMap map) { return shared || circle.opensMap(map.id()); }
+    }
+
+    /** 공용 공간이면 이용이 제한되지 않은 누구나, 소로우 공간이면 그 소로우의 승인된 멤버만. */
+    private Space requireSpace(String spaceId, DbUser me) {
+        if (spaceId == null || spaceId.isBlank()) throw ApiException.badRequest("함께 쉴 소로우를 골라 주세요.");
         if (me.blocked()) throw ApiException.forbidden("이용이 제한된 계정이에요.");
-        CircleService.Circle circle = circles.byId(communityId.strip());
+        if (SpaceMaps.isPublic(spaceId.strip())) return Space.PUBLIC;
+        CircleService.Circle circle = circles.byId(spaceId.strip());
         circles.requireAccess(circle, me);
         if (circles.member(circle.id(), me.id()).filter(CircleService.Member::active).isEmpty()) {
             throw ApiException.forbidden("이 소로우의 멤버만 바닷가에 들어갈 수 있어요.");
         }
-        return circle;
+        return Space.of(circle);
+    }
+
+    /** 소로우 공간의 풍경은 멤버 수에 따라 열린다. 아직 닫힌 풍경은 방도 인원수도 내주지 않는다. */
+    private static void requireOpenMap(Space space, BeachMap map) {
+        if (space.opens(map)) return;
+        throw ApiException.forbidden("이 풍경은 소로우 멤버가 " + SpaceMaps.membersToOpen(map.id()) + "명이 되면 열려요. 지금은 공용 공간에서 만날 수 있어요.");
     }
 
     /** Public position/rest requests keep the existing ticket-only path without auth/database reads. */
@@ -194,32 +223,38 @@ public class BeachController {
         DbUser me = req == null ? null : auth.currentUser(req).orElse(null);
         if (me == null || me.anonymous()) throw ApiException.unauthorized("비공개 소로우에 참여한 계정으로 다시 로그인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(ticket, me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return me;
     }
 
     /**
      * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" | "bamboo" | "garden" | "cloudspa" | "baikal" } → map-scoped ticket, capabilities and state.
-     * 이 소로우의 승인된 멤버만 들어갈 수 있다. 정원 초과는 409.
+     * communityId 가 "public" 이면 공용 공간(이용규칙에 동의한 누구나), 아니면 그 소로우의 승인된 멤버만 들어갈 수 있다.
+     * 소로우 공간에서 아직 열리지 않은 풍경은 403, 정원 초과는 409.
      */
     @PostMapping("/api/beach/enter")
     public Map<String, Object> enter(@RequestBody(required = false) EnterBody body, HttpServletRequest req, HttpServletResponse res) {
         DbUser me = auth.requireUser(req, res);
-        CircleService.Circle circle = requireMember(body == null ? null : body.communityId(), me);
-        if (circle.privateTest()) privateCommunities.add(circle.id());
+        Space space = requireSpace(body == null ? null : body.communityId(), me);
         BeachMap map = BeachMap.from(body.mapId());
+        requireOpenMap(space, map);
+        // 소로우 가입이 이용규칙 동의를 거치듯, 처음 보는 사람들과 만나는 공용 공간도 같은 동의를 먼저 받는다.
+        if (space.shared() && consent != null && !consent.accepted(me))
+            throw new ApiException(409, "함께 지킬 약속에 동의한 뒤 공용 공간에 들어올 수 있어요.");
+        if (space.privateTest()) privateCommunities.add(space.id());
         Set<String> excluded = blocks.excludedIds(me.id());
-        BeachRoom.Entry entry = beach.enter(circle.id(), me.id(), me.nick(), excluded, body.character(), map.id(), body.resumeTicket(), body.sequence(), circle.spaceCapacity());
+        BeachRoom.Entry entry = beach.enter(space.id(), me.id(), me.nick(), excluded, body.character(), map.id(), body.resumeTicket(), body.sequence(), space.capacity());
         BeachRoom.Presence p = entry.presence();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ticket", p.ticket());
         out.put("resumed", entry.resumed());
         out.put("selfRest", BeachRoom.RestPresence.of(p));
         out.put("sequence", p.sequence());
-        out.put("communityId", circle.id());
+        out.put("communityId", space.id());
         out.put("mapId", map.id());
-        out.put("community", Map.of("id", circle.id(), "slug", circle.slug(), "name", circle.name()));
-        out.put("capacity", circle.spaceCapacity());
+        out.put("community", Map.of("id", space.id(), "slug", space.slug(), "name", space.name()));
+        out.put("shared", space.shared());
+        out.put("capacity", space.capacity());
         out.put("restEnabled", map.hasStarlight());
         out.put("bedEnabled", map.hasBeds());
         out.put("bunkerEnabled", map == BeachMap.UYUNI && !me.anonymous());
@@ -229,13 +264,13 @@ public class BeachController {
         out.put("fireEnabled", map.hasBeachFacilities());
         out.put("careCapabilities", new BeachRoom.CareCapabilities(true, auth.isAdmin(me)));
         out.put("lightingControl", auth.isAdmin(me));
-        out.put("lighting", beach.lighting(circle.id(), map.id()));
+        out.put("lighting", beach.lighting(space.id(), map.id()));
         out.put("musicControl", auth.isAdmin(me));
         boolean fireworksFree = auth.isAdmin(me);
         out.put("fireworksControl", fireworksAllowed(me));
         out.put("fireworksFree", fireworksFree);
         if (!fireworksFree && fireworksAllowed(me)) out.put("fireworkTickets", tickets.balance(me.id()));
-        BeachRoom.FireworksState fireworks = beach.fireworks(circle.id(), map.id());
+        BeachRoom.FireworksState fireworks = beach.fireworks(space.id(), map.id());
         out.put("fireworks", fireworks.events());
         out.put("fireworksCooldownUntil", fireworks.cooldownUntil());
         BeachUyuniMoments.State moments = beach.uyuniMoments(p.ticket());
@@ -249,10 +284,10 @@ public class BeachController {
         out.put("me", Map.of("pid", p.pid(), "id", p.userId(), "nick", p.nick(), "skin", p.skin()));
         out.put("spawn", Map.of("x", p.x(), "z", p.z(), "yaw", p.yaw()));
         out.put("bounds", Map.of("minX", map.minX(), "maxX", map.maxX(), "minZ", map.minZ(), "maxZ", map.maxZ()));
-        out.put("count", beach.count(circle.id(), map.id()));
-        BeachFireService.FireView fire = beach.fire(circle.id(), map.id());
+        out.put("count", beach.count(space.id(), map.id()));
+        BeachFireService.FireView fire = beach.fire(space.id(), map.id());
         out.put("fire", fire);
-        BeachRoom.MusicState playback = beach.music(circle.id(), map.id());
+        BeachRoom.MusicState playback = beach.music(space.id(), map.id());
         out.put("music", playback.music());
         out.put("serverTime", playback.serverTime());
         if (map == BeachMap.BAMBOO) out.put("festival", p.festivalAt(fire.serverTime()));
@@ -281,7 +316,7 @@ public class BeachController {
             if (actor != null && !ownedMember) {
                 try {
                     BeachService.Visit visit = beach.requireVisit(body.ticket(), actor.id());
-                    requireMember(visit.communityId(), actor);
+                    requireSpace(visit.communityId(), actor);
                     ownedMember = true;
                 } catch (ApiException e) {
                     if (e.status() != 403) throw e;
@@ -316,7 +351,7 @@ public class BeachController {
         if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 이용해 주세요.");
         if (body == null) throw ApiException.badRequest("게임 동작을 다시 확인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         if (body.cell() != null && (body.cell() < 0 || body.cell() > 1024)) throw ApiException.badRequest("둘 자리를 다시 골라 주세요.");
         return beach.board(body.ticket(), me.id(), body.action(), body.tableId(), body.cell() == null ? null : body.cell().intValue(), body.version());
     }
@@ -327,7 +362,7 @@ public class BeachController {
         if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 지하 쉼터를 이용해 주세요.");
         if (body == null) throw ApiException.badRequest("지하 쉼터의 출입을 다시 확인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return beach.bunker(body.ticket(), me.id(), body.action(), body.bunkerId(), body.sequence());
     }
 
@@ -337,7 +372,7 @@ public class BeachController {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
         if (body == null) throw ApiException.badRequest("방의 시간 설정을 다시 골라 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 방의 시간을 바꿀 수 있어요.");
         return beach.setLighting(body.ticket(), me.id(), body.mode());
     }
@@ -347,7 +382,7 @@ public class BeachController {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("관리자 계정으로 로그인해 주세요."));
         if (body == null) throw ApiException.badRequest("재생할 음악을 확인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 방의 음악을 재생하거나 정지할 수 있어요.");
         return beach.changeMusic(body.ticket(), me.id(), body.action(), body.trackId(), body.expectedVersion());
     }
@@ -358,9 +393,9 @@ public class BeachController {
                                                @RequestParam(required = false) String trackId,
                                                HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("음악을 들으려면 공간에 다시 들어와 주세요."));
-        CircleService.Circle circle = requireMember(communityId, me);
+        Space space = requireSpace(communityId, me);
         if (mapId == null) throw ApiException.badRequest("이용할 지도를 다시 골라 주세요.");
-        beach.requireMusicListener(circle.id(), mapId, me.id());
+        beach.requireMusicListener(space.id(), mapId, me.id());
         RoomMusicTrack selected = RoomMusicTrack.from(trackId);
         // Spring handles byte ranges and conditional GET/HEAD after the same visit check.
         var response = ResponseEntity.ok().contentType(MediaType.valueOf("audio/mpeg"))
@@ -380,7 +415,7 @@ public class BeachController {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 불꽃놀이를 쏠 수 있어요."));
         if (body == null) throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         String variant = BeachRoom.requireFireworkVariant(body.selectedVariant());
         if (auth.isAdmin(me)) return beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant);
         if (!memberFireworks) throw ApiException.forbidden("불꽃놀이는 아직 준비 중이에요.");
@@ -399,7 +434,7 @@ public class BeachController {
         if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 함께 띄워 주세요.");
         if (body == null) throw ApiException.badRequest("함께 띄울 내용을 다시 확인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return beach.launchUyuniMoment(body.ticket(), me.id(), body.requestId(), body.kind(), body.letter(), body.color(), body.wish(), blocks.excludedIds(me.id()));
     }
 
@@ -411,7 +446,7 @@ public class BeachController {
         if (me.anonymous()) throw ApiException.forbidden("가입한 계정으로 함께 띄워 주세요.");
         if (body == null) throw ApiException.badRequest("연못에 띄울 내용을 다시 확인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return beach.launchGardenMoment(body.ticket(), me.id(), body.requestId(), body.kind(), blocks.excludedIds(me.id()));
     }
 
@@ -419,7 +454,7 @@ public class BeachController {
     public BeachRoom.FestivalChange festival(@RequestBody FestivalBody body, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("대나무숲에 다시 들어와 주세요."));
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return beach.changeFestival(body.ticket(), me.id(), body.requestId(), body.choice());
     }
 
@@ -440,14 +475,15 @@ public class BeachController {
 
     public Map<String, Object> count(String communityId, HttpServletRequest req) { return count(communityId, null, req); }
 
-    /** GET /api/beach/count?communityId=...&mapId=beach|uyuni (해당 소로우 멤버만) */
+    /** GET /api/beach/count?communityId=...&mapId=beach|uyuni (공용 공간은 누구나, 소로우 공간은 그 멤버만) */
     @GetMapping("/api/beach/count")
     public Map<String, Object> count(@RequestParam(required = false) String communityId,
                                    @RequestParam(required = false) String mapId, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 바닷가를 이용해 주세요."));
-        CircleService.Circle circle = requireMember(communityId, me);
+        Space space = requireSpace(communityId, me);
         BeachMap map = BeachMap.from(mapId);
-        return Map.of("communityId", circle.id(), "mapId", map.id(), "count", beach.count(circle.id(), map.id()), "capacity", circle.spaceCapacity());
+        requireOpenMap(space, map);
+        return Map.of("communityId", space.id(), "mapId", map.id(), "count", beach.count(space.id(), map.id()), "capacity", space.capacity());
     }
 
     public BeachFireService.FireView fire(String communityId, HttpServletRequest req) { return fire(communityId, null, req); }
@@ -456,8 +492,8 @@ public class BeachController {
     public BeachFireService.FireView fire(@RequestParam(required = false) String communityId,
                                           @RequestParam(required = false) String mapId, HttpServletRequest req) {
         DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("소로우에 가입한 뒤 모닥불을 이용해 주세요."));
-        CircleService.Circle circle = requireMember(communityId, me);
-        return beach.fire(circle.id(), mapId);
+        Space space = requireSpace(communityId, me);
+        return beach.fire(space.id(), mapId);
     }
 
     @PostMapping("/api/beach/fire/wood")
@@ -465,7 +501,7 @@ public class BeachController {
         DbUser me = auth.requireUser(req, res);
         if (body == null) throw ApiException.badRequest("장작 요청을 다시 시도해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return beach.addWood(body.ticket(), me.id(), body.requestId());
     }
 
@@ -474,7 +510,7 @@ public class BeachController {
         DbUser me = auth.requireUser(req, res);
         if (body == null) throw ApiException.badRequest("색가루 요청을 다시 시도해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
-        requireMember(visit.communityId(), me);
+        requireSpace(visit.communityId(), me);
         return beach.addPowder(body.ticket(), me.id(), body.requestId(), body.color());
     }
 }

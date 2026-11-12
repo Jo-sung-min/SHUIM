@@ -45,6 +45,18 @@ export const MAPS = {
   },
 } as const;
 
+/**
+ * 공간은 두 가지다. 누구나 들어오는 공용 공간(방 id "public", 서버 SpaceMaps.PUBLIC_ID 와 같다)과
+ * 그 소로우의 멤버만 들어오는 소로우 공간(방 id 는 소로우 id). 소로우 공간의 풍경은 멤버가 늘수록 하나씩 열린다.
+ */
+export const PUBLIC_SPACE_ID = "public";
+
+/** communityId 는 공간 id: 소로우 id 또는 공용 공간의 PUBLIC_SPACE_ID */
 export function mapHref(mapId: MapId, communityId: string): string {
   return `${MAPS[mapId].path}?communityId=${encodeURIComponent(communityId)}`;
+}
+
+/** 들어서며 보이는 한 줄. 공용 공간에서는 '우리만의'라고 하지 않는다. */
+export function mapEyebrow(mapId: MapId, shared: boolean): string {
+  return shared && mapId === "beach" ? "누구나 쉬어 가는 해변" : MAPS[mapId].eyebrow;
 }

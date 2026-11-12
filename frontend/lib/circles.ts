@@ -47,10 +47,17 @@ export const JOIN_MODE_LABEL: Record<JoinMode, string> = {
   domain: "소속 메일 인증",
 };
 
+/** 소로우 공간의 풍경 하나: 지금 열렸는지와 열리는 멤버 수 (서버 SpaceMaps: 멤버가 20명 늘 때마다 다음 풍경) */
+export interface SpaceMapState { id: string; open: boolean; members: number }
+/** 누구나 들어오는 공용 공간. 서버가 알려 줄 때만 보여 준다 (옛 서버에는 없다) */
+export interface PublicSpace { id: string; name: string; capacity: number }
+
 export interface Circle {
   privateTest?: boolean;
   pinned?: boolean;
   spaceCapacity?: number;
+  /** 소로우 공간의 풍경 (소로우 하나·내 소로우에만 온다). 없으면 모두 열린 것으로 본다 */
+  spaceMaps?: SpaceMapState[];
   id: string;
   slug: string;
   name: string;
@@ -144,7 +151,7 @@ export const browseCircles = (kind?: string, q?: string) => {
   return get<{ circles: Circle[] }>(`/api/circles?${p}`).then((r) => r.circles);
 };
 export const fetchWarmCircles = () => get<{ circles: Circle[] }>("/api/circles/warm").then((r) => r.circles);
-export const fetchMyCircles = () => get<{ member: MyCircle[]; listening: Circle[] }>("/api/circles/mine");
+export const fetchMyCircles = () => get<{ member: MyCircle[]; listening: Circle[]; publicSpace?: PublicSpace }>("/api/circles/mine");
 export const fetchCircle = (slug: string) => get<CircleDetail>(at(slug));
 
 export const createPrivateTestCircle = (peerId: string) => post<CircleDetail>("/api/circles/private-test", { peerId });

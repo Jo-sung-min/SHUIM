@@ -138,6 +138,9 @@ export default function NewCirclePage() {
             <p className={styles.sub} style={{ margin: 0 }}>
               연 사람이 소로우지기예요. 멤버가 보낸 사연을 실명·연락처를 가려 올리고, 가입과 멤버를 관리해요. 보낸 사람이 누구인지는 소로우지기도 알 수 없어요.
             </p>
+            <p className={styles.sub} style={{ margin: 0 }}>
+              소로우를 열면 우리 멤버만 들어오는 바닷가가 생겨요. 멤버가 20명 늘 때마다 다음 풍경이 하나씩 열려요.
+            </p>
             {error && <div className="notice warn" role="alert">{error}</div>}
             <button className="btn block" disabled={busy} aria-busy={busy}>{busy ? "여는 중…" : "소로우 열기"}</button>
           </form>

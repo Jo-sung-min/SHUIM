@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CommunityStore, Target, api, fetchCommunity } from "@/lib/community";
-import { Circle, MyCircle, fetchMyCircles, fetchWarmCircles } from "@/lib/circles";
+import { Circle, MyCircle, PublicSpace, fetchMyCircles, fetchWarmCircles } from "@/lib/circles";
 import ShoutTabs from "@/components/ShoutTabs";
 import CirclePosts, { circlePostsOf } from "@/components/CirclePosts";
 import { CircleRow } from "@/components/CircleRow";
@@ -21,7 +21,7 @@ import { route } from "@/lib/routes";
  */
 export default function CircleHomePage() {
   const [s, setS] = useState<CommunityStore | null>(null);
-  const [mine, setMine] = useState<{ member: MyCircle[]; listening: Circle[] } | null>(null);
+  const [mine, setMine] = useState<{ member: MyCircle[]; listening: Circle[]; publicSpace?: PublicSpace } | null>(null);
   const [warm, setWarm] = useState<Circle[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [menu, setMenu] = useState<Target | null>(null);
@@ -81,7 +81,8 @@ export default function CircleHomePage() {
           <Link href="/c/new" className={`${styles.mineChip} ${styles.add}`}><IconPlus aria-hidden="true" />소로우 열기</Link>
         </div>
 
-        <BeachCard circles={mine.member.filter((c) => c.status === "active")} />
+        {/* 맨 위 풍경은 누구나 들어오는 공용 공간. 소로우만의 공간은 각 소로우 화면에 있다 (옛 서버는 공용 공간을 모르니 내 소로우 공간을 그대로 보여 준다) */}
+        <BeachCard publicSpace={mine.publicSpace} circles={mine.member.filter((c) => c.status === "active")} />
         <Link href="/sponsors" className={styles.sponsorLink}>후원 기업 <IconChevronR aria-hidden="true" /></Link>
 
         <div className={styles.head}>

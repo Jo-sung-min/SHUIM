@@ -42,8 +42,30 @@ class BeachFirePostgresTest {
     }
 
     private static void cleanup(String id) {
+        // V48 부터 모닥불은 소로우 행에 묶여 있지 않으므로 직접 지운다.
+        jdbc.sql("DELETE FROM beach_fire_wood_requests WHERE community_id = ?").param(id).update();
+        jdbc.sql("DELETE FROM beach_fires WHERE community_id = ?").param(id).update();
         jdbc.sql("DELETE FROM communities WHERE id = ?").param(id).update();
         jdbc.sql("DELETE FROM users WHERE id = ?").param(id).update();
+    }
+
+    @Test
+    void thePublicSpaceKeepsADurableFireWithoutACircleRow() {
+        String space = kr.co.shuim.common.SpaceMaps.PUBLIC_ID, visitor = UUID.randomUUID().toString();
+        jdbc.sql("INSERT INTO users (id, nick, is_anonymous) VALUES (?, '공용 불씨 테스트', TRUE)").param(visitor).update();
+        cleanup(space);
+        try {
+            long now = 1_000_000;
+            var fire = new BeachFireService(repository, () -> now);
+            assertEquals(BeachFireService.INITIAL_LOGS, fire.snapshot(space).logs());
+            assertEquals(BeachFireService.INITIAL_LOGS + 1, fire.addWood(space, visitor, UUID.randomUUID().toString()).logs());
+            // 다른 서버 인스턴스도 같은 공용 모닥불을 본다.
+            assertEquals(BeachFireService.INITIAL_LOGS + 1, new BeachFireService(new BeachFireRepository(jdbc, manager), () -> now).snapshot(space).logs());
+            assertEquals(0L, jdbc.sql("SELECT count(*) FROM communities WHERE id = ?").param(space).query(Long.class).single());
+        } finally {
+            cleanup(space);
+            jdbc.sql("DELETE FROM users WHERE id = ?").param(visitor).update();
+        }
     }
 
     @Test

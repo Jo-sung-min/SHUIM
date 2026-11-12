@@ -65,4 +65,22 @@ class BambooGuestbookPostgresTest {
             jdbc.sql("DELETE FROM users WHERE id IN (?,?)").param(author).param(viewer).update();
         }
     }
+
+    @Test void thePublicBambooForestKeepsItsGuestbookWithoutACircleRow() {
+        var source = new DriverManagerDataSource(System.getenv("SOROW_TEST_DATABASE_URL"), "sorow_test", "");
+        Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate();
+        var jdbc = JdbcClient.create(source);
+        var tx = new TransactionTemplate(new DataSourceTransactionManager(source));
+        String space = kr.co.shuim.common.SpaceMaps.PUBLIC_ID, author = UUID.randomUUID().toString();
+        jdbc.sql("INSERT INTO users (id,nick,is_anonymous) VALUES (?, '공용 방명록 테스트', false)").param(author).update();
+        try {
+            var book = new BambooGuestbook(jdbc);
+            var written = tx.execute(s -> book.write(space, author, UUID.randomUUID(), "달", "누구나 쉬어 가요"));
+            assertEquals(written.id(), book.list(space, author, null).entries().getFirst().id());
+            assertEquals(0L, jdbc.sql("SELECT count(*) FROM communities WHERE id = ?").param(space).query(Long.class).single());
+        } finally {
+            // 글쓴이를 지우면 방명록 글도 함께 지워진다 (author_id 의 ON DELETE CASCADE).
+            jdbc.sql("DELETE FROM users WHERE id = ?").param(author).update();
+        }
+    }
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { assetCssUrl } from "@/lib/assets";
-import { MAPS, type MapId } from "@/lib/beach/maps";
+import { MAPS, PUBLIC_SPACE_ID, mapEyebrow, type MapId } from "@/lib/beach/maps";
 import { BeachEngine, webglSupported, type RestState, type StargazingState, type BedState, type BenchState, type OnsenState, type PavilionState, type ViewMode, type BoatRideState, type BunkerState } from "@/lib/beach/engine";
 import { BeachGone, BeachUnavailable, BeachCooldown, enterBeach, leaveBeach, suspendBeach, tickBeach, playBoardGame, type BoardGame, addFirewood, addFirePowder, setBeachRest, setBeachLighting, launchBeachFireworks, enterBeachBunker, type FireworkEvent, type FireworkVariant, type RoomLighting, type RoomLightingMode, type FireState, type PowderColor, type CareEvent, type CareKind, type RemotePlayer, type EnterResponse } from "@/lib/beach/net";
 import { attachBeachLifecycle, beachTickDelay, forgetBeachVisit, readBeachVisit, sameBeachRoster, sameFireDisplay, saveBeachVisit, type SavedBeachVisit } from "@/lib/beach/continuity";
@@ -1604,7 +1604,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const areaEnabled = activeBed ? bedEnabled : restEnabled;
   const areaSpot = activeBed?.spotId ?? "starlight";
   const skyFull = !lying && restArea.occupied >= restArea.capacity;
-  const returnHref = community ? route(`/c/${community.slug}`) : "/c/home";
+  // 공용 공간은 소로우 화면이 없으므로 소로우 홈으로 돌아간다.
+  const shared = (community?.id ?? communityId) === PUBLIC_SPACE_ID;
+  const returnHref = community && !shared ? route(`/c/${community.slug}`) : "/c/home";
   /** 나가기: 소로우 페이지에서 들어왔으면 history 를 되돌려 (뒤로가기가 다시 바닷가로 오지 않게), 아니면 바닷가 기록을 소로우 페이지로 바꾼다 */
   const exitRoom = (event: MouseEvent) => {
     event.preventDefault();
@@ -1738,7 +1740,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
 
   return (
     <div className={styles.root} data-map={mapId} data-night={nightControls} data-context-row={!hudHidden && phase === "ready" && (contextVisible || fireContextVisible) && !characterPickerOpen && !powderOpen} inert={Boolean(photo)}>
-      <canvas ref={canvasRef} className={styles.canvas} aria-label={`${community?.name ?? "소로우"}의 프라이빗 ${map.name} (${view === "first" ? "1인칭" : "3인칭"})`} />
+      <canvas ref={canvasRef} className={styles.canvas} aria-label={`${shared ? `누구나 함께 쉬는 ${map.name}` : `${community?.name ?? "소로우"}의 프라이빗 ${map.name}`} (${view === "first" ? "1인칭" : "3인칭"})`} />
       {flash && <div key={flash.id} className={`${styles.flash} ${styles[flash.kind]}`} aria-hidden="true" onAnimationEnd={() => setFlash(null)} />}
 
       <div className={styles.top} hidden={hudHidden} inert={bunkerTravel}>
@@ -1757,7 +1759,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       </div>
 
       {community && !hudHidden && !lightingOpen && phase === "ready" && intro !== "hidden" && <div className={`${styles.place} ${intro === "leaving" ? styles.placeLeaving : ""}`} aria-hidden={intro === "leaving"}>
-        <span><IconLock />{map.eyebrow}</span>
+        <span>{shared ? <IconUsers /> : <IconLock />}{mapEyebrow(mapId, shared)}</span>
         <h1>{community.name} {map.name}</h1>
         <p>{map.welcome}</p>
       </div>}

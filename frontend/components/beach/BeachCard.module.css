@@ -1,6 +1,9 @@
 .card { margin:20px 0 24px; }
 .head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 13px; }
-.heading { margin:0; color:var(--text); font-size:18px; font-weight:750; letter-spacing:-.035em; }
+.heading { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; min-width:0; margin:0; color:var(--text); font-size:18px; font-weight:750; letter-spacing:-.035em; }
+/* 어느 공간인지: 공용 공간 / 우리 소로우 */
+.scope { padding:3px 8px; border-radius:999px; background:var(--surface-2,#f1f1f3); color:var(--text-2,#5f5f6a); font-size:12px; font-weight:650; letter-spacing:-.01em; white-space:nowrap; }
+.note { margin:-5px 0 12px; color:var(--text-2,#5f5f6a); font-size:13px; line-height:1.55; word-break:keep-all; }
 /* 넓은 화면에서만 보이는 단순한 화살표 두 개 */
 .arrows { display:none; gap:6px; }
 .arrow { display:grid; place-items:center; width:34px; height:34px; padding:0; border:1px solid var(--border-strong,#c5d2c9); border-radius:50%; background:var(--surface,#fff); color:var(--text); cursor:pointer; transition:background .15s,opacity .15s,transform .12s; }
@@ -27,6 +30,10 @@
 .count b { margin-left:3px; font-size:9px; font-weight:600; }
 .placeCard:disabled { cursor:default; }
 .placeCard:disabled .count { background:#4b4d46a6; }
+/* 아직 열리지 않은 풍경: 사진을 가라앉히고 인원수 자리에 열리는 멤버 수를 적는다 */
+.placeCard[data-locked] .photo { filter:grayscale(.6) brightness(.6); }
+.placeCard[data-locked] .placeCopy { opacity:.82; }
+.count[data-lock] { gap:5px; padding:5px 10px; background:#10151cb3; font-size:11px; font-weight:650; }
 @media(hover:hover) { .placeCard:not(:disabled):hover .photo { transform:scale(1.035); }.placeCard:not(:disabled):hover { border-color:#a7c3b5; box-shadow:0 0 0 1px #b2ccbe66,0 5px 16px #2439441c; } }
 .placeCard:not(:disabled):active { transform:scale(.975); }
 .placeCard:focus-visible { outline:3px solid #86a593; outline-offset:3px; }

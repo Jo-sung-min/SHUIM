@@ -39,7 +39,7 @@ class BeachControllerTest {
 
     private static CircleService.Circle circle(String id) {
         return new CircleService.Circle(id, id, "함께 소로우", "life", null, false, "open", "public",
-            "", "", "u-1", 0, 0, 1, 0, false);
+            "", "", "u-1", 0, 0, 200, 0, false);
     }
 
     private void activeMember(String communityId) {
@@ -115,7 +115,7 @@ class BeachControllerTest {
         activeMember("circle-a");
         when(blocks.excludedIds("u-1")).thenReturn(Set.of("u-x"));
         Map<String, Object> out = enter("circle-a");
-        assertEquals(Set.of("ticket", "resumed", "selfRest", "sequence", "communityId", "mapId", "community", "capacity", "me", "spawn", "bounds", "count", "fire", "fireEnabled", "serverTime", "restEnabled", "bedEnabled", "bunkerEnabled", "pavilionEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "music", "musicControl", "fireworksControl", "fireworksFree", "fireworks", "fireworksCooldownUntil", "uyuniMomentsEnabled", "uyuniMoments", "uyuniMomentCooldowns", "gardenMomentsEnabled", "gardenMoments", "gardenMomentCooldowns"), out.keySet());
+        assertEquals(Set.of("ticket", "resumed", "selfRest", "sequence", "communityId", "mapId", "community", "shared", "capacity", "me", "spawn", "bounds", "count", "fire", "fireEnabled", "serverTime", "restEnabled", "bedEnabled", "bunkerEnabled", "pavilionEnabled", "benchEnabled", "onsenEnabled", "careCapabilities", "lighting", "lightingControl", "music", "musicControl", "fireworksControl", "fireworksFree", "fireworks", "fireworksCooldownUntil", "uyuniMomentsEnabled", "uyuniMoments", "uyuniMomentCooldowns", "gardenMomentsEnabled", "gardenMoments", "gardenMomentCooldowns"), out.keySet());
         assertEquals("beach", out.get("mapId"));
         assertEquals(true, out.get("fireEnabled"));
         assertEquals(true, out.get("restEnabled"));
@@ -127,6 +127,7 @@ class BeachControllerTest {
         assertEquals(32, ((String) out.get("ticket")).length());
         assertEquals("circle-a", out.get("communityId"));
         assertEquals(Map.of("id", "circle-a", "slug", "circle-a", "name", "함께 소로우"), out.get("community"));
+        assertEquals(false, out.get("shared"));
         assertEquals(20, out.get("capacity"));
         @SuppressWarnings("unchecked") Map<String, Object> me = (Map<String, Object>) out.get("me");
         assertEquals(Set.of("pid", "id", "nick", "skin"), me.keySet());

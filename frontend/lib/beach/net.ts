@@ -18,6 +18,8 @@ export interface EnterResponse {
   mapId: MapId;
   communityId: string;
   community: { id: string; slug: string; name: string };
+  /** 누구나 들어오는 공용 공간이면 true. 소로우 공간이나 옛 서버에서는 false 이거나 없다. */
+  shared?: boolean;
   capacity: number;
   ticket: string;
   me: { pid: string; id: string; nick: string; skin: number };

@@ -48,7 +48,7 @@ class BeachMusicTest {
     void setup() {
         for (String id : List.of("room", "other")) {
             when(circles.byId(id)).thenReturn(new CircleService.Circle(id, id, "함께", "life", null, false,
-                "open", "public", "", "", "operator", 0, 0, 1, 0, false));
+                "open", "public", "", "", "operator", 0, 0, 200, 0, false));
             when(circles.member(eq(id), any())).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
         }
         when(auth.isAdmin(any())).thenCallRealMethod();

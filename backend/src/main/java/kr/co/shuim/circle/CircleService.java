@@ -9,6 +9,7 @@ import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.common.SpaceCapacity;
+import kr.co.shuim.common.SpaceMaps;
 import kr.co.shuim.community.CommunityLogic;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.profile.BadgeService;
@@ -87,6 +88,9 @@ public class CircleService {
             this(id, slug, name, kind, domain, verified, joinMode, visibility, intro, notice, createdBy, postSeq,
                 createdAt, memberCount, listenerCount, sample, false, false, SpaceCapacity.MAX);
         }
+
+        /** 소로우 공간에서 이 풍경이 열렸는지. 참여자가 고정된 비공개 테스트 소로우는 늘 수 없으므로 모두 열어 둔다. */
+        public boolean opensMap(String mapId) { return privateTest || SpaceMaps.open(mapId, memberCount); }
     }
 
     public record Member(String role, String status, boolean primary, boolean verified) {
@@ -119,6 +123,28 @@ public class CircleService {
         m.put("postCount", c.postSeq());
         if (c.sample()) m.put("sample", true);
         m.put("createdAt", c.createdAt());
+        return m;
+    }
+
+    /** 소로우 공간의 풍경마다 열렸는지와 열리는 멤버 수 (소로우 하나·내 소로우에만 붙인다) */
+    static List<Map<String, Object>> spaceMaps(Circle c) {
+        List<Map<String, Object>> maps = new ArrayList<>();
+        for (String id : SpaceMaps.ORDER) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", id);
+            m.put("open", c.opensMap(id));
+            m.put("members", SpaceMaps.membersToOpen(id));
+            maps.add(m);
+        }
+        return maps;
+    }
+
+    /** 누구나 들어오는 공용 공간. 화면은 이 값이 있을 때만 공용 풍경을 보여 준다 */
+    static Map<String, Object> publicSpace() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", SpaceMaps.PUBLIC_ID);
+        m.put("name", SpaceMaps.PUBLIC_NAME);
+        m.put("capacity", SpaceCapacity.MAX);
         return m;
     }
 
@@ -227,7 +253,9 @@ public class CircleService {
         List<Map<String, Object>> member = new ArrayList<>();
         jdbc.sql(CIRCLE_SELECT.replace("SELECT c.*,", "SELECT c.*, mm.role, mm.status, mm.is_primary,") + " JOIN community_members mm ON mm.community_id = c.id WHERE mm.user_id = :userId AND " + VISIBLE_CIRCLE + " ORDER BY c.pinned DESC, mm.is_primary DESC, mm.joined_at")
             .param("userId", me.id()).param("viewerId", viewerId(me)).query((rs, i) -> {
-                Map<String, Object> v = view(circleRow(rs));
+                Circle c = circleRow(rs);
+                Map<String, Object> v = view(c);
+                v.put("spaceMaps", spaceMaps(c));
                 v.put("role", rs.getString("role"));
                 v.put("status", rs.getString("status"));
                 v.put("primary", rs.getBoolean("is_primary"));
@@ -238,6 +266,7 @@ public class CircleService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("member", member);
         out.put("listening", listening);
+        out.put("publicSpace", publicSpace());
         return out;
     }
 
@@ -279,6 +308,7 @@ public class CircleService {
         Circle c = bySlug(slug);
         requireAccess(c, viewer);
         Map<String, Object> out = view(c);
+        out.put("spaceMaps", spaceMaps(c));
         Optional<Member> m = viewer == null ? Optional.empty() : member(c.id(), viewer.id());
         Map<String, Object> me = new LinkedHashMap<>();
         me.put("role", m.map(Member::role).orElse(null));

@@ -70,7 +70,7 @@ class BeachFireworksTest {
         when(auth.isAdmin(any())).thenCallRealMethod();
         for (String room : List.of("room", "other")) {
             when(circles.byId(room)).thenReturn(new CircleService.Circle(room, room, "함께", "life", null, false,
-                "open", "public", "", "", "operator", 0, 0, 1, 0, false));
+                "open", "public", "", "", "operator", 0, 0, 200, 0, false));
             when(circles.member(eq(room), any())).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
         }
         actor(user("operator", "admin", false, null));

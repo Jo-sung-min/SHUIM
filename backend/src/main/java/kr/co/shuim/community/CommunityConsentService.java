@@ -17,10 +17,12 @@ public class CommunityConsentService {
             .param(user.id()).param(version).update();
     }
 
+    public boolean accepted(DbUser user) {
+        return jdbc.sql("SELECT count(*) FROM community_consents WHERE user_id = ? AND version = ?")
+            .param(user.id()).param(CURRENT_VERSION).query(Long.class).single() > 0;
+    }
+
     public void requireAccepted(DbUser user) {
-        if (jdbc.sql("SELECT count(*) FROM community_consents WHERE user_id = ? AND version = ?")
-            .param(user.id()).param(CURRENT_VERSION).query(Long.class).single() == 0) {
-            throw new ApiException(409, "글과 메시지를 보내기 전에 커뮤니티 이용규칙에 동의해 주세요.");
-        }
+        if (!accepted(user)) throw new ApiException(409, "글과 메시지를 보내기 전에 커뮤니티 이용규칙에 동의해 주세요.");
     }
 }

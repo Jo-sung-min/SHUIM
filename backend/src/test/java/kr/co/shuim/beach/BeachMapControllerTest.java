@@ -44,7 +44,7 @@ class BeachMapControllerTest {
         when(auth.requireUser(any(), any())).thenReturn(admin);
         when(auth.isAdmin(any())).thenCallRealMethod();
         when(circles.byId("room")).thenReturn(new CircleService.Circle("room", "room", "함께", "life", null, false,
-            "open", "public", "", "", "operator", 0, 0, 1, 0, false));
+            "open", "public", "", "", "operator", 0, 0, 200, 0, false));
         when(circles.member("room", "operator")).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
         when(fire.snapshot(anyString())).thenAnswer(call -> new BeachFireService.FireView(3, 12, .25, "amber", null, clock.get(), clock.get() + 60_000, null, 0));
         mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).build();

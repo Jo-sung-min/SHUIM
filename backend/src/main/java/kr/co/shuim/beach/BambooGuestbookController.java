@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.circle.CircleService;
+import kr.co.shuim.common.SpaceMaps;
 import kr.co.shuim.config.ApiException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,8 @@ public class BambooGuestbookController {
         if (user.blocked()) throw ApiException.forbidden("이용이 제한된 계정이에요.");
         var visit = beach.requireVisit(ticket, user.id());
         if (!BeachMap.BAMBOO.id().equals(visit.mapId())) throw ApiException.forbidden("대나무숲에서 방명록을 열어 주세요.");
+        // 공용 공간의 방명록은 그 방에 들어와 있는 누구나, 소로우 공간의 방명록은 지금도 멤버인 사람만 연다.
+        if (SpaceMaps.isPublic(visit.communityId())) return new Reader(visit.communityId(), user);
         var circle = circles.byId(visit.communityId());
         circles.requireActiveMember(circle, user);
         return new Reader(circle.id(), user);

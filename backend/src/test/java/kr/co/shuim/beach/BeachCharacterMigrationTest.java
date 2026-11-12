@@ -36,7 +36,7 @@ class BeachCharacterMigrationTest {
         when(auth.currentUser(any())).thenReturn(Optional.of(member));
         when(auth.requireUser(any(), any())).thenReturn(member);
         when(circles.byId("room")).thenReturn(new CircleService.Circle("room", "room", "함께", "life", null, false,
-            "open", "public", "", "", "owner", 0, 0, 1, 0, false));
+            "open", "public", "", "", "owner", 0, 0, 200, 0, false));
         when(circles.member("room", "member")).thenReturn(Optional.of(new CircleService.Member("member", "active", false, false)));
         when(fire.snapshot(anyString())).thenAnswer(call -> new BeachFireService.FireView(0, 12, 0, "amber", null,
             clock.get(), 0L, null, 0));
