@@ -120,3 +120,6 @@ Browser verified all three gallery previews. Actual appearance persistence remai
 
 ## Tamagotchi direction
 See [MORU_TAMAGOTCHI.md](MORU_TAMAGOTCHI.md) for the Tamagotchi-style direction (real-time daily rhythm, four needs without punishment, planned interactions and phases). Only the full-screen room view from that document is implemented.
+
+## Stage 1 (applied)
+`POST /api/pet/snack` gives one food outside the three meals, once per Korea calendar day (a zero-point `snack:<date>` row in `pet_point_ledger`, no migration), +1 XP. `GET /api/pet` returns `snacked`. Daily rhythm, touch gestures, talk lines, rain sound and the pixel-art room UI are client-side; see MORU_TAMAGOTCHI.md.

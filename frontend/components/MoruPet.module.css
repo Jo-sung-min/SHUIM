@@ -185,3 +185,59 @@
 @keyframes moruTickle{0%,100%{transform:rotate(0)}25%{transform:rotate(-4deg)}75%{transform:rotate(4deg)}}
 @keyframes moruSprout{0%,100%{transform:rotate(0) scaleY(1)}25%{transform:rotate(-12deg) scaleY(.8)}55%{transform:rotate(9deg) scaleY(1.15)}80%{transform:rotate(-4deg) scaleY(1)}}
 @keyframes moruDuck{0%,100%{transform:scale(1)}12%,68%{transform:scale(1.14,.6)}82%{transform:scale(.97,1.05)}}
+/* ---------- 도트 게임 UI ----------
+   방 안의 UI는 앱의 유리 UI가 아니라 그림과 한 세계인 도트 게임 UI다: 2px 외곽선과 계단 모서리(네 방향 그림자로 그린다),
+   단색 면과 아래쪽 턱, 둥근 모서리·흐림·그라데이션 없음, 한글 도트 글꼴 Galmuri11 (SIL OFL 1.1, Pretendard 와 같은 jsDelivr 에서 필요할 때만 받는다).
+   방은 낮·밤 테마와 무관한 같은 세계라 색도 고정이다. 시트(마음 기록·이사·모습)는 방 밖이라 앱 UI 그대로. 위의 유리 규칙을 여기서 덮어쓴다 */
+@font-face{font-family:"Galmuri11";font-weight:400;font-display:swap;src:url("https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11.woff2") format("woff2")}
+@font-face{font-family:"Galmuri11";font-weight:700;font-display:swap;src:url("https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri11-Bold.woff2") format("woff2")}
+.room,.closedRoom{--px-ink:#2b2233;--px-panel:#f3eaf4;--px-panel-2:#e3d6ea;--px-shade:#b7a3c6;--px-accent:#7a5fa8;--px-accent-2:#5d4588;--px-accent-hi:#a48ad0;--px-cream:#fff7e6;--px-text:#3f2f4d;--px-text-2:#7c6889;--px-gold:#96661a;
+  --px-line:0 -2px 0 var(--px-ink),0 2px 0 var(--px-ink),-2px 0 0 var(--px-ink),2px 0 0 var(--px-ink);
+  font-family:"Galmuri11","Pretendard Variable",Pretendard,sans-serif;letter-spacing:0}
+.hud,.scenePicker,.pad,.alert,.tools,.talk{background:var(--px-panel);background-image:none;border:0;border-radius:0;color:var(--px-text);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:var(--px-line),0 5px 0 #1b162266,inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff}
+.room svg:not([class]),.closedRoom svg:not([class]){shape-rendering:crispEdges;stroke-linecap:square;stroke-linejoin:miter;stroke-width:2}
+/* HUD: 이름·레벨·성장 막대 · 마음밥 · 포인트 · 안내 */
+.hud{padding:0 8px 0 12px;gap:8px}
+.nameplate b{font-size:13px;font-weight:700}
+.nameplate button span{font-size:11px;font-weight:700;color:var(--px-accent)}
+.xp{height:6px;max-width:112px;border-radius:0;background:var(--px-shade);box-shadow:0 0 0 1px var(--px-ink)}
+.xp i{border-radius:0;background:var(--px-accent);transition:width .7s steps(8)}
+.food{gap:5px;padding:0 2px;font-size:13px;font-weight:700;color:var(--px-text)}
+.food svg{width:18px;height:18px;flex:none}
+.points,.hudIcon{height:28px;border-radius:0;background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff;font-size:12px;font-weight:700;transition:none}
+.points{padding:0 8px;color:var(--px-gold)}
+.hudIcon{width:28px;color:var(--px-text-2);font-size:13px}
+.points:active,.hudIcon:active{transform:translateY(2px);background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 2px 0 #fff}
+/* 양옆 도구 기둥: 네모 칸, 고른 칸은 보라로 찬다 */
+.scenePicker,.tools{gap:4px;padding:5px}
+.scenePicker button,.tools button{width:34px;height:34px;border-radius:0;color:var(--px-text-2);font-size:15px;transition:none}
+.scenePicker button svg,.tools button svg{width:20px;height:20px}
+.scenePicker button[aria-pressed="true"],.tools button[aria-pressed="true"],.tools button[aria-expanded="true"]{background:var(--px-accent);box-shadow:none;color:var(--px-cream)}
+.scenePicker button:active,.tools button:not(:disabled):active{transform:translateY(1px);background:var(--px-panel-2)}
+/* 조작 패드: 눌리는 턱이 있는 도트 버튼 */
+.pad{padding:10px 10px 12px}
+.status{margin:0 4px 8px;font-size:11px;line-height:15px;color:var(--px-text-2)}
+.keys{gap:8px}
+.key{height:56px;border:0;border-radius:0;background:var(--px-panel-2);color:var(--px-text);box-shadow:var(--px-line),inset 0 -4px 0 var(--px-shade),inset 0 2px 0 #fff;font-size:12px;font-weight:700;letter-spacing:0;transition:none}
+.key svg{width:22px;height:22px}
+.key:not(:disabled):active{transform:translateY(2px);background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 -1px 0 var(--px-shade),inset 0 2px 0 #fff}
+.keyMain{flex-grow:1.45;background:var(--px-accent);color:var(--px-cream);border:0;box-shadow:var(--px-line),inset 0 -4px 0 var(--px-accent-2),inset 0 2px 0 var(--px-accent-hi);font-size:12px;font-weight:700}
+.keyMain:not(:disabled):active{background:var(--px-accent);box-shadow:var(--px-line),inset 0 -1px 0 var(--px-accent-2),inset 0 2px 0 var(--px-accent-hi)}
+.key:focus-visible,.nameplate button:focus-visible{outline:2px solid var(--px-cream);outline-offset:3px}
+/* 말풍선·말 걸기·알림·축하 */
+.speech{border-radius:0;padding:8px 12px;background:var(--px-panel);color:var(--px-text);box-shadow:var(--px-line),0 4px 0 #1b162255;font-size:12px;font-weight:400;line-height:1.5}
+.speech::after{left:calc(50% - 3px);bottom:-4px;width:6px;height:4px;transform:none;background:var(--px-panel);box-shadow:-2px 0 0 var(--px-ink),2px 0 0 var(--px-ink),0 2px 0 var(--px-ink)}
+.speech[data-thinking]{background:#ece2f6;color:var(--px-text)}
+.speech[data-thinking]::after{background:#ece2f6}
+.speech[data-murmur]{background:#e6dcec;color:var(--px-text-2);font-size:11px}
+.speech[data-murmur]::after{background:#e6dcec}
+.talk{gap:10px 8px;padding:12px}
+.talk button{min-height:38px;border:0;border-radius:0;background:var(--px-panel-2);color:var(--px-text);box-shadow:var(--px-line),inset 0 -3px 0 var(--px-shade),inset 0 2px 0 #fff;font-size:12px;font-weight:700;transition:none}
+.talk button:active{transform:translateY(2px);background:var(--px-panel-2);box-shadow:var(--px-line),inset 0 2px 0 #fff}
+.alert{color:#a23a4c;font-size:11px}
+.alert button{min-height:30px;border-radius:0;background:var(--px-panel-2);color:var(--px-text);box-shadow:var(--px-line),inset 0 -3px 0 var(--px-shade);font-size:11px}
+.celebration>span{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:0;background:#49365e;color:var(--px-cream);box-shadow:var(--px-line),inset 0 2px 0 #6a5484;font-size:12px;font-weight:700}
+.celebration>span svg{width:16px;height:16px}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:var(--px-panel)}}
+@media(prefers-reduced-transparency:reduce){.hud,.scenePicker,.pad,.alert,.tools,.talk{background-color:var(--px-panel)}}
+.pixelIcon{display:block;image-rendering:pixelated}

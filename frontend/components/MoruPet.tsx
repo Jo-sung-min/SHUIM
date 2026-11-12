@@ -364,7 +364,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           <button type="button" disabled={!pet} onClick={() => { setName(petName); setChosenAppearance(appearance); openSheet("companions"); }} aria-label={`${petName}, 이름과 모습 바꾸기`}><b>{petName}</b><span>Lv.{pet?.level ?? 1}</span></button>
           <span className={styles.xp} role="progressbar" aria-label={`${petName} 성장`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }} /></span>
         </div>
-        <span className={styles.food} title="마음밥"><span aria-hidden="true">🍚</span><b aria-hidden="true">{pet?.food ?? 0}</b><span className="sr-only">마음밥 {pet?.food ?? 0}개</span></span>
+        <span className={styles.food} title="마음밥"><RiceIcon /><b aria-hidden="true">{pet?.food ?? 0}</b><span className="sr-only">마음밥 {pet?.food ?? 0}개</span></span>
         {pet && <button type="button" className={styles.points} onClick={() => openSheet("homes")} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 이사하기`}>{pet.points ?? 0} P</button>}
         <button type="button" className={styles.hudIcon} aria-label="돌봄 안내" onClick={() => openSheet("guide")}>?</button>
       </div>
@@ -383,7 +383,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       </div>}
       {celebration && <div key={celebration.id} className={styles.celebration} onAnimationEnd={(event) => { if (event.target === event.currentTarget) setCelebration(null); }}>
         {Array.from({ length: celebration.food }, (_, i) => <i key={i} style={{ left: `${28 + i * 11}%`, animationDelay: `${i * 100}ms` }} aria-hidden="true" />)}
-        <span role="status">{celebration.level ? `Lv.${celebration.level} ↑` : `🍚 +${celebration.food}`}</span>
+        <span role="status">{celebration.level ? `Lv.${celebration.level} ↑` : <><RiceIcon /><span className="sr-only">마음밥</span>+{celebration.food}</>}</span>
       </div>}
       {error && !sheet && <div className={styles.alert} role="alert"><span>{error}</span>{!needsLogin && <button type="button" onClick={() => void load()}>다시 연결</button>}</div>}
       <div className={styles.pad} role="group" aria-label={`${petName}와 오늘`}>
@@ -459,6 +459,13 @@ const WORLD_H = 440;
 function ExpandIcon({ shrink }: { shrink: boolean }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {shrink ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
+  </svg>;
+}
+/** 마음밥: 방 그림과 같은 도트 밥그릇 (방 안 UI에는 이모지 대신 도트 아이콘) */
+function RiceIcon() {
+  return <svg className={styles.pixelIcon} viewBox="0 0 12 12" shapeRendering="crispEdges" aria-hidden="true">
+    <path fill="#fff7e6" d="M4 1h4v1h2v3H2V2h2z" /><path fill="#e2d2b4" d="M2 4h8v1H2z" />
+    <path fill="#7a5fa8" d="M1 5h10v2h-1v2H9v1H3V9H2V7H1z" /><path fill="#a48ad0" d="M2 6h8v1H2z" /><path fill="#5d4588" d="M4 10h4v1H4z" />
   </svg>;
 }
 /** 빗소리: 스피커와 물결 (꺼져 있으면 물결 없이) */
