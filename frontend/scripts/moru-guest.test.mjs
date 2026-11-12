@@ -32,3 +32,15 @@ test("guests see only a closed window linking to login, without pet stats or jou
   assert.match(html, /closedWindow/);
   assert.doesNotMatch(html, /progressbar|행복도|이사하기|textarea|방문포인트/);
 });
+
+test("a companion the server does not list yet (Moring on an older backend) is not offered", () => {
+  const source = readFileSync(new URL("../components/MoruCompanion.tsx", import.meta.url), "utf8");
+  const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
+  const module = { exports: {} };
+  const empty = () => null;
+  vm.runInNewContext(js, { require: (name) => name === "react/jsx-runtime" ? require(name) : name.endsWith(".module.css") ? {} : empty, module, exports: module.exports });
+  const ids = (allowed) => module.exports.companionChoices(allowed).map((c) => c.id).join(" ");
+  assert.equal(ids(undefined), "moru noa leo lumi"); // 옛 서버: 응답에 appearances 가 없다
+  assert.equal(ids(["moru", "noa", "leo", "lumi", "moring"]), "moru noa leo lumi moring");
+  assert.equal(ids(["moru"]), "moru"); // 서버가 받아 주는 것만
+});
