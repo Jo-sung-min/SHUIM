@@ -1237,8 +1237,10 @@ html[data-keyboard="open"] .app-toasts { bottom: calc(var(--kb) + 12px); }
 .nav-progress[data-state="loading"] i { width: 82%; opacity: 1; transition: width 6s cubic-bezier(0.05, 0.75, 0.15, 1); }
 .nav-progress[data-state="done"] i { width: 100%; opacity: 0; transition: width 180ms var(--ease), opacity 220ms ease 140ms; }
 
-/* 새 화면은 살짝 떠오르듯 (투명도만: transform 은 안쪽 fixed 요소 위치를 흔든다) */
-.screen { animation: screen-in 200ms var(--ease) both; }
+/* 새 화면은 살짝 떠오르듯 (투명도만: transform 은 안쪽 fixed 요소 위치를 흔든다).
+   끝난 뒤에는 효과를 남기지 않는다(backwards): forwards/both 로 남겨 두면 .screen 이 계속 쌓임 맥락이 되어
+   안쪽 바텀시트(z 41)가 떠 있는 탭바(z 30) 아래에 갇히고, 시트 아래쪽 버튼을 탭바가 가로챈다 */
+.screen { animation: screen-in 200ms var(--ease) backwards; }
 @keyframes screen-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* 처리 중인 버튼: 글자 앞에 작은 돌림 표시 */

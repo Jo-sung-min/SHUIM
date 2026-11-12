@@ -7,7 +7,10 @@ import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoruCompanion, { COMPANIONS } from "./MoruCompanion";
 import { ROOM_SCENES } from "./MoruRoom";
 import MoruHomeScene from "./MoruHomeScene";
+import { IconBook, IconSmile } from "./Icons";
 import { fetchMe } from "@/lib/auth";
+import { haptic } from "@/lib/haptics";
+import { useBackLayer } from "@/lib/use-back-layer";
 import { EMPTY_ANSWERS, PET_MOODS, PET_NEEDS, PET_REASONS, PET_STEPS, PetError, answerCount, petRequest, type PetAnswers, type PetView } from "@/lib/pet";
 import { sessionUserId, syncRecords, loadProfile } from "@/lib/storage";
 import styles from "./MoruPet.module.css";
@@ -116,6 +119,12 @@ function PetRoom({ userId }: { userId: string | null }) {
   const address = ownerName ? `${ownerName}님, ` : "";
   const homeId = pet?.homeId ?? 0;
   const ownedHomes = pet?.ownedHomes ?? [0];
+  const homeName = pet?.homes?.find((home) => home.id === homeId)?.name ?? "동굴";
+  const moodLabel = mood === "pet" ? "반가움" : mood === "happy" || mood === "eat" ? "포근함" : "고요함";
+  const ready = Boolean(pet) && !busy;
+  // 안드로이드 뒤로 가기는 열린 시트만 닫는다 (저장 중이면 그대로)
+  useBackLayer(sheet !== null, () => { if (busy) return true; setSheet(null); return false; });
+  const openSheet = (next: NonNullable<typeof sheet>) => { haptic(8); setError(""); setSheet(next); };
   if (!canUse) return <section className={styles.card} aria-label="모루를 만나기">
     <Link href="/auth" className={styles.closedRoom} aria-label="나를 찾아줘 — 로그인하고 모루 만나기">
       <span className={styles.closedRain} aria-hidden="true" />
@@ -123,46 +132,42 @@ function PetRoom({ userId }: { userId: string | null }) {
       <span className={styles.findMe}>나를 찾아줘<span>창문을 두드려 주세요</span></span>
     </Link>
   </section>;
+  // 모루의 방 한 장 = 게임 화면: 위에는 상태 HUD, 가운데는 모루, 아래에는 조작 패드. 버튼이 모두 이 안에 있다
   return <section className={styles.card} aria-label="나의 소로우 모루 키우기">
     <div className={styles.room}>
-      <MoruHomeScene homeId={homeId} scene={scene} />
+      <div className={styles.world}>
+        <MoruHomeScene homeId={homeId} scene={scene} />
+        {mood !== "idle" && <div className={styles.speech} aria-live="polite">{message}</div>}
+        <button type="button" className={styles.petButton} aria-label={`${petName} 쓰다듬기`} onClick={() => { haptic(8); react("pet", `${address}와 줘서 좋아.`); }}>
+          <MoruCompanion appearance={pet?.appearance} mood={mood === "idle" && pet?.food === 0 ? "sleep" : mood} level={pet?.level} />
+        </button>
+      </div>
+      <div className={styles.hud}>
+        <div className={styles.nameplate}>
+          <button type="button" disabled={!pet} onClick={() => { setName(petName); openSheet("name"); }} aria-label={`${petName} 이름 바꾸기`}><b>{petName}</b><span>Lv.{pet?.level ?? 1}</span></button>
+          <span className={styles.xp} role="progressbar" aria-label="모루 성장" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }} /></span>
+        </div>
+        <span className={styles.food} title="마음밥"><span aria-hidden="true">🍚</span><b aria-hidden="true">{pet?.food ?? 0}</b><span className="sr-only">마음밥 {pet?.food ?? 0}개</span></span>
+        {pet && <button type="button" className={styles.points} onClick={() => openSheet("homes")} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 공간 상점 열기`}>{pet.points ?? 0} P</button>}
+        <button type="button" className={styles.hudIcon} aria-label="돌봄 안내" onClick={() => openSheet("guide")}>?</button>
+      </div>
       <div className={styles.scenePicker} role="group" aria-label="창밖 풍경">
-        {ROOM_SCENES.map((label, index) => <button key={label} type="button" title={label} aria-label={label} aria-pressed={scene === index} onClick={() => setScene(index)}><span aria-hidden="true">{index === 0 ? "☂" : index === 1 ? "❄" : "☾"}</span></button>)}
-      </div>
-      <div className={styles.roomHeader}>
-      <div className={styles.identity}>
-        <button type="button" disabled={!pet || !canUse} className={styles.name} onClick={() => { setName(petName); setSheet("name"); setError(""); }} aria-label={`${petName} 이름 바꾸기`}>{petName}<span aria-hidden="true">✎</span></button>
-        <span className={styles.level}>Lv.{pet?.level ?? 1}</span>
-      </div>
-        <button type="button" className={styles.help} aria-label="친구 모습 고르기" title="친구 모습" onClick={() => { setChosenAppearance(pet?.appearance ?? "moru"); setError(""); setSheet("companions"); }}>♧</button>
-        {pet && <button type="button" className={styles.points} onClick={() => { setError(""); setSheet("homes"); }} aria-label={`방문포인트 ${pet.points ?? 0} 포인트, 공간 상점 열기`}>{pet.points ?? 0} P</button>}
-        <button type="button" className={styles.help} aria-label="돌봄 안내" onClick={() => setSheet("guide")}>?</button>
+        {ROOM_SCENES.map((label, index) => <button key={label} type="button" title={label} aria-label={label} aria-pressed={scene === index} onClick={() => { haptic(6); setScene(index); }}><span aria-hidden="true">{index === 0 ? "☂" : index === 1 ? "❄" : "☾"}</span></button>)}
       </div>
       {celebration && <div key={celebration.id} className={styles.celebration} onAnimationEnd={(event) => { if (event.target === event.currentTarget) setCelebration(null); }}>
         {Array.from({ length: celebration.food }, (_, i) => <i key={i} style={{ left: `${28 + i * 11}%`, animationDelay: `${i * 100}ms` }} aria-hidden="true" />)}
         <span role="status">{celebration.level ? `Lv.${celebration.level} ↑` : `🍚 +${celebration.food}`}</span>
       </div>}
-      {mood !== "idle" && <div className={styles.speech} aria-live="polite">{message}</div>}
-      <button type="button" className={styles.petButton} aria-label={`${petName} 쓰다듬기`} onClick={() => react("pet", `${address}와 줘서 좋아.`)}>
-        <MoruCompanion appearance={pet?.appearance} mood={mood === "idle" && pet?.food === 0 ? "sleep" : mood} level={pet?.level} />
-      </button>
-    </div>
-    <div className={styles.details}>
-      <div className={styles.moodBar}><span>행복도 · {mood === "pet" ? "반가움" : mood === "happy" || mood === "eat" ? "포근함" : "고요함"}</span><span>{pet?.homes?.find((home) => home.id === homeId)?.name ?? "동굴"}</span></div>
-      <div className={styles.xp} role="progressbar" aria-label="모루 성장" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }} /></div>
-      {loading ? <p className={styles.notice} role="status">모루가 방을 정리하고 있어요…</p> : pet && canUse ? <>
-        <div className={styles.stats}>
-          <span aria-label={`마음밥 ${pet.food}개`}>🍚 <strong>{pet.food}</strong></span>
-          <span aria-label={`오늘 식사 ${pet.meals}끼`}>식사 {pet.meals}/3</span>
-          <Link href="/memo" aria-label="마음기록장 열기">기록장 ↗</Link>
+      {error && !sheet && <div className={styles.alert} role="alert"><span>{error}</span>{!needsLogin && <button type="button" onClick={() => void load()}>다시 연결</button>}</div>}
+      <div className={styles.pad} role="group" aria-label={`${petName} 돌보기`}>
+        <p className={styles.status}>{loading ? <span role="status">방을 정리하는 중…</span> : pet ? <><span>{moodLabel} · 식사 {pet.meals}/3</span><span>{homeName}</span></> : <span>잠시 후 다시 만나요</span>}</p>
+        <div className={styles.keys}>
+          <button type="button" className={`${styles.key} ${styles.keyMain}`} disabled={!ready} onClick={() => { haptic(12); openJournal(); }} aria-label={pet?.earned === 5 ? "오늘의 마음 보기" : `${petName} 밥 주기`}><BowlIcon /><span>{pet?.earned === 5 ? "오늘의 마음" : "밥 주기"}</span></button>
+          <button type="button" className={styles.key} disabled={!ready} onClick={() => openSheet("homes")} aria-label="이사하기, 공간 고르기"><HouseIcon /><span>이사</span></button>
+          <button type="button" className={styles.key} disabled={!ready} onClick={() => { setChosenAppearance(pet?.appearance ?? "moru"); openSheet("companions"); }} aria-label="친구 모습 고르기"><IconSmile /><span>모습</span></button>
+          <Link href="/memo" className={styles.key} onClick={() => haptic(8)} aria-label="마음기록장 열기"><IconBook /><span>기록장</span></Link>
         </div>
-        <div className={styles.actions}>
-          <button type="button" className={styles.primary} disabled={busy} onClick={openJournal}>{pet.earned === 5 ? "오늘의 마음 보기" : "모루 밥 주기"}</button>
-          <button type="button" className={styles.secondary} disabled={busy} onClick={() => { setError(""); setSheet("homes"); }}>이사하기</button>
-
-        </div>
-      </> : !error || needsLogin ? <Link href="/auth" className={styles.adopt}>모루 만나기</Link> : null}
-      {error && !sheet && <div className={styles.error} role="alert">{error}{!needsLogin && <button type="button" onClick={() => void load()}>다시 연결하기</button>}</div>}
+      </div>
     </div>
     <Sheet open={sheet === "journal"} title="모루의 마음밥" onClose={() => { if (!busy) setSheet(null); }}>
       <div className={styles.journal}>
@@ -177,7 +182,7 @@ function PetRoom({ userId }: { userId: string | null }) {
         </div>
         {staleDraft && <div className={styles.error} role="alert">한국 시간으로 날짜가 바뀌었어요. 작성한 내용은 그대로예요.<button type="button" onClick={() => setDraftDate(pet!.date)}>이 내용을 오늘의 기록으로 남기기</button></div>}
         {error && <p className={styles.error} role="alert">{error}</p>}
-        <div className={styles.journalActions}><button type="button" className={styles.secondary} disabled={busy || answerCount(draft) === 0 || staleDraft} onClick={() => void saveJournal()}>{busy ? "저장 중…" : "여기까지 저장"}</button>{step < 4 ? <button type="button" className={styles.primary} disabled={busy} onClick={() => setStep((v) => v + 1)}>다음 마음 →</button> : <button type="button" className={styles.primary} disabled={busy || answerCount(draft) === 0 || staleDraft} onClick={() => void saveJournal()}>{busy ? "저장 중…" : "마음 남기고 밥 모으기"}</button>}</div>
+        <div className={`sheet-actions ${styles.journalActions}`}><button type="button" className={styles.secondary} disabled={busy || answerCount(draft) === 0 || staleDraft} onClick={() => void saveJournal()}>{busy ? "저장 중…" : "여기까지 저장"}</button>{step < 4 ? <button type="button" className={styles.primary} disabled={busy} onClick={() => setStep((v) => v + 1)}>다음 마음 →</button> : <button type="button" className={styles.primary} disabled={busy || answerCount(draft) === 0 || staleDraft} onClick={() => void saveJournal()}>{busy ? "저장 중…" : "마음 남기고 밥 모으기"}</button>}</div>
       </div>
     </Sheet>
     <Sheet open={sheet === "companions"} title="나의 작은 친구" onClose={() => { if (!busy) setSheet(null); }}>
@@ -228,10 +233,18 @@ function PetRoom({ userId }: { userId: string | null }) {
       <div className={styles.guide}>
         <MoruSprite mood="happy" />
         <p>마음 기록하면 +5 🍚<br />하루 세 끼 −3 🍚<br />쉬어 가도 괜찮아요.</p>
-        <Link href="/memo" onClick={() => setSheet(null)}>기록장 ↗</Link>
+        <Link href="/memo">기록장 ↗</Link>
       </div>
     </Sheet>
   </section>;
+}
+/** 조작 패드 아이콘: Icons.tsx 와 같은 선 굵기의 밥그릇·집 */
+const padIcon = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;
+function BowlIcon() {
+  return <svg {...padIcon}><path d="M3.5 12h17a8.5 8 0 0 1-17 0Z" /><path d="M7 12a5 4.2 0 0 1 10 0" /><path d="M9.5 6.5c0-1 1-1.3 1-2.4M13.5 6.5c0-1 1-1.3 1-2.4" /></svg>;
+}
+function HouseIcon() {
+  return <svg {...padIcon}><path d="M3.5 11.5 12 4.5l8.5 7" /><path d="M6 10v9.5h12V10" /><path d="M10 19.5V15h4v4.5" /></svg>;
 }
 function Choices({ values, value, onChange, disabled }: { values: string[]; value: string | null; onChange: (v: string) => void; disabled: boolean }) {
   return <div className={styles.choices}>{values.map((v) => <button type="button" key={v} aria-pressed={value === v} disabled={disabled} onClick={() => onChange(v)}>{v}</button>)}</div>;
