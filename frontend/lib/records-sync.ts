@@ -5,7 +5,9 @@
  *
  * - 화면은 그대로 localStorage(계정별 키)를 동기적으로 읽고 쓴다 (lib/storage.ts).
  * - 로그인 상태면: 페이지가 열릴 때 서버에서 받아 localStorage 를 덮어쓰고(syncRecords), 쓸 때마다 서버로 보낸다(push).
- * - 보내기는 키별로 합쳐서 순서대로 하나씩 보낸다. 실패하면(오프라인 등) "못 보낸 부분" 표시를 남겨 두고,
+ * - 보내기는 키별로 합쳐서 순서대로 하나씩 보낸다. 본문이 { 필드: 값 } 꼴이면 필드 단위로 합친다 (pushRecords):
+ *   쓰는 쪽은 바뀐 필드만 보내고, 서버는 없는 필드를 그대로 둔다 — 화면을 오래 열어 둔 기기가 다른 기기의 변경을 덮지 않도록.
+ * - 실패하면(오프라인 등) "못 보낸 부분" 표시를 남겨 두고,
  *   다음 동기화 때 localStorage 의 그 부분을 통째로 다시 보낸 뒤에야 서버 데이터를 받는다 — 서버가 로컬의 최신 변경을 덮지 않도록.
  * - 익명 상태면 아무것도 하지 않는다 (기록은 이 기기에만).
  */
@@ -14,7 +16,7 @@ export type Section = "journal" | "memos" | "goals" | "schedule" | "categories";
 
 interface Push {
   userId: string;
-  key: string; // 같은 키는 아직 안 보낸 것끼리 합친다 (예: 같은 날짜의 기록)
+  key: string; // 같은 키는 아직 안 보낸 것끼리 합친다 (예: 같은 날짜의 기록과 오늘 한 일)
   path: string;
   method: "PUT" | "POST" | "DELETE";
   body?: unknown;
@@ -131,18 +133,37 @@ async function send(p: Push): Promise<Response> {
   });
 }
 
+/** 본문이 { 필드: 값 } 꼴인지 (목록 전체를 보내는 배열 본문은 아니다) */
+function isFields(body: unknown): body is Record<string, unknown> {
+  return typeof body === "object" && body !== null && !Array.isArray(body);
+}
+
 /**
  * 큐에 넣고 바로 보내기 시작. 로그인 상태가 아니면 아무것도 하지 않는다.
  * sections: 실패했을 때 다음 동기화에서 통째로 다시 보낼 부분. 게스트 import는 별도의 영속 POST 경로를 쓴다.
+ *
+ * 같은 키의 요청이 아직 대기 중이면 그것과 합친다 (보내는 중인 것은 건드리지 않고 뒤에 따로 선다).
+ * - 둘 다 { 필드: 값 } 본문이면 필드 단위로: { record } 뒤에 { did } 가 오면 { record, did }, 같은 필드는 나중 값.
+ *   그래서 쓰는 쪽은 바뀐 필드만 보내면 되고, 연달아 불러도 앞의 변경이 사라지지 않는다.
+ * - 그 밖(배열 본문 등)은 나중 것으로 바꾼다.
+ * 대기 중인 것이 둘이면(보내다 실패한 것 + 그 뒤에 선 것) 나중 것에 합친다 — 새 값이 가장 마지막에 가도록.
  */
 export function pushRecords(sections: Section[], key: string, method: Push["method"], path: string, body?: unknown) {
   const uid = hooks?.userId() ?? null;
   if (!uid) return;
   markDirty(uid, sections);
   const p: Push = { userId: uid, key, path, method, body };
-  const i = outbox.findIndex((x) => x.key === key && x !== inFlight);
-  if (i >= 0) outbox[i] = p;
-  else outbox.push(p);
+  let i = outbox.length - 1;
+  while (i >= 0 && (outbox[i].key !== key || outbox[i] === inFlight)) i--;
+  if (i < 0) outbox.push(p);
+  else {
+    const waiting = outbox[i];
+    // 다른 계정이 남긴 대기 본문과는 절대 합치지 않는다 (예전처럼 새 것으로 바꾼다)
+    if (waiting.userId === uid && waiting.method === method && waiting.path === path && isFields(waiting.body) && isFields(body)) {
+      p.body = { ...waiting.body, ...body };
+    }
+    outbox[i] = p;
+  }
   void flushRecords();
 }
 

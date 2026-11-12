@@ -16,8 +16,9 @@ function setup(network) {
     fetch: async (path, options) => { calls.push({ path, ...options }); return network(path, options, calls.length); },
   };
   vm.runInNewContext(`${source}\nglobalThis.api = { installSyncHooks, pushRecords, flushRecords, resetRecordsSync };`, context);
-  context.api.installSyncHooks({ userId: () => "test-user", sectionBody: () => ({}), apply: () => {} });
-  return { api: context.api, calls, stored };
+  let user = "test-user";
+  context.api.installSyncHooks({ userId: () => user, sectionBody: () => ({}), apply: () => {} });
+  return { api: context.api, calls, stored, signInAs: (id) => { user = id; } };
 }
 
 for (const failure of ["network", "server"]) {
@@ -75,7 +76,94 @@ test("expired sessions discard queued requests without repeated sends", async ()
   assert.equal(calls.length, 1);
 });
 
-const storageTyped = await readFile(new URL("../lib/storage.ts", import.meta.url), "utf8");
+/* ---------- 같은 키의 대기 요청은 필드 단위로 합친다 (하루치 기록 record · 오늘 한 일 did) ---------- */
+
+const DAY = "2026-11-12";
+const dayKey = `journal:${DAY}`;
+const dayPath = `/api/records/journal/${DAY}`;
+const dirtyFlag = "maeum-accel:dirty:v1:test-user";
+const score = (value, note = "") => ({ mind: { score: value, note } });
+const sentBodies = (calls) => calls.map((call) => JSON.parse(call.body));
+const slowOk = async () => { await nextTurn(); return { ok: true, status: 200 }; };
+
+test("waiting writes to one day merge by field: a did-only write keeps the record queued before it", async () => {
+  const { api, calls } = setup(slowOk);
+  api.pushRecords(["memos"], "memos", "PUT", "/api/records/memos", ["being sent"]);
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { record: score(1) });
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { did: ["산책"] });
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { record: score(2) });
+  assert.equal(await api.flushRecords(), true);
+  assert.deepEqual(calls.map((call) => call.path), ["/api/records/memos", dayPath]);
+  assert.deepEqual(sentBodies(calls)[1], { record: score(2), did: ["산책"] });
+});
+
+test("a write made while the same day is being sent follows it with only its own field", async () => {
+  const { api, calls } = setup(slowOk);
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { record: score(1) });
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { did: ["산책"] });
+  assert.equal(await api.flushRecords(), true);
+  assert.deepEqual(sentBodies(calls), [{ record: score(1) }, { did: ["산책"] }]);
+});
+
+test("whole-list bodies and a different request under the same key are replaced, not merged", async () => {
+  const { api, calls } = setup(slowOk);
+  api.pushRecords(["goals"], "goals", "PUT", "/api/records/goals", ["being sent"]);
+  api.pushRecords(["memos"], "memos", "PUT", "/api/records/memos", [{ id: "old" }]);
+  api.pushRecords(["memos"], "memos", "PUT", "/api/records/memos", [{ id: "latest" }]);
+  api.pushRecords(["journal"], "shared-key", "PUT", "/api/records/categories", { categories: [] });
+  api.pushRecords(["journal"], "shared-key", "DELETE", "/api/records");
+  assert.equal(await api.flushRecords(), true);
+  assert.deepEqual(calls.map(({ method, path, body }) => [method, path, body]), [
+    ["PUT", "/api/records/goals", JSON.stringify(["being sent"])],
+    ["PUT", "/api/records/memos", JSON.stringify([{ id: "latest" }])],
+    ["DELETE", "/api/records", undefined],
+  ]);
+});
+
+test("offline: an unsent did stays queued and goes out together with a later record edit", async () => {
+  let online = false;
+  const { api, calls, stored } = setup(async () => { await nextTurn(); if (!online) throw new Error("offline"); return { ok: true, status: 200 }; });
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { did: ["산책"] });
+  assert.equal(await api.flushRecords(), false);
+  assert.ok(stored.has(dirtyFlag));
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { record: score(1) });
+  assert.equal(await api.flushRecords(), false);
+  online = true;
+  const failed = calls.length;
+  assert.equal(await api.flushRecords(), true);
+  assert.deepEqual(sentBodies(calls.slice(failed)), [{ did: ["산책"], record: score(1) }]);
+  assert.equal(stored.has(dirtyFlag), false);
+});
+
+test("offline: with a failed request and one waiting behind it, a newer edit is still the last one sent", async () => {
+  let online = false;
+  const { api, calls } = setup(async () => { await nextTurn(); if (!online) throw new Error("offline"); return { ok: true, status: 200 }; });
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { record: score(1) }); // being sent, fails
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { did: ["산책"] }); // waits behind it
+  assert.equal(await api.flushRecords(), false);
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { did: ["산책", "운동"] });
+  assert.equal(await api.flushRecords(), false);
+  online = true;
+  const failed = calls.length;
+  assert.equal(await api.flushRecords(), true);
+  assert.deepEqual(sentBodies(calls.slice(failed)), [{ record: score(1) }, { did: ["산책", "운동"] }]);
+});
+
+test("a waiting body left by another account is never merged into the next account's request", async () => {
+  let online = false;
+  const { api, calls, signInAs } = setup(async () => { await nextTurn(); if (!online) throw new Error("offline"); return { ok: true, status: 200 }; });
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { record: score(-3, "Alice's private note") });
+  assert.equal(await api.flushRecords(), false);
+  signInAs("bob"); // the session changed (for example in another tab) without resetRecordsSync
+  api.pushRecords(["journal"], dayKey, "PUT", dayPath, { did: ["Bob's walk"] });
+  assert.equal(await api.flushRecords(), false);
+  online = true;
+  const failed = calls.length;
+  assert.equal(await api.flushRecords(), true);
+  assert.deepEqual(sentBodies(calls.slice(failed)), [{ did: ["Bob's walk"] }]);
+});
+
+const storageTyped =await readFile(new URL("../lib/storage.ts", import.meta.url), "utf8");
 const storageSource = stripTypeScriptTypes(storageTyped)
   .replace(/^import .*;\r?\n/gm, "")
   .replace(/^export \{.*\} from .*;\r?\n/gm, "")
@@ -197,7 +285,7 @@ function bootAccountRecords(stored, network, failPendingWrite = false) {
     } },
     fetch: async (path, options) => { calls.push({ path, ...options }); return network(path, options); },
   };
-  vm.runInNewContext(`${source}\n${storageSource}\nglobalThis.api = { adoptGuestData, syncRecords, flushRecords, resetRecordsSync, clearAccountCache, stageGuestImport };`, context);
+  vm.runInNewContext(`${source}\n${storageSource}\nglobalThis.api = { adoptGuestData, syncRecords, flushRecords, resetRecordsSync, clearAccountCache, stageGuestImport, saveDay, saveDayLog };`, context);
   return { api: context.api, calls };
 }
 
@@ -277,4 +365,128 @@ test("an old session's completed import cannot clear its pending record after sw
   assert.equal(await syncing, false);
   assert.ok(stored.has(pendingKey("alice")), "Alice can safely retry this idempotent import on her next login");
   assert.equal(instance.calls.length, 1, "the old operation must never pull Bob's data or send another request");
+});
+
+/* ---------- 하루치 저장(saveDay·saveDayLog)은 바뀐 쪽만 서버로 ---------- */
+
+const journalKey = (id) => `maeum-accel:v1:${id}`;
+const logKey = (id) => `maeum-accel:log:v1:${id}`;
+
+/** Another device's view of one day on the server. Like the backend, a side missing from the PUT body is left as it is. */
+function dayServer(day) {
+  return async (path, options) => {
+    assert.equal(path, dayPath);
+    assert.equal(options.method, "PUT");
+    const body = JSON.parse(options.body);
+    if (body.record != null) day.record = body.record;
+    if (body.did != null) day.did = body.did;
+    return { ok: true, status: 200 };
+  };
+}
+
+test("changing only what I did sends no record, so a record another device left for today survives", async () => {
+  // This device opened the screen while today was still empty. The other device recorded its categories afterwards.
+  const stored = new Map([[sessionKey, JSON.stringify({ userId: "alice" })]]);
+  const server = { record: score(2, "from the other device"), did: [] };
+  const device = bootAccountRecords(stored, dayServer(server));
+  device.api.saveDay(DAY, {}); // the screens always call both with what they hold
+  device.api.saveDayLog(DAY, { did: ["산책"] });
+  assert.equal(await device.api.flushRecords(), true);
+  assert.deepEqual(sentBodies(device.calls), [{ did: ["산책"] }]);
+  assert.equal("record" in JSON.parse(device.calls[0].body), false);
+  assert.deepEqual(server, { record: score(2, "from the other device"), did: ["산책"] });
+  assert.deepEqual(JSON.parse(stored.get(logKey("alice"))), { [DAY]: { did: ["산책"] } });
+});
+
+test("changing only a score or note sends no did, so what another device added to today's list survives", async () => {
+  const stored = new Map([
+    [sessionKey, JSON.stringify({ userId: "alice" })],
+    [journalKey("alice"), JSON.stringify({ [DAY]: score(0) })],
+    [logKey("alice"), JSON.stringify({ [DAY]: { did: ["산책"] } })],
+  ]);
+  const server = { record: score(0), did: ["산책", "운동"] };
+  const device = bootAccountRecords(stored, dayServer(server));
+  device.api.saveDay(DAY, score(1, "조금 나아짐"));
+  device.api.saveDayLog(DAY, { did: ["산책"] });
+  assert.equal(await device.api.flushRecords(), true);
+  assert.deepEqual(sentBodies(device.calls), [{ record: score(1, "조금 나아짐") }]);
+  assert.equal("did" in JSON.parse(device.calls[0].body), false);
+  assert.deepEqual(server, { record: score(1, "조금 나아짐"), did: ["산책", "운동"] });
+  assert.deepEqual(JSON.parse(stored.get(journalKey("alice"))), { [DAY]: score(1, "조금 나아짐") });
+});
+
+test("saving a day that did not change sends nothing", async () => {
+  const stored = new Map([
+    [sessionKey, JSON.stringify({ userId: "alice" })],
+    [journalKey("alice"), JSON.stringify({ [DAY]: score(1) })],
+    [logKey("alice"), JSON.stringify({ [DAY]: { did: ["산책"] } })],
+  ]);
+  const device = bootAccountRecords(stored, async () => { throw new Error("must not send"); });
+  device.api.saveDay(DAY, score(1));
+  device.api.saveDayLog(DAY, { did: ["산책"] });
+  device.api.saveDay("2026-11-11", {}); // an empty day that was never stored
+  device.api.saveDayLog("2026-11-11", { did: [] });
+  assert.equal(await device.api.flushRecords(), true);
+  assert.equal(device.calls.length, 0);
+  assert.equal(stored.has("maeum-accel:dirty:v1:alice"), false);
+});
+
+test("back-to-back changes to the same day all reach the server", async () => {
+  const stored = new Map([[sessionKey, JSON.stringify({ userId: "alice" })]]);
+  const server = { record: {}, did: [] };
+  const answer = dayServer(server);
+  const device = bootAccountRecords(stored, async (path, options) => { await nextTurn(); return answer(path, options); });
+  device.api.saveDay(DAY, score(1)); // sent at once
+  device.api.saveDayLog(DAY, { did: ["산책"] }); // these three wait behind it as one request
+  device.api.saveDay(DAY, score(2, "고쳐 씀"));
+  device.api.saveDayLog(DAY, { did: ["산책", "운동"] });
+  assert.equal(await device.api.flushRecords(), true);
+  assert.deepEqual(sentBodies(device.calls), [{ record: score(1) }, { did: ["산책", "운동"], record: score(2, "고쳐 씀") }]);
+  assert.deepEqual(server, { record: score(2, "고쳐 씀"), did: ["산책", "운동"] });
+  // Clearing a side is a change too: the empty value is sent, the other side is not.
+  device.api.saveDayLog(DAY, { did: [] });
+  assert.equal(await device.api.flushRecords(), true);
+  assert.deepEqual(sentBodies(device.calls).at(-1), { did: [] });
+  assert.deepEqual(server, { record: score(2, "고쳐 씀"), did: [] });
+});
+
+test("offline changes to a day are sent together once the same screen is back online", async () => {
+  const stored = new Map([[sessionKey, JSON.stringify({ userId: "alice" })]]);
+  const server = { record: {}, did: [] };
+  const answer = dayServer(server);
+  let online = false;
+  const device = bootAccountRecords(stored, async (path, options) => { await nextTurn(); if (!online) throw new Error("offline"); return answer(path, options); });
+  device.api.saveDayLog(DAY, { did: ["산책"] });
+  assert.equal(await device.api.flushRecords(), false);
+  device.api.saveDay(DAY, score(1));
+  assert.equal(await device.api.flushRecords(), false);
+  assert.deepEqual(server, { record: {}, did: [] });
+  assert.ok(stored.has("maeum-accel:dirty:v1:alice"));
+  online = true;
+  const failed = device.calls.length;
+  assert.equal(await device.api.flushRecords(), true);
+  assert.deepEqual(sentBodies(device.calls.slice(failed)), [{ did: ["산책"], record: score(1) }]);
+  assert.deepEqual(server, { record: score(1), did: ["산책"] });
+  assert.equal(stored.has("maeum-accel:dirty:v1:alice"), false);
+});
+
+test("offline changes survive a refresh: the next sync resends the whole journal section before pulling", async () => {
+  const stored = new Map([[sessionKey, JSON.stringify({ userId: "alice" })]]);
+  const offline = bootAccountRecords(stored, async () => { throw new Error("offline"); });
+  offline.api.saveDayLog(DAY, { did: ["산책"] });
+  offline.api.saveDay(DAY, score(1));
+  assert.equal(await offline.api.flushRecords(), false);
+
+  // The refresh loses the in-memory queue. Only localStorage and the dirty mark are left.
+  let server = {};
+  const reloaded = bootAccountRecords(stored, async (_path, options) => {
+    if (options.method === "PUT") { server = JSON.parse(options.body); return { ok: true, status: 200 }; }
+    return { ok: true, status: 200, json: async () => server };
+  });
+  assert.equal(await reloaded.api.syncRecords(), true);
+  assert.deepEqual(reloaded.calls.map(({ path, method }) => [path, method ?? "GET"]), [["/api/records", "PUT"], ["/api/records", "GET"]]);
+  assert.deepEqual(JSON.parse(reloaded.calls[0].body), { journal: { [DAY]: score(1) }, log: { [DAY]: { did: ["산책"] } } });
+  assert.deepEqual(JSON.parse(stored.get(journalKey("alice"))), { [DAY]: score(1) });
+  assert.deepEqual(JSON.parse(stored.get(logKey("alice"))), { [DAY]: { did: ["산책"] } });
+  assert.equal(stored.has("maeum-accel:dirty:v1:alice"), false);
 });

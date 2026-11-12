@@ -304,13 +304,23 @@ export function saveJournal(j: Journal) {
   pushRecords(["journal"], "journal", "PUT", "/api/records", { journal: j, log: loadLog() });
 }
 
-/** 하루치 기록. 서버에는 그 날의 기록과 한 행동을 함께 보낸다 (saveDayLog 와 같은 키라 연달아 불러도 한 번만 간다) */
+/**
+ * 하루치 저장(saveDay·saveDayLog)은 바뀐 쪽만 서버로 보낸다. 서버는 없는 쪽을 그대로 둔다 (PUT /api/records/journal/{date} 의 record·did 는 둘 다 선택).
+ * 화면은 둘을 늘 함께 부르지만, 이 기기에 저장된 것과 같은 쪽은 쓰지도 보내지도 않는다 —
+ * 화면을 오래 열어 둔 사이 다른 기기에서 남긴 그 날의 기록이나 한 일을, 건드리지도 않은 이 기기의 옛 값으로 덮지 않도록.
+ * 둘은 같은 키라 대기 중에 연달아 부르면 한 요청({ record, did })으로 합쳐진다 (records-sync.ts 의 pushRecords).
+ */
+const sameStored = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** 하루치 기록(카테고리별 점수·메모). 빈 기록이면 그 날을 지운다. 서버에는 record 만 보낸다 */
 export function saveDay(date: string, day: DayRecord) {
   const j = loadJournal();
-  if (Object.keys(day).length === 0) delete j[date];
-  else j[date] = day;
+  const next = Object.keys(day).length === 0 ? undefined : day;
+  if (sameStored(j[date], next)) return;
+  if (next) j[date] = next;
+  else delete j[date];
   write(K.journal, j);
-  pushRecords(["journal"], `journal:${date}`, "PUT", `/api/records/journal/${date}`, { record: day, did: loadLog()[date]?.did ?? [] });
+  pushRecords(["journal"], `journal:${date}`, "PUT", `/api/records/journal/${date}`, { record: day });
 }
 
 /** 연속 기록 일수 (오늘 또는 어제부터 거꾸로) */
@@ -327,12 +337,14 @@ export function streak(j: Journal, from = todayKey()): number {
 /* ---------- 오늘 한 행동 ---------- */
 
 export const loadLog = () => read<LogBook>(K.log, {});
+/** 그 날 한 일. 빈 목록이면 그 날을 지운다. 서버에는 did 만 보낸다 (saveDay 위의 설명) */
 export function saveDayLog(date: string, log: DayLog) {
   const b = loadLog();
+  if (sameStored(b[date]?.did ?? [], log.did)) return;
   if (log.did.length === 0) delete b[date];
   else b[date] = log;
   write(K.log, b);
-  pushRecords(["journal"], `journal:${date}`, "PUT", `/api/records/journal/${date}`, { record: loadJournal()[date] ?? {}, did: log.did });
+  pushRecords(["journal"], `journal:${date}`, "PUT", `/api/records/journal/${date}`, { did: log.did });
 }
 
 /* ---------- 메모 ---------- */
