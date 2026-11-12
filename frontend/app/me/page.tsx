@@ -16,6 +16,7 @@ import { FireworkTicketCard } from "@/components/FireworkTicketSheet";
 import BadgeShelf, { BadgeCelebration } from "@/components/BadgeShelf";
 import ProfileSheet from "@/components/ProfileSheet";
 import ProfileTabs from "@/components/ProfileTabs";
+import { KeepsakeShelf } from "@/components/Keepsakes";
 import styles from "../account-screens.module.css";
 import profileStyles from "@/components/Profile.module.css";
 import { route } from "@/lib/routes";
@@ -24,7 +25,7 @@ type View = "profile" | "notif";
 
 /**
  * 나 페이지 = 남이 보는 내 프로필 + 나만 보이는 도구.
- * 위: 프로필 머리(사진, 닉네임·칭호, 위로글 · 리스너 · 리스닝) · 위로 배지 선반 · 나만 보이는 도구 줄(메시지·메모·목표·일정, 점선) · 소개 · 온기 포인트와 폭죽 이용권 한 줄
+ * 위: 프로필 머리(사진, 닉네임·칭호, 위로글 · 리스너 · 리스닝) · 위로 배지 선반 · 나만 보이는 도구 줄(메시지·메모·목표·일정, 점선) · 보관함(감정구슬·맵 앨범, 점선) · 소개 · 온기 포인트와 폭죽 이용권 한 줄
  * 아래: 콘텐츠 탭(위로글 · 외침 · 내 위로 · 저장함). 넓게 잡는다
  * 프로필 편집·공유는 설정에. 알림은 위쪽 종 아이콘. 서로 기다릴 필요 없는 요청은 동시에 보낸다.
  */
@@ -130,6 +131,8 @@ export default function MePage() {
                         ))}
                       </div>
                     </section>
+                    {/* 보관함: 맵에서 주운 감정구슬과 맵 앨범. 서버가 알려 줄 때만 보이고, 구슬 줄은 첫 구슬을 주운 뒤에만 보인다 */}
+                    <KeepsakeShelf key={user?.id} />
                   </>
                 }
               />

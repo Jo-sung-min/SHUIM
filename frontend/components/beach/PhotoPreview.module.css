@@ -7,6 +7,11 @@
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 48px; padding: 10px 8px; border: 1px solid #dbded4; border-radius: 15px; background: #f1f3ed; color: #4b5a47; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: transform .14s, background .14s; }
 .actions button.share { background: #536c54; border-color: #536c54; color: #fff; }
+/* 앨범에 넣기: 서버가 앨범을 알 때만 아래 줄에 길게 선다 */
+.actions button.album { grid-column: 1 / -1; background: #fff; border-style: dashed; border-color: #b9c7b4; }
+.actions button.album:disabled { opacity: .8; }
+/* 버튼이 한 줄 늘어난 만큼 사진을 줄여 작은 화면에서도 한눈에 들어오게 한다 */
+.withAlbum .photo { max-height: min(47dvh, 540px); }
 .actions svg { width: 19px; height: 19px; flex: none; }
 .actions button:active { transform: scale(.97); }
 .actions button:focus-visible { outline: 3px solid #a9bc91; outline-offset: 3px; }

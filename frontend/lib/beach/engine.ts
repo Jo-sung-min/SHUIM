@@ -45,6 +45,8 @@ import { BAMBOO_PAVILIONS, BAMBOO_PAVILION_COLLIDERS, BAMBOO_PAVILION_OBSTACLES,
 import type { MapId } from "./maps";
 import { FirePowderPlayback } from "./fire-powder";
 import { captureScenePhoto } from "./photo";
+import { EmotionOrbLight } from "./emotion-orb";
+import { ORB_REACH } from "../emotion-orbs";
 import { SkyLanterns } from "./lanterns";
 import { BeachFireworks } from "./fireworks";
 import { FireworkAudio } from "./firework-audio";
@@ -130,6 +132,10 @@ export interface EngineHandlers {
   onGuestbookInSight?: (inSight: boolean) => void;
   onViewChange?: (view: ViewMode) => void;
   onFireRangeChange?: (near: boolean) => void;
+  /** 감정구슬이 손 닿는 곳에 들어오거나 벗어났을 때 */
+  onOrbRangeChange?: (near: boolean) => void;
+  /** 가까이에서 감정구슬을 직접 눌렀을 때 */
+  onOrbTap?: () => void;
   /** 화질을 낮췄을 때 (프레임이 떨어져서) */
   onQuality?: (level: "high" | "low") => void;
 }
@@ -450,6 +456,9 @@ export class BeachEngine {
   private fireState: FireState | null = null;
   private firePowder = new FirePowderPlayback();
   private nearFire = false;
+  /** 내 화면에만 보이는 감정구슬 (docs/EMOTION_ORBS.md) */
+  private orb: EmotionOrbLight | null = null;
+  private orbNear = false;
   private inputPaused = false;
   /** 화면 조이스틱·외부 입력이 넣는 걷기 벡터 (x: 오른쪽, y: 앞). 키보드와 합쳐진다 */
   private move = { x: 0, y: 0 };
@@ -1829,6 +1838,13 @@ export class BeachEngine {
   private tapAt(x: number, y: number) {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
+    // 손 닿는 곳의 감정구슬을 직접 눌렀으면 줍는다
+    if (this.orb && this.orbNear && this.handlers.onOrbTap) {
+      const at = this.orb.object.position.clone();
+      at.y += 0.95;
+      at.project(this.camera);
+      if (at.z < 1 && Math.hypot(((at.x + 1) / 2) * rect.width - x, ((1 - at.y) / 2) * rect.height - y) < 56) { this.handlers.onOrbTap(); return; }
+    }
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
     const targets = [...this.players.values()].map((p) => p.avatar?.root ?? p.sprite);
@@ -2102,6 +2118,59 @@ export class BeachEngine {
     }
   }
 
+  /* ---------------- 감정구슬 ---------------- */
+
+  /**
+   * 구슬을 둘 수 있는 곳: 이 맵의 충돌 규칙이 그 점을 옮겨 준 자리. 맵 가장자리 밖이거나 옮긴 자리가 흔들리면 null.
+   * 지하 쉼터 안에서는 지상의 규칙을 쓸 수 없어 null 이다
+   */
+  settleOrb(x: number, z: number): { x: number; z: number } | null {
+    if (this.disposed || this.activeBunkerId || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+    const first = this.collide(x, z), second = this.collide(first[0], first[1]);
+    if (!second.every(Number.isFinite) || Math.hypot(second[0] - first[0], second[1] - first[1]) > 0.05) return null;
+    const b = this.bounds;
+    if (second[0] < b.minX + 1.2 || second[0] > b.maxX - 1.2 || second[1] < b.minZ + 1.2 || second[1] > b.maxZ - 1.2) return null;
+    return { x: second[0], z: second[1] };
+  }
+
+  /** 구슬을 놓는다 (null 이면 치운다). 이미 같은 자리에 있으면 그대로 둔다 */
+  setOrb(place: { x: number; z: number } | null) {
+    if (this.disposed) return;
+    if (place && this.orb && !this.orb.collecting && this.orb.x === place.x && this.orb.z === place.z) return;
+    this.orb?.dispose();
+    this.orb = null;
+    if (this.orbNear) { this.orbNear = false; this.handlers.onOrbRangeChange?.(false); }
+    if (!place || this.activeBunkerId) return;
+    this.orb = new EmotionOrbLight(place.x, this.deckHeight(place.x, place.z), place.z);
+    this.scene.add(this.orb.object);
+  }
+
+  get hasOrb() { return this.orb !== null && !this.orb.collecting; }
+
+  /** 주웠다: 그날의 빛깔로 물들며 떠오른 뒤 사라진다 */
+  async collectOrb(color: string): Promise<void> {
+    const orb = this.orb;
+    if (!orb || this.disposed) return;
+    if (this.orbNear) { this.orbNear = false; this.handlers.onOrbRangeChange?.(false); }
+    await orb.collect(color);
+    if (this.orb === orb) { orb.dispose(); this.orb = null; }
+  }
+
+  private orbDistance(): number {
+    const orb = this.orb;
+    return !orb || orb.collecting || this.activeBunkerId ? Infinity : Math.hypot(orb.x - this.self.x, orb.z - this.self.z);
+  }
+
+  private updateOrb(dt: number) {
+    const orb = this.orb;
+    if (!orb) return;
+    orb.object.visible = !this.activeBunkerId;
+    const distance = this.orbDistance();
+    orb.update(dt, this.time, 1 - Math.min(1, Math.max(0, (distance - ORB_REACH) / 8)));
+    const near = distance <= ORB_REACH;
+    if (near !== this.orbNear) { this.orbNear = near; this.handlers.onOrbRangeChange?.(near); }
+  }
+
   /* ---------------- 프레임 ---------------- */
   getSelf(): SelfState {
     return { ...(this.uyuni ? { bunkerId: this.activeBunkerId } : {}), x: this.self.x, z: this.self.z, yaw: this.skyRest?.yaw ?? this.fixedSeat?.yaw ?? this.self.yaw, moving: this.anchored ? false : this.self.moving };
@@ -2290,6 +2359,7 @@ export class BeachEngine {
     this.syncSkyResolution();
     this.updatePlayers(dt);
     this.updateFx(dt);
+    this.updateOrb(dt);
     this.updateWorld(dt);
     if (this.garden || this.baikal) this.updateRain();
     if (this.garden) {
@@ -3163,6 +3233,8 @@ export class BeachEngine {
     window.removeEventListener("blur", this.onBlur);
     for (const p of this.players.values()) this.removePlayer(p);
     this.players.clear();
+    this.orb?.dispose();
+    this.orb = null;
     this.chibiSelf?.object.removeFromParent();
     this.chibiSelf = null;
     this.ultraSea?.dispose();

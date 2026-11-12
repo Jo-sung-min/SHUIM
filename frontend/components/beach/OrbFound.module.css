@@ -1,0 +1,30 @@
+/* 구슬을 주운 순간의 카드. 맵 위에 뜨는 시트라 사진 미리보기와 같은 밝은 종이 빛을 쓴다 */
+.scope { --surface:#fff; --surface-2:#f0f4f1; --text:#34433e; --text-2:#55665f; --text-3:#738179; --muted:#738179; --border:#dfe7e1; --border-strong:#c5d2c9; color:var(--text); color-scheme:light; }
+.scope :global(.sheet) { background:linear-gradient(145deg,#fffffff5,#f6faf4ed); border-top-color:#fff; box-shadow:0 -14px 40px #143c2214; -webkit-backdrop-filter:blur(24px) saturate(120%); backdrop-filter:blur(24px) saturate(120%); }
+.scope :global(.sheet-backdrop) { background:#17332935; }
+
+.card { display: grid; justify-items: center; gap: 4px; text-align: center; touch-action: pan-y; }
+.orb { display: grid; place-items: center; height: 150px; animation: orbRise .9s cubic-bezier(.2,.8,.2,1) both; }
+.name { margin: 6px 0 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.feeling { margin: 0; font-size: 13px; font-weight: 650; color: var(--text-2); }
+.line { margin: 6px 0 0; font-size: 14px; line-height: 1.6; color: var(--text-2); word-break: keep-all; }
+
+.memo { display: grid; gap: 8px; width: 100%; margin: 14px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--surface-2); text-align: left; }
+.memo > div { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.memo dt { font-size: 12px; font-weight: 700; color: var(--text-3); }
+.memo dd { margin: 0; font-size: 14px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.memo small { display: block; font-size: 12.5px; color: var(--text-3); }
+.people { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.people b { padding: 1px 9px; border-radius: 999px; background: #fff; border: 1px solid var(--border); font-size: 13px; font-weight: 650; }
+.people + small { margin-top: 4px; }
+
+.intro { margin: 12px 0 0; padding: 10px 12px; border-radius: 14px; border: 1.5px dashed var(--border-strong); font-size: 13px; line-height: 1.6; color: var(--text-2); word-break: keep-all; }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; width: 100%; margin-top: 14px; }
+.actions > * { display: inline-flex; align-items: center; justify-content: center; min-width: 0; min-height: 48px; padding: 10px 8px; border: 1px solid #dbded4; border-radius: 15px; background: #f1f3ed; color: #4b5a47; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; text-decoration: none; transition: transform .14s; }
+.actions .stay { background: #536c54; border-color: #536c54; color: #fff; }
+.actions > *:active { transform: scale(.97); }
+.actions > *:focus-visible { outline: 3px solid #a9bc91; outline-offset: 3px; }
+
+@keyframes orbRise { from { opacity: 0; transform: translateY(18px) scale(.7); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .orb { animation: none; } .actions > * { transition: none; } }

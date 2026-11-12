@@ -42,6 +42,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
   let now = 1_700_000_000_000, nextTimer = 1, cursor = 0, dirty = true, mounted = false, tree;
   const slots = [], effects = [], pendingEffects = [], timers = new Map(), requests = [], engines = [], toasts = [], refs = new WeakMap();
   const chibi = { created: 0, disposed: 0 };
+  const orbHandles = { near: false, busy: false, found: null, pick() {}, dismiss() {}, onRange() {}, onTap() {} };
   const document = Object.assign(eventTarget(), { hidden: false, visibilityState: "visible", body: { style: { overflow: "" } } });
   const localStorage = storage(), navigator = { onLine: true };
   const schedule = (fn, delay, interval = false) => { const id = nextTimer++; timers.set(id, { fn, at: now + delay, delay, interval }); return id; };
@@ -163,6 +164,8 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name.endsWith("/auth")) return { fetchMe: async () => ({ admin, user: admin ? { id: "user-1" } : null }) };
     if (name.endsWith("/beach-preview")) return { createChibiPreview: async () => { chibi.created++; return { character: { name: "chibi" }, dispose() { chibi.disposed++; } }; } };
     if (name.endsWith("/toast")) return { showToast(message) { toasts.push(message); }, toastSuccess(message) { toasts.push(message); }, tick() {} };
+    // The orb hook has its own rules test; here it only has to hand the scene the same quiet handles on every render.
+    if (name.endsWith("/useEmotionOrb")) return { useEmotionOrb: () => orbHandles };
     if (name.endsWith(".css")) return { default: new Proxy({}, { get: (_, key) => String(key) }) };
     return new Proxy({ default: "section" }, { get: (object, key) => object[key] ?? "i" });
   });

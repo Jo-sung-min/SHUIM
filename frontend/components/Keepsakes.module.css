@@ -1,0 +1,70 @@
+/* 보관함: 나 페이지의 한 칸, 구슬·사진 시트, /me/keepsakes 의 격자 (docs/EMOTION_ORBS.md) */
+
+/* ---------- 나 페이지의 보관함 한 칸 ---------- */
+.box { margin-top: 12px; padding: 12px 12px 10px; border: 1.5px dashed var(--border-strong); border-radius: 16px; }
+.head { display: flex; align-items: baseline; gap: 8px; }
+.head h3 { margin: 0; font-size: 14px; font-weight: 750; }
+.head small { color: var(--text-3); font-size: 12px; }
+.more { display: inline-flex; align-items: center; gap: 1px; margin-left: auto; min-height: 28px; padding: 0 2px 0 6px; border-radius: 8px; color: var(--text-2); font-size: 12.5px; font-weight: 600; }
+.more svg { width: 14px; height: 14px; }
+.row { margin-top: 10px; }
+.rowHead { margin: 0 0 6px; font-size: 12.5px; color: var(--text-2); font-weight: 650; }
+.rowHead b { margin-left: 3px; color: var(--text-3); font-weight: 650; font-variant-numeric: tabular-nums; }
+.orbs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 4px 2px 2px; margin: 0 -2px; }
+.orbs::-webkit-scrollbar { display: none; }
+.orbCell { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 58px; padding: 4px 0 2px; border: 0; border-radius: 12px; background: none; color: var(--text); font: inherit; cursor: pointer; }
+.orbCell:active { background: var(--surface-2); }
+.orbCell small { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; border-radius: 12px; overflow: hidden; }
+.thumbs img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--surface-2); }
+.hint { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); color: var(--text-2); font-size: 13px; line-height: 1.55; word-break: keep-all; }
+
+/* ---------- 구슬 시트 ---------- */
+.orbSheet { display: grid; justify-items: center; gap: 4px; text-align: center; }
+.orbBig { display: grid; place-items: center; height: 148px; }
+.feeling { margin: 0; font-size: 13.5px; font-weight: 650; color: var(--text-2); }
+.memo { display: grid; gap: 8px; width: 100%; margin: 12px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--surface-2); text-align: left; }
+.memo > div { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.memo dt { font-size: 12px; font-weight: 700; color: var(--text-3); }
+.memo dd { margin: 0; font-size: 14.5px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.memo small { display: block; font-size: 12.5px; color: var(--text-3); }
+.people { display: flex; flex-wrap: wrap; gap: 5px 6px; }
+.people a { padding: 2px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 13.5px; font-weight: 650; }
+.people + small { margin-top: 5px; }
+.drop { margin-top: 10px; min-height: 36px; padding: 0 12px; border: 0; border-radius: 10px; background: none; color: var(--text-3); font: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.confirm { width: 100%; margin-top: 10px; text-align: left; }
+.confirm p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; color: var(--text-2); word-break: keep-all; }
+
+/* ---------- 사진 시트 ---------- */
+.photoSheet { display: grid; gap: 10px; }
+.photoBig { display: block; width: 100%; max-height: min(56dvh, 520px); object-fit: contain; border-radius: 16px; background: var(--surface-2); }
+.where { margin: 0; font-size: 13px; color: var(--text-2); text-align: center; overflow-wrap: anywhere; }
+.photoActions { display: flex; gap: 8px; }
+.photoActions :global(.btn) { flex: 1; }
+.photoActions .trash { flex: 0 0 52px; padding: 0; }
+.photoActions .trash svg { width: 20px; height: 20px; }
+
+/* ---------- /me/keepsakes ---------- */
+.tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); border-bottom: 1px solid var(--border); }
+.tab { position: relative; min-height: 46px; padding: 0 4px; border: 0; background: none; color: var(--text-3); font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.tab[aria-selected="true"] { color: var(--text); font-weight: 750; }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: -1px; height: 2px; background: var(--text); border-radius: 2px; }
+.tab small { margin-left: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.panel { min-height: max(360px, 52vh); padding: 14px 0 24px; }
+.lead { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: var(--text-2); word-break: keep-all; }
+.tally { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 12px; padding: 0; list-style: none; }
+.tally li { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.orbGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 4px; }
+.orbTile { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; padding: 8px 0 6px; border: 0; border-radius: 14px; background: none; color: var(--text); font: inherit; cursor: pointer; }
+.orbTile:active { background: var(--surface-2); }
+.orbTile b { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.orbTile small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-3); }
+.albumHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.albumHead p { margin: 0; font-size: 13px; color: var(--text-2); }
+.albumHead small { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.photoGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.photoTile { position: relative; display: block; padding: 0; border: 0; border-radius: 6px; overflow: hidden; background: var(--surface-2); cursor: pointer; }
+.photoTile img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.photoTile span { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px; background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, .55)); color: #fff; font-size: 10.5px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.photoTile:focus-visible, .orbTile:focus-visible, .orbCell:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+@media (min-width: 560px) { .orbGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); } .photoGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
