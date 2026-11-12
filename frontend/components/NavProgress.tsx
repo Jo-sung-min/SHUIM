@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { appPath } from "@/lib/routes";
 
 /**
  * 화면 맨 위 얇은 진행 막대. 앱 안 링크를 누르면 바로 차오르기 시작하고, 주소가 바뀌면 끝까지 채운 뒤 사라진다.
@@ -11,9 +12,11 @@ export default function NavProgress() {
   const path = usePathname();
   const bar = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shown = useRef(path);
 
   // 주소가 바뀌면 끝까지 채우고 사라진다
   useEffect(() => {
+    shown.current = path;
     const el = bar.current;
     if (!el || el.dataset.state !== "loading") return;
     el.dataset.state = "done";
@@ -41,7 +44,9 @@ export default function NavProgress() {
       if (url.origin !== location.origin || url.pathname === location.pathname) return;
       start();
     };
-    const onBack = () => start();
+    // 같은 화면 안의 뒤로 가기는 이동이 아니다: 시트·댓글창이 닫히며 쌓아 둔 기록 한 칸을 걷어 낼 때(lib/use-back-layer)
+    // 주소가 그대로라 막대가 끝나지 않고 10초 동안 "불러오는 중"으로 남았다
+    const onBack = () => { if (appPath(location.pathname) !== appPath(shown.current)) start(); };
     document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onBack);
     return () => {
