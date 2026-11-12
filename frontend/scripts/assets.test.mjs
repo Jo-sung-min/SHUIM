@@ -46,6 +46,17 @@ test("garden and cloud spa art use the CDN for desktop, mobile and map cards", (
   }
 });
 
+test("moru furniture, moring strips and re-hosted feed paintings load from the CDN", () => {
+  for (const base of [CDN, "https://media.example.com/static"]) {
+    const { assetUrl } = assetsFor(base);
+    for (const path of ["/moru/decor/bear-v1.webp", "/moru/decor/stringLights-v1.webp", "/moru/moring/moring-idle-v1.webp", "/feed/curation/met-437307-v1.webp"]) {
+      assert.equal(assetUrl(path), `${base}${path}`);
+    }
+  }
+  const { assetUrl } = assetsFor(CDN);
+  for (const path of ["/moru", "/moru?homeId=1", "/moru/../api/photo.jpg", "/moru/decor/notes.json"]) assert.equal(assetUrl(path), path);
+});
+
 test("CDN mapping leaves API, private uploads, external images and app navigation untouched", () => {
   const { assetUrl } = assetsFor(CDN);
   for (const path of [

@@ -1,10 +1,6 @@
 import type { CSSProperties } from "react";
-import type { StaticImageData } from "next/image";
+import { assetUrl } from "@/lib/assets";
 import type { MoruMood } from "./MoruSprite";
-import idleArt from "./moring/moring-idle.webp";
-import happyArt from "./moring/moring-happy.webp";
-import eatArt from "./moring/moring-eat.webp";
-import sleepArt from "./moring/moring-sleep.webp";
 import styles from "./MoruPet.module.css";
 
 /**
@@ -20,11 +16,11 @@ import styles from "./MoruPet.module.css";
 const REF = { birdW: 434, half: 245, up: 501, down: 6 };
 const S = 100 / REF.birdW; // 새 폭을 128×122 칸에서 100 으로
 const FRAME = { x: 64 - REF.half * S, y: 112.5 - REF.up * S, w: REF.half * 2 * S, h: (REF.up + REF.down) * S };
-const LOOPS: Record<"idle" | "happy" | "eat" | "sleep", { art: StaticImageData; seconds: number }> = {
-  idle: { art: idleArt, seconds: 3.2 },
-  happy: { art: happyArt, seconds: 1.2 },
-  eat: { art: eatArt, seconds: 1.1 },
-  sleep: { art: sleepArt, seconds: 4 },
+const LOOPS: Record<"idle" | "happy" | "eat" | "sleep", { art: string; seconds: number }> = {
+  idle: { art: assetUrl("/moru/moring/moring-idle-v1.webp"), seconds: 3.2 },
+  happy: { art: assetUrl("/moru/moring/moring-happy-v1.webp"), seconds: 1.2 },
+  eat: { art: assetUrl("/moru/moring/moring-eat-v1.webp"), seconds: 1.1 },
+  sleep: { art: assetUrl("/moru/moring/moring-sleep-v1.webp"), seconds: 4 },
 };
 
 export default function MoringSprite({ mood }: { mood: MoruMood; level?: number }) {
@@ -34,7 +30,7 @@ export default function MoringSprite({ mood }: { mood: MoruMood; level?: number 
     <ellipse cx="64" cy="113" rx="32" ry="4.5" fill="#2a1b13" opacity=".16" />
     {/* 한 칸만 보이는 창: 띠를 왼쪽으로 한 칸씩 넘긴다 (steps(4)) */}
     <svg x={FRAME.x} y={FRAME.y} width={FRAME.w} height={FRAME.h} viewBox={`0 0 ${FRAME.w} ${FRAME.h}`} overflow="hidden">
-      <image key={name} className={styles.moringLoop} href={loop.art.src} x="0" y="0" width={FRAME.w * 4} height={FRAME.h} preserveAspectRatio="none"
+      <image key={name} className={styles.moringLoop} href={loop.art} x="0" y="0" width={FRAME.w * 4} height={FRAME.h} preserveAspectRatio="none"
         style={{ "--loop-w": `${-FRAME.w * 4}px`, animationDuration: `${loop.seconds}s` } as CSSProperties} />
     </svg>
   </svg>;

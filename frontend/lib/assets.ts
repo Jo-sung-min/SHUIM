@@ -13,6 +13,8 @@ export const DEFAULT_ASSET_BASE_URL = "https://cdn.sorow.co.kr";
 // must keep the verified production origin instead of requesting deleted local files.
 // Next.js replaces this direct reference at build time in both server and client bundles.
 const BASE = assetBase(process.env.NEXT_PUBLIC_ASSET_BASE_URL ?? "") || DEFAULT_ASSET_BASE_URL;
+/** For <link rel="preconnect">: the CDN connection opens while HTML/JS load, before the first image request. */
+export const ASSET_ORIGIN = new URL(BASE).origin;
 const ROOT_MEDIA = new Set([
   "/splash.webp", "/sorow-logo.png", "/favicon.svg",
   "/icon-192.png", "/icon-512.png", "/icon-512-maskable.png", "/apple-icon.png",
@@ -24,7 +26,7 @@ export function assetUrl(path: string): string {
     const url = new URL(path, "https://public-assets.invalid");
     if (url.origin !== "https://public-assets.invalid") return path;
     const publicMedia = ROOT_MEDIA.has(url.pathname)
-      || (/^\/(?:(?:beach|feed)\/|(?:garden|cloudspa|baikal)\/art\/)/.test(url.pathname) && /\.(?:avif|webp|png|jpe?g|gif|svg|glb|gltf|ktx2|basis|bin|mp3)$/i.test(url.pathname));
+      || (/^\/(?:(?:beach|feed|moru)\/|(?:garden|cloudspa|baikal)\/art\/)/.test(url.pathname) && /\.(?:avif|webp|png|jpe?g|gif|svg|glb|gltf|ktx2|basis|bin|mp3)$/i.test(url.pathname));
     return publicMedia ? `${BASE}${url.pathname}${url.search}${url.hash}` : path;
   } catch { return path; }
 }

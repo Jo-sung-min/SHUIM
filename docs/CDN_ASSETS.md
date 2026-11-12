@@ -84,3 +84,19 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 ### 앱에서 쓰지 않는 캐릭터 파일 (2026-11-09)
 
 `characters/dog-girl/`과 `characters/female-toon/`의 모델·미리보기는 S3에 올렸지만, 강아지소녀를 지우고 여자 캐릭터를 원래 모델로 되돌리면서 앱에서 쓰지 않습니다. 원격 파일은 지우지 않으므로 CDN과 manifest에 남아 있습니다.
+
+## 모루 그림·명화 피드 CDN 이전 (2026-11-12)
+
+- **모루 꾸미기 가구 36개, 모링 4프레임 띠 4개:** 컴포넌트 옆에 두고 번들로 내보내던 WebP를 S3 `moru/decor/<id>-v1.webp`, `moru/moring/moring-<표정>-v1.webp`로 옮겼습니다. 코드는 `assetUrl()`로 읽고 원본 픽셀 크기는 `MoruDecor.tsx`의 `ART_SIZE`에 둡니다. 컴포넌트 폴더의 그림 확장자는 `.gitignore`에 넣어, 그림이 다시 번들로 들어가지 않게 했습니다.
+- **명화 큐레이션 10장(V39):** 피드가 메트로폴리탄 미술관 원본 JPG(장당 2.2~6.2MB, 합계 44.5MB)를 바로 읽고 있었습니다. 9:16 상자에 cover로 보이던 가운데 영역을 sRGB로 맞춰 1080x1920 WebP로 만들고(합계 4.0MB), S3 `feed/curation/met-<작품ID>-v1.webp`에 올렸습니다. V50 마이그레이션이 글의 주소를 바꿉니다. 원본 주소는 `frontend/lib/curation-nov11.json`의 `image`에, CDN 주소는 `cdnImage`에 있습니다. V39 생성 스크립트 `--check` 결과는 그대로입니다.
+- 50개 모두 `--verify`로 SHA256·형식·CORS를 확인한 뒤 로컬 사본을 지웠습니다.
+
+### 업로드 스크립트 변경
+
+- `--only <접두사>`(여러 번 사용 가능): 해당 경로만 올립니다. 예: `python scripts/sync-public-assets.py --apply --only moru/`. 로컬의 `audio/onsen-water-v1.mp3`가 함께 올라가는 일을 막습니다.
+- 이름에 버전이 붙은 파일(`…-v1.webp`처럼 `-v숫자.확장자`)은 `Cache-Control: public, max-age=31536000, immutable`로 올립니다. 브라우저와 CDN이 1년 동안 다시 묻지 않습니다. 그 밖의 파일(`splash.webp`, 아이콘 등)은 지금처럼 하루입니다. 버전 파일은 절대 같은 이름으로 덮어쓰지 않고, 내용을 바꿀 때 새 버전 이름을 씁니다. 이전에 올린 버전 파일은 다음에 그 파일을 다시 동기화할 때 새 캐시 값으로 바뀝니다.
+
+### 로딩 순서
+
+- `app/layout.tsx`가 CDN에 `preconnect`를 두 개 엽니다. 하나는 `<img>`용 일반 연결, 하나는 WebGL 텍스처·fetch용 anonymous CORS 연결입니다.
+- 피드는 첫 글의 첫 사진만 `loading="eager"`·`fetchpriority="high"`로 받고, 나머지는 지연 로딩입니다(`ScreenPhoto`의 `priority`).

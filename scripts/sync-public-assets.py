@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -22,6 +23,14 @@ TYPES = {
     ".mp3": "audio/mpeg",
 }
 CACHE_CONTROL = "public, max-age=86400"
+# Versioned names (…-v2.webp) are never overwritten in place: a new version gets a new
+# key, so browsers and CloudFront may keep them for a year without revalidating.
+IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+VERSIONED = re.compile(r"-v\d+\.[A-Za-z0-9]+$")
+
+
+def cache_control(key):
+    return IMMUTABLE_CACHE_CONTROL if VERSIONED.search(key) else CACHE_CONTROL
 # Match the ordinary Chrome GET that loads a GLB. HEAD or urllib's identity
 # encoding alone can hit a different CloudFront cache entry and miss CORS bugs.
 BROWSER_HEADERS = {
@@ -65,10 +74,14 @@ def main():
     parser.add_argument("--cdn", default="https://cdn.sorow.co.kr")
     parser.add_argument("--distribution-id", help="Invalidate uploaded paths, including negative cache entries")
     parser.add_argument("--profile", help="Use this AWS profile instead of local .env credentials")
+    parser.add_argument("--only", action="append", metavar="PREFIX",
+                        help="Upload only local files whose key starts with PREFIX (e.g. moru/); may be repeated")
     args = parser.parse_args()
     if not args.cdn.startswith("https://"):
         parser.error("CDN must use HTTPS")
     local_files = inventory()
+    if args.only:
+        local_files = [item for item in local_files if any(item["key"].startswith(prefix) for prefix in args.only)]
     published = json.loads(MANIFEST.read_text(encoding="utf-8"))["files"] if MANIFEST.exists() else []
     by_key = {item["key"]: item for item in published}
     by_key.update({item["key"]: item for item in local_files})
@@ -117,14 +130,14 @@ def main():
                 if error.response["Error"]["Code"] not in ("404", "NoSuchKey", "NotFound"):
                     raise
             if old and old.get("Metadata", {}).get("sha256") == item["sha256"] \
-                    and old.get("ContentType") == item["contentType"] and old.get("CacheControl") == CACHE_CONTROL:
+                    and old.get("ContentType") == item["contentType"] and old.get("CacheControl") == cache_control(item["key"]):
                 report["unchanged"].append(item["key"])
                 continue
             data = (PUBLIC / item["key"]).read_bytes()
             if hashlib.sha256(data).hexdigest() != item["sha256"]:
                 raise RuntimeError("Asset changed during upload; rerun sync")
             s3.put_object(Bucket=args.bucket, Key=item["key"], Body=data,
-                          ContentType=item["contentType"], CacheControl=CACHE_CONTROL,
+                          ContentType=item["contentType"], CacheControl=cache_control(item["key"]),
                           Metadata={"sha256": item["sha256"]})
             report["uploaded"].append(item["key"])
             print("Uploaded " + item["key"])

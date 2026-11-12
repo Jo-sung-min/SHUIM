@@ -70,4 +70,43 @@ class CuratedFeedMigrationPostgresTest {
             admin.sql("DROP SCHEMA IF EXISTS " + schema + " CASCADE").update();
         }
     }
+
+    /** V50: V39 의 미술관 원본 JPG 주소를 CDN WebP 로 바꾸고, 그 사이 손댄 글은 그대로 둔다 */
+    @Test
+    void movesMuseumOriginalsToCdnWebpWithoutTouchingEditedPosts() throws Exception {
+        DriverManagerDataSource source = new DriverManagerDataSource(System.getenv("SOROW_TEST_DATABASE_URL"), "sorow_test", "");
+        String schema = "curated_cdn_" + UUID.randomUUID().toString().replace("-", "");
+        JdbcClient admin = JdbcClient.create(source);
+        try {
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("49").load().migrate();
+            JdbcClient jdbc = JdbcClient.create(source);
+            String p = schema + ".";
+            assertEquals(10L, jdbc.sql("SELECT count(*) FROM " + p + "feed_posts WHERE image LIKE 'https://images.metmuseum.org/CRDImages/%'").query(Long.class).single());
+            // 관리자가 이미 다른 그림으로 바꾼 글
+            jdbc.sql("UPDATE " + p + "feed_posts SET image = '/feed/curation/edited-v1.webp' WHERE id = 'curation-12'").update();
+            String editedPages = jdbc.sql("SELECT pages::text FROM " + p + "feed_posts WHERE id = 'curation-12'").query(String.class).single();
+
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("50").load().migrate();
+
+            ObjectMapper json = new ObjectMapper();
+            List<Map<String, Object>> rows = jdbc.sql("SELECT id, image, images[1] AS first, cardinality(images) AS n, pages::text AS pages FROM " + p + "feed_posts WHERE id LIKE 'curation-%' AND id >= 'curation-11' AND id <> 'curation-12'").query().listOfRows();
+            assertEquals(9, rows.size());
+            for (Map<String, Object> row : rows) {
+                String image = String.valueOf(row.get("image"));
+                assertTrue(image.matches("/feed/curation/met-[0-9]+-v1\\.webp"), image);
+                assertEquals(image, row.get("first"));
+                assertEquals(1, ((Number) row.get("n")).intValue());
+                List<Map<String, Object>> pages = json.readValue(String.valueOf(row.get("pages")), new TypeReference<>() {});
+                assertEquals(1, pages.size());
+                assertEquals(image, pages.get(0).get("image"));
+                assertEquals(0.5625, FeedMedia.ratio(pages.get(0).get("ratio")));
+                assertEquals(2, ((List<?>) pages.get(0).get("overlays")).size());
+            }
+            assertEquals("/feed/curation/edited-v1.webp", jdbc.sql("SELECT image FROM " + p + "feed_posts WHERE id = 'curation-12'").query(String.class).single());
+            assertEquals(editedPages, jdbc.sql("SELECT pages::text FROM " + p + "feed_posts WHERE id = 'curation-12'").query(String.class).single());
+            assertEquals(1L, jdbc.sql("SELECT count(*) FROM " + p + "feed_posts WHERE pages::text LIKE '%images.metmuseum.org%'").query(Long.class).single());
+        } finally {
+            admin.sql("DROP SCHEMA IF EXISTS " + schema + " CASCADE").update();
+        }
+    }
 }

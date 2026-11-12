@@ -2,60 +2,70 @@
   {
     "id": "curation-11", "title": "오늘의 희망", "art": "카미유 피사로 · 에라니의 포플러", "date": "1895", "metId": 437307,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DT1866.jpg",
+    "cdnImage": "/feed/curation/met-437307-v1.webp",
     "quote": "희망은 영혼에 내려앉아\n말 없는 노래를 부르는\n깃털 달린 것.", "author": "에밀리 디킨슨", "work": "「희망은 깃털 달린 것」 1연", "source": "https://poets.org/poem/hope-thing-feathers-254",
     "font": "serif", "color": "ink", "y": 0.17, "size": 0.048
   },
   {
     "id": "curation-12", "title": "오늘의 고요", "art": "카미유 코로 · 멀리 탑이 보이는 강", "date": "1865", "metId": 435983,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DP-14936-055.jpg",
+    "cdnImage": "/feed/curation/met-435983-v1.webp",
     "quote": "자주 마음속 쉼터로 돌아가\n너 자신을 새롭게 하라.", "author": "마르쿠스 아우렐리우스", "work": "『명상록』 4.3", "source": "https://classics.mit.edu/Antoninus/meditations.4.four.html",
     "font": "song", "color": "ink", "y": 0.18, "size": 0.049
   },
   {
     "id": "curation-13", "title": "오늘의 다정함", "art": "오귀스트 르누아르 · 피아노 앞의 두 소녀", "date": "1892", "metId": 459112,
     "image": "https://images.metmuseum.org/CRDImages/rl/original/DP-34501-001.jpg",
+    "cdnImage": "/feed/curation/met-459112-v1.webp",
     "quote": "친구를 얻는 유일한 길은\n스스로 친구가 되는 것이다.", "author": "랠프 월도 에머슨", "work": "『에세이』 「우정」", "source": "https://www.gutenberg.org/files/16643/16643-h/16643-h.htm",
     "font": "serif", "color": "cream", "y": 0.14, "size": 0.047
   },
   {
     "id": "curation-14", "title": "오늘의 걸음", "art": "알프레드 시슬레 · 모레의 외젠 무수아르 거리, 겨울", "date": "1891", "metId": 437686,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DP-33708-001.jpg",
+    "cdnImage": "/feed/curation/met-437686-v1.webp",
     "quote": "저마다 들리는 음악에 맞춰\n걸어가게 하라.\n박자가 다르고 멀리 들리더라도.", "author": "헨리 데이비드 소로", "work": "『월든』 「결론」", "source": "https://www.gutenberg.org/files/205/205-h/205-h.htm",
     "font": "song", "color": "ink", "y": 0.16, "size": 0.046
   },
   {
     "id": "curation-15", "title": "오늘의 시작", "art": "알프레드 시슬레 · 밤나무 가로수길", "date": "1878", "metId": 459121,
     "image": "https://images.metmuseum.org/CRDImages/rl/original/DP-34504-001.jpg",
+    "cdnImage": "/feed/curation/met-459121-v1.webp",
     "quote": "아름드리나무도\n작은 싹에서 자라난다.", "author": "노자", "work": "『도덕경』 64장", "source": "https://www.gutenberg.org/files/216/216-h/216-h.htm",
     "font": "serif", "color": "cream", "y": 0.16, "size": 0.054
   },
   {
     "id": "curation-16", "title": "오늘의 마음", "art": "알프레드 시슬레 · 부지발의 센강", "date": "1876", "metId": 901617,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DP323410.jpg",
+    "cdnImage": "/feed/curation/met-901617-v1.webp",
     "quote": "우리에게 달린 일이 있고,\n우리에게 달려 있지 않은 일도 있다.", "author": "에픽테토스", "work": "『엥케이리디온』 1장", "source": "https://classics.mit.edu/Epictetus/epicench.html",
     "font": "song", "color": "ink", "y": 0.16, "size": 0.044
   },
   {
     "id": "curation-17", "title": "오늘의 빛", "art": "알프레드 시슬레 · 모레에서 생마메스로 가는 길", "date": "1883–85", "metId": 437684,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DP323408.jpg",
+    "cdnImage": "/feed/curation/met-437684-v1.webp",
     "quote": "아직 밝아올 날이 더 있다.\n태양은 다만 아침의 별일 뿐.", "author": "헨리 데이비드 소로", "work": "『월든』 「결론」 마지막 문장", "source": "https://www.gutenberg.org/files/205/205-h/205-h.htm",
     "font": "serif", "color": "ink", "y": 0.15, "size": 0.049
   },
   {
     "id": "curation-18", "title": "오늘의 믿음", "art": "오딜롱 르동 · 꽃이 꽂힌 에트루리아 꽃병", "date": "1900–1910", "metId": 437381,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DT323419.jpg",
+    "cdnImage": "/feed/curation/met-437381-v1.webp",
     "quote": "너 자신을 믿어라.\n모든 마음은 그 굳센 현에 울린다.", "author": "랠프 월도 에머슨", "work": "『에세이』 「자기 신뢰」", "source": "https://www.gutenberg.org/files/16643/16643-h/16643-h.htm",
     "font": "song", "color": "ink", "y": 0.16, "size": 0.047
   },
   {
     "id": "curation-19", "title": "오늘의 충분함", "art": "오딜롱 르동 · 분홍색 배경의 꽃병", "date": "1906년경", "metId": 437382,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DT2159.jpg",
+    "cdnImage": "/feed/curation/met-437382-v1.webp",
     "quote": "만족할 줄 아는 사람이\n부유한 사람이다.", "author": "노자", "work": "『도덕경』 33장", "source": "https://www.gutenberg.org/files/216/216-h/216-h.htm",
     "font": "serif", "color": "ink", "y": 0.16, "size": 0.052
   },
   {
     "id": "curation-20", "title": "오늘의 아름다움", "art": "장프랑수아 밀레 · 건초더미, 가을", "date": "1874년경", "metId": 437097,
     "image": "https://images.metmuseum.org/CRDImages/ep/original/DP124093.jpg",
+    "cdnImage": "/feed/curation/met-437097-v1.webp",
     "quote": "아름다운 것은\n그 자체로 아름답다.\n칭찬이 그것을 더 낫게 만들지는 않는다.", "author": "마르쿠스 아우렐리우스", "work": "『명상록』 4.20", "source": "https://classics.mit.edu/Antoninus/meditations.4.four.html",
     "font": "song", "color": "ink", "y": 0.16, "size": 0.042
   }

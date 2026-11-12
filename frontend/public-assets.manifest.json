@@ -531,6 +531,66 @@
       "contentType": "image/svg+xml"
     },
     {
+      "key": "feed/curation/met-435983-v1.webp",
+      "bytes": 230814,
+      "sha256": "4c47d5a713297a6d0b4ceee97b7bd7ae3bd03dbfbbd30685a5a4472d38515628",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-437097-v1.webp",
+      "bytes": 162618,
+      "sha256": "d3ae4f1aa6f9d074c56a852994036f531764cfe184541743043df8e0a57c3edd",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-437307-v1.webp",
+      "bytes": 731864,
+      "sha256": "7f6777d416bf39cd6e85f5119df9e41c2f06d852abd3d82e6257c6650f2a924f",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-437381-v1.webp",
+      "bytes": 549502,
+      "sha256": "10c894404c326e2b5167b19df8491e605eb7b30836c05bfd8b8d2cddaf1044d5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-437382-v1.webp",
+      "bytes": 504448,
+      "sha256": "79d2f4216b77d91875e99c7ddff9e14e2c714903ff54a0eb93df6910004583bd",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-437684-v1.webp",
+      "bytes": 565044,
+      "sha256": "1cb487b8d35948deffdd9d8687cce31889c96ba1ce3210c50b07713a964a9a40",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-437686-v1.webp",
+      "bytes": 267418,
+      "sha256": "64a19cdf180e83afa8d13ccadf241a1b505d512358172f7fc47f77bbdc149708",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-459112-v1.webp",
+      "bytes": 217404,
+      "sha256": "e72ccc4290be9f54ea3cb4220fa42534e5f308b30665a120ece1f4c233728a4c",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-459121-v1.webp",
+      "bytes": 443222,
+      "sha256": "db8642aea147a7b4742c36903882d0cc5bb83b96ef23b77bc0a7b5269659d0bc",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "feed/curation/met-901617-v1.webp",
+      "bytes": 336952,
+      "sha256": "5052ca06af1d0a3c41ae4880775c4935c9e1e54ad62f77bdcfbb135682275fbf",
+      "contentType": "image/webp"
+    },
+    {
       "key": "feed/curation/sky-kanbara-snow-v1.webp",
       "bytes": 263590,
       "sha256": "a120db152fca23fc3b0ee4361eaab4f728724c44e1334dc51a2d2508ec6da297",
@@ -685,6 +745,246 @@
       "bytes": 22074,
       "sha256": "f63a7df1ad9f721cc77bf30a4ec051b1f970fab60046e7d04ad0af3acb775172",
       "contentType": "image/png"
+    },
+    {
+      "key": "moru/decor/beanbag-v1.webp",
+      "bytes": 7302,
+      "sha256": "6e4e559c3524bbe74e14423bde1e5c30f7d214d45917b2843b2174f3d7740d26",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/bear-v1.webp",
+      "bytes": 8034,
+      "sha256": "48f1685c02b0068165c53c64b0e6dade5b17675d684434c8653f13e9b18425ed",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/books-v1.webp",
+      "bytes": 8340,
+      "sha256": "ac89db7df4a54d7a3b63fd1c883dbe14c81971e4d420db915076b47b098fda78",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/bookshelf-v1.webp",
+      "bytes": 7814,
+      "sha256": "b7d9cf42fd92b7494e3c26122406d1fa0a15b1b5ebbecafe1d10c966f581dcd5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/bunny-v1.webp",
+      "bytes": 8792,
+      "sha256": "9bfc908d0f17ce27795fcb66633ca6b3978b2c27ebee621491a0b226407302ec",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/cactus-v1.webp",
+      "bytes": 6196,
+      "sha256": "826e074da4308cee5e38c4fe39e093c8f71b30963325d3c4c6e2b279f95c630d",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/calendar-v1.webp",
+      "bytes": 6118,
+      "sha256": "6dace39638eecff169fc116b38808143d3173ffebaac040be8680fbd383f237a",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/candles-v1.webp",
+      "bytes": 9128,
+      "sha256": "6b48a54d19ed6f7b027154477097ba250507e7679e46d671ffaa00977e96d022",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/cat-v1.webp",
+      "bytes": 7780,
+      "sha256": "bb0202d037a0be7cc7f9ae3fa7a00c9df58c8d2c727f870e3e067fd079fe3d9d",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/clock-v1.webp",
+      "bytes": 6862,
+      "sha256": "5dc5187eff871efc8f8fd9f00d0ebfae18e37b11f5182240c1f45f94cbf6f240",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/cocoa-v1.webp",
+      "bytes": 7528,
+      "sha256": "4c8809cfee76f692274bc9492ee674ff2457dd127735e3ac36029917481008bf",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/diary-v1.webp",
+      "bytes": 6142,
+      "sha256": "0dff7aeee8086ef243f83b1a99a32bf9a65c4f60dc01be72bfa6e88e83fc592c",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/duck-v1.webp",
+      "bytes": 6840,
+      "sha256": "1962b5729dc8744abee8d96717a675ef6dd2e9e6c5c1a5e23d7384c926e65dd5",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/frame-v1.webp",
+      "bytes": 5258,
+      "sha256": "3c3bde39529e9c8d0f6f94b55001631345c4fb915812fd756e032ec9a72c504f",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/globe-v1.webp",
+      "bytes": 7224,
+      "sha256": "cb22c1bc927036d3efe4a83d763c875711d4e3516e8b01c33e866627ea3fb3f2",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/heart-v1.webp",
+      "bytes": 5402,
+      "sha256": "a2582ae838ecd85a7def73d4118b660b4984a576d4ff2aaefbea3e4ed6386919",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/hourglass-v1.webp",
+      "bytes": 4844,
+      "sha256": "03973c2a964f25dcd6d8fc03af580f23c2939e6cb0cce8c58a6a450642314517",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/ivy-v1.webp",
+      "bytes": 8600,
+      "sha256": "7c37bfc1e235e6d4d71c26a3b291dd237c1d6ea3439c0cf1499927d8933cdca2",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/lantern-v1.webp",
+      "bytes": 5604,
+      "sha256": "d889e5cf7c37bc42fb8e9fe8bd26b38f574dbfd24a1bac3f1934eb95dfc031bc",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/mirror-v1.webp",
+      "bytes": 6332,
+      "sha256": "c9fe61946642c8d5823f1224b1c2f48ee4758b89cde01d08bb259694cb4443cd",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/mobile-v1.webp",
+      "bytes": 8206,
+      "sha256": "cac792a1a37a2c535e4aadaa313647497179ff2648ba120e77f51aa5b99fdad4",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/monstera-v1.webp",
+      "bytes": 9984,
+      "sha256": "3826e4de499093f70bf5ea9316f47e0104261bdac1d7a8de7b6de2f088bb2194",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/moonPoster-v1.webp",
+      "bytes": 5170,
+      "sha256": "1a357fdfd2e3628cdfed8b434a06f4bfb1d2cbbf5bfde92bdceab071a6f14655",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/mushroom-v1.webp",
+      "bytes": 7180,
+      "sha256": "2997e851567f3958c495cb775f0609abc0ea11445f8d08530d02b49be6e3f859",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/oranges-v1.webp",
+      "bytes": 8952,
+      "sha256": "d9d234be689e2969e605ddfdefa795d781b8e0a156531189aa10121b42d9018e",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/radio-v1.webp",
+      "bytes": 7280,
+      "sha256": "80940117e3736920ffc2e52c9e94742871f165721dd6a6008fcae4e96e2c3985",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/record-v1.webp",
+      "bytes": 6090,
+      "sha256": "64eac3e3667cbe3c34c08d74b33bee2f40d47e681170260b5384a3ea85ff004f",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/rug-v1.webp",
+      "bytes": 10970,
+      "sha256": "fbd4e7b00262937e2001ad1a332c585f2db87a6d077063f5f6262fe7303be1ab",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/snowman-v1.webp",
+      "bytes": 6844,
+      "sha256": "5389356be7b0e167fc7130fc65625ac8b7b081262c050eafab600f0a1867e69b",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/starLamp-v1.webp",
+      "bytes": 5960,
+      "sha256": "5219c920ed809de4c0dcaf7ac9773312d41718d2eaddede3fb060a6a82172dd2",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/stringLights-v1.webp",
+      "bytes": 6680,
+      "sha256": "39a83cc92093efe0f2d994253c2577fef398ceece0e88263676f0fcb37325ce2",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/succulent-v1.webp",
+      "bytes": 6616,
+      "sha256": "48bf7c3a856e90402ce08b43837f32424012dc2f88289a7cac57b6855741ff80",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/sunflower-v1.webp",
+      "bytes": 7476,
+      "sha256": "a46ce26e28c905b04b39f6a197482f447ca9a64691274436c37d7625fe37a5f1",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/tulips-v1.webp",
+      "bytes": 9584,
+      "sha256": "43f6acb4aa16f354dee1c5d1cebb9990047d9b9069176cad66e092d7b94a1605",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/wreath-v1.webp",
+      "bytes": 11560,
+      "sha256": "917133302e378e754faa1828c4393fc64a07d773a9feefed35ef8d27fb74b73b",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/decor/yarn-v1.webp",
+      "bytes": 10372,
+      "sha256": "f3048ccf77065c6a8ac266a77d9b7ddf1adfc4a0fe88a71a626979165d55f75b",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-eat-v1.webp",
+      "bytes": 83930,
+      "sha256": "ac51502f967e46b77f46372ed1a5f61ce8a1f567abdf05a4f6ea8921adcbe32f",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-happy-v1.webp",
+      "bytes": 86230,
+      "sha256": "9450778ffca484db87ae80a5c943ed180b7ddd43857293b606c29ca455b74ead",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-idle-v1.webp",
+      "bytes": 72464,
+      "sha256": "a1718d371c36cfda7165927ffaff51ed3a99a2bbf32f64ffe02ffb7432f452d2",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-sleep-v1.webp",
+      "bytes": 88892,
+      "sha256": "8b745b3cbb7e4183eeccdf6c5f608775f7405c15185c458d6afc5a52c454cdf5",
+      "contentType": "image/webp"
     },
     {
       "key": "sorow-logo.png",

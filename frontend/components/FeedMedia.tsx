@@ -27,12 +27,15 @@ export function Overlays({ overlays }: { overlays?: TextOverlay[] }) {
   return <>{overlays.map((o, i) => <OverlayText key={i} overlay={o} />)}</>;
 }
 
-/** 피드 사진 한 장: 화면을 꽉 채우고(cover) 아래쪽을 어둡게 깔아 글이 읽히게 */
-export function ScreenPhoto({ src, ratio, alt, overlays }: { src: string; ratio?: number; alt: string; overlays?: TextOverlay[] }) {
+/**
+ * 피드 사진 한 장: 화면을 꽉 채우고(cover) 아래쪽을 어둡게 깔아 글이 읽히게.
+ * priority = 처음 화면에 보이는 사진(첫 글의 첫 장). 지연 로딩 없이 먼저 받아 첫 화면이 비어 있지 않게 한다.
+ */
+export function ScreenPhoto({ src, ratio, alt, overlays, priority = false }: { src: string; ratio?: number; alt: string; overlays?: TextOverlay[]; priority?: boolean }) {
   return <div className={styles.player}>
     <MediaFrame ratio={ratio} fit="cover">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} loading="lazy" decoding="async" />
+      <img src={src} alt={alt} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" />
       <Overlays overlays={overlays} />
     </MediaFrame>
     <div className={styles.shade} />

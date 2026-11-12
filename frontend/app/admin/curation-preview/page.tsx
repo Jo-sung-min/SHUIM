@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ScreenPhoto } from "@/components/FeedMedia";
+import { assetUrl } from "@/lib/assets";
 import type { TextOverlay } from "@/lib/feed-media";
 import entries from "@/lib/curation-nov11.json";
 
@@ -16,7 +17,7 @@ export default function CurationPreview() {
         ];
         return <article key={e.id}>
           <div style={{ position: "relative", aspectRatio: "9/16", overflow: "hidden", borderRadius: 12 }}>
-            <ScreenPhoto src={e.image} ratio={.5625} alt={e.art} overlays={overlays} />
+            <ScreenPhoto src={assetUrl(e.cdnImage)} ratio={.5625} alt={e.art} overlays={overlays} />
             <div style={{ position: "absolute", zIndex: 2, bottom: 24, left: 20, right: 20, color: "white", textShadow: "0 1px 4px #000" }}>
               <b>소로우</b><p style={{ fontSize: 13, marginTop: 8 }}>{e.title}</p>
               <p style={{ fontSize: 11 }}>{e.art} ({e.date})</p>

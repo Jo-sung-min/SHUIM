@@ -14,7 +14,7 @@ import InlineScript from "@/components/InlineScript";
 import AitRuntime from "@/components/AitRuntime";
 import { IS_AIT } from "@/lib/ait";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
-import { assetUrl, publicAssetStyles } from "@/lib/assets";
+import { ASSET_ORIGIN, assetUrl, publicAssetStyles } from "@/lib/assets";
 
 /**
  * 사이트 전체 메타 태그. 제목·설명·파비콘·공유 이미지는 관리자가 /admin › 사이트 에서 바꾼 값(/api/site)을 쓰고,
@@ -107,6 +107,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="ko" data-ait={IS_AIT ? "" : undefined} data-theme={IS_AIT ? "light" : undefined} suppressHydrationWarning>
       <head>
         <InlineScript html={THEME_SCRIPT} />
+        {/* 그림·3D 파일은 모두 CDN 에서 온다: <img> 용(자격 증명 연결)과 WebGL·fetch 용(anonymous CORS 연결)을 미리 열어 둔다 */}
+        <link rel="preconnect" href={ASSET_ORIGIN} />
+        <link rel="preconnect" href={ASSET_ORIGIN} crossOrigin="anonymous" />
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"

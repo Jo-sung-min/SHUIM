@@ -220,9 +220,10 @@ export default function FeedPage() {
             </div>
           </section>
         ) : (
-          items.slice(0, limit).map((f) => (
+          items.slice(0, limit).map((f, index) => (
             <Reel
               key={f.id}
+              first={index === 0}
               s={s}
               post={f}
               revealed={revealed.has(f.id)}
@@ -335,8 +336,8 @@ function shrinkFor(sheetHeight: number, reelHeight: number) {
   return Math.max(0.12, Math.min(1, room / reelHeight));
 }
 
-function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile, shrink }: {
-  s: CommunityStore; post: FeedPost; revealed: boolean; onReveal: () => void; onCheer: () => void; onSave: () => void;
+function Reel({ s, post, first, revealed, onReveal, onCheer, onSave, onComments, onMenu, onFollow, onProfile, shrink }: {
+  s: CommunityStore; post: FeedPost; first?: boolean; revealed: boolean; onReveal: () => void; onCheer: () => void; onSave: () => void;
   onComments: () => void; onMenu: () => void; onFollow: () => Promise<boolean>; onProfile: () => void; shrink?: number | null;
 }) {
   const me = s.me.id;
@@ -420,7 +421,7 @@ function Reel({ s, post, revealed, onReveal, onCheer, onSave, onComments, onMenu
             {pages.map((p, i) => (
               <article key={i} className={`${styles.fullSlide} ${p.image ? "" : `bg-${post.bg}`}`} aria-label={`${i + 1}번째 콘텐츠`}>
                 {p.image
-                  ? <ScreenPhoto src={assetUrl(p.image)} ratio={p.ratio} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} overlays={p.overlays} />
+                  ? <ScreenPhoto src={assetUrl(p.image)} ratio={p.ratio} alt={p.title || `${author.nick}님의 ${i + 1}번째 사진`} overlays={p.overlays} priority={first && i === 0} />
                   : <p className={`reel-text ${styles.textPage}`}><Highlighted text={p.text} /></p>}
               </article>
             ))}

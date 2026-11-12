@@ -1,44 +1,20 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import type { StaticImageData } from "next/image";
 import { Sheet } from "./ui";
 import type { PetView } from "@/lib/pet";
-import frameArt from "./moru-decor/frame.webp";
-import clockArt from "./moru-decor/clock.webp";
-import wreathArt from "./moru-decor/wreath.webp";
-import moonPosterArt from "./moru-decor/moonPoster.webp";
-import calendarArt from "./moru-decor/calendar.webp";
-import mirrorArt from "./moru-decor/mirror.webp";
-import ivyArt from "./moru-decor/ivy.webp";
-import mobileArt from "./moru-decor/mobile.webp";
-import lanternArt from "./moru-decor/lantern.webp";
-import stringLightsArt from "./moru-decor/stringLights.webp";
-import heartArt from "./moru-decor/heart.webp";
-import bearArt from "./moru-decor/bear.webp";
-import catArt from "./moru-decor/cat.webp";
-import bunnyArt from "./moru-decor/bunny.webp";
-import duckArt from "./moru-decor/duck.webp";
-import snowmanArt from "./moru-decor/snowman.webp";
-import monsteraArt from "./moru-decor/monstera.webp";
-import cactusArt from "./moru-decor/cactus.webp";
-import succulentArt from "./moru-decor/succulent.webp";
-import tulipsArt from "./moru-decor/tulips.webp";
-import sunflowerArt from "./moru-decor/sunflower.webp";
-import mushroomArt from "./moru-decor/mushroom.webp";
-import starLampArt from "./moru-decor/starLamp.webp";
-import candlesArt from "./moru-decor/candles.webp";
-import booksArt from "./moru-decor/books.webp";
-import yarnArt from "./moru-decor/yarn.webp";
-import radioArt from "./moru-decor/radio.webp";
-import recordArt from "./moru-decor/record.webp";
-import globeArt from "./moru-decor/globe.webp";
-import hourglassArt from "./moru-decor/hourglass.webp";
-import diaryArt from "./moru-decor/diary.webp";
-import cocoaArt from "./moru-decor/cocoa.webp";
-import orangesArt from "./moru-decor/oranges.webp";
-import rugArt from "./moru-decor/rug.webp";
-import bookshelfArt from "./moru-decor/bookshelf.webp";
-import beanbagArt from "./moru-decor/beanbag.webp";
+import { assetUrl } from "@/lib/assets";
 import styles from "./MoruPet.module.css";
+
+/** 가구 그림: CDN moru/decor/<id>-v1.webp (public-assets.manifest.json). 값은 원본 픽셀 크기 [폭, 높이] */
+type DecorArt = { src: string; width: number; height: number };
+const ART_SIZE: Record<string, [number, number]> = {
+  frame: [145, 160], clock: [158, 160], wreath: [152, 160], moonPoster: [134, 160], calendar: [159, 160], mirror: [134, 160],
+  ivy: [104, 160], mobile: [122, 160], lantern: [121, 160], stringLights: [220, 78], heart: [160, 131], bear: [134, 160],
+  cat: [140, 160], bunny: [160, 150], duck: [135, 160], snowman: [117, 160], monstera: [132, 160], cactus: [111, 160],
+  succulent: [160, 110], tulips: [134, 160], sunflower: [95, 160], mushroom: [154, 160], starLamp: [126, 160], candles: [136, 160],
+  books: [153, 160], yarn: [160, 154], radio: [157, 160], record: [160, 156], globe: [123, 160], hourglass: [116, 160],
+  diary: [158, 160], cocoa: [160, 130], oranges: [160, 155], rug: [240, 132], bookshelf: [168, 200], beanbag: [200, 168],
+};
+const decor = (id: string): DecorArt => ({ src: assetUrl(`/moru/decor/${id}-v1.webp`), width: ART_SIZE[id][0], height: ART_SIZE[id][1] });
 
 /**
  * 꾸미기 (V49 서버): 방문포인트로 가구를 사서 방 안 원하는 곳에 끌어다 놓는다.
@@ -46,27 +22,27 @@ import styles from "./MoruPet.module.css";
  * 값과 칸은 서버(PetDecor)가 정하고, 여기서는 이름·그림·보이는 크기(무대 px, 긴 변)만 안다. 모르는 가구 id 는 보여 주지 않는다.
  * 그림은 이미지 주소로만 묶여 있어, 방에 놓인 것과 가구 상자에서 지금 보는 칸의 것만 받는다.
  */
-export const FURNITURE: Record<string, { name: string; art: StaticImageData; size: number; flat?: boolean }> = {
-  frame: { name: "풍경 액자", art: frameArt, size: 40 }, clock: { name: "둥근 시계", art: clockArt, size: 38 },
-  wreath: { name: "꽃 리스", art: wreathArt, size: 42 }, moonPoster: { name: "달 포스터", art: moonPosterArt, size: 42 },
-  calendar: { name: "달력", art: calendarArt, size: 38 }, mirror: { name: "작은 거울", art: mirrorArt, size: 40 },
-  ivy: { name: "아이비 화분", art: ivyArt, size: 50 }, mobile: { name: "별 모빌", art: mobileArt, size: 48 },
-  lantern: { name: "종이 등", art: lanternArt, size: 44 }, stringLights: { name: "줄 전구", art: stringLightsArt, size: 96 },
-  heart: { name: "하트 쿠션", art: heartArt, size: 46 }, bear: { name: "곰 인형", art: bearArt, size: 46 },
-  cat: { name: "고양이 인형", art: catArt, size: 44 }, bunny: { name: "토끼 인형", art: bunnyArt, size: 46 },
-  duck: { name: "오리 인형", art: duckArt, size: 42 }, snowman: { name: "눈사람 인형", art: snowmanArt, size: 46 },
-  monstera: { name: "몬스테라", art: monsteraArt, size: 56 }, cactus: { name: "선인장", art: cactusArt, size: 40 },
-  succulent: { name: "다육이", art: succulentArt, size: 46 }, tulips: { name: "튤립 꽃병", art: tulipsArt, size: 46 },
-  sunflower: { name: "해바라기", art: sunflowerArt, size: 52 },
-  mushroom: { name: "버섯 스탠드", art: mushroomArt, size: 46 }, starLamp: { name: "별 전등", art: starLampArt, size: 46 },
-  candles: { name: "촛대", art: candlesArt, size: 44 },
-  books: { name: "책과 찻잔", art: booksArt, size: 44 }, yarn: { name: "털실 바구니", art: yarnArt, size: 46 },
-  radio: { name: "라디오", art: radioArt, size: 44 }, record: { name: "레코드 플레이어", art: recordArt, size: 52 },
-  globe: { name: "지구본", art: globeArt, size: 44 }, hourglass: { name: "모래시계", art: hourglassArt, size: 36 },
-  diary: { name: "일기장과 펜", art: diaryArt, size: 38 }, cocoa: { name: "코코아와 쿠키", art: cocoaArt, size: 44 },
-  oranges: { name: "귤 바구니", art: orangesArt, size: 44 },
-  rug: { name: "둥근 러그", art: rugArt, size: 124, flat: true }, bookshelf: { name: "작은 책장", art: bookshelfArt, size: 76 },
-  beanbag: { name: "빈백 의자", art: beanbagArt, size: 64 },
+export const FURNITURE: Record<string, { name: string; art: DecorArt; size: number; flat?: boolean }> = {
+  frame: { name: "풍경 액자", art: decor("frame"), size: 40 }, clock: { name: "둥근 시계", art: decor("clock"), size: 38 },
+  wreath: { name: "꽃 리스", art: decor("wreath"), size: 42 }, moonPoster: { name: "달 포스터", art: decor("moonPoster"), size: 42 },
+  calendar: { name: "달력", art: decor("calendar"), size: 38 }, mirror: { name: "작은 거울", art: decor("mirror"), size: 40 },
+  ivy: { name: "아이비 화분", art: decor("ivy"), size: 50 }, mobile: { name: "별 모빌", art: decor("mobile"), size: 48 },
+  lantern: { name: "종이 등", art: decor("lantern"), size: 44 }, stringLights: { name: "줄 전구", art: decor("stringLights"), size: 96 },
+  heart: { name: "하트 쿠션", art: decor("heart"), size: 46 }, bear: { name: "곰 인형", art: decor("bear"), size: 46 },
+  cat: { name: "고양이 인형", art: decor("cat"), size: 44 }, bunny: { name: "토끼 인형", art: decor("bunny"), size: 46 },
+  duck: { name: "오리 인형", art: decor("duck"), size: 42 }, snowman: { name: "눈사람 인형", art: decor("snowman"), size: 46 },
+  monstera: { name: "몬스테라", art: decor("monstera"), size: 56 }, cactus: { name: "선인장", art: decor("cactus"), size: 40 },
+  succulent: { name: "다육이", art: decor("succulent"), size: 46 }, tulips: { name: "튤립 꽃병", art: decor("tulips"), size: 46 },
+  sunflower: { name: "해바라기", art: decor("sunflower"), size: 52 },
+  mushroom: { name: "버섯 스탠드", art: decor("mushroom"), size: 46 }, starLamp: { name: "별 전등", art: decor("starLamp"), size: 46 },
+  candles: { name: "촛대", art: decor("candles"), size: 44 },
+  books: { name: "책과 찻잔", art: decor("books"), size: 44 }, yarn: { name: "털실 바구니", art: decor("yarn"), size: 46 },
+  radio: { name: "라디오", art: decor("radio"), size: 44 }, record: { name: "레코드 플레이어", art: decor("record"), size: 52 },
+  globe: { name: "지구본", art: decor("globe"), size: 44 }, hourglass: { name: "모래시계", art: decor("hourglass"), size: 36 },
+  diary: { name: "일기장과 펜", art: decor("diary"), size: 38 }, cocoa: { name: "코코아와 쿠키", art: decor("cocoa"), size: 44 },
+  oranges: { name: "귤 바구니", art: decor("oranges"), size: 44 },
+  rug: { name: "둥근 러그", art: decor("rug"), size: 124, flat: true }, bookshelf: { name: "작은 책장", art: decor("bookshelf"), size: 76 },
+  beanbag: { name: "빈백 의자", art: decor("beanbag"), size: 64 },
 };
 /** 가구 상자의 칸 (서버 PetDecor.Item.kind) */
 const KINDS: [string, string][] = [["wall", "벽"], ["hang", "매달기"], ["soft", "인형"], ["plant", "식물"], ["light", "빛"], ["small", "작은 것"], ["floor", "바닥"]];
@@ -97,7 +73,7 @@ export function firstSpot(kind: string, count: number): { x: number; y: number }
   if (kind === "hang") return { x: count % 2 ? 300 : 180, y: 270 };
   return { x, y: 480 };
 }
-function dims(f: { art: StaticImageData; size: number }) {
+function dims(f: { art: DecorArt; size: number }) {
   const scale = f.size / Math.max(f.art.width, f.art.height);
   return { w: Math.round(f.art.width * scale), h: Math.round(f.art.height * scale) };
 }
