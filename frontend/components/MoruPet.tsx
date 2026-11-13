@@ -12,11 +12,11 @@ import MoruMindSheet from "./MoruMindSheet";
 import { IconBook, IconBubble, IconMoon, IconSmile, IconSun } from "./Icons";
 import MoruWeatherBook, { weatherName } from "./MoruWeatherBook";
 import MoruMoodSheet, { MoodFace } from "./MoruMoodSheet";
-import { JarIcon, FoundThingsSheet, MoruAsk, MoruDrift, MoruGift, MoruPlant } from "./MoruHappenings";
+import { JarIcon, FoundThingsSheet, MoruAsk, MoruDrift, MoruGift, MoruGrower, MoruPlant } from "./MoruHappenings";
 import {
-  ASK_STAY_MS, CLOVER_LINE, DRIFT_LINES, DRIFT_SECONDS, FEATHER_LINE, GIFT_LINES, GROW_LINES, PLANT_STAGE_NAMES, PRESS_LINE, SCRATCH_LINES, WATERED_LINE, WATER_LINES,
-  askSlot, canDrift, catchDrift, driftDelay, driftKind, driftPath, giftOf, keepItem, markAsked, normalizeHappenings, pickAsk, plantStage, pressFlower, takeGift, waterPlant,
-  type Ask, type AskAnswer, type Happenings,
+  ASK_STAY_MS, CLOVER_LINE, DRIFT_LINES, DRIFT_SECONDS, FEATHER_LINE, GIFT_LINES, GROWERS, GROWN_LINE, GROW_LINES, PLANT_STAGE_NAMES, PRESS_LINE, SCRATCH_LINES, TENDED_LINE, WATERED_LINE, WATER_LINES,
+  askSlot, canDrift, catchDrift, driftDelay, driftKind, driftPath, giftOf, growerOf, keepItem, markAsked, normalizeHappenings, pickAsk, plantStage, pressFlower, takeGift, tendGrower, waterPlant,
+  type Ask, type AskAnswer, type GrowerId, type Happenings,
 } from "@/lib/moru-happenings";
 import { happeningsQuick, loadHappenings, saveHappenings } from "@/lib/moru-keep";
 import { fetchMe } from "@/lib/auth";
@@ -24,8 +24,8 @@ import { haptic } from "@/lib/haptics";
 import { useBackLayer } from "@/lib/use-back-layer";
 import { PetError, petRequest, type PetView } from "@/lib/pet";
 import {
-  BATH_LINES, DAILY_FOOD_MAX, DECOR_LINES, DUST_LINES, GLOW_LINE, HUG_LINES, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
-  RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, talkReplies, TICKLE_LINES,
+  DAILY_FOOD_MAX, DECOR_LINES, DUST_LINES, GLOW_LINE, HUG_MS, HUNGRY_LINE, IDLE_LINE, LIGHTS_OFF_LINE, LIGHTS_ON_LINE, MEAL_LINES, MOVE_SLOP, NAP_WAKE_LINES, PEEK_LINE, PHASE_GREETING,
+  RESTED_GREETING, RESULT_LINE, SLEEP_TALK, SNACK_LINES, SPROUT_LINES, STARTLE_LINE, STARTLE_MS, TALK_TOPICS, talkReplies, bathLines, hugLines, tickleLines,
   CHORE_NAMES, currentHour, dailySky, dayPhase, devHome, devLook, devSky, dueMeals, koreaDate, dustCount, fullness, isAsleep, isNightOutside, isStartle, isTickle, lightsOff, loadRainPref, mealStatus, murmurDelay, murmurPool,
   petLine, pickLine, recordLine, rubStats, saveCompanion, saveRainPref, takeNewMeal, touchSpot, type Companion,
   LOW_GLOW_LINE, LOW_HUG_LINES, MOOD_BESIDE_LINE, MOOD_INTRO_LINE, MOOD_NAMES, MOOD_OFF_LINE, MOOD_ON_LINE, MOOD_SETTLE_LINES, devMood, loadMoodSync, moodOf, saveMoodSync, takeMoodIntro, type MoodStage,
@@ -80,6 +80,8 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const drifted = useRef(0);
   const [watering, setWatering] = useState(false);
   const waterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tending, setTending] = useState<GrowerId | null>(null); // 지금 돌보는 중인 한 달 키우기 (물 주는 1.5초)
+  const tendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
   // 꾸미기: 꾸미는 중이면 방의 자리마다 동그라미가 뜨고, 자리를 누르면 가구 고르기 시트가 열린다
   const [decorating, setDecorating] = useState(false);
@@ -144,7 +146,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     }).catch(() => {});
     return () => {
       alive.current = false;
-      for (const timer of [reactionTimer, hugTimer, touchTimer, waterTimer]) if (timer.current) clearTimeout(timer.current);
+      for (const timer of [reactionTimer, hugTimer, touchTimer, waterTimer, tendTimer]) if (timer.current) clearTimeout(timer.current);
     };
   }, [userId]);
   /** 서버에서 방을 받는다. 끼니를 새로 먹었으면 처음 보는 순간 한마디, 밥이 없어 끼니를 거르고 있으면 한 번 말한다 */
@@ -296,13 +298,13 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     let clear: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       if (document.hidden) return;
-      const line = pickLine(murmurPool(level, energy, stage), lastLine.current);
+      const line = pickLine(murmurPool(level, energy, stage, appearance), lastLine.current);
       lastLine.current = line;
       setMurmur(line);
       clear = setTimeout(() => setMurmur(null), 4600);
     }, murmurDelay());
     return () => { clearTimeout(timer); if (clear) clearTimeout(clear); };
-  }, [quiet, level, energy, stage, murmur]);
+  }, [quiet, level, energy, stage, murmur, appearance]);
 
   // ---------- 창밖 소리: 켜 두면 오늘 날씨에 맞춰 (비는 그대로, 눈은 작게, 맑은 날은 아주 작게). 화면을 떠나면 멈춘다 ----------
   useEffect(() => { rainWanted.current = loadRainPref(); return () => stopRain(); }, []);
@@ -350,8 +352,8 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   };
   const gesture = (kind: "tap" | "sprout" | "scratch" | "hug" | "tickle") => {
     if (touch === "hide" || touch === "bath" || whileSleeping()) return;
-    if (kind === "hug") { haptic([12, 60, 12]); flash("hug", 1800); react("happy", say(low ? LOW_HUG_LINES : HUG_LINES)); void care("hug"); return; }
-    if (kind === "tickle") { haptic([6, 40, 6, 40, 6]); flash("tickle", 1400); react("happy", say(TICKLE_LINES)); void care("tickle"); return; }
+    if (kind === "hug") { haptic([12, 60, 12]); flash("hug", 1800); react("happy", say(low ? LOW_HUG_LINES : hugLines(appearance))); void care("hug"); return; }
+    if (kind === "tickle") { haptic([6, 40, 6, 40, 6]); flash("tickle", 1400); react("happy", say(tickleLines(appearance))); void care("tickle"); return; }
     const now = Date.now();
     taps.current = [...taps.current.filter((t) => now - t <= STARTLE_MS), now];
     if (isStartle(taps.current, now)) {
@@ -387,7 +389,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     if (napping) setNapWoken(true);
     flash("bath", 2400);
     const data = await care("bath", true);
-    if (data) react("happy", say(BATH_LINES));
+    if (data) react("happy", say(bathLines(appearance)));
   };
   /** 간식: 마음밥 하나를 직접 준다, 하루 한 번 (서버가 지킨다) */
   const giveSnack = async () => {
@@ -466,7 +468,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   // 화분: 톡 누르면 하루 한 번 물. 꽃이 피어 있으면 주운 것들을 연다 (거기서 꽃갈피로 간직한다)
   const pressPlant = () => {
     const now = happenRef.current;
-    if (!now || watering) return;
+    if (!now || watering || tending) return;
     if (plantStage(now.waters) === 4) { openSheet("keep"); return; }
     const result = waterPlant(now, today);
     if (!result.done) { haptic(4); if (awake) react("pet", WATERED_LINE); return; }
@@ -477,6 +479,21 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       setWatering(false);
       if (result.grew) banner(result.stage === 4 ? "화분 · 꽃이 폈어요" : `화분 · ${PLANT_STAGE_NAMES[result.stage]}`);
       if (awake) react(result.grew ? "happy" : "pet", result.grew ? GROW_LINES[result.stage] : say(WATER_LINES));
+    }, 1500);
+  };
+  // 한 달 키우기 (작은 나무·이끼 병): 톡 누르면 하루 한 번 돌본다. 서른 번이면 다 자란다
+  const tendIt = (id: GrowerId) => {
+    const now = happenRef.current, g = growerOf(id);
+    if (!now || !g || tending || watering) return;
+    const result = tendGrower(now, id, today);
+    if (!result.done) { haptic(4); if (awake) react("pet", result.full ? GROWN_LINE : TENDED_LINE); return; }
+    haptic(10); commit(result.state); setTending(id);
+    if (tendTimer.current) clearTimeout(tendTimer.current);
+    tendTimer.current = setTimeout(() => {
+      if (!alive.current) return;
+      setTending(null);
+      if (result.grew) banner(result.full ? `${g.name} · 다 자랐어요` : `${g.name} · ${g.stages[result.stage]}`);
+      if (awake) react(result.grew ? "happy" : "pet", result.grew ? g.grown[result.stage] : say(g.idle));
     }, 1500);
   };
   const pressBloom = () => {
@@ -490,7 +507,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   };
   // 먼저 묻는 한마디: 낮과 저녁에 한 번씩, 방이 조용할 때 친구가 먼저 묻는다. 한 번 뜨면 그때의 물음은 지나간 것이다 (다시 조르지 않는다).
   // 많이 힘든 신호가 있는 날은 묻지 않고, 가라앉은 날은 조용한 물음만 고른다
-  const calm = still && awake && mood === "idle" && touch === null && !watering;
+  const calm = still && awake && mood === "idle" && touch === null && !watering && !tending;
   const slot = askSlot(hour);
   const canBreathe = Boolean(onBreathe);
   useEffect(() => {
@@ -663,6 +680,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           {touch === "bath" && <span className={styles.bubbles} aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>}
         </button>
         {happen && <MoruPlant state={happen} today={today} who={who} watering={watering} disabled={decorating} onPress={pressPlant} />}
+        {happen && GROWERS.map((g) => <MoruGrower key={g.id} id={g.id} state={happen} today={today} tending={tending === g.id} disabled={decorating} onTend={() => tendIt(g.id)} />)}
         {giftOut && <MoruGift id={giftId} friend={petName} onTake={takeIt} />}
         <span className={styles.dusk} data-phase={phase} data-off={nightly && off ? "" : undefined} aria-hidden="true" />
         {drift && !decorating && <MoruDrift key={drift.id} kind={drift.kind} x={drift.x} sway={drift.sway} onCatch={catchIt} onGone={() => setDrift(null)} />}
@@ -781,7 +799,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     <Sheet open={sheet === "guide"} title={`${petName}와 천천히, 함께`} onClose={() => setSheet(null)} className={styles.handSheet}>
       <div className={styles.guide}>
         <MoruSprite mood="happy" />
-        <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />간식·목욕은 하루 한 번 · 길게 누르면 안아 주기, 문지르면 간질이기<br />먼지는 톡 눌러 치우고, 밤에는 불을 꺼서 재워 주세요.<br />화분은 하루 한 번 물을 주면 일곱 번 만에 꽃이 피어요. 방에 날아드는 것과 발치에 놓인 것은 톡 눌러 주워요.<br />온기·말끔함·기운이 낮아도 잃는 건 없어요. 쉬어 가도 괜찮아요.<br />{petName}의 기분은 내 기록을 닮아요 (메뉴에서 끌 수 있어요). 하트는 {petName}의 것이에요.</p>
+        <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />간식·목욕은 하루 한 번 · 길게 누르면 안아 주기, 문지르면 간질이기<br />먼지는 톡 눌러 치우고, 밤에는 불을 꺼서 재워 주세요.<br />화분은 하루 한 번 물을 주면 일곱 번 만에 꽃이 피어요. 작은 나무와 이끼 병은 하루 한 번 돌보면 한 달쯤 걸려 다 자라요.<br />방에 날아드는 것과 발치에 놓인 것은 톡 눌러 주워요.<br />온기·말끔함·기운이 낮아도 잃는 건 없어요. 쉬어 가도 괜찮아요.<br />{petName}의 기분은 내 기록을 닮아요 (메뉴에서 끌 수 있어요). 하트는 {petName}의 것이에요.</p>
         <Link href="/memo">기록장 ↗</Link>
       </div>
     </Sheet>

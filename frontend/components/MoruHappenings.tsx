@@ -3,8 +3,8 @@
 import type { CSSProperties } from "react";
 import { Sheet } from "./ui";
 import {
-  BLOOM_WATERS, DRIFT_SECONDS, FLOWER_NAMES, KEEP_ITEMS, PLANT_STAGE_NAMES, flowerColor, keepItem, plantStage, plantStatus, wateredToday,
-  type Ask, type AskAnswer, type FlowerColor, type Happenings, type PlantStage,
+  BLOOM_WATERS, DRIFT_SECONDS, FLOWER_NAMES, GROWERS, GROW_TOTAL, KEEP_ITEMS, PLANT_STAGE_NAMES, flowerColor, growStage, growStatus, growerOf, keepItem, plantStage, plantStatus, tendedToday, wateredToday,
+  type Ask, type AskAnswer, type FlowerColor, type GrowStage, type GrowerId, type Happenings, type PlantStage,
 } from "@/lib/moru-happenings";
 import { hasBatchim, subject } from "@/lib/moru-rules";
 import room from "./MoruPet.module.css";
@@ -83,6 +83,69 @@ function CanIcon() {
 function DropIcon() {
   return <svg className={room.handIcon} viewBox="0 0 14 18" fill="#a9d3f2" stroke={INK} strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="M7 1.500C10 5.500 12 8.300 12 11A5 5 0 0 1 2 11C2 8.300 4 5.500 7 1.500Z" /></svg>;
 }
+/**
+ * 물 주기: 물뿌리개가 다가와 기울고, 주둥이 끝에서 물방울이 곧게 아래로 떨어져 흙에 닿는다.
+ * 이 요소의 자리가 기울어진 주둥이 끝이다 (가로는 화분의 가운데). top 은 그 높이(버튼 위에서 px), fall 은 흙까지의 거리.
+ * flip 이면 물뿌리개가 오른쪽에서 온다 (방 왼쪽 가장자리의 화분은 왼쪽이 잘린다)
+ */
+function Pour({ top, fall, flip = false }: { top: number; fall: number; flip?: boolean }) {
+  return <span className={styles.pour} data-flip={flip ? "" : undefined} style={{ top, "--pour-fall": `${fall}px` } as CSSProperties} aria-hidden="true">
+    <span className={styles.pourCan}><CanIcon /></span>
+    <i /><i /><i /><i /><i />
+  </span>;
+}
+
+const LEAF = "#9fd08a";
+/** 작은 나무 (44×80): 0 씨앗 · 1 새순 · 2 묘목 · 3 어린 나무 · 4 잎이 무성한 나무 · 5 꽃 핀 나무. 화분은 푸른 유약 */
+function TreeArt({ stage }: { stage: GrowStage }) {
+  return <svg className={`${room.handIcon} ${styles.growerArt}`} viewBox="0 0 44 80" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <g className={styles.canopy}>
+      {stage === 1 && <><path strokeWidth="2.2" d="M22 62V55" /><path fill={LEAF} d="M22 56C25.500 55.500 27 53 26.500 50.500C23.500 51 22 53 22 56Z" /></>}
+      {stage === 2 && <><path strokeWidth="2.2" d="M22 62V43" />
+        <path fill={LEAF} d="M22 55C17 54.500 15 51 15.500 48C19.500 48 22 51 22 55ZM22 50C27 49.500 29 46 28.500 43C24.500 43 22 46 22 50ZM22 44C19.800 42 19.800 38.500 22 36.500C24.200 38.500 24.200 42 22 44Z" /></>}
+      {stage === 3 && <><path fill="#a9774f" d="M20.500 62C21 54 21 47 20.800 41H23.200C23 47 23 54 23.500 62Z" />
+        <path fill={LEAF} d="M12 34C9.500 30 12 24.500 16.500 24.500C17.500 20.500 24 19.500 26.500 23C31 22.500 34 27 32 31C34.500 35 31 39.500 27 38.500C24.500 42 18.500 41.500 17 38.500C13.500 39.500 11 37 12 34Z" />
+        <path stroke="#5d8f52" strokeWidth="1.4" d="M17 30C18.500 28.500 20.500 28.500 22 30M24 34C25.500 32.800 27.500 33 28.500 34.500" /></>}
+      {stage >= 4 && <><path fill="#a9774f" d="M19.500 62C20.500 54 20.500 46 20 38H24C23.500 46 23.500 54 24.500 62Z" />
+        <path fill="#8cc67a" d="M8 32C3.500 27 6.500 19 12.500 19C13 12.500 21.500 9 26 13.500C32 11.500 38 17 36 23C41 26.500 39.500 35 33.500 36C32 42 23.500 44 20 39.500C15 43 8 39.500 8 32Z" />
+        <path stroke="#5d8f52" strokeWidth="1.4" d="M13.500 27C15.500 25 18.500 25 20.500 27M24 20.500C26 19 29 19.500 30.500 21.500M22 33.500C24 32 27 32.500 28.500 34.500" /></>}
+      {stage === 5 && <g strokeWidth="1.2">{[[13, 28], [20.500, 17.500], [30.500, 20], [34, 29.500], [25.500, 28], [16, 36]].map(([x, y]) => <g key={`${x}-${y}`}>
+        <circle cx={x} cy={y} r="2.700" fill="#f7b6c4" /><circle cx={x} cy={y} r=".9" fill="#ffdd8f" stroke="none" />
+      </g>)}</g>}
+    </g>
+    <path fill="#6b4a3a" d="M11 62.500C14 60 30 60 33 62.500Z" />
+    {stage === 0 && <path fill="#e2b77a" strokeWidth="1.5" d="M20.200 60.700C20.600 59.200 23.400 59.200 23.800 60.700C23.400 61.900 20.600 61.900 20.200 60.700Z" />}
+    <path fill="#7f9db3" d="M12.500 66.500H31.500L29.500 78H14.500Z" />
+    <path fill="#9bb6c9" d="M10 62H34V66.500H10Z" />
+  </svg>;
+}
+/** 이끼 병 (44×50): 0 빈 병 · 1 이끼 한 점 · 2 이끼 방석 · 3 고사리 싹 · 4 작은 숲 · 5 버섯이 돋은 숲 */
+function MossArt({ stage }: { stage: GrowStage }) {
+  const moss = "#8fc98a", fern = "#4f8a52";
+  return <svg className={`${room.handIcon} ${styles.growerArt}`} viewBox="0 0 44 50" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path fill="#eef7ff" fillOpacity=".72" stroke="none" d="M11.500 8H32.500V11.500C36.500 13 39 16.500 39 21V40.500C39 44 36.500 46.500 33 46.500H11C7.500 46.500 5 44 5 40.500V21C5 16.500 7.500 13 11.500 11.500Z" />
+    <path fill="#6b4a3a" stroke="none" d="M5.500 38C12 36 32 36 38.500 38V40.500C38.500 44 36.500 46 33 46H11C7.500 46 5.500 44 5.500 40.500Z" />
+    <g fill="#b9a48e" stroke="none"><circle cx="12" cy="42.500" r="1.500" /><circle cx="20" cy="43.500" r="1.200" /><circle cx="30.500" cy="42.500" r="1.500" /></g>
+    <g className={styles.canopy} style={{ transformOrigin: "22px 38px" }}>
+      {stage === 1 && <path fill={moss} strokeWidth="1.5" d="M18.500 37.500C18.500 34 25.500 34 25.500 37.500Z" />}
+      {stage >= 2 && <path fill={moss} strokeWidth="1.5" d="M6.500 38C8.500 33.500 14 33.500 16 36.500C18 32.500 25 32.500 27 36.500C29 33.500 35 33.500 37.500 38Z" />}
+      {stage >= 3 && <path stroke={fern} strokeWidth="1.5" d="M22 34.500C22 30 21 27 19 24.500C17.500 23 18.500 21.500 20 22.500M21.700 31.500L18.500 30.300M22 33L25.200 32M21 28.800L18 27.300M21.300 29.300L24.200 27.800" />}
+      {stage >= 4 && <><path fill="#7fbf78" strokeWidth="1.5" d="M9.500 36C7.500 32 10.500 28.500 13.500 30.500C15.500 28.500 18.500 31 17 34.500C16 36.500 11 37 9.500 36Z" />
+        <path stroke={fern} strokeWidth="1.5" d="M30 35C30.500 30.500 32 27.500 34 25.500M30.300 32L27.500 30.800M30.800 30L33.800 29.500M31.500 27.800L29 26.300" /></>}
+      {stage === 5 && <><path fill="#fffaf0" strokeWidth="1.3" d="M25 31.500V36H27.500V31.500" /><path fill="#e8766d" strokeWidth="1.4" d="M22.200 31.500C22.200 27 30.300 27 30.300 31.500Z" />
+        <g fill="#fff" stroke="none"><circle cx="24.800" cy="29.800" r=".8" /><circle cx="27.800" cy="29.300" r=".8" /></g>
+        <path fill="#fffaf0" strokeWidth="1.2" d="M13.200 33.500V36H14.800V33.500" /><path fill="#e8766d" strokeWidth="1.3" d="M11.300 33.500C11.300 30.500 16.700 30.500 16.700 33.500Z" /></>}
+    </g>
+    <path d="M11.500 8H32.500V11.500C36.500 13 39 16.500 39 21V40.500C39 44 36.500 46.500 33 46.500H11C7.500 46.500 5 44 5 40.500V21C5 16.500 7.500 13 11.500 11.500Z" />
+    <path fill="#cfe3f2" d="M10 4.500H34V8.500H10Z" />
+    <path stroke="#fff" strokeWidth="2" opacity=".85" d="M9.500 19V29" />
+  </svg>;
+}
+/** 한 달 키우는 것의 그림 */
+export function GrowerArt({ id, stage }: { id: GrowerId; stage: GrowStage }) {
+  return id === "tree" ? <TreeArt stage={stage} /> : <MossArt stage={stage} />;
+}
+
 /** 메뉴의 "주운 것들": 작은 유리병 */
 export function JarIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -103,8 +166,29 @@ export function MoruPlant({ state, today, who, watering, disabled, onPress }: {
   return <button type="button" className={styles.plant} data-stage={stage} data-watering={watering ? "" : undefined} data-bloom={stage === 4 ? "" : undefined}
     disabled={disabled} aria-label={label} onClick={onPress}>
     <PlantArt stage={stage} color={flowerColor(who, state.seed)} />
-    {watering && <span className={styles.can} aria-hidden="true"><CanIcon /><i /><i /><i /></span>}
+    {watering && <Pour top={-6} fall={46} />}
     {thirsty && !watering && !disabled && <span className={styles.thirsty} aria-hidden="true"><DropIcon /></span>}
+  </button>;
+}
+
+/**
+ * 한 달 키우는 것 (작은 나무·이끼 병). 톡 누르면 하루 한 번 돌본다: 서른 번이면 다 자란다. 화분처럼 시들지 않고 기다린다.
+ * 아직 안 돌본 날에는 물방울이 까딱이고, 다 자라면 반짝인다
+ */
+export function MoruGrower({ id, state, today, tending, disabled, onTend }: {
+  id: GrowerId; state: Happenings; today: string; tending: boolean; disabled?: boolean; onTend: () => void;
+}) {
+  const g = growerOf(id);
+  if (!g) return null;
+  const n = state.grow[id].n, stage = growStage(n), full = n >= GROW_TOTAL;
+  const thirsty = !full && !tendedToday(state, id, today);
+  const label = full ? `${g.name}, 다 자랐어요. ${g.stages[5]}`
+    : thirsty ? `${g.name}에 ${g.verb}. 지금은 ${g.stages[stage]}, 다 자라기까지 ${GROW_TOTAL - n}번` : `${g.name}, 오늘 돌봤어요. 지금은 ${g.stages[stage]}`;
+  return <button type="button" className={styles.grower} data-grower={id} data-stage={stage} data-tending={tending ? "" : undefined} data-grown={full ? "" : undefined}
+    disabled={disabled} aria-label={label} onClick={onTend}>
+    <GrowerArt id={id} stage={stage} />
+    {tending && (id === "tree" ? <Pour top={38} fall={24} flip /> : <Pour top={-8} fall={44} />)}
+    {thirsty && !tending && !disabled && <span className={styles.thirsty} aria-hidden="true"><DropIcon /></span>}
   </button>;
 }
 
@@ -137,7 +221,7 @@ export function MoruAsk({ ask, friend, full = false, onAnswer }: { ask: Ask; fri
   </div>;
 }
 
-/** 주운 것들: 화분의 지금, 날아든 것·물어 온 것, 꽃갈피 */
+/** 주운 것들: 키우는 것(화분·작은 나무·이끼 병)의 지금, 날아든 것·물어 온 것, 꽃갈피 */
 export function FoundThingsSheet({ open, onClose, friend, state, today, who, onPress }: {
   open: boolean; onClose: () => void; friend: string; state: Happenings; today: string; who: string; onPress: () => void;
 }) {
@@ -156,6 +240,18 @@ export function FoundThingsSheet({ open, onClose, friend, state, today, who, onP
       {stage === 4
         ? <button type="button" className="btn" onClick={onPress}>꽃갈피로 간직하고 새 씨앗 심기</button>
         : <p className={styles.hint}>방의 화분을 톡 누르면 하루 한 번 물을 줘요. 물을 거른 날에도 시들지 않고 그 자리에서 기다려요.</p>}
+      <h4 className={styles.heading}>한 달 키우기 <small>서른 번 돌보면 다 자라요</small></h4>
+      {GROWERS.map((g) => {
+        const n = state.grow[g.id].n, grown = growStage(n);
+        return <section key={g.id} className={styles.pot} data-grower={g.id} aria-label={g.name}>
+          <GrowerArt id={g.id} stage={grown} />
+          <div>
+            <h4>{g.name} · {g.stages[grown]}</h4>
+            <p>{growStatus(state, g.id, today)}</p>
+            <span className={styles.growBar} role="img" aria-label={`${GROW_TOTAL}번 가운데 ${n}번 돌봤어요`}><i style={{ width: `${(n / GROW_TOTAL) * 100}%` }} /></span>
+          </div>
+        </section>;
+      })}
       <h4 className={styles.heading}>주운 것들 <small>{found}/{KEEP_ITEMS.length}</small></h4>
       <ul className={styles.shelf}>
         {KEEP_ITEMS.map((item) => {
@@ -171,7 +267,7 @@ export function FoundThingsSheet({ open, onClose, friend, state, today, who, onP
       {state.flowers.length
         ? <ul className={styles.pressed}>{state.flowers.map((flower, i) => <li key={`${flower.day}-${i}`} title={`${flower.day} · ${FLOWER_NAMES[flower.color]}`}><PressedIcon color={flower.color} /><span className="sr-only">{flower.day} {FLOWER_NAMES[flower.color]}</span></li>)}</ul>
         : <p className={styles.hint}>꽃이 피면 눌러서 간직할 수 있어요.</p>}
-      <p className={room.footnote}>날아든 것은 하루 다섯 개까지, 물어 온 것은 하루 하나예요. 놓쳐도 잃는 것은 없어요. 화분과 주운 것들은 지금은 이 기기에 남아요.</p>
+      <p className={room.footnote}>날아든 것은 하루 다섯 개까지, 물어 온 것은 하루 하나예요. 놓쳐도 잃는 것은 없어요. 화분·키우는 것·주운 것들은 지금은 이 기기에 남아요.</p>
     </div>
   </Sheet>;
 }

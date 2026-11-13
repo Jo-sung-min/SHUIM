@@ -152,34 +152,49 @@ export function DecorLayer({ placed, editing, selected, onSelect, onDrop, onPutA
   </div>;
 }
 
-/** 가구 상자: 칸마다 가구. 가진 것은 "놓기", 없는 것은 방문포인트로 "사서 놓기". 놓으면 방에 나타나고, 그다음 끌어서 옮긴다 */
+/**
+ * 가구 상자: 칸마다 가구. 가진 것과 아직 없는 것이 한눈에 갈린다: 가진 것은 연두 칸에 "놓기"(앞쪽에 모인다),
+ * 아직 없는 것은 빛바랜 점선 칸에 값 딱지와 "사러 가기". 사러 가기를 누르면 그 칸에서 한 번 더 묻고("살게요"), 사면 방에 놓인다.
+ * 놓으면 방에 나타나고, 그다음 끌어서 옮긴다
+ */
 export function DecorBox({ open, pet, placed, busy, error, onPick, onClose }: {
   open: boolean; pet: PetView | null; placed: Placed[]; busy: boolean; error: string;
   onPick: (item: string, kind: string) => void; onClose: () => void;
 }) {
   const [kind, setKind] = useState("soft");
+  const [buying, setBuying] = useState<string | null>(null); // 사러 간 가구: 그 칸에서 살지 한 번 더 묻는다
+  useEffect(() => { if (!open) setBuying(null); }, [open]);
   const owned = pet?.ownedFurniture ?? [];
   const points = pet?.points ?? 0;
   const full = placed.length >= DECOR_MAX;
-  const items = (pet?.furniture ?? []).filter((f) => f.kind === kind && FURNITURE[f.id]);
+  const all = (pet?.furniture ?? []).filter((f) => f.kind === kind && FURNITURE[f.id]);
+  const items = [...all.filter((f) => owned.includes(f.id)), ...all.filter((f) => !owned.includes(f.id))]; // 가진 것 먼저
+  const haveCount = all.filter((f) => owned.includes(f.id)).length;
   const kinds = KINDS.filter(([id]) => (pet?.furniture ?? []).some((f) => f.kind === id && FURNITURE[f.id]));
   return <Sheet open={open} title="가구 상자" onClose={onClose} className={styles.handSheet}>
     <div className={styles.decorShop}>
       <p className={styles.shopBalance}>방문포인트 <b>{points} P</b><small>이 방에 {placed.length}/{DECOR_MAX}개 · 산 가구는 어느 공간에나 놓아요</small></p>
       <div className={styles.decorKinds} role="tablist" aria-label="가구 칸">
-        {kinds.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={kind === id} onClick={() => setKind(id)}>{label}</button>)}
+        {kinds.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={kind === id} onClick={() => { setKind(id); setBuying(null); }}>{label}</button>)}
       </div>
+      <p className={styles.decorLegend}><span data-have="">가진 것 {haveCount}</span><span>아직 없는 것 {all.length - haveCount}</span></p>
       {error && <p className={styles.error} role="alert">{error}</p>}
       <ul className={styles.decorGrid}>
         {items.map((f) => {
           const have = owned.includes(f.id), here = placed.some((p) => p.item === f.id), short = Math.max(0, f.cost - points);
-          const label = here ? "방에 있어요" : full ? `${DECOR_MAX}개까지` : have ? "놓기" : short ? `${short} P 부족` : "사서 놓기";
-          return <li key={f.id} data-here={here ? "" : undefined}>
+          const name = FURNITURE[f.id].name;
+          const asking = buying === f.id && !have && !short && !full;
+          const label = here ? "방에 있어요" : full ? `${DECOR_MAX}개까지` : have ? "놓기" : short ? `${short} P 부족` : "사러 가기";
+          return <li key={f.id} data-here={here ? "" : undefined} data-have={have ? "" : undefined} data-asking={asking ? "" : undefined}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={FURNITURE[f.id].art.src} alt="" width={56} height={56} loading="lazy" decoding="async" />
-            <b>{FURNITURE[f.id].name}</b>
-            <small>{have ? "가지고 있어요" : `${f.cost} P`}</small>
-            <button type="button" aria-label={`${FURNITURE[f.id].name} ${label}`} disabled={busy || here || full || (!have && short > 0)} onClick={() => onPick(f.id, f.kind)}>{label}</button>
+            <b>{name}</b>
+            <small>{asking ? `${f.cost} P 로 살까요?` : have ? "가지고 있어요" : `${f.cost} P`}</small>
+            {asking ? <span className={styles.decorAsk}>
+              <button type="button" aria-label={`${name} ${f.cost} 포인트로 사서 방에 놓기`} disabled={busy} onClick={() => { setBuying(null); onPick(f.id, f.kind); }}>살게요</button>
+              <button type="button" data-quiet="" aria-label={`${name} 사지 않기`} disabled={busy} onClick={() => setBuying(null)}>그만</button>
+            </span> : <button type="button" aria-label={`${name} ${label}`} disabled={busy || here || full || (!have && short > 0)}
+              onClick={() => { if (have) onPick(f.id, f.kind); else setBuying(f.id); }}>{label}</button>}
           </li>;
         })}
       </ul>

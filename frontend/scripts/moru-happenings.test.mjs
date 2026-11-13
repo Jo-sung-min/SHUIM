@@ -10,6 +10,7 @@ const load = async (name) => stripTypeScriptTypes(await readFile(new URL(`../lib
 const context = { Intl, Date, Math, Number, Object, Array, Boolean };
 vm.runInNewContext(`${await load("moru-rules.ts")}\n${await load("moru-happenings.ts")}\nglobalThis.h = { KEEP_ITEMS, keepItem, DRIFT_KEEP_MAX, driftKind, driftDelay, driftPath, giftOf, CLOVER_CHANCE,
   BLOOM_WATERS, plantStage, FLOWER_COLORS, flowerColor, emptyHappenings, normalizeHappenings, canDrift, catchDrift, takeGift, wateredToday, waterPlant, pressFlower,
+  GROW_TOTAL, GROW_STEPS, GROWERS, growStage, growerOf, tendedToday, tendGrower, growStatus, TENDED_LINE, GROWN_LINE,
   ASKS, askSlot, pickAsk, markAsked, DRIFT_LINES, GIFT_LINES, CLOVER_LINE, FEATHER_LINE, GROW_LINES, WATER_LINES, WATERED_LINE, BLOOMED_LINE, PRESS_LINE, SCRATCH_LINES, plantStatus, shiftDate, touchSpot };`, context);
 const h = context.h;
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -121,7 +122,56 @@ test("stored state is repaired, and a new day clears only today's part", () => {
   assert.deepEqual(plain(fixed.flowers), [{ color: "pink", day: DAY }]);
   const yesterday = { day: DAY, caught: 4, gift: true, asked: ["day", "eve"], watered: DAY, waters: 5, seed: 2, shelf: { leaf: 4, acorn: 1 }, flowers: [{ color: "white", day: DAY }] };
   const next = h.normalizeHappenings(yesterday, h.shiftDate(DAY, 1));
-  assert.deepEqual(plain(next), { day: h.shiftDate(DAY, 1), caught: 0, gift: false, asked: [], watered: DAY, waters: 5, seed: 2, shelf: { leaf: 4, acorn: 1 }, flowers: [{ color: "white", day: DAY }] });
+  assert.deepEqual(plain(next), { day: h.shiftDate(DAY, 1), caught: 0, gift: false, asked: [], watered: DAY, waters: 5, seed: 2, shelf: { leaf: 4, acorn: 1 }, flowers: [{ color: "white", day: DAY }],
+    grow: { tree: { n: 0, last: null }, moss: { n: 0, last: null } } });
+});
+
+test("a month-long grower takes thirty cares, one a day, and changes shape five times", () => {
+  assert.equal(h.GROW_TOTAL, 30);
+  assert.deepEqual(plain(h.GROW_STEPS), [1, 6, 14, 22, 30]);
+  assert.deepEqual([0, 1, 5, 6, 13, 14, 21, 22, 29, 30, 99].map((n) => h.growStage(n)), [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  for (const g of h.GROWERS) {
+    assert.equal(g.stages.length, 6, g.id);
+    assert.equal(g.grown.length, 6, g.id);
+    let state = h.emptyHappenings(DAY), day = DAY;
+    const changes = [];
+    for (let i = 1; i <= h.GROW_TOTAL; i++) {
+      const first = h.tendGrower(state, g.id, day);
+      assert.equal(first.done, true, `${g.id} care ${i}`);
+      assert.equal(h.tendedToday(first.state, g.id, day), true);
+      const again = h.tendGrower(first.state, g.id, day);
+      assert.equal(again.done, false, "only once a day");
+      assert.equal(again.state, first.state);
+      if (first.grew) changes.push([i, first.stage]);
+      assert.equal(first.full, i === h.GROW_TOTAL);
+      state = first.state;
+      day = h.shiftDate(day, 1);
+    }
+    assert.deepEqual(changes, [[1, 1], [6, 2], [14, 3], [22, 4], [30, 5]]);
+    const grown = h.tendGrower(state, g.id, day);
+    assert.equal(grown.done, false);
+    assert.equal(grown.full, true);
+    assert.equal(state.grow[g.id].n, h.GROW_TOTAL);
+    assert.equal(h.growStatus(state, g.id, day), "다 자랐어요");
+  }
+});
+
+test("each grower keeps its own count, waits through skipped days, and survives a broken save", () => {
+  let state = h.emptyHappenings(DAY);
+  state = h.tendGrower(state, "tree", DAY).state;
+  assert.equal(h.tendGrower(state, "moss", DAY).done, true, "caring for the tree does not use up the jar's day");
+  state = h.tendGrower(state, "moss", DAY).state;
+  assert.deepEqual(plain(state.grow), { tree: { n: 1, last: DAY }, moss: { n: 1, last: DAY } });
+  assert.equal(h.growStatus(state, "tree", DAY), "오늘 돌봤어요 · 다 자라기까지 29번");
+  const later = h.normalizeHappenings(plain(state), h.shiftDate(DAY, 50));
+  assert.deepEqual(plain(later.grow), plain(state.grow), "nothing shrinks while away");
+  assert.equal(h.growStatus(later, "moss", h.shiftDate(DAY, 50)), "기다려요 · 다 자라기까지 29번");
+  assert.equal(h.tendGrower(later, "tree", h.shiftDate(DAY, 50)).state.grow.tree.n, 2);
+  const messy = h.normalizeHappenings({ day: DAY, grow: { tree: { n: 999, last: "never" }, moss: "jar", rock: { n: 3, last: DAY } } }, DAY);
+  assert.deepEqual(plain(messy.grow), { tree: { n: 30, last: null }, moss: { n: 0, last: null } });
+  assert.deepEqual(plain(h.normalizeHappenings({ day: DAY }, DAY).grow), { tree: { n: 0, last: null }, moss: { n: 0, last: null } }, "saves from before the growers get empty ones");
+  assert.equal(h.growerOf("tree").name, "작은 나무");
+  assert.equal(h.growerOf("nothing"), undefined);
 });
 
 test("the friend asks only in the day and evening, never right after waking, at nap time or at night", () => {
@@ -162,7 +212,8 @@ test("one question per slot, quieter ones on a low day, and none that cannot be 
 test("every question has two short answers, and no line blames or hurries the user", () => {
   assert.equal(new Set(h.ASKS.map((a) => a.id)).size, h.ASKS.length);
   const lines = [...h.GIFT_LINES, h.CLOVER_LINE, h.FEATHER_LINE, ...h.WATER_LINES, h.WATERED_LINE, h.BLOOMED_LINE, h.PRESS_LINE, ...h.SCRATCH_LINES,
-    ...Object.values(h.DRIFT_LINES).flat(), ...[1, 2, 3, 4].map((stage) => h.GROW_LINES[stage])];
+    ...Object.values(h.DRIFT_LINES).flat(), ...[1, 2, 3, 4].map((stage) => h.GROW_LINES[stage]),
+    h.TENDED_LINE, h.GROWN_LINE, ...h.GROWERS.flatMap((g) => [...g.grown.slice(1), ...g.idle])];
   for (const ask of h.ASKS) {
     assert.equal(ask.answers.length, 2);
     assert.ok(ask.text.length <= 22, ask.text);

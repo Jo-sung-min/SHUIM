@@ -11,8 +11,11 @@
  */
 import { read, write } from "./storage";
 import { DAILY_FOOD_MAX, callName, koreaHour, type DayPhase, type MoodStage } from "./moru-rules";
+import { lightMurmur } from "./moru-lines";
 
 export * from "./moru-rules";
+// 캐릭터마다 다른 말(간질이기·안아 주기·목욕·기다리는 말)은 lib/moru-lines.ts
+export * from "./moru-lines";
 
 /** 지금 시(한국 시간). 개발 중에는 ?moruHour=22 로 시간대를 고정해 본다 (운영 빌드에서는 무시) */
 export function currentHour(): number {
@@ -64,9 +67,7 @@ export function recordLine(gained: number, earned: number): string {
 }
 export const RESULT_LINE = "다 적었어. 아래에 놓아 둘게.";
 
-/** 손길: 길게 눌러 안아 주기 · 문질러 간질이기 · 새싹 톡 · 너무 빨리 두드렸을 때 */
-export const HUG_LINES = ["…따뜻해.", "조금만 이대로 있자.", "네 손, 포근해."];
-export const TICKLE_LINES = ["히히. 간지러워.", "새싹까지 간지러워.", "…히히, 그만."];
+/** 손길: 새싹 톡(모루만) · 너무 빨리 두드렸을 때. 안아 주기·간질이기는 캐릭터마다 다르다 (lib/moru-lines.ts 의 hugLines·tickleLines) */
 export const SPROUT_LINES = ["새싹은 조금 간지러워.", "통통. 오늘도 조금 자랐어.", "거기는 내 안테나야."];
 export const STARTLE_LINE = "…깜짝이야.";
 export const PEEK_LINE = "천천히 만져 줘.";
@@ -87,17 +88,16 @@ export const SNACK_LINES = ["냠. 고마워, 맛있어.", "마음밥이다. 아�
 /** 꾸미기: 가구를 놓았을 때 */
 export const DECOR_LINES = ["여기 잘 어울린다.", "방이 조금 더 우리 방 같아.", "…마음에 들어."];
 export const DUST_LINES = ["방이 조금 넓어졌어.", "먼지가 갔다. 고마워.", "…개운해."];
-export const BATH_LINES = ["보글보글. 따뜻해.", "새싹까지 말끔해졌어.", "…비누 냄새, 좋다."];
 export const RESTED_GREETING = "푹 잤어. 어젯밤 불 꺼 줘서 고마워.";
 export const GLOW_LINE = "오늘은 다 좋아. 네 덕분이야.";
 
-/** 말 걸기: 기분을 고르면 모루가 성격대로 한 줄 답한다 (AI 아님). 조언·평가 없이 곁에 있는 말로 */
+/** 말 걸기: 기분을 고르면 성격대로 한 줄 답한다 (AI 아님). 조언·평가 없이 곁에 있는 말로. 이 말로 답하는 것은 사람 친구(노아·레오·루미)라 새싹 이야기는 없다 */
 export const TALK_TOPICS: { id: string; label: string; replies: string[] }[] = [
   { id: "tired", label: "지쳤어", replies: ["그랬구나. 여기서는 아무것도 안 해도 돼.", "이불 반쪽 비워 뒀어. 잠깐 기대.", "많이 걸어왔나 봐. 숨만 쉬다 가도 좋아."] },
-  { id: "happy", label: "기뻐", replies: ["새싹이 먼저 알았어. 나도 좋아.", "좋은 일이 있었구나. 천천히 들려줘.", "네가 웃으니까 방이 조금 밝아졌어."] },
+  { id: "happy", label: "기뻐", replies: ["네 얼굴 보고 먼저 알았어. 나도 좋아.", "좋은 일이 있었구나. 천천히 들려줘.", "네가 웃으니까 방이 조금 밝아졌어."] },
   { id: "sad", label: "슬퍼", replies: ["말 안 해도 돼. 옆에 있을게.", "슬픈 날에도 와 줬네. 고마워.", "울어도 괜찮아. 나는 비 오는 날도 좋아해."] },
   { id: "anxious", label: "불안해", replies: ["지금은 여기야. 비 소리만 같이 듣자.", "마음이 바쁘구나. 내 옆은 느려도 돼.", "숨 한 번만 같이 쉴까. 천천히."] },
-  { id: "bored", label: "심심해", replies: ["나도 심심했어. 새싹 한 번 톡 해 볼래?", "창밖 빗방울을 세고 있었어. 같이 셀래?", "심심한 건 쉬고 있다는 거래."] },
+  { id: "bored", label: "심심해", replies: ["나도 심심했어. 같이 창밖 볼래?", "창밖 빗방울을 세고 있었어. 같이 셀래?", "심심한 건 쉬고 있다는 거래."] },
   { id: "just", label: "그냥 왔어", replies: ["그냥 와도 좋아. 그게 제일 좋아.", "이유 없이 와 준 거, 나는 알아.", "왔구나. 그걸로 충분해."] },
 ];
 /**
@@ -126,12 +126,15 @@ export const TALK_SOUNDS: Record<string, Record<string, string[]>> = {
 export const talkReplies = (appearance: string, topic: { id: string; replies: string[] }): string[] => TALK_SOUNDS[appearance]?.[topic.id] ?? topic.replies;
 
 /** 칭찬·사랑·정리를 기다리는 동안 방 안의 모루가 돌려 말하는 문장 */
-export const PRAISE_WAITING = ["네 하루를 천천히 읽고 있어.", "새싹이 살짝 흔들렸어. 좋은 걸 찾았나 봐.", "네가 지나친 작은 좋은 점을 줍고 있어.", "조금만 기다려 줘. 꼭 말해 주고 싶은 게 있어."];
+// 칭찬을 기다리는 말은 캐릭터마다 한 줄이 다르다: lib/moru-lines.ts 의 praiseWaiting(모습)
 export const LOVE_WAITING = ["네 옆에 조용히 앉아 있을게.", "이불 반쪽 덮어 줄게. 천천히 들을게.", "네 마음에 닿을 말을 고르고 있어.", "조금만 기다려 줘. 따뜻하게 건넬게."];
 export const BRIEFING_WAITING = ["오늘 남긴 마음을 하나씩 펼쳐 보고 있어.", "어디로 움직였는지 천천히 따라가는 중이야.", "작은 한 걸음 하나를 고르고 있어."];
 
-/** 마음 단계에서 한 번에 넣는 마음 (예전 모루 5문항의 선택지) */
-export const MOOD_CHIPS = ["편안해", "기뻐", "그저 그래", "지쳤어", "슬퍼", "불안해"];
+/**
+ * 마음 단계에서 한 번에 넣는 마음 (예전 모루 5문항의 선택지).
+ * 바로 위 점수 줄(−5 … +5)과 같은 방향으로 놓는다: 왼쪽이 가라앉은 마음, 오른쪽이 좋은 마음
+ */
+export const MOOD_CHIPS = ["슬퍼", "불안해", "지쳤어", "그저 그래", "편안해", "기뻐"];
 
 /** 흐름 보기 위에 놓는 모루의 한 줄 (AI 아님) */
 export function flowLine(days: number, recorded: number, ups: number, downs: number): string {
@@ -152,7 +155,7 @@ const MOOD_MURMURS: Record<MoodStage, string[]> = {
   1: ["…오늘은 이불 밖이 멀다.", "…", "같이 가라앉아 있자.", "말 안 해도 돼. 나도 그래."],
   2: ["오늘은 마음이 좀 무겁네.", "빗소리만 듣고 있어.", "천천히 있자.", "…후우."],
   3: [],
-  4: ["오늘은 새싹이 좀 가벼워.", "창밖이 잘 보여.", "숨이 편하다."],
+  4: ["창밖이 잘 보여.", "숨이 편하다."], // 첫 줄은 캐릭터마다 다르다 (lightMurmur): murmurPool 이 얹는다
   5: ["오늘은 그냥 좋아.", "자꾸 콧노래가 나와.", "…흥얼, 흥얼."],
 };
 /** 오늘 마음을 다 들은 순간, 그날의 기분으로 자리 잡으며 하는 한마디 */
@@ -231,9 +234,9 @@ const MURMURS: { minLevel: number; lines: string[] }[] = [
 /** 기운이 낮은 날에는 하품이 섞인다 (탓하는 말은 없다) */
 const DROWSY = ["…하암.", "오늘은 조금 졸려."];
 /** 오늘의 기분(마음 닮기)에 따라 혼잣말이 달라진다: 울적한 날은 말수가 줄고, 그 밖의 날은 그 기분의 말이 절반쯤 섞인다 */
-export function murmurPool(level: number, energy = 4, stage: MoodStage = 3): string[] {
+export function murmurPool(level: number, energy = 4, stage: MoodStage = 3, appearance = "moru"): string[] {
   const base = [...MURMURS.filter((m) => level >= m.minLevel).flatMap((m) => m.lines), ...(energy <= 2 ? DROWSY : [])];
-  const mood = MOOD_MURMURS[stage] ?? [];
+  const mood = [...(stage === 4 ? [lightMurmur(appearance)] : []), ...(MOOD_MURMURS[stage] ?? [])];
   if (!mood.length) return base;
   return stage === 1 ? mood : [...mood, ...mood, ...base];
 }

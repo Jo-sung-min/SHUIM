@@ -79,6 +79,45 @@ export function flowerColor(who: string, seed: number): FlowerColor {
   return FLOWER_COLORS[(start + step * Math.max(0, Math.floor(seed))) % FLOWER_COLORS.length];
 }
 
+/* ---------- 한 달 키우기: 화분보다 훨씬 느리게, 서른 번 돌보면 다 자라는 것들 ---------- */
+
+export type GrowerId = "tree" | "moss";
+/** 0 처음 … 5 다 자람 */
+export type GrowStage = 0 | 1 | 2 | 3 | 4 | 5;
+/** 다 자라기까지 돌보는 횟수: 하루 한 번이라 한 달쯤 걸린다 (이어서가 아니라 쌓아서 서른 번) */
+export const GROW_TOTAL = 30;
+/** 이만큼 돌보면 다음 모습이 된다 */
+export const GROW_STEPS = [1, 6, 14, 22, GROW_TOTAL];
+export function growStage(n: number): GrowStage {
+  return GROW_STEPS.filter((step) => n >= step).length as GrowStage;
+}
+export interface Grower {
+  id: GrowerId; name: string;
+  /** 돌보는 일의 이름 */
+  verb: string;
+  /** 여섯 모습의 이름 */
+  stages: string[];
+  /** 그 모습이 되는 날의 한마디 (0번은 쓰지 않는다) */
+  grown: string[];
+  /** 모습이 그대로인 날의 한마디 */
+  idle: string[];
+}
+export const GROWERS: Grower[] = [
+  { id: "tree", name: "작은 나무", verb: "물 주기",
+    stages: ["씨앗", "새순", "묘목", "어린 나무", "잎이 무성한 나무", "꽃 핀 나무"],
+    grown: ["", "새순이 올라왔어. 아주 작아.", "이제 묘목이야. 줄기가 섰어.", "어린 나무가 됐어. 가지가 생겼어.", "잎이 무성해졌어. 그늘이 생기겠다.", "나무에 꽃이 폈어. 한 달을 같이 키웠네."],
+    idle: ["뿌리가 물을 마신다.", "천천히 크는 중이야.", "오늘도 조금 자랐을 거야."] },
+  { id: "moss", name: "이끼 병", verb: "물 뿌리기",
+    stages: ["빈 병", "이끼 한 점", "이끼 방석", "고사리 싹", "작은 숲", "버섯이 돋은 숲"],
+    grown: ["", "초록 점이 하나 생겼어.", "이끼가 방석처럼 깔렸어.", "고사리가 고개를 내밀었어.", "병 안이 작은 숲이 됐어.", "버섯이 돋았어. 한 달이 여기 다 들어 있어."],
+    idle: ["병 안이 촉촉해졌어.", "이끼가 숨을 쉬어.", "유리에 김이 서렸어."] },
+];
+export const growerOf = (id: string): Grower | undefined => GROWERS.find((g) => g.id === id);
+/** 오늘 이미 돌본 것을 다시 눌렀을 때 · 다 자란 것을 눌렀을 때 */
+export const TENDED_LINE = "오늘은 충분해. 내일 또 보자.";
+export const GROWN_LINE = "다 자랐어. 이제 곁에 두고 보자.";
+export interface Growth { n: number; last: string | null }
+
 /* ---------- 이 기기에 남는 상태 ---------- */
 
 export interface PressedFlower { color: FlowerColor; day: string }
@@ -101,10 +140,13 @@ export interface Happenings {
   shelf: Record<string, number>;
   /** 꽃갈피: 눌러 간직한 꽃 */
   flowers: PressedFlower[];
+  /** 한 달 키우기: 키우는 것 → 돌본 횟수(0~30)와 마지막으로 돌본 날 */
+  grow: Record<GrowerId, Growth>;
 }
 export const SHELF_MAX = 999;
 export const FLOWERS_MAX = 60;
-export const emptyHappenings = (day: string): Happenings => ({ day, caught: 0, gift: false, asked: [], watered: null, waters: 0, seed: 0, shelf: {}, flowers: [] });
+const emptyGrow = (): Record<GrowerId, Growth> => ({ tree: { n: 0, last: null }, moss: { n: 0, last: null } });
+export const emptyHappenings = (day: string): Happenings => ({ day, caught: 0, gift: false, asked: [], watered: null, waters: 0, seed: 0, shelf: {}, flowers: [], grow: emptyGrow() });
 
 const isDay = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 const count = (value: unknown, max: number): number => (typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(max, Math.floor(value))) : 0);
@@ -121,7 +163,12 @@ export function normalizeHappenings(raw: unknown, today: string): Happenings {
   const flowers = (Array.isArray(r.flowers) ? r.flowers : [])
     .filter((f): f is PressedFlower => Boolean(f) && typeof f === "object" && FLOWER_COLORS.includes((f as PressedFlower).color) && isDay((f as PressedFlower).day))
     .map((f) => ({ color: f.color, day: f.day })).slice(-FLOWERS_MAX);
-  const kept = { watered: isDay(r.watered) ? r.watered : null, waters: count(r.waters, BLOOM_WATERS), seed: count(r.seed, 9999), shelf, flowers };
+  const grow = emptyGrow();
+  if (r.grow && typeof r.grow === "object") for (const g of GROWERS) {
+    const saved = (r.grow as Record<string, unknown>)[g.id];
+    if (saved && typeof saved === "object") grow[g.id] = { n: count((saved as Growth).n, GROW_TOTAL), last: isDay((saved as Growth).last) ? (saved as Growth).last : null };
+  }
+  const kept = { watered: isDay(r.watered) ? r.watered : null, waters: count(r.waters, BLOOM_WATERS), seed: count(r.seed, 9999), shelf, flowers, grow };
   if (r.day !== today) return { ...base, ...kept };
   return {
     ...base, ...kept, caught: count(r.caught, DRIFT_KEEP_MAX), gift: r.gift === true,
@@ -155,6 +202,28 @@ export function waterPlant(state: Happenings, today: string): { state: Happening
 export function pressFlower(state: Happenings, who: string, today: string): Happenings {
   if (plantStage(state.waters) !== 4) return state;
   return { ...state, waters: 0, watered: state.watered, seed: state.seed + 1, flowers: [...state.flowers, { color: flowerColor(who, state.seed), day: today }].slice(-FLOWERS_MAX) };
+}
+
+/** 오늘 이것을 돌봤는지 */
+export const tendedToday = (state: Happenings, id: GrowerId, today: string): boolean => state.grow[id].last === today;
+/**
+ * 한 달 키우기 돌보기: 하루 한 번. 서른 번이면 다 자라고 그 뒤로는 더 세지 않는다 (full).
+ * 거른 날에도 줄지 않는다. grew 는 이번에 모습이 달라졌는지
+ */
+export function tendGrower(state: Happenings, id: GrowerId, today: string): { state: Happenings; done: boolean; grew: boolean; stage: GrowStage; full: boolean } {
+  const now = state.grow[id];
+  const before = growStage(now.n);
+  if (now.n >= GROW_TOTAL) return { state, done: false, grew: false, stage: before, full: true };
+  if (now.last === today) return { state, done: false, grew: false, stage: before, full: false };
+  const next = { n: now.n + 1, last: today };
+  const stage = growStage(next.n);
+  return { state: { ...state, grow: { ...state.grow, [id]: next } }, done: true, grew: stage !== before, stage, full: next.n >= GROW_TOTAL };
+}
+/** 키우는 것의 지금을 한 줄로 */
+export function growStatus(state: Happenings, id: GrowerId, today: string): string {
+  const left = GROW_TOTAL - state.grow[id].n;
+  if (left <= 0) return "다 자랐어요";
+  return tendedToday(state, id, today) ? `오늘 돌봤어요 · 다 자라기까지 ${left}번` : `기다려요 · 다 자라기까지 ${left}번`;
 }
 
 /* ---------- 먼저 묻는 한마디: 하루 두 번(낮·저녁)까지, 친구가 먼저 말을 건다 ---------- */

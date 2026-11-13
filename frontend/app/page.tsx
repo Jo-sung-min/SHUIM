@@ -4,7 +4,7 @@ import SafetyReport from "@/components/SafetyReport";
 import DailyQuote from "@/components/DailyQuote";
 import MoruPet from "@/components/MoruPet";
 import MoruCompanion from "@/components/MoruCompanion";
-import { BRIEFING_WAITING, LOVE_WAITING, PRAISE_WAITING, loadCompanion, type Companion } from "@/lib/moru";
+import { BRIEFING_WAITING, LOVE_WAITING, loadCompanion, praiseWaiting, type Companion } from "@/lib/moru";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -257,7 +257,8 @@ export default function HomePage() {
     ...CARE_BUILTIN.map(tileOf),
     ...careExtras.flatMap((id) => { const action = CARE_CATALOG.find((c) => c.id === id); return action ? [tileOf(action)] : []; }),
   ];
-  const thinking = loading === "praise" ? PRAISE_WAITING : loading === "love" ? LOVE_WAITING : loading === "briefing" ? BRIEFING_WAITING : null;
+  const praiseLines = praiseWaiting(companion.appearance); // 칭찬을 기다리는 말: 새싹·리본·깃털처럼 캐릭터마다 한 줄이 다르다
+  const thinking = loading === "praise" ? praiseLines : loading === "love" ? LOVE_WAITING : loading === "briefing" ? BRIEFING_WAITING : null;
 
   return (
     <>
@@ -339,7 +340,7 @@ export default function HomePage() {
         {crisis && <div style={{ marginTop: 12 }}><HelpBanner alert /></div>}
 
         {/* 모루가 건네는 말: 칭찬 / 사랑 (기다리는 동안 방 안의 모루도 같은 말을 한다) */}
-        {loading === "praise" && <Skeleton messages={PRAISE_WAITING} />}
+        {loading === "praise" && <Skeleton messages={praiseLines} />}
         {loading === "love" && <Skeleton messages={LOVE_WAITING} />}
         {open && openMoment && !loading && (
           <section className="card moment" style={{ marginTop: 12 }}>
