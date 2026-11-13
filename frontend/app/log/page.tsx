@@ -19,12 +19,14 @@ const DELTAS = Array.from({ length: DELTA_MAX * 2 + 1 }, (_, i) => i - DELTA_MAX
 const clamp = (v: number) => Math.max(SCORE_MIN, Math.min(SCORE_MAX, v));
 const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 /**
- * 나 돌보기 = 작은 한 걸음 (components/StepCare), 오늘 쓰기 = 오늘 한 일 + 카테고리별 어제 대비 점수, 기록하기 = 메모장.
- * 오늘 쓰기는 홈의 모루에게 마음 들려주기와 같은 기록이라, 탭을 열면 나 돌보기가 먼저 보인다.
- * 다른 화면에서 쓰러 올 때는 /log?view=today 로 바로 연다. 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다
+ * 탭은 둘이다: 나 돌보기 = 작은 한 걸음 (components/StepCare), 기록하기 = 메모장.
+ * 오늘 쓰기(오늘 한 일 + 카테고리별 어제 대비 점수)는 홈의 모루에게 마음 들려주기와 같은 기록이라 2026-11-13 에 탭에서 뺐다.
+ * 화면은 남아 있고 /log?view=today 로만 열린다: 로그인 전(닫힌 방)의 "마음 기록", 흐름 보기·요약의 "기록으로"가 이 주소로 온다
+ * (로그인 전에는 홈의 마음 들려주기를 열 수 없어서 여기가 유일하게 쓰는 곳이다). 흐름 보기는 홈의 "나를 위한 시간" 타일로 옮겼다
  */
 type View = "care" | "today" | "memo";
 const VIEWS: View[] = ["care", "today", "memo"];
+type Tab = Exclude<View, "today">;
 
 /** 상단 현황(연속 일수·채운 수)은 메인 페이지에서 보여주고, 여기선 바로 시작 */
 export default function LogPage() {
@@ -40,15 +42,17 @@ export default function LogPage() {
       <TopBar title="기록" eyebrow={fmtDate(todayKey())} />
       <div className="screen">
         <div>
-          <Segmented
-            value={view ?? "care"}
+          {view === "today" ? <div className="section-title" style={{ margin: 0 }}>
+            <span>오늘 쓰기</span>
+            <button type="button" className="text-btn" onClick={() => setView("care")}>나 돌보기로</button>
+          </div> : <Segmented<Tab>
+            value={view === "memo" ? "memo" : "care"}
             onChange={setView}
             options={[
               { value: "care", label: "나 돌보기" },
-              { value: "today", label: "오늘 쓰기" },
               { value: "memo", label: "기록하기" },
             ]}
-          />
+          />}
         </div>
         {view === "care" ? <StepCare /> : view === "today" ? <TodayWrite /> : view === "memo" ? <MemoPad scrollKey="/log:memo" /> : null}
       </div>

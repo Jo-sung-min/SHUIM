@@ -27,8 +27,21 @@ import styles from "./StepCare.module.css";
 /** 기운 고르기 → 카드 고르기 → (나중에: 언제 고르기) → 하는 중 → 하기 전보다 어때 → 끝 */
 type Phase = "energy" | "pick" | "when" | "doing" | "after" | "done";
 
+/** 손그림 외곽선의 떨림: 종이·버튼의 면(::before)에 거는 SVG 필터. 모루 방의 #moru-sketch 와 같은 값이고, 방이 없는 이 화면에 따로 둔다 */
+function SketchDefs() {
+  return <svg className={styles.defs} width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="step-sketch" x="-6%" y="-14%" width="112%" height="128%" colorInterpolationFilters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.6" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+  </svg>;
+}
+
 /**
  * 기록 탭 › 나 돌보기: 작은 한 걸음.
+ * 화면은 모루의 방과 같은 손그림이다 (크림 종이·갈색 외곽선·턱 있는 버튼, StepCare.module.css).
  * 지금 기운을 고르면 그 기운에 맞는 아주 작은 행동 세 장이 나오고, 하나를 해 본 뒤 "하기 전보다 어때?"를 한 번 누른다.
  * 끝낸 행동은 "오늘 한 일"에 더해진다. 그 밖의 것(기운·응답·정해 둔 한 걸음)은 이 기기에만 남는다 (lib/steps.ts).
  * 못 해도 잃는 것이 없다: 그만두기·내일로·지우기뿐이고 탓하는 말은 없다. AI 는 쓰지 않는다.
@@ -195,14 +208,15 @@ export default function StepCare() {
 
   return (
     <div className={styles.wrap}>
-      <p className={`${moruStyles.flowLine} ${styles.line}`} aria-live="polite">
-        <span className={moruStyles.flowFace} aria-hidden="true"><MoruCompanion appearance={companion.appearance} mood={phase === "done" && last?.after === 1 ? "happy" : "idle"} /></span>
-        <span><b>{companion.name}</b>{line}</span>
-      </p>
+      <SketchDefs />
+      <div className={styles.say} aria-live="polite">
+        <span className={styles.face} aria-hidden="true"><MoruCompanion appearance={companion.appearance} mood={phase === "done" && last?.after === 1 ? "happy" : "idle"} /></span>
+        <p className={styles.bubble}><i aria-hidden="true" /><b>{companion.name}</b>{line}</p>
+      </div>
 
       {plan && (
-        <section className={`card ${styles.plan}`} aria-label="정해 둔 한 걸음">
-          <span className="tiny muted">{plan.due > today ? "내일 하기로 한 한 걸음" : "정해 둔 한 걸음"}</span>
+        <section className={`${moruStyles.handSheet} ${styles.paper} ${styles.plan}`} aria-label="정해 둔 한 걸음">
+          <span className={styles.tag}>{plan.due > today ? "내일 하기로 한 한 걸음" : "정해 둔 한 걸음"}</span>
           <b className={styles.planLine}>{planLine(plan)}</b>
           {!planBusy && (
             <div className={styles.planActions}>
@@ -214,15 +228,16 @@ export default function StepCare() {
         </section>
       )}
 
-      <section className="card" aria-labelledby="step-title">
+      <section className={`${moruStyles.handSheet} ${styles.paper}`} aria-labelledby="step-title">
         {phase === "energy" && (
           <>
             <h2 id="step-title" className={styles.title}>지금 기운은 어때요?</h2>
             <p className={styles.sub}>{doneToday.length ? "오늘은 이미 한 걸음 걸었어요. 더 안 해도 괜찮아요." : "기운에 맞는 아주 작은 것 세 가지를 보여 드릴게요."}</p>
             <div className={styles.options}>
               {ENERGY_OPTIONS.map((o) => (
-                <button key={o.value} type="button" className={`reason glass ${styles.option}`} onClick={() => chooseEnergy(o.value)}>
+                <button key={o.value} type="button" className={styles.option} onClick={() => chooseEnergy(o.value)}>
                   <span><b>{o.label}</b><small>{o.hint}</small></span>
+                  <span className={styles.pips} aria-hidden="true">{[1, 2, 3].map((n) => <i key={n} data-on={n <= o.value ? "" : undefined} />)}</span>
                 </button>
               ))}
             </div>
@@ -240,7 +255,7 @@ export default function StepCare() {
               {cards.map((s) => {
                 const on = !writing && picked?.id === s.id;
                 return (
-                  <button key={s.id} type="button" role="radio" aria-checked={on} className={`reason glass ${styles.option} ${on ? `on ${styles.on}` : ""}`}
+                  <button key={s.id} type="button" role="radio" aria-checked={on} className={`${styles.option} ${on ? styles.on : ""}`}
                     onClick={() => { haptic(6); setWriting(false); setPicked(refOf(s)); }}>
                     <span><b>{s.text}</b><small>{KIND_LABEL[s.kind]} · {s.min}분쯤</small></span>
                     {on && <span className={styles.check} aria-hidden="true"><IconCheck /></span>}
@@ -285,7 +300,7 @@ export default function StepCare() {
         {phase === "doing" && doing && (
           <>
             <div className={styles.doing}>
-              <span className="tiny muted">지금 하는 한 걸음</span>
+              <span className={styles.tag}>지금 하는 한 걸음</span>
               <h2 id="step-title" className={styles.big}>{doing.text}</h2>
               <small>{elapsedLabel(state.doing?.startedAt ?? now, now)} · 다 하고 돌아와서 눌러 주세요</small>
               {doing.breath && <button type="button" className="btn sm soft" onClick={() => { breathCounted.current = false; setBreathing(true); }}>숨 고르기 열기</button>}
@@ -304,7 +319,7 @@ export default function StepCare() {
             <p className={styles.sub}>{doing.text} · 느낀 그대로 하나만 눌러 주세요. 맞는 답은 없어요.</p>
             <div className={styles.options}>
               {AFTER_OPTIONS.map((o) => (
-                <button key={o.value} type="button" className={`reason glass ${styles.option}`} onClick={() => answer(o.value)}>
+                <button key={o.value} type="button" className={styles.option} onClick={() => answer(o.value)}>
                   <span><b>{o.label}</b></span>
                 </button>
               ))}
@@ -323,13 +338,10 @@ export default function StepCare() {
       </section>
 
       {doneToday.length > 0 && (
-        <section aria-labelledby="step-today">
-          <div className="section-title" style={{ marginTop: 0 }}>
-            <span id="step-today">오늘 걸은 걸음</span>
-            <span className="tiny muted">{doneToday.length}개</span>
-          </div>
-          <ul className={`card ${styles.list}`}>
-            {doneToday.map((e) => <li key={e.at}><span>{e.text}</span><span className="muted">{afterLabel(e.after)}</span></li>)}
+        <section className={`${moruStyles.handSheet} ${styles.paper}`} aria-labelledby="step-today">
+          <h3 id="step-today" className={styles.listTitle}>오늘 걸은 걸음<small>{doneToday.length}개</small></h3>
+          <ul className={styles.list}>
+            {doneToday.map((e) => <li key={e.at}><span>{e.text}</span><span>{afterLabel(e.after)}</span></li>)}
           </ul>
         </section>
       )}

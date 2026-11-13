@@ -1,39 +1,75 @@
-/* 기록 탭 › 나 돌보기: 작은 한 걸음 (components/StepCare.tsx). 색·간격은 앱의 토큰만 쓴다 */
-.wrap { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+/* 기록 탭 › 나 돌보기: 작은 한 걸음 (components/StepCare.tsx).
+   모루의 방과 같은 손그림이다 (docs/MORU_TAMAGOTCHI.md 9장): 크림 종이, 짙은 갈색 외곽선 2.5px, 네 귀가 조금씩 다른 둥근 모서리, 아래 턱이 있는 버튼, 글꼴 Jua.
+   종이 조각(.paper)은 MoruPet.module.css 의 .handSheet 와 함께 쓴다: 그 안에서 앱의 색 토큰과 버튼(.btn)·칩·입력창이 종이 위의 것으로 바뀐다. 낮·밤 테마와 무관하다.
+   종이 밖(맨 아래 안내와 도움 받을 곳)은 앱의 색 그대로다. 외곽선의 떨림은 이 화면에 따로 둔 필터 #step-sketch (StepCare 의 SketchDefs) */
+.wrap { display: grid; gap: 14px; margin-top: var(--sp-2); }
 .wrap > * { min-width: 0; }
-.line { margin: 0; }
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* 종이 한 장: 면과 외곽선은 ::before 가 그린다 (글자는 떨리지 않게). .handSheet 의 시트 모양(위 테두리·배경)은 걷어 낸다 */
+.wrap .paper { position: relative; isolation: isolate; margin: 0; padding: 16px 16px 18px; border: 0; border-radius: 0; background: none; color: #4a3528; }
+.wrap .paper::before { content: ""; position: absolute; inset: 0; z-index: -1; border: 2.5px solid #4a3528; border-radius: 20px 24px 19px 23px / 23px 19px 24px 20px; background: #fff6e0; box-shadow: 0 4px 0 #2a1b1347; filter: url(#step-sketch); }
+
+/* 친구의 한마디: 왼쪽에 친구, 오른쪽에 꼬리 달린 말풍선 */
+.say { display: flex; align-items: flex-end; gap: 12px; padding: 0 2px; }
+.face { flex: none; width: 66px; height: 63px; }
+.face > svg { display: block; width: 66px; height: 63px; overflow: visible; } /* 바깥 svg 만: 모링의 띠를 한 칸으로 자르는 안쪽 창(overflow=hidden)은 건드리지 않는다 */
+.bubble { position: relative; isolation: isolate; flex: 1; min-width: 0; margin: 0 0 8px; padding: 10px 14px 12px; color: #4a3528; font-family: "Jua", "Pretendard Variable", Pretendard, sans-serif; font-synthesis: none; font-size: 15px; line-height: 1.5; letter-spacing: 0; word-break: keep-all; }
+.bubble > i { position: absolute; inset: 0; z-index: -1; filter: url(#step-sketch); }
+.bubble > i::before { content: ""; position: absolute; inset: 0; border: 2.5px solid #4a3528; border-radius: 17px 20px 16px 19px / 19px 16px 20px 17px; background: #fff6e0; box-shadow: 0 3px 0 #2a1b1347; }
+.bubble > i::after { content: ""; position: absolute; left: -6px; bottom: 15px; width: 11px; height: 11px; border: solid #4a3528; border-width: 0 0 2.5px 2.5px; border-radius: 0 0 0 3px; background: #fff6e0; transform: rotate(45deg); }
+.bubble b { display: block; margin-bottom: 1px; color: #7a5f4d; font-size: 12px; font-weight: 400; }
 
 .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.head :global(.text-btn) { flex: none; color: var(--text-2); font-size: 13px; margin-right: -6px; }
-.title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.35; word-break: keep-all; }
-.sub { margin: 4px 0 14px; color: var(--text-2); font-size: 14px; line-height: 1.55; word-break: keep-all; }
+.head :global(.text-btn), .links :global(.text-btn) { flex: none; min-height: 36px; padding: 4px 8px; color: #7a5f4d; font-size: 13px; font-weight: 400; text-decoration: underline dashed #b89a72; text-underline-offset: 5px; }
+.head :global(.text-btn) { margin-right: -6px; }
+.title { margin: 0; font-size: 20px; font-weight: 400; letter-spacing: 0; line-height: 1.35; word-break: keep-all; }
+.sub { margin: 5px 0 14px; color: #7a5f4d; font-size: 14px; line-height: 1.55; word-break: keep-all; }
+.tag { display: inline-block; width: max-content; padding: 1px 9px 2px; border: 1.8px solid #4a3528; border-radius: 9px 11px 8px 10px / 10px 8px 11px 9px; background: #ffdd8f; color: #4a3528; font-size: 12px; }
 
-.options { display: grid; gap: 8px; }
-.option { align-items: center; min-height: 56px; }
-.option > span:first-child { flex: 1; min-width: 0; word-break: keep-all; }
-.on { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
-.check { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
-.check svg { width: 13px; height: 13px; stroke-width: 3; }
+/* 고르는 칸: 방의 버튼과 같은 턱. 누르면 2px 내려가고, 고른 칸은 연보라 */
+.options { display: grid; gap: 10px; }
+.option { position: relative; isolation: isolate; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 58px; padding: 9px 14px 13px; border: 0; background: none; color: #4a3528; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: transform .12s ease; }
+.option::before { content: ""; position: absolute; inset: 0; z-index: -1; border: 2.5px solid #4a3528; border-radius: 16px 19px 15px 18px / 18px 15px 19px 16px; background: #ffeccb; box-shadow: inset 0 -4px 0 #e6c48d; filter: url(#step-sketch); }
+.option:nth-child(2n)::before { border-radius: 18px 15px 19px 16px / 15px 19px 16px 18px; }
+.option:active { transform: translateY(2px); }
+.option:active::before { box-shadow: inset 0 -1px 0 #e6c48d; }
+.option:focus-visible { outline: 2px dashed #4a3528; outline-offset: 3px; border-radius: 16px; }
+.option > span:first-child { flex: 1; min-width: 0; display: grid; gap: 2px; word-break: keep-all; }
+.option b { font-size: 16px; font-weight: 400; line-height: 1.35; }
+.option small { color: #7a5f4d; font-size: 12.5px; line-height: 1.4; }
+.option.on::before { background: #cfbdf2; box-shadow: inset 0 -4px 0 #a890d8; }
+.option.on small { color: #4a3528; }
+.check { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border: 2.2px solid #4a3528; border-radius: 50%; background: #fff6e0; color: #4a3528; }
+.check svg { width: 14px; height: 14px; stroke-width: 3; }
+/* 기운 세 칸: 잎 모양 점이 기운만큼 찬다 */
+.pips { display: flex; flex: none; gap: 4px; }
+.pips i { width: 11px; height: 15px; border: 1.8px solid #b89a72; border-radius: 60% 60% 55% 55% / 70% 70% 40% 40%; background: #fffaf0; }
+.pips i[data-on] { border-color: #4a3528; background: #9fd08a; }
 
-.links { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.links :global(.text-btn) { color: var(--text-2); }
-.actions { display: flex; gap: 8px; margin-top: 14px; }
-.actions > * { flex: 1; min-width: 0; padding: 0 12px; }
-.preview { margin: 6px 0 0; font-size: 16px; font-weight: 700; line-height: 1.5; word-break: keep-all; }
+.links { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.actions { display: flex; gap: 10px; margin-top: 16px; }
+.actions > * { flex: 1; min-width: 0; padding-left: 12px; padding-right: 12px; }
+.preview { margin: 10px 0 0; font-size: 17px; line-height: 1.5; word-break: keep-all; }
 
-.doing { display: grid; justify-items: center; gap: 8px; padding: 10px 0 4px; text-align: center; }
-.doing small { max-width: 30ch; color: var(--text-2); font-size: 13px; line-height: 1.6; word-break: keep-all; }
-.big { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.35; word-break: keep-all; }
-.doneMark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: color-mix(in srgb, var(--tone-mint) 16%, var(--surface)); color: var(--tone-mint); }
-.doneMark svg { width: 22px; height: 22px; stroke-width: 2.6; }
+.doing { display: grid; justify-items: center; gap: 9px; padding: 8px 0 4px; text-align: center; }
+.doing small { max-width: 30ch; color: #7a5f4d; font-size: 13px; line-height: 1.6; word-break: keep-all; }
+.big { margin: 0; font-size: 23px; font-weight: 400; letter-spacing: 0; line-height: 1.35; word-break: keep-all; }
+.doneMark { display: grid; place-items: center; width: 54px; height: 52px; border: 2.5px solid #4a3528; border-radius: 50% 46% 52% 48% / 48% 52% 46% 50%; background: #ffdd8f; box-shadow: inset 0 -4px 0 #e9b65c; color: #4a3528; }
+.doneMark svg { width: 24px; height: 24px; margin-top: -3px; stroke-width: 2.8; }
 
 .plan { display: grid; gap: 8px; }
-.planLine { font-size: 16px; line-height: 1.5; word-break: keep-all; }
-.planActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.planLine { font-size: 17px; font-weight: 400; line-height: 1.5; word-break: keep-all; }
+.planActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 
-.list { display: grid; gap: 8px; margin: 0; list-style: none; font-size: 14px; }
-.list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.listTitle { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 16px; font-weight: 400; }
+.listTitle small { color: #7a5f4d; font-size: 12px; }
+.list { display: grid; margin: 0; padding: 0; list-style: none; font-size: 15px; }
+.list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; }
+.list li + li { border-top: 1.8px dashed #dcc39b; }
 .list li > span:first-child { min-width: 0; word-break: keep-all; }
-.list li > span:last-child { flex: none; font-size: 13px; }
+.list li > span:last-child { flex: none; color: #7a5f4d; font-size: 13px; }
 
 .note { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.6; word-break: keep-all; }
+
+@media (prefers-reduced-motion: reduce) { .option { transition: none; } }
