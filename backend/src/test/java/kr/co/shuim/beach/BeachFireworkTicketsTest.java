@@ -158,6 +158,34 @@ class BeachFireworkTicketsTest {
         assertEquals(1, tickets.launches.size());
     }
 
+    @Test
+    void aSpentRequestIdCannotLaunchAgainInAnotherMapAfterTheRoomForgotOrForAnotherUser() {
+        tickets.grant("member", 1);
+        String requestId = UUID.randomUUID().toString();
+        var me = visitor("room", "member", "beach");
+        var first = launch(me, requestId, "bloom");
+        // 다른 지도에서 같은 요청 번호: 이용권 없이 새로 쏘지 못한다
+        var elsewhere = visitor("room", "member", "uyuni");
+        assertEquals(409, assertThrows(ApiException.class, () -> launch(elsewhere, requestId, "bloom")).status());
+        assertTrue(poll(elsewhere).fireworks().isEmpty());
+        // 다른 사람이 같은 번호를 보내도 409
+        actor(user("second", "user", false));
+        tickets.grant("second", 1);
+        var second = visitor("room", "second", "beach");
+        assertEquals(409, assertThrows(ApiException.class, () -> launch(second, requestId, "bloom")).status());
+        assertEquals(1, tickets.balance("second"));
+        // 재시작으로 방이 기억을 잃으면(새 서비스) 같은 방·같은 지도라도 다시 쏘지 않는다
+        actor(user("member", "user", false));
+        BeachService restarted = new BeachService(clock::get, new BeachFireService(new TestFireRepository(), clock::get));
+        BeachController after = new BeachController(auth, mock(BlockService.class), restarted, circles, tickets);
+        var again = restarted.enter("room", "member", "member", Set.of(), null, "beach");
+        assertEquals(409, assertThrows(ApiException.class,
+            () -> after.fireworks(new BeachController.FireworksBody(again.ticket(), requestId, "bloom"), request)).status());
+        assertTrue(restarted.fireworks("room", "beach").events().isEmpty());
+        assertEquals(1, tickets.launches.size());
+        assertEquals(first.event(), launch(me, requestId, "bloom").event(), "the original room still answers its own retry");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = { "beach", "uyuni", "bamboo", "garden" })
     void songiMessageStaysAdministratorOnlyAndNeverSpendsATicket(String map) {

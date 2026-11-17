@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /** Opt-in only: requires a dedicated disposable local PostgreSQL, never DB_URL. */
-@EnabledIfEnvironmentVariable(named = "SOROW_TEST_DATABASE_URL", matches = "jdbc:postgresql://127\\.0\\.0\\.1:[0-9]+/sorow_test")
+@EnabledIfEnvironmentVariable(named = "SOROW_TEST_DATABASE_URL", matches = "jdbc:postgresql://127\\.0\\.0\\.1:[0-9]+/sorow_(test|wt_[a-z0-9_]+)")
 class AccountSafetyPostgresTest {
     private static JdbcClient jdbc;
     private static TransactionTemplate tx;
@@ -52,6 +52,13 @@ class AccountSafetyPostgresTest {
         DbUser user = new DbUser(id, null, id, "user", true, null, null, 0);
         new CommunityConsentService(jdbc).accept(user, CommunityConsentService.CURRENT_VERSION);
         return user;
+    }
+
+    /** 가입 회원 (DM 은 가입 회원만 보낼 수 있다) */
+    private static DbUser member(String id) {
+        user(id);
+        jdbc.sql("UPDATE users SET is_anonymous = FALSE WHERE id = ?").param(id).update();
+        return new DbUser(id, null, id, "user", false, null, null, 0);
     }
 
     private static long count(String sql) { return jdbc.sql(sql).query(Long.class).single(); }
@@ -177,6 +184,119 @@ class AccountSafetyPostgresTest {
         });
     }
 
+    private static void circle(String id, String createdBy) {
+        jdbc.sql("INSERT INTO communities (id, slug, name, name_key, kind, created_by) VALUES (?, ?, ?, ?, 'interest', ?)")
+            .param(id).param(id).param(id).param(id).param(createdBy).update();
+    }
+
+    private static void member(String circle, String user, String role, String joinedAt) {
+        jdbc.sql("INSERT INTO community_members (community_id, user_id, role, status, joined_at) VALUES (?, ?, ?, 'active', CAST(? AS timestamp))")
+            .param(circle).param(user).param(role).param(joinedAt).update();
+    }
+
+    @Test
+    void deletingACircleCreatorHandsTheCircleOverInsteadOfFailing() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser creator = user("circle-creator");
+            user("circle-member");
+            user("circle-keeper");
+            user("circle-admin");
+            jdbc.sql("UPDATE users SET role = 'user' WHERE role = 'admin'").update();
+            jdbc.sql("UPDATE users SET role = 'admin', is_anonymous = FALSE WHERE id = 'circle-admin'").update();
+            // 1) 다른 멤버가 있는 소로우: keeper 가 먼저 들어온 member 보다 우선
+            circle("circle-shared", "circle-creator");
+            member("circle-shared", "circle-creator", "owner", "2026-01-01 00:00:00");
+            member("circle-shared", "circle-member", "member", "2026-01-02 00:00:00");
+            member("circle-shared", "circle-keeper", "keeper", "2026-01-03 00:00:00");
+            jdbc.sql("INSERT INTO shout_posts (id, author_id, cat, text, community_id) VALUES ('circle-keep-post', 'circle-member', 'free', 'keep', 'circle-shared')").update();
+            // 2) 혼자였던 소로우: 관리자에게 넘기고 닫는다
+            circle("circle-alone", "circle-creator");
+            member("circle-alone", "circle-creator", "owner", "2026-01-01 00:00:00");
+
+            new AccountDeletionService(jdbc, mock(S3Service.class)).delete(creator, "계정 삭제");
+
+            assertEquals(0, count("SELECT count(*) FROM users WHERE id = 'circle-creator'"));
+            assertEquals("circle-keeper", jdbc.sql("SELECT created_by FROM communities WHERE id = 'circle-shared'").query(String.class).single());
+            assertEquals("owner", jdbc.sql("SELECT role FROM community_members WHERE community_id = 'circle-shared' AND user_id = 'circle-keeper'").query(String.class).single());
+            assertEquals(1, count("SELECT count(*) FROM communities WHERE id = 'circle-shared' AND closed_at IS NULL"));
+            assertEquals(1, count("SELECT count(*) FROM shout_posts WHERE id = 'circle-keep-post'"));
+            assertEquals(1, count("SELECT count(*) FROM communities WHERE id = 'circle-alone' AND created_by = 'circle-admin' AND closed_at IS NOT NULL"));
+        });
+    }
+
+    @Test
+    void deletingTheLastKeeperWithoutAnyAdminRemovesOnlyThatEmptyCircle() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            DbUser creator = user("circle-solo");
+            jdbc.sql("UPDATE users SET role = 'user' WHERE role = 'admin'").update();
+            circle("circle-solo-room", "circle-solo");
+            member("circle-solo-room", "circle-solo", "owner", "2026-01-01 00:00:00");
+            new AccountDeletionService(jdbc, mock(S3Service.class)).delete(creator, "계정 삭제");
+            assertEquals(0, count("SELECT count(*) FROM users WHERE id = 'circle-solo'"));
+            assertEquals(0, count("SELECT count(*) FROM communities WHERE id = 'circle-solo-room'"));
+        });
+    }
+
+    @Test
+    void loginFailuresLookTheSameAndLoginRotatesTheSession() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            AuthService auth = new AuthService(jdbc, true, 90);
+            DbUser signed = auth.signUp(new MockHttpServletRequest(), new MockHttpServletResponse(), "rotate@example.test", "회전테스트", "test-password");
+            jdbc.sql("INSERT INTO users (id, email, nick, kakao_id, is_anonymous) VALUES ('rotate-kakao', 'kakao-only@example.test', '카카오', 'k-rotate', FALSE)").update();
+            String unknown = assertThrows(ApiException.class, () -> auth.signIn(new MockHttpServletRequest(), new MockHttpServletResponse(), "none@example.test", "test-password")).getMessage();
+            String wrong = assertThrows(ApiException.class, () -> auth.signIn(new MockHttpServletRequest(), new MockHttpServletResponse(), "rotate@example.test", "nope-nope")).getMessage();
+            String kakaoOnly = assertThrows(ApiException.class, () -> auth.signIn(new MockHttpServletRequest(), new MockHttpServletResponse(), "kakao-only@example.test", "test-password")).getMessage();
+            assertEquals(AuthService.LOGIN_FAILED, unknown);
+            assertEquals(unknown, wrong);
+            assertEquals(unknown, kakaoOnly);
+
+            // 익명 세션으로 로그인하면 그 세션 행은 지워지고 새 토큰이 나온다
+            DbUser anon = user("rotate-anon");
+            String oldToken = "ab".repeat(32);
+            jdbc.sql("INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, 'rotate-anon', now() + interval '1 day')").param(AuthService.sha256(oldToken)).update();
+            MockHttpServletRequest req = new MockHttpServletRequest();
+            req.setCookies(new jakarta.servlet.http.Cookie(AuthService.COOKIE, oldToken));
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            assertEquals(signed.id(), auth.signIn(req, res, "ROTATE@example.test", "test-password").id());
+            assertEquals(0, count("SELECT count(*) FROM auth_sessions WHERE token_hash = '" + AuthService.sha256(oldToken) + "'"));
+            String setCookie = res.getHeaders("Set-Cookie").stream().filter(c -> c.startsWith(AuthService.COOKIE + "=")).reduce((a, b) -> b).orElseThrow();
+            assertFalse(setCookie.contains(oldToken));
+            assertTrue(setCookie.contains("Secure"));
+            assertNotNull(anon);
+        });
+    }
+
+    @Test
+    void anonymousSignupGetsANewSessionToken() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            user("upgrade-anon");
+            String oldToken = "cd".repeat(32);
+            jdbc.sql("INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, 'upgrade-anon', now() + interval '1 day')").param(AuthService.sha256(oldToken)).update();
+            MockHttpServletRequest req = new MockHttpServletRequest();
+            req.setCookies(new jakarta.servlet.http.Cookie(AuthService.COOKIE, oldToken));
+            DbUser u = new AuthService(jdbc, true, 90).signUp(req, new MockHttpServletResponse(), "upgrade@example.test", "승격회원", "test-password");
+            assertEquals("upgrade-anon", u.id());
+            assertEquals(0, count("SELECT count(*) FROM auth_sessions WHERE token_hash = '" + AuthService.sha256(oldToken) + "'"));
+            assertEquals(1, count("SELECT count(*) FROM auth_sessions WHERE user_id = 'upgrade-anon'"));
+        });
+    }
+
+    @Test
+    void expiredSessionsAreCleanedUp() {
+        tx.executeWithoutResult(status -> {
+            status.setRollbackOnly();
+            user("session-old");
+            jdbc.sql("INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES ('expired-1', 'session-old', now() - interval '1 day'), ('alive-1', 'session-old', now() + interval '1 day')").update();
+            assertTrue(new AuthSessionCleanup(jdbc).purgeExpired() >= 1);
+            assertEquals(0, count("SELECT count(*) FROM auth_sessions WHERE token_hash = 'expired-1'"));
+            assertEquals(1, count("SELECT count(*) FROM auth_sessions WHERE token_hash = 'alive-1'"));
+        });
+    }
+
     @Test
     void aiConsentIsDurableScopedToTheSessionAndCanBeRevoked() {
         tx.executeWithoutResult(status -> {
@@ -242,6 +362,7 @@ class AccountSafetyPostgresTest {
     @Test
     void signupRollsBackAccountAndSessionIfConsentCannotBeSaved() {
         AuthService auth = new AuthService(jdbc, false, 90);
+        auth.setTransactionTemplate(tx); // 운영처럼: 해시는 밖에서, 계정·세션·동의 쓰기는 한 트랜잭션
         PolicyConsentService policies = spy(new PolicyConsentService(jdbc, auth));
         doThrow(new IllegalStateException("consent write unavailable")).when(policies).accept(any(), eq(PolicyConsentService.VERSION), eq(false));
         AuthController target = new AuthController(auth, mock(KakaoLoginService.class), mock(TossLoginService.class), policies);
@@ -261,8 +382,8 @@ class AccountSafetyPostgresTest {
     void blockedMessagesDisappearAndBothDirectionsAreRejectedUntilUnblocked() {
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
-            DbUser a = user("block-a");
-            DbUser b = user("block-b");
+            DbUser a = member("block-a");
+            DbUser b = member("block-b");
             BlockService blocks = new BlockService(jdbc);
             MessageService messages = new MessageService(jdbc, blocks, new CommunityConsentService(jdbc));
             String conversation = messages.sendMessage(b, a.id(), "hello").conversationId();
@@ -285,8 +406,8 @@ class AccountSafetyPostgresTest {
     void privateMessagesCanOnlyBeReportedByConversationMembers() {
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
-            DbUser a = user("report-a");
-            DbUser b = user("report-b");
+            DbUser a = member("report-a");
+            DbUser b = member("report-b");
             DbUser outsider = user("report-c");
             MessageService messages = new MessageService(jdbc, new BlockService(jdbc), new CommunityConsentService(jdbc));
             String id = messages.sendMessage(a, b.id(), "hello").message().id();
@@ -300,8 +421,8 @@ class AccountSafetyPostgresTest {
     void messagesRequireCurrentAccountConsent() {
         tx.executeWithoutResult(status -> {
             status.setRollbackOnly();
-            DbUser a = user("consent-a");
-            DbUser b = user("consent-b");
+            DbUser a = member("consent-a");
+            DbUser b = member("consent-b");
             jdbc.sql("UPDATE community_consents SET version = 'old' WHERE user_id = 'consent-a'").update();
             CommunityConsentService consent = new CommunityConsentService(jdbc);
             MessageService messages = new MessageService(jdbc, new BlockService(jdbc), consent);

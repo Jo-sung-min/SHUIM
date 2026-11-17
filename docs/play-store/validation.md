@@ -58,7 +58,7 @@ Android 상세 검사와 당시 파일 해시는 [Android 검증 기록](../../a
 
 ## 의도적으로 아직 통과하지 않는 출시 점검
 
-`frontend`에서 `npm run check:release -- https://sorow.co.kr`를 실행합니다. 현재 코드의 로컬 점검에서는 다음 사항을 미완료로 정확히 표시합니다.
+`frontend`에서 `npm run check:release -- https://www.sorow.co.kr`를 실행합니다. 현재 코드의 로컬 점검에서는 다음 사항을 미완료로 정확히 표시합니다.
 
 1. **앱 서명 인증서 없음:** `/.well-known/assetlinks.json`이 503. Play 앱 서명 인증서를 `ANDROID_SHA256_FINGERPRINTS`에 설정해야 함.
 2. **정책 안내 준비용 상태:** 보유기간·처리업체/국가·시행일을 확정하고 `LEGAL_*`를 설정한 뒤 승인해야 함. 단순히 배너만 없애고 제출하면 안 됨.

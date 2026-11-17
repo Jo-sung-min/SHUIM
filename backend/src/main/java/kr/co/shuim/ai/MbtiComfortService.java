@@ -41,7 +41,7 @@ public class MbtiComfortService {
         try {
             return auth.currentUser(req).flatMap(user -> mbtiOf(user.id())).flatMap(this::guide);
         } catch (RuntimeException e) {
-            log.warn("mbti comfort guide unavailable: {}", e.getMessage());
+            log.warn("mbti comfort guide unavailable: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }

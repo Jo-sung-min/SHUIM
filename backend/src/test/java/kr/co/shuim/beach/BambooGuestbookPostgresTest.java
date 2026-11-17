@@ -83,4 +83,31 @@ class BambooGuestbookPostgresTest {
             jdbc.sql("DELETE FROM users WHERE id = ?").param(author).update();
         }
     }
+
+    @Test void authorsDeleteTheirOwnNotesAdministratorsAnyAndSuspendedAuthorsDisappear() {
+        var source = new DriverManagerDataSource(System.getenv("SOROW_TEST_DATABASE_URL"), "sorow_test", "");
+        Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate();
+        var jdbc = JdbcClient.create(source);
+        var tx = new TransactionTemplate(new DataSourceTransactionManager(source));
+        String space = kr.co.shuim.common.SpaceMaps.PUBLIC_ID, author = UUID.randomUUID().toString(), other = UUID.randomUUID().toString();
+        for (String id : new String[] {author, other})
+            jdbc.sql("INSERT INTO users (id,nick,is_anonymous) VALUES (?, '방명록 관리 테스트', false)").param(id).update();
+        try {
+            var book = new BambooGuestbook(jdbc);
+            long mine = Long.parseLong(tx.execute(s -> book.write(space, author, UUID.randomUUID(), "달", "지울 글")).id());
+            assertFalse(book.deleteOwn(other, mine), "someone else cannot delete it");
+            assertTrue(book.deleteOwn(author, mine));
+            assertTrue(book.list(space, other, null).entries().stream().noneMatch(e -> e.id().equals(Long.toString(mine))));
+
+            long reported = jdbc.sql("INSERT INTO bamboo_guestbook(community_id,author_id,request_id,display_name,story) VALUES (?,?,?,'별','신고된 글') RETURNING id")
+                .param(space).param(other).param(UUID.randomUUID()).query(Long.class).single();
+            jdbc.sql("UPDATE users SET blocked_at = now() WHERE id = ?").param(other).update();
+            assertTrue(book.list(space, author, null).entries().stream().noneMatch(e -> e.id().equals(Long.toString(reported))),
+                "a suspended author's notes are hidden");
+            assertTrue(book.deleteAny(reported));
+            assertFalse(book.deleteAny(reported));
+        } finally {
+            jdbc.sql("DELETE FROM users WHERE id IN (?,?)").param(author).param(other).update();
+        }
+    }
 }

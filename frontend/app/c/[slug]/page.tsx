@@ -12,6 +12,7 @@ import BeachCard from "@/components/beach/BeachCard";
 import { SampleTag, Verified } from "@/components/CircleRow";
 import { CircleMark } from "@/components/CircleMark";
 import { LoadError, ReportSheet, TargetMenuSheet, run } from "@/components/CommunityUI";
+import { SafetyReportSheet } from "@/components/SafetyReport";
 import { ConfirmSheet, Empty, Sheet, SkeletonList, TopBar } from "@/components/ui";
 import { IconChevronL, IconLeaf, IconLock, IconMegaphone, IconMore, IconPen, IconShare, IconShield } from "@/components/Icons";
 import { showToast, toastSuccess } from "@/lib/toast";
@@ -33,6 +34,7 @@ export default function CirclePage() {
   const [leaving, setLeaving] = useState(false);
   const [menu, setMenu] = useState<Target | null>(null);
   const [reporting, setReporting] = useState<Target | null>(null);
+  const [circleReport, setCircleReport] = useState(false);
   const locked = useRef(false);
 
   const load = useCallback(async () => {
@@ -100,7 +102,7 @@ export default function CirclePage() {
         right={
           <div style={{ display: "flex" }}>
             <button className="icon-btn" onClick={share} aria-label="소로우 주소 공유"><IconShare /></button>
-            {c.me.role && <button className="icon-btn" onClick={() => setMore(true)} aria-label="더보기"><IconMore /></button>}
+            <button className="icon-btn" onClick={() => setMore(true)} aria-label="더보기"><IconMore /></button>
             {back}
           </div>
         }
@@ -171,7 +173,8 @@ export default function CirclePage() {
           )}
           {member && <button className={`btn ghost`} disabled={busy} onClick={() => { setMore(false); act(() => toggleCircleFollow(c.slug), c.me.listening ? "리스닝을 취소했어요" : "이제 이 소로우의 사연이 내 소로우에 보여요"); }}>{c.me.listening ? "리스닝 취소" : "리스닝하기"}</button>}
           {c.privateTest && <p className="tiny muted">지정된 두 계정만 참여하는 비공개 테스트 소로우예요.</p>}
-          {!c.privateTest && c.me.role !== "owner" && <button className="btn ghost danger" onClick={() => { setMore(false); setLeaving(true); }}>{waiting ? "가입 신청 취소" : "소로우 나가기"}</button>}
+          {!c.me.keeper && <button className="btn ghost" onClick={() => { setMore(false); setCircleReport(true); }}>소로우 신고</button>}
+          {c.me.role && !c.privateTest && c.me.role !== "owner" && <button className="btn ghost danger" onClick={() => { setMore(false); setLeaving(true); }}>{waiting ? "가입 신청 취소" : "소로우 나가기"}</button>}
           <button className="btn ghost" onClick={() => setMore(false)}>닫기</button>
         </div>
       </Sheet>
@@ -185,6 +188,8 @@ export default function CirclePage() {
         message="이미 올라간 사연은 그대로 남아요. 보낸 사람은 여전히 드러나지 않아요."
       />
 
+      <SafetyReportSheet open={circleReport} onClose={() => setCircleReport(false)} kind="circle" targetId={c.id} title="소로우 신고"
+        context={[`소로우: ${c.name}`, c.intro && `소개: ${c.intro}`, c.notice && `공지: ${c.notice}`].filter(Boolean).join("\n")} />
       <TargetMenuSheet s={s} target={menu} onClose={() => setMenu(null)} onChange={setS} onReport={(t) => setReporting(t)} />
       <ReportSheet
         key={reporting ? `report-${reporting.id}` : "report-closed"}

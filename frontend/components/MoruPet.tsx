@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Sheet } from "./ui";
+import { Sheet, SheetBackContext } from "./ui";
 import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoruCompanion, { companionChoices } from "./MoruCompanion";
 import MoruHomeScene, { HOME_NAMES } from "./MoruHomeScene";
@@ -641,7 +641,8 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     </div>
   </section>;
   // 모루의 방 한 장 = 게임 화면: 위에는 상태 HUD, 가운데는 모루, 아래에는 조작 패드. 버튼이 모두 이 안에 있다
-  return <section className={styles.card} aria-label="나의 소로우 모루 키우기" data-full={full ? "" : undefined}>
+  // 방 안 시트는 위의 useBackLayer 하나가 순서대로 닫는다 (시트가 따로 닫히지 않게)
+  return <SheetBackContext value={false}><section className={styles.card} aria-label="나의 소로우 모루 키우기" data-full={full ? "" : undefined}>
     <div className={styles.room} ref={roomRef} onPointerDownCapture={() => { if (rainWanted.current) { rainWanted.current = false; setRainOn(true); } }}>
       <SketchFilter />
       <div className={styles.world} ref={worldRef}>
@@ -803,7 +804,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
         <Link href="/memo">기록장 ↗</Link>
       </div>
     </Sheet>
-  </section>;
+  </section></SheetBackContext>;
 }
 
 function HouseIcon() {

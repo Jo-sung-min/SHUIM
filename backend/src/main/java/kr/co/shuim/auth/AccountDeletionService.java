@@ -3,9 +3,12 @@ package kr.co.shuim.auth;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.upload.S3Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,10 +19,17 @@ import java.util.Set;
 public class AccountDeletionService {
     private final JdbcClient jdbc;
     private final S3Service s3;
+    private final KakaoUnlinkClient kakaoUnlink;
 
     public AccountDeletionService(JdbcClient jdbc, S3Service s3) {
+        this(jdbc, s3, null);
+    }
+
+    @Autowired
+    public AccountDeletionService(JdbcClient jdbc, S3Service s3, KakaoUnlinkClient kakaoUnlink) {
         this.jdbc = jdbc;
         this.s3 = s3;
+        this.kakaoUnlink = kakaoUnlink;
     }
 
     @Transactional
@@ -35,6 +45,8 @@ public class AccountDeletionService {
         Db.lockCommunity(jdbc);
         // Serializes deletion with concurrent FK-backed writes and upload registration.
         if (jdbc.sql("SELECT id FROM users WHERE id = ? FOR UPDATE").param(id).query(String.class).optional().isEmpty()) return false;
+        String kakaoId = jdbc.sql("SELECT kakao_id FROM users WHERE id = ?").param(id).query(String.class).optional().orElse(null);
+        handOverCreatedCircles(id);
         Set<String> keys = new LinkedHashSet<>(jdbc.sql("SELECT object_key FROM uploaded_objects WHERE user_id = ?")
             .param(id).query(String.class).list());
         // Backfill attached media uploaded before uploaded_objects was introduced.
@@ -92,6 +104,47 @@ public class AccountDeletionService {
             """).param(id).update();
         // Cascades cover profiles, records/goals, settings, sessions, follows/saves, personal blocks and uploads.
         jdbc.sql("DELETE FROM users WHERE id = ?").param(id).update();
+        unlinkKakaoAfterCommit(kakaoId);
         return true;
+    }
+
+    /**
+     * communities.created_by 는 users 를 ON DELETE 없이 가리켜, 소로우를 연 사람은 그대로 지우면 FK 오류가 난다.
+     * 가장 덜 잃는 쪽으로 넘긴다: 다른 활성 멤버가 있으면 keeper 우선·먼저 들어온 순으로 owner 로 올리고 created_by 를 넘긴다.
+     * 남은 멤버가 없으면 관리자 계정에 넘기고 닫는다(closed_at, 사연은 남는다). 관리자도 없으면 그 소로우만 지운다.
+     */
+    private void handOverCreatedCircles(String id) {
+        List<String> circles = jdbc.sql("SELECT id FROM communities WHERE created_by = ?").param(id).query(String.class).list();
+        if (circles.isEmpty()) return;
+        String admin = jdbc.sql("SELECT id FROM users WHERE role = 'admin' AND NOT is_anonymous AND id <> ? ORDER BY created_at, id LIMIT 1")
+            .param(id).query(String.class).optional().orElse(null);
+        for (String circle : circles) {
+            String heir = jdbc.sql("""
+                SELECT user_id FROM community_members WHERE community_id = ? AND user_id <> ? AND status = 'active'
+                ORDER BY (role = 'keeper') DESC, joined_at, user_id LIMIT 1
+                """).param(circle).param(id).query(String.class).optional().orElse(null);
+            if (heir != null) {
+                jdbc.sql("UPDATE community_members SET role = 'owner' WHERE community_id = ? AND user_id = ?").param(circle).param(heir).update();
+                jdbc.sql("UPDATE communities SET created_by = ? WHERE id = ?").param(heir).param(circle).update();
+            } else if (admin != null) {
+                jdbc.sql("UPDATE communities SET created_by = ?, closed_at = COALESCE(closed_at, ?) WHERE id = ?")
+                    .param(admin).param(System.currentTimeMillis()).param(circle).update();
+            } else {
+                jdbc.sql("DELETE FROM communities WHERE id = ?").param(circle).update();
+            }
+        }
+    }
+
+    /** 카카오 연결 끊기는 삭제가 확정된 뒤에만 (롤백되면 부르지 않는다) */
+    private void unlinkKakaoAfterCommit(String kakaoId) {
+        if (kakaoUnlink == null || kakaoId == null || !kakaoUnlink.configured()) return;
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() { kakaoUnlink.unlinkLater(kakaoId); }
+            });
+        } else {
+            kakaoUnlink.unlinkLater(kakaoId);
+        }
     }
 }

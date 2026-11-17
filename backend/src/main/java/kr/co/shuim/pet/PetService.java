@@ -375,9 +375,16 @@ public class PetService {
         String memo = "[모루와 마음기록 · " + s.date() + "]\n오늘 마음: " + text(a.mood())
             + "\n감정의 크기: " + (a.intensity() == null ? "아직 남기지 않았어요" : a.intensity() + "/5")
             + "\n마음의 이유: " + text(a.reason()) + "\n오늘의 한 조각: " + text(a.note()) + "\n지금 필요한 것: " + text(a.need());
-        jdbc.sql("INSERT INTO memos(id, user_id, cat, text, pet_answers) VALUES (?, ?, 'mind', ?, CAST(? AS jsonb)) "
-            + "ON CONFLICT(id) DO UPDATE SET text = EXCLUDED.text, pet_answers = EXCLUDED.pet_answers, updated_at = CURRENT_TIMESTAMP")
+        // memos.id 는 계정과 무관한 전역 키다. 같은 id 를 다른 계정이 먼저 차지했으면 절대 그 행을 덮어쓰지 않는다.
+        int saved = jdbc.sql("INSERT INTO memos(id, user_id, cat, text, pet_answers) VALUES (?, ?, 'mind', ?, CAST(? AS jsonb)) "
+            + "ON CONFLICT(id) DO UPDATE SET text = EXCLUDED.text, pet_answers = EXCLUDED.pet_answers, updated_at = CURRENT_TIMESTAMP "
+            + "WHERE memos.user_id = EXCLUDED.user_id")
             .param(memoId(uid, s.date())).param(uid).param(memo).param(raw).update();
+        if (saved == 0) {
+            // 트랜잭션 전체(마음밥 지급 포함)를 되돌린다
+            org.slf4j.LoggerFactory.getLogger(PetService.class).warn("Pet diary memo id is held by another account");
+            throw new ApiException(409, "오늘 마음기록을 저장하지 못했어요. 문의하기로 알려 주시면 바로 살펴볼게요.");
+        }
         jdbc.sql("INSERT INTO pet_daily_rewards(user_id, date, rewarded) VALUES (?, ?, ?) ON CONFLICT(user_id, date) DO UPDATE SET rewarded = EXCLUDED.rewarded")
             .param(uid).param(s.date()).param(old | next).update();
         // New food can satisfy today's outstanding meals, but never past missed meals.

@@ -103,9 +103,18 @@ public class BeachService {
         RoomKey key = new RoomKey(communityId, map);
         RoomBinding original = resumeTicket == null ? null : tickets.get(resumeTicket);
         if (original != null && !original.key.equals(key)) throw ApiException.forbidden("같은 소로우와 지도로 돌아가 주세요.");
-        RoomBinding binding = rooms.computeIfAbsent(key, id -> new RoomBinding(id, new BeachRoom(clock, false, id.map())));
-        binding.room().setCapacity(capacity);
-        BeachRoom.Entry entry = binding.room().enter(userId, nick, excluded, character, resumeTicket, sequence);
+        // 방 만들기와 입장을 같은 열쇠 잠금 안에서 해서, 빈 방 정리(sweepTickets)가 막 들어온 방문의 방을 지우지 못하게 한다.
+        final int admitted = capacity;
+        Object[] out = new Object[2];
+        rooms.compute(key, (id, existing) -> {
+            RoomBinding b = existing != null ? existing : new RoomBinding(id, new BeachRoom(clock, false, id.map()));
+            b.room().setCapacity(admitted);
+            out[0] = b.room().enter(userId, nick, excluded, character, resumeTicket, sequence);
+            out[1] = b;
+            return b;
+        });
+        BeachRoom.Entry entry = (BeachRoom.Entry) out[0];
+        RoomBinding binding = (RoomBinding) out[1];
         tickets.put(entry.presence().ticket(), binding);
         if (resumeTicket != null && binding.room().retainsTicket(resumeTicket)) tickets.put(resumeTicket, binding);
         return entry;
@@ -283,10 +292,14 @@ public class BeachService {
         return binding.room().setLighting(mode);
     }
 
-    /** 지금 같은 방에서 서로 보이는 사람들 (감정구슬의 "함께 있던 친구"). 모르는 티켓이면 아무도 없다 */
+    /**
+     * 지금 같은 방에서 서로 보이는 사람들 (감정구슬의 "함께 있던 친구"). 모르는 티켓이면 아무도 없다.
+     * 공용 공간에서 만난 사람은 낯선 사람이라 구슬에 계정 id·닉네임을 남기지 않는다. 같은 소로우 멤버만 적는다.
+     */
     public java.util.List<BeachRoom.Companion> companions(String ticket) {
         RoomBinding binding = ticket == null ? null : tickets.get(ticket);
-        return binding == null ? java.util.List.of() : binding.room().companions(ticket);
+        if (binding == null || kr.co.shuim.common.SpaceMaps.isPublic(binding.communityId())) return java.util.List.of();
+        return binding.room().companions(ticket);
     }
 
     /** Read only the existing in-memory binding; this does not validate or refresh a visit. */
@@ -342,6 +355,52 @@ public class BeachService {
         if ((now < last || now - last >= BeachRoom.SWEEP_EVERY_MS) && lastSweep.compareAndSet(last, now)) {
             rooms.values().forEach(binding -> binding.room().sweep());
             tickets.entrySet().removeIf(entry -> !entry.getValue().room().retainsTicket(entry.getKey()));
+            // 아무도 없고 재입장 기록도 끝난 방은 메모리에서 지운다. 서버가 한 대라 메모리 정리로 충분하다.
+            // 입장과 같은 열쇠 잠금(compute) 안에서 비었는지 다시 보므로 막 들어온 방문을 잃지 않는다.
+            for (RoomKey key : java.util.List.copyOf(rooms.keySet()))
+                rooms.computeIfPresent(key, (id, binding) -> binding.room().idle() ? null : binding);
         }
+    }
+
+    /** 메모리에 남아 있는 방 수 (테스트용) */
+    int roomCount() { return rooms.size(); }
+
+    /* ---------- 방문 자격 다시 보기 · 관리 ---------- */
+
+    /** tick 이 이 간격마다 한 번 로그인·이용 제한·소로우 멤버 자격·차단 목록을 다시 본다 */
+    static final long RECHECK_MS = 60_000;
+
+    /** 이 방문의 자격을 다시 볼 차례인지. 차례가 오면 시각을 먼저 갱신해 같은 방문의 다른 tick 은 다시 보지 않는다 */
+    boolean claimRecheck(String ticket) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        return binding != null && binding.room().claimRecheck(ticket, RECHECK_MS);
+    }
+
+    void refreshExcluded(String ticket, Set<String> excluded) {
+        RoomBinding binding = ticket == null ? null : tickets.get(ticket);
+        if (binding != null) binding.room().refreshExcluded(ticket, excluded);
+    }
+
+    /** 이용권을 이미 쓴 요청의 재시도: 이 방이 기억하는 불꽃만 돌려주고 새로 쏘지 않는다 */
+    public BeachRoom.FireworkLaunch replayFireworks(String ticket, String userId, String requestId) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().replayFireworks(ticket, userId, requestId);
+    }
+
+    /** 내가 띄운 소원 풍등을 내린다. 내 방문이 있는 방에서만 */
+    public boolean removeOwnLantern(String ticket, String userId, String eventId) {
+        requireVisit(ticket, userId);
+        RoomBinding binding = tickets.get(ticket);
+        if (binding == null) throw ApiException.gone(BeachController.GONE);
+        return binding.room().removeUyuniMoment(eventId, userId);
+    }
+
+    /** 관리자: 어느 방이든 이 풍등을 내린다 */
+    public boolean removeLanternAnywhere(String eventId) {
+        boolean removed = false;
+        for (RoomBinding binding : rooms.values()) removed |= binding.room().removeUyuniMoment(eventId, null);
+        return removed;
     }
 }

@@ -10,7 +10,7 @@ export const SITE = {
   tagline: "잔혹하면서도 아름다운 역설들",
   description: "잔혹하면서도 아름다운 역설들. 모순된 마음을 기록하고 서로에게 위로를 건네는 소로우.",
   /** 운영 주소. 미리보기·로컬은 NEXT_PUBLIC_SITE_URL 로 바꿀 수 있다 */
-  url: (process.env.NEXT_PUBLIC_SITE_URL ?? "https://sorow.co.kr").replace(/\/+$/, ""),
+  url: (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.sorow.co.kr").replace(/\/+$/, ""),
   keywords: ["소로우", "SOROW", "슬픔", "위로", "마음 기록", "감정 일기", "익명 커뮤니티", "멘탈 케어", "마음 가속도"],
   themeLight: "#f7f7fb",
   themeDark: "#15141c",

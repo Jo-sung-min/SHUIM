@@ -8,7 +8,7 @@
 
 | 항목 | 현재 값 / 해야 할 일 |
 | --- | --- |
-| 앱 / 웹 주소 | 소로우 / `https://sorow.co.kr` |
+| 앱 / 웹 주소 | 소로우 / `https://www.sorow.co.kr` |
 | 운영 회사 | 루체. 사업자 서류와 결제 프로필의 정확한 법적 명칭·주소를 확인 |
 | 계정·고객 문의 이메일 | `developer@lucelab.co.kr`. Google 계정 생성과 메일 수신·회신을 실제로 확인 |
 | Play 개발자 계정 | 아직 없음. 회사 서비스이므로 **조직 계정**으로 등록 준비 |
@@ -85,7 +85,7 @@ npm.cmd run test:privacy
 npm.cmd run test:availability
 npm.cmd run test:media
 npm.cmd run build
-npm.cmd run check:release -- https://sorow.co.kr
+npm.cmd run check:release -- https://www.sorow.co.kr
 ```
 
 `check:release`는 공개 웹의 앱 연결·매니페스트/아이콘·오프라인 파일·정책 페이지와 초안 배너를 확인합니다. 미배포 상태, 실제 서명 인증서 미설정, 운영 정책 초안이면 실패가 정상입니다. 비밀번호나 실제 사용자 내용을 전송하는 도구가 아닙니다. 계정 삭제·차단·로그인·개인정보처리방침의 내용 자체는 [실기기 시험](device-test-plan.md)과 운영 검토로 확인합니다.

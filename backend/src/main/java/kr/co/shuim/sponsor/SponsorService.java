@@ -57,6 +57,17 @@ public class SponsorService {
     public SponsorService(JdbcClient jdbc, FireworkTicketService tickets) { this(jdbc, tickets, System::currentTimeMillis); }
     SponsorService(JdbcClient jdbc, FireworkTicketService tickets, LongSupplier clock) { this.jdbc = jdbc; this.tickets = tickets; this.clock = clock; }
 
+    /** 회원 폭죽이 열려 있을 때만 멋져요가 이용권을 준다. 직접 만든(테스트) 서비스는 열린 상태로 시작한다 */
+    private boolean memberFireworks = true;
+    /** 한 계정이 최근 30일 동안 멋져요로 받을 수 있는 이용권 수 (하루 한도와 별도) */
+    private int monthlyCheers = 30;
+
+    @org.springframework.beans.factory.annotation.Value("${app.fireworks.members-enabled:false}")
+    void setMemberFireworks(boolean enabled) { this.memberFireworks = enabled; }
+
+    @org.springframework.beans.factory.annotation.Value("${app.sponsor.monthly-cheers:30}")
+    void setMonthlyCheers(int limit) { this.monthlyCheers = Math.max(0, limit); }
+
     /* ---------- 공개 ---------- */
 
     public List<PublicBanner> liveBanners() {
@@ -105,11 +116,18 @@ public class SponsorService {
     /** 멋져요 한 번 = 기업의 남은 폭죽 1개가 내 이용권 1장. 기업당 하루 1번, 하루 DAILY_CHEERS 장. */
     @Transactional
     public CheerResult cheer(DbUser user, String sponsorId) {
+        // 기업이 돈으로 산 폭죽이 쓸 수 없는 이용권으로 새어 나가지 않게, 회원 폭죽이 닫혀 있으면 보상도 주지 않는다.
+        if (!memberFireworks) throw ApiException.forbidden("불꽃놀이는 아직 준비 중이에요.");
         tickets.requireEligible(user);
         UUID key = parse(sponsorId);
         if (key == null) throw ApiException.notFound("후원 기업을 찾을 수 없어요.");
         long now = clock.getAsLong();
         LocalDate day = PointsPolicy.day(now);
+        // 막 만든 계정을 여럿 돌려 기업 재고를 빼 가지 못하게, 가입하고 하루가 지난 계정만 받는다.
+        boolean fresh = jdbc.sql("""
+            SELECT COALESCE(registered_at, created_at) > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '24 hours' FROM users WHERE id=?
+            """).param(user.id()).query(Boolean.class).optional().orElse(true);
+        if (fresh) throw ApiException.forbidden("가입하고 하루가 지나면 멋져요로 이용권을 받을 수 있어요.");
         int balance = tickets.lock(user.id(), now);
         record Locked(boolean published, int remaining) {}
         Locked sponsor = jdbc.sql("SELECT published,fireworks_total-fireworks_given AS remaining FROM sponsors WHERE id=? FOR UPDATE").param(key)
@@ -119,6 +137,8 @@ public class SponsorService {
         if (sponsor.remaining() <= 0) throw new ApiException(409, "이 기업이 준비한 폭죽이 모두 전해졌어요.");
         int today = jdbc.sql("SELECT count(*) FROM sponsor_cheers WHERE user_id=? AND cheered_on=?").param(user.id()).param(day).query(Integer.class).single();
         if (today >= SponsorPolicy.DAILY_CHEERS) throw new ApiException(429, "오늘 받을 수 있는 폭죽 이용권을 모두 받았어요. 내일 다시 멋져요를 보내 주세요.");
+        int month = jdbc.sql("SELECT count(*) FROM sponsor_cheers WHERE user_id=? AND cheered_on>?").param(user.id()).param(day.minusDays(30)).query(Integer.class).single();
+        if (month >= monthlyCheers) throw new ApiException(429, "이번 달에 받을 수 있는 폭죽 이용권을 모두 받았어요. 다음에 다시 멋져요를 보내 주세요.");
         int inserted = jdbc.sql("INSERT INTO sponsor_cheers(id,sponsor_id,user_id,cheered_on,created_at) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING")
             .param(UUID.randomUUID()).param(key).param(user.id()).param(day).param(now).update();
         if (inserted == 0) throw new ApiException(409, "오늘은 이미 이 기업에 멋져요를 보냈어요.");

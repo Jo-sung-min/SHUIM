@@ -16,13 +16,21 @@ public final class Categories {
         new Category("work", "일·커리어", "💼", "회사, 이직, 사이드 프로젝트…", "var(--c-work)")
     );
 
+    /** 요청으로 받는 카테고리 상한 (기본 5 + 사용자 5 보다 넉넉하게). 넘는 것은 버리고 이름은 자른다 */
+    static final int MAX = 15, ID_LEN = 40, LABEL_LEN = 20, EMOJI_LEN = 16, HINT_LEN = 60, COLOR_LEN = 40;
+
     /** 요청에 카테고리 목록이 있으면 그것(기본 + 사용자 추가), 없으면 기본 5개 */
     public static List<Category> of(List<Category> fromBody) {
         if (fromBody == null || fromBody.isEmpty()) return DEFAULT;
-        return fromBody.stream().filter(c -> c != null && c.id() != null && !c.id().isBlank())
-            .map(c -> new Category(c.id(), c.label() == null ? c.id() : c.label(), c.emoji() == null ? "📌" : c.emoji(), c.hint() == null ? "" : c.hint(), c.color() == null ? "" : c.color()))
+        List<Category> out = fromBody.stream().filter(c -> c != null && c.id() != null && !c.id().isBlank() && c.id().length() <= ID_LEN)
+            .limit(MAX)
+            .map(c -> new Category(c.id(), cut(c.label() == null ? c.id() : c.label(), LABEL_LEN), c.emoji() == null ? "📌" : cut(c.emoji(), EMOJI_LEN),
+                cut(c.hint(), HINT_LEN), cut(c.color(), COLOR_LEN)))
             .toList();
+        return out.isEmpty() ? DEFAULT : out;
     }
+
+    private static String cut(String s, int max) { return kr.co.shuim.common.Korean.cut(s, max); }
 
     public static Category byId(String id, List<Category> extra) {
         for (Category c : DEFAULT) if (c.id().equals(id)) return c;

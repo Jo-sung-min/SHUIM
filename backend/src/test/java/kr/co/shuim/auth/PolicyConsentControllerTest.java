@@ -127,7 +127,12 @@ class PolicyConsentControllerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         DbUser user = new DbUser("created", "a@example.com", "닉네임", "user", false, null, null, 0);
-        when(auth.signUp(request, response, "a@example.com", "닉네임", "secret1")).thenReturn(user);
+        // 동의 저장은 가입 트랜잭션 안의 콜백으로 넘어간다
+        when(auth.signUp(eq(request), eq(response), eq("a@example.com"), eq("닉네임"), eq("secret1"), any())).thenAnswer(inv -> {
+            java.util.function.Consumer<DbUser> afterInsert = inv.getArgument(5);
+            afterInsert.accept(user);
+            return user;
+        });
         controller.post("signup", Map.of("email", "a@example.com", "nick", "닉네임", "password", "secret1",
             "signupConsentVersion", PolicyConsentService.VERSION, "aiDisclosureAccepted", false), request, response);
         verify(policies).accept(user, PolicyConsentService.VERSION, false);

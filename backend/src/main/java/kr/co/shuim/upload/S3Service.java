@@ -139,6 +139,9 @@ public class S3Service {
         return presigner;
     }
 
+    /** 사용자 업로드 키의 접두사 (예: upload) */
+    public String uploadPrefix() { return prefix; }
+
     /** 키 → 공개 URL (CDN 우선) */
     public String publicUrlFor(String key) {
         return cdn.isBlank() ? "https://" + bucket + ".s3." + region + ".amazonaws.com/" + key : cdn + "/" + key;
@@ -152,6 +155,20 @@ public class S3Service {
             if (url.startsWith(b + "/")) return url.substring(b.length() + 1);
         }
         return null;
+    }
+
+    /**
+     * 피드 사진·릴스 표지·프로필 사진으로 저장해도 되는 주소인지: 우리 CDN(app.s3.cdn-base-url)·버킷 주소이거나
+     * 사이트 상대 경로("/…", 단 "//"·역슬래시는 다른 호스트로 해석되므로 제외). 외부 주소는 열람자 추적·검토 뒤 바꿔치기에 쓰일 수 있다.
+     * CDN 이 없는 로컬 개발에서도 상대 경로와 (설정돼 있으면) 버킷 주소는 그대로 쓸 수 있다.
+     */
+    public boolean isAllowedMediaUrl(String url) {
+        if (url == null) return false;
+        String u = url.strip();
+        if (u.isEmpty() || u.indexOf('\\') >= 0 || u.chars().anyMatch(c -> c <= 0x20 || c == 0x7f)) return false;
+        if (u.startsWith("/")) return !u.startsWith("//");
+        if (!cdn.isBlank() && u.startsWith(cdn + "/")) return true;
+        return keyFromUrl(u) != null;
     }
 
     public record Presigned(String uploadUrl, String key, String publicUrl, long expiresIn, Map<String, String> headers) {}
@@ -200,6 +217,25 @@ public class S3Service {
         } catch (Exception e) {
             log.warn("S3 delete failed {}: {}", key, e.getMessage());
         }
+    }
+
+    /**
+     * 더 쓰지 않게 된 본인 업로드(예: 바꾼 프로필 사진)를 삭제 작업(object_deletion_jobs)에 넣는다.
+     * 남의 파일이거나, 프로필·피드·외침·보관함 어디선가 아직 쓰고 있으면 넣지 않는다. 화면 캐시·진행 중인 저장을 위해 10분 뒤에 지운다.
+     */
+    public boolean enqueueDeletionIfUnused(String url, String userId) {
+        String key = ownedKeyFromUrl(url, userId);
+        if (key == null || jdbc == null) return false;
+        boolean used = jdbc.sql("""
+            SELECT EXISTS (SELECT 1 FROM profiles WHERE avatar_url = :u)
+                OR EXISTS (SELECT 1 FROM feed_posts WHERE image = :u OR :u = ANY(images) OR strpos(pages::text, :u) > 0)
+                OR EXISTS (SELECT 1 FROM shout_posts WHERE :u = ANY(images))
+                OR EXISTS (SELECT 1 FROM map_photos WHERE object_key = :k)
+            """).param("u", url).param("k", key).query(Boolean.class).single();
+        if (used) return false;
+        jdbc.sql("INSERT INTO object_deletion_jobs (object_key, not_before) VALUES (?, now() + interval '10 minutes') ON CONFLICT (object_key) DO NOTHING")
+            .param(key).update();
+        return true;
     }
 
     /** Durable cleanup jobs call this method; failures must propagate so the job is retried. */

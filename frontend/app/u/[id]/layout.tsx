@@ -10,6 +10,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     title: "프로필",
     description: "소로우에서 나눈 위로글과 외침",
     alternates: { canonical: `/u/${encodeURIComponent(id)}` },
+    // 개인 프로필은 검색 결과에 남기지 않는다 (링크를 받은 사람만 본다)
+    robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
   };
 }
 

@@ -48,10 +48,18 @@ class BeachCompanionsTest {
     @Test
     void theServiceFindsTheRoomByTicket() {
         BeachService beach = new BeachService(clock::get, new BeachFireService(new TestFireRepository()));
-        Presence me = beach.enter("public", "u-me", "나", Set.of());
-        beach.enter("public", "u-friend", "가람", Set.of());
+        Presence me = beach.enter("circle-1", "u-me", "나", Set.of());
+        beach.enter("circle-1", "u-friend", "가람", Set.of());
         beach.enter("other-space", "u-elsewhere", "다른 방", Set.of());
         assertEquals(List.of(new Companion("u-friend", "가람")), beach.companions(me.ticket()));
         assertTrue(beach.companions("unknown").isEmpty());
+    }
+
+    @Test
+    void publicSpaceStrangersAreNeverStoredAsCompanions() {
+        BeachService beach = new BeachService(clock::get, new BeachFireService(new TestFireRepository()));
+        Presence me = beach.enter("public", "u-me", "나", Set.of());
+        beach.enter("public", "u-stranger", "낯선 사람", Set.of());
+        assertTrue(beach.companions(me.ticket()).isEmpty());
     }
 }

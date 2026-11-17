@@ -19,9 +19,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -43,6 +49,38 @@ public class CommunityService {
     private final BadgeService badges;
     private final PointsService points;
     private final LightService light;
+
+    /** GET 에서 세션이 없는 방문자. DB 에 만들지 않는 자리표시 (실제 id 는 8자 이상 base36, 시드는 demo·u1~u7 이라 겹치지 않는다) */
+    public static final String GUEST_ID = "guest";
+    public static final DbUser GUEST = new DbUser(GUEST_ID, null, "손님", "user", true, null, null, 0L);
+
+    /*
+     * 계정별 하루 쓰기 한도. 실제 이용자는 닿지 않을 만큼 넉넉하게, 쿠키만 지우면 생기는 익명 계정은 더 낮게.
+     * 백엔드는 인스턴스 하나라 프로세스 안 카운터로 센다 (재시작하면 0부터).
+     */
+    static final int DAILY_POSTS = 30, DAILY_POSTS_ANON = 10;
+    static final int DAILY_COMMENTS = 200, DAILY_COMMENTS_ANON = 50;
+    static final int DAILY_FEED = 20, DAILY_FEED_ANON = 5;
+    static final int DAILY_REPORTS = 100, DAILY_REPORTS_ANON = 20;
+    private static final long WEEKLY_REFRESH_GAP_MS = 60_000;
+    private final DailyCaps caps = new DailyCaps();
+
+    /*
+     * GET 스냅샷 캐시: 보는 사람과 무관한 전체 상태를 잠깐(기본 2초) 같이 쓴다. 백엔드 인스턴스가 하나라 메모리 캐시로 충분하다.
+     * 이 서비스의 쓰기는 커밋 뒤 generation 을 올려 바로 비운다. 다른 서비스의 변경은 TTL 만큼 늦게 보일 수 있다.
+     */
+    private final Object snapshotLock = new Object();
+    private final AtomicLong generation = new AtomicLong();
+    private final AtomicLong lastWeeklyRefresh = new AtomicLong();
+    private volatile Cached cached;
+    private long snapshotTtlMs = 2000;
+    private TransactionTemplate tx;
+
+    @Autowired(required = false)
+    void configureSnapshot(PlatformTransactionManager transactions, @Value("${app.community.snapshot-ttl-ms:2000}") long ttlMs) {
+        this.tx = new TransactionTemplate(transactions);
+        this.snapshotTtlMs = Math.max(0, ttlMs);
+    }
 
     @Autowired
     public CommunityService(JdbcClient jdbc, ObjectMapper json, S3Service s3, Environment env,
@@ -72,49 +110,176 @@ public class CommunityService {
 
     /* ---------- 읽기 ---------- */
 
+    /**
+     * 쓰기 경로(전역 잠금 안)에서 쓰는 최신 상태. 잠금을 잡고 전체를 다시 읽고, 주간 집계를 저장한다.
+     * GET /api/community 는 이 메서드 대신 잠금 없는 {@link #viewerStore(DbUser)} 를 쓴다.
+     */
     @Transactional
     public Store loadStore(DbUser me) {
-        return forViewer(loadUnfilteredStore(me), me);
+        return forViewer(loadUnfilteredStore(me), me, null);
     }
 
-    private Store forViewer(Store store, DbUser me) {
-        Set<String> myCircles = new HashSet<>(jdbc.sql("SELECT community_id FROM community_members WHERE user_id = ? AND status = 'active'").param(me.id()).query(String.class).list());
+    /**
+     * GET /api/community 용: 전역 잠금·쓰기 없이, 보는 사람과 무관한 스냅샷(짧게 캐시)에 보는 사람 몫만 얹는다.
+     * 스냅샷은 REPEATABLE READ 읽기 전용 트랜잭션 한 번으로 읽어 계정 삭제와 겹쳐도 한 시점의 모습만 보인다.
+     * 지난 주·이번 주 집계가 오래됐으면 메모리에서 다시 세어 보여 주고, 저장은 다음 쓰기(전역 잠금 안)가 한다.
+     */
+    public Store viewerStore(DbUser me) {
+        // 프로토타입 자동 답글은 쓰기라서 개발 환경(simulate)에서만 예전처럼 잠금 경로로
+        if (simulate && !GUEST_ID.equals(me.id())) return inTx(() -> loadStore(me));
+        Snapshot snap = snapshot();
+        return forViewer(snap.storeFor(me), me, snap.circleVisibility());
+    }
+
+    /** 이번 주 다시 세기: 1분 안에 이미 셌으면 다시 세지 않고(누구나 누를 수 있는 버튼이라) 지금 상태만 돌려준다 */
+    public Store weeklyRefresh(DbUser me) {
+        long now = System.currentTimeMillis();
+        long last = lastWeeklyRefresh.get();
+        if (now - last < WEEKLY_REFRESH_GAP_MS || !lastWeeklyRefresh.compareAndSet(last, now)) return viewerStore(me);
+        return inTx(() -> refreshCurrentWeek(me));
+    }
+
+    /** 다른 서비스가 커뮤니티 글을 바꾼 뒤 캐시를 바로 비우고 싶을 때 */
+    public void invalidateSnapshot() {
+        generation.incrementAndGet();
+    }
+
+    private <T> T inTx(java.util.function.Supplier<T> work) {
+        if (tx == null || TransactionSynchronizationManager.isActualTransactionActive()) return work.get();
+        return tx.execute(status -> work.get());
+    }
+
+    /** 보는 사람과 무관한 전체 상태 (gifts 는 집계용으로 전부) */
+    record Snapshot(List<User> users, Map<String, User> usersById, List<Post> posts, List<Comment> comments, List<FeedPost> feed,
+                    Map<String, Creator> creators, List<String[]> follows, List<Gift> gifts, Map<String, WeeklyBatch> weekly,
+                    Map<String, String> circleVisibility) {
+        /** 보는 사람 몫: me·following 만 채운다. 목록은 복사해서 호출자가 덧붙여도 스냅샷은 그대로 */
+        Store storeFor(DbUser me) {
+            User meUser = usersById.get(me.id());
+            if (meUser == null) meUser = new User(me.id(), me.nick(), me.role(), null, null, null, false);
+            List<String> following = new ArrayList<>();
+            for (String[] f : follows) if (f[0].equals(me.id())) following.add(f[1]);
+            return new Store(meUser, users, posts, new ArrayList<>(comments), feed, creators, following, gifts, new LinkedHashMap<>(weekly));
+        }
+    }
+
+    private record Cached(Snapshot snapshot, long generation, long at) {}
+
+    private Snapshot snapshot() {
+        long gen = generation.get();
+        Cached c = cached;
+        if (c != null && c.generation() == gen && System.currentTimeMillis() - c.at() < snapshotTtlMs) return c.snapshot();
+        // 한 번에 하나만 DB 에서 읽는다 (나머지는 DB 연결 없이 기다렸다가 같은 결과를 쓴다)
+        synchronized (snapshotLock) {
+            gen = generation.get();
+            c = cached;
+            if (c != null && c.generation() == gen && System.currentTimeMillis() - c.at() < snapshotTtlMs) return c.snapshot();
+            long at = System.currentTimeMillis();
+            Snapshot fresh = withComputedWeeks(readSnapshot());
+            // 읽는 사이에 쓰기가 커밋됐으면 이 결과는 캐시하지 않는다
+            if (snapshotTtlMs > 0 && generation.get() == gen) cached = new Cached(fresh, gen, at);
+            return fresh;
+        }
+    }
+
+    private Snapshot readSnapshot() {
+        if (tx == null || TransactionSynchronizationManager.isActualTransactionActive()) return loadSnapshot();
+        return tx.execute(status -> {
+            // 트랜잭션 범위 설정이라 Supabase 트랜잭션 풀러에서도 다른 연결로 새지 않는다
+            jdbc.sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY").update();
+            return loadSnapshot();
+        });
+    }
+
+    /** 오래된 주간 집계를 메모리에서만 다시 센다 (GET 은 쓰지 않는다) */
+    private static Snapshot withComputedWeeks(Snapshot s) {
+        User nobody = new User("", "", "user", null, null);
+        Store plaza = new Store(nobody, s.users(), s.posts().stream().filter(p -> !p.inCircle()).toList(), s.comments(), s.feed(), s.creators(), List.of(), s.gifts(), s.weekly());
+        List<CommunityLogic.WeekTodo> todo = CommunityLogic.weeksNeedingCompute(plaza);
+        if (todo.isEmpty()) return s;
+        Map<String, WeeklyBatch> weekly = new LinkedHashMap<>(s.weekly());
+        for (CommunityLogic.WeekTodo w : todo) weekly.put(w.week(), CommunityLogic.computeWeekly(plaza, w.week(), w.finalized()));
+        return new Snapshot(s.users(), s.usersById(), s.posts(), s.comments(), s.feed(), s.creators(), s.follows(), s.gifts(), weekly, s.circleVisibility());
+    }
+
+    private Store forViewer(Store store, DbUser me, Map<String, String> knownCircleVisibility) {
+        boolean guest = GUEST_ID.equals(me.id());
+        Set<String> myCircles = guest ? Set.of()
+            : new HashSet<>(jdbc.sql("SELECT community_id FROM community_members WHERE user_id = ? AND status = 'active'").param(me.id()).query(String.class).list());
+        Map<String, String> circleVisibility = knownCircleVisibility != null ? knownCircleVisibility : loadCircleVisibility();
+        return visibleStore(store, guest ? Set.of() : blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked(),
+            myCircles, circleVisibility, System.currentTimeMillis(), PrivateCircleAccess.inaccessibleCircles(jdbc, me.id()));
+    }
+
+    private Map<String, String> loadCircleVisibility() {
         Map<String, String> circleVisibility = new HashMap<>();
         jdbc.sql("SELECT id, visibility FROM communities").query(rs -> { circleVisibility.put(rs.getString("id"), rs.getString("visibility")); });
-        return visibleStore(store, blocks.excludedIds(me.id()), "admin".equals(me.role()) && !me.anonymous() && !me.blocked(),
-            myCircles, circleVisibility, System.currentTimeMillis(), PrivateCircleAccess.inaccessibleCircles(jdbc, me.id()));
+        return circleVisibility;
     }
 
     private Store loadUnfilteredStore(DbUser me) {
         Db.lockCommunity(jdbc);
+        // 쓰기 뒤에 GET 캐시가 옛 상태를 보여 주지 않게 커밋되면 비운다
+        afterCompletion(this::invalidateSnapshot);
+        Store store = loadSnapshot().storeFor(me);
+
+        // 프로토타입: 샘플 유저의 자동 답글
+        if (simulate) {
+            Set<String> privatePostIds = new HashSet<>(jdbc.sql("SELECT p.id FROM shout_posts p JOIN communities c ON c.id=p.community_id WHERE c.private_test")
+                .query(String.class).list());
+            for (Comment c : CommunityLogic.pendingSimulatedReplies(store, SAMPLE_USER_IDS, privatePostIds)) {
+                boolean isPost = store.posts().stream().anyMatch(p -> p.id().equals(c.postId()));
+                jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
+                    .param(c.id()).param(isPost ? "post" : "feed").param(c.postId()).param(c.authorId()).param(c.text()).update();
+                store.comments().add(c);
+            }
+        }
+
+        // 주간 집계 (지난 주 확정, 이번 주 잠정). 소로우 사연은 보낸 사람이 드러나면 안 되니 광장의 외침만 센다
+        Store plaza = new Store(store.me(), store.users(), store.posts().stream().filter(p -> !p.inCircle()).toList(), store.comments(), store.feed(),
+            store.creators(), store.following(), store.gifts(), store.weekly());
+        for (CommunityLogic.WeekTodo w : CommunityLogic.weeksNeedingCompute(plaza)) {
+            WeeklyBatch b = CommunityLogic.computeWeekly(plaza, w.week(), w.finalized());
+            upsertWeekly(b);
+            store.weekly().put(w.week(), b);
+        }
+        return store;
+    }
+
+    /** 잠금 없이 전체를 읽는다. 호출자가 잠금(쓰기) 또는 REPEATABLE READ 트랜잭션(GET)으로 한 시점을 보장한다 */
+    private Snapshot loadSnapshot() {
         Map<String, List<String>> cheerMap = new HashMap<>();
         jdbc.sql("SELECT user_id, target_kind, target_id FROM cheers ORDER BY created_at").query(rs -> {
             cheerMap.computeIfAbsent(rs.getString("target_kind") + ":" + rs.getString("target_id"), k -> new ArrayList<>()).add(rs.getString("user_id"));
         });
+        // 익명 계정이나 가입한 지 하루가 안 된 계정의 신고는 weak: 관리자 검토에는 보이지만 자동 가리기에는 세지 않는다
         Map<String, List<Report>> reportMap = new HashMap<>();
-        jdbc.sql("SELECT reporter_id, target_kind, target_id, reason, created_at FROM reports ORDER BY created_at").query(rs -> {
+        jdbc.sql("""
+            SELECT r.reporter_id, r.target_kind, r.target_id, r.reason, r.created_at,
+                   (u.id IS NULL OR u.is_anonymous OR r.created_at < COALESCE(u.registered_at, u.created_at) + interval '24 hours') AS weak
+              FROM reports r LEFT JOIN users u ON u.id = r.reporter_id ORDER BY r.created_at""").query(rs -> {
             reportMap.computeIfAbsent(rs.getString("target_kind") + ":" + rs.getString("target_id"), k -> new ArrayList<>())
-                .add(new Report(rs.getString("reporter_id"), rs.getString("reason"), Db.msReq(rs, "created_at")));
+                .add(new Report(rs.getString("reporter_id"), rs.getString("reason"), Db.msReq(rs, "created_at"), rs.getBoolean("weak")));
         });
         Map<String, List<String>> saveMap = new HashMap<>();
         jdbc.sql("SELECT user_id, feed_post_id FROM saves ORDER BY created_at").query(rs -> {
             saveMap.computeIfAbsent(rs.getString("feed_post_id"), k -> new ArrayList<>()).add(rs.getString("user_id"));
         });
         Map<String, List<String>> followerMap = new HashMap<>();
-        List<String> following = new ArrayList<>();
+        List<String[]> follows = new ArrayList<>();
         jdbc.sql("SELECT follower_id, creator_id FROM follows ORDER BY created_at").query(rs -> {
             followerMap.computeIfAbsent(rs.getString("creator_id"), k -> new ArrayList<>()).add(rs.getString("follower_id"));
-            if (rs.getString("follower_id").equals(me.id())) following.add(rs.getString("creator_id"));
+            follows.add(new String[] {rs.getString("follower_id"), rs.getString("creator_id")});
         });
 
         Map<String, String> titles = badges.allTitles(); // 닉네임 옆 칭호
-        List<User> allUsers = jdbc.sql("SELECT id, nick, role, blocked_at, blocked_reason, is_anonymous FROM users")
+        List<User> users = jdbc.sql("SELECT id, nick, role, blocked_at, blocked_reason, is_anonymous FROM users")
             .query((rs, i) -> new User(rs.getString("id"), rs.getString("nick"), "admin".equals(rs.getString("role")) ? "admin" : "user", Db.ms(rs, "blocked_at"), rs.getString("blocked_reason"), titles.get(rs.getString("id")),
                 !rs.getBoolean("is_anonymous") && !PointsPolicy.SAMPLE_USERS.contains(rs.getString("id")))).list();
-        User meUser = allUsers.stream().filter(u -> u.id().equals(me.id())).findFirst().orElse(new User(me.id(), me.nick(), me.role(), null, null, null, false));
-        List<User> users = new ArrayList<>(allUsers.stream().filter(u -> !u.id().equals(me.id())).toList());
+        Map<String, User> usersById = new HashMap<>(Math.max(16, users.size() * 2));
+        for (User u : users) usersById.put(u.id(), u);
 
-        // 별: 집계에는 전부 쓰고, 화면에는 forViewer 가 최근 것만 추려 내려보낸다
+        // 별: 집계에는 전부 쓰고, 화면에는 visibleStore 가 최근 것만 추려 내려보낸다
         List<Gift> gifts = jdbc.sql("SELECT id::text AS id, from_user, to_user, post_id, amount, created_at FROM light_gifts WHERE post_id IS NOT NULL ORDER BY created_at DESC, id")
             .query((rs, i) -> new Gift(rs.getString("id"), rs.getString("from_user"), rs.getString("to_user"), rs.getString("post_id"), rs.getInt("amount"), rs.getLong("created_at"))).list();
         Map<String, Integer> lightByPost = CommunityLogic.lightByPost(gifts);
@@ -125,10 +290,10 @@ public class CommunityService {
             listOf(cheerMap, "post:" + rs.getString("id")), reportsOf(reportMap, "post:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
             Db.textArray(rs, "images"), rs.getString("community_id"), rs.getObject("post_no", Integer.class), rs.getString("circle_name"), rs.getString("circle_slug"), rs.getString("accepted_comment_id"),
             lightByPost.getOrDefault(rs.getString("id"), 0))).list();
-        List<Comment> comments = new ArrayList<>(jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
+        List<Comment> comments = jdbc.sql("SELECT * FROM comments").query((rs, i) -> new Comment(
             rs.getString("id"), rs.getString("post_id"), rs.getString("text"), rs.getString("author_id"), Db.msReq(rs, "created_at"),
             listOf(cheerMap, "comment:" + rs.getString("id")), reportsOf(reportMap, "comment:" + rs.getString("id")), Db.trueOrNull(rs, "hidden"), Db.ms(rs, "reviewed_at"),
-            rs.getString("parent_id"))).list());
+            rs.getString("parent_id"))).list();
         List<FeedPost> feed = jdbc.sql("SELECT * FROM feed_posts").query((rs, i) -> {
             String id = rs.getString("id");
             String image = rs.getString("image");
@@ -152,29 +317,7 @@ public class CommunityService {
             weekly.put(week, new WeeklyBatch(week, Db.msReq(rs, "computed_at"), rs.getBoolean("finalized"), parseRows(rs.getString("rows")),
                 new Fund(0, 0, 0), new Light(rs.getLong("light_total"), rs.getInt("light_count"), rs.getInt("light_givers"))));
         });
-
-        Store store = new Store(meUser, users, posts, comments, feed, creators, following, gifts, weekly);
-
-        // 프로토타입: 샘플 유저의 자동 답글
-        if (simulate) {
-            Set<String> privatePostIds = new HashSet<>(jdbc.sql("SELECT p.id FROM shout_posts p JOIN communities c ON c.id=p.community_id WHERE c.private_test")
-                .query(String.class).list());
-            for (Comment c : CommunityLogic.pendingSimulatedReplies(store, SAMPLE_USER_IDS, privatePostIds)) {
-                boolean isPost = store.posts().stream().anyMatch(p -> p.id().equals(c.postId()));
-                jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING")
-                    .param(c.id()).param(isPost ? "post" : "feed").param(c.postId()).param(c.authorId()).param(c.text()).update();
-                store.comments().add(c);
-            }
-        }
-
-        // 주간 집계 (지난 주 확정, 이번 주 잠정). 소로우 사연은 보낸 사람이 드러나면 안 되니 광장의 외침만 센다
-        Store plaza = new Store(meUser, users, posts.stream().filter(p -> !p.inCircle()).toList(), comments, feed, creators, following, gifts, weekly);
-        for (CommunityLogic.WeekTodo w : CommunityLogic.weeksNeedingCompute(plaza)) {
-            WeeklyBatch b = CommunityLogic.computeWeekly(plaza, w.week(), w.finalized());
-            upsertWeekly(b);
-            store.weekly().put(w.week(), b);
-        }
-        return store;
+        return new Snapshot(users, usersById, posts, comments, feed, creators, follows, gifts, weekly, loadCircleVisibility());
     }
 
     /** Filter only after global ranking computation, so personal blocks cannot change shared rankings. */
@@ -190,50 +333,90 @@ public class CommunityService {
         return visibleStore(store, excluded, admin, myCircles, circleVisibility, now, Set.of());
     }
 
+    /**
+     * 관리자가 아니면 회원 명부를 통째로 내려주지 않는다: users 는 이번 응답의 글·댓글·피드·별·순위에 나온 사람만,
+     * 그것도 닉네임·칭호·가입 여부만 (역할·정지 시각·정지 사유는 빼고). 힘내요·리스너 목록은 수는 그대로 두고 내 id 만 남긴다.
+     */
     static Store visibleStore(Store store, Set<String> excluded, boolean admin, Set<String> myCircles,
                               Map<String, String> circleVisibility, long now, Set<String> inaccessibleCircles) {
         String viewer = store.me().id();
+        Map<String, User> byId = new HashMap<>(Math.max(16, store.users().size() * 2));
+        for (User u : store.users()) byId.putIfAbsent(u.id(), u);
+        User meUser = store.me();
+        Function<String, User> users = id -> viewer.equals(id) ? meUser : byId.getOrDefault(id, new User(id, "익명", null, null, null));
         List<Post> posts = store.posts().stream()
             .filter(p -> !p.inCircle() || !inaccessibleCircles.contains(p.communityId()))
             .filter(p -> p.inCircle()
-                ? (admin || CommunityLogic.isVisible(store, p)) && CircleLogic.canSee(p.communityId(), circleVisibility.get(p.communityId()), myCircles, admin, viewer.equals(p.authorId()), p.createdAt(), now)
-                : !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
-            .map(p -> p.withAuthor(p.inCircle() && !admin && !viewer.equals(p.authorId()) ? CircleLogic.maskedAuthor(p.communityId()) : p.authorId(),
-                publicReports(p, viewer, admin))).toList();
-        List<FeedPost> feed = store.feed().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(store, p)))
-            .map(p -> new FeedPost(p.id(), p.title(), p.text(), p.bg(), p.image(), p.images(), p.pages(), p.authorId(), p.createdAt(), p.cheers(),
+                ? (admin || CommunityLogic.isVisible(users, p)) && CircleLogic.canSee(p.communityId(), circleVisibility.get(p.communityId()), myCircles, admin, viewer.equals(p.authorId()), p.createdAt(), now)
+                : !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(users, p)))
+            .map(p -> p.forViewer(p.inCircle() && !admin && !viewer.equals(p.authorId()) ? CircleLogic.maskedAuthor(p.communityId()) : p.authorId(),
+                publicIds(p.cheers(), viewer, admin), publicReports(p, viewer, admin))).toList();
+        List<FeedPost> feed = store.feed().stream().filter(p -> !excluded.contains(p.authorId()) && (admin || CommunityLogic.isVisible(users, p)))
+            .map(p -> new FeedPost(p.id(), p.title(), p.text(), p.bg(), p.image(), p.images(), p.pages(), p.authorId(), p.createdAt(), publicIds(p.cheers(), viewer, admin),
                 publicReports(p, viewer, admin), p.saves().stream().filter(viewer::equals).toList(), p.hidden(), p.reviewedAt())).toList();
         Set<String> visiblePostIds = new HashSet<>();
         posts.forEach(p -> visiblePostIds.add(p.id()));
         feed.forEach(p -> visiblePostIds.add(p.id()));
-        Map<String, Creator> creators = new LinkedHashMap<>(store.creators());
-        excluded.forEach(creators::remove);
+        List<Comment> comments = store.comments().stream()
+            .filter(c -> !excluded.contains(c.authorId()) && visiblePostIds.contains(c.postId()) && (admin || CommunityLogic.isVisible(users, c)))
+            .map(c -> new Comment(c.id(), c.postId(), c.text(), c.authorId(), c.createdAt(), publicIds(c.cheers(), viewer, admin), publicReports(c, viewer, admin), c.hidden(), c.reviewedAt(), c.parentId())).toList();
+        // 크리에이터: 관리자는 전부, 그 밖에는 지금 보이는 피드 작성자와 나만 (피드를 쓴 적 있는 모든 사람의 명부가 되지 않게)
+        Set<String> feedAuthors = new HashSet<>();
+        feed.forEach(f -> feedAuthors.add(f.authorId()));
+        Map<String, Creator> creators = new LinkedHashMap<>();
+        store.creators().forEach((id, c) -> {
+            if (excluded.contains(id)) return;
+            if (admin) creators.put(id, c);
+            else if (id.equals(viewer) || feedAuthors.contains(id)) creators.put(id, new Creator(c.bio(), publicIds(c.followers(), viewer, false), c.since()));
+        });
         Map<String, WeeklyBatch> weekly = new LinkedHashMap<>();
         // A finalized snapshot must never resurrect a deleted/hidden/suspended/flagged post.
         Set<String> rankablePostIds = new HashSet<>();
-        store.posts().stream().filter(p -> !p.inCircle() && !excluded.contains(p.authorId()) && CommunityLogic.isVisible(store, p) && !CommunityLogic.isFlagged(p))
+        store.posts().stream().filter(p -> !p.inCircle() && !excluded.contains(p.authorId()) && CommunityLogic.isVisible(users, p) && !CommunityLogic.isFlagged(p))
             .forEach(p -> rankablePostIds.add(p.id()));
         store.weekly().forEach((key, w) -> weekly.put(key, new WeeklyBatch(w.week(), w.computedAt(), w.finalized(),
-            w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !CommunityLogic.userById(store, r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund(), w.light())));
+            w.rows().stream().filter(r -> !excluded.contains(r.userId()) && !users.apply(r.userId()).blocked() && rankablePostIds.contains(r.topPostId())).toList(), w.fund(), w.light())));
         // 최근 오간 별: 이 사람이 볼 수 있는 광장 글에 건넨 것만, 차단한·차단된 사람과 정지된 계정은 빼고
         Set<String> plazaPostIds = new HashSet<>();
         posts.stream().filter(p -> !p.inCircle()).forEach(p -> plazaPostIds.add(p.id()));
         List<Gift> gifts = store.gifts().stream()
             .filter(g -> g.by() != null && g.postId() != null && plazaPostIds.contains(g.postId()) && !excluded.contains(g.by()) && !excluded.contains(g.to())
-                && !CommunityLogic.userById(store, g.by()).blocked())
+                && !users.apply(g.by()).blocked())
             .sorted(Comparator.comparingLong(Gift::at).reversed()).limit(RECENT_GIFTS).toList();
-        return new Store(store.me(), store.users().stream().filter(u -> !excluded.contains(u.id())).toList(), posts,
-            store.comments().stream().filter(c -> !excluded.contains(c.authorId()) && visiblePostIds.contains(c.postId()) && (admin || CommunityLogic.isVisible(store, c)))
-                .map(c -> new Comment(c.id(), c.postId(), c.text(), c.authorId(), c.createdAt(), c.cheers(), publicReports(c, viewer, admin), c.hidden(), c.reviewedAt(), c.parentId())).toList(),
-            feed, creators, store.following().stream().filter(id -> !excluded.contains(id)).toList(),
+        List<User> outUsers;
+        if (admin) outUsers = store.users().stream().filter(u -> !excluded.contains(u.id()) && !u.id().equals(viewer)).toList();
+        else {
+            // 반드시 가린 뒤의 목록에서 모은다 (사연 작성자는 이미 "c:<id>" 라 실제 작성자가 들어가지 않는다)
+            Set<String> shown = new LinkedHashSet<>();
+            posts.forEach(p -> shown.add(p.authorId()));
+            comments.forEach(c -> shown.add(c.authorId()));
+            feed.forEach(f -> shown.add(f.authorId()));
+            gifts.forEach(g -> { if (g.by() != null) shown.add(g.by()); if (g.to() != null) shown.add(g.to()); });
+            weekly.values().forEach(w -> w.rows().forEach(r -> shown.add(r.userId())));
+            shown.addAll(creators.keySet());
+            shown.remove(viewer);
+            outUsers = new ArrayList<>();
+            for (String id : shown) {
+                User u = byId.get(id);
+                if (u != null && !excluded.contains(id)) outUsers.add(new User(u.id(), u.nick(), null, null, null, u.title(), u.registered()));
+            }
+        }
+        return new Store(store.me(), outUsers, posts, comments, feed, creators, store.following().stream().filter(id -> !excluded.contains(id)).toList(),
             gifts, weekly);
+    }
+
+    /** 힘내요·리스너 id: 관리자는 그대로, 그 밖에는 수는 두고 내 id 만 남긴다 (publicReports 와 같은 방식) */
+    private static List<String> publicIds(List<String> ids, String viewer, boolean admin) {
+        if (admin) return ids;
+        return ids.stream().map(id -> viewer.equals(id) ? id : "").toList();
     }
 
     private static List<Report> publicReports(Item item, String viewer, boolean admin) {
         if (admin) return item.reports();
         // Keep the existing count-based flagging contract without revealing other reporters.
         // Sentinel timestamps encode only active/inactive status, never the real report time.
-        return item.reports().stream().map(r -> viewer.equals(r.by()) ? r : new Report("", "other",
+        // 자동 가리기에 세지 않는 남의 신고(weak)는 화면에서도 세지 않게 뺀다
+        return item.reports().stream().filter(r -> viewer.equals(r.by()) || !r.weak()).map(r -> viewer.equals(r.by()) ? r : new Report("", "other",
             item.reviewedAt() == null || r.at() > item.reviewedAt() ? (item.reviewedAt() == null ? 1 : item.reviewedAt() + 1) : 0)).toList();
     }
 
@@ -301,6 +484,32 @@ public class CommunityService {
         if (me.blocked()) throw ApiException.forbidden("차단된 계정은 글과 댓글을 쓸 수 없어요.");
     }
 
+    /** 계정별 하루 한도. 관리자는 세지 않는다 */
+    private void takeDaily(DbUser me, String kind, int registered, int anonymous, String message) {
+        if ("admin".equals(me.role()) && !me.anonymous()) return;
+        if (!caps.tryTake(kind, me.id(), me.anonymous() ? anonymous : registered)) throw new ApiException(429, message);
+    }
+
+    /** 트랜잭션이 끝난 뒤(전역 잠금이 풀린 뒤) 할 일. 트랜잭션 밖이면 바로 한다 */
+    private static void afterCompletion(Runnable work) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) { work.run(); return; }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCompletion(int status) { work.run(); }
+        });
+    }
+
+    /**
+     * 지운 글의 내 사진·영상은 S3 를 바로 부르지 않고 삭제 작업 큐(object_deletion_jobs)에 넣는다.
+     * 글 삭제와 함께 커밋되고, ObjectDeletionWorker 가 1분 안에 지우며 실패하면 다시 시도한다.
+     * (전역 잠금·DB 연결을 쥔 채 S3 응답을 기다리지 않는다)
+     */
+    private void queueOwnedMediaDeletion(DbUser me, Collection<String> urls) {
+        for (String u : urls) {
+            String key = u == null ? null : s3.ownedKeyFromUrl(u, me.id());
+            if (key != null) jdbc.sql("INSERT INTO object_deletion_jobs (object_key) VALUES (?) ON CONFLICT (object_key) DO NOTHING").param(key).update();
+        }
+    }
+
     private static String assertKind(String k) {
         if ("post".equals(k) || "comment".equals(k) || "feed".equals(k)) return k;
         throw ApiException.badRequest("대상 종류가 올바르지 않아요");
@@ -332,6 +541,7 @@ public class CommunityService {
         String t = text(body, 600);
         if (t == null) throw ApiException.badRequest("내용을 적어 주세요.");
         List<String> imgs = CommunityLogic.cleanImageList(images, CommunityLogic.SHOUT_MAX_IMAGES, u -> s3.ownedKeyFromUrl(u, me.id()) != null);
+        takeDaily(me, "post", DAILY_POSTS, DAILY_POSTS_ANON, "오늘은 글을 충분히 많이 남겼어요. 내일 다시 남겨 주세요.");
         jdbc.sql("INSERT INTO shout_posts (id, author_id, cat, text, images) VALUES (?, ?, ?, ?, ?)")
             .param(Ids.uid()).param(me.id()).param(c).param(t).param(imgs.toArray(String[]::new)).update();
         badges.refresh(me.id());
@@ -346,7 +556,7 @@ public class CommunityService {
             .query((rs, i) -> Db.textArray(rs, "images")).optional();
         if (removed.isPresent()) {
             jdbc.sql("DELETE FROM comments WHERE post_kind = 'post' AND post_id = ?").param(id).update();
-            for (String u : removed.get()) if (s3.ownedKeyFromUrl(u, me.id()) != null) s3.deleteUploadedImage(u);
+            queueOwnedMediaDeletion(me, removed.get());
         }
         return loadStore(me);
     }
@@ -374,9 +584,11 @@ public class CommunityService {
             assertTargetAccessible(me, "comment", parentId);
             parent = p.parentId() != null ? p.parentId() : parentId;
         }
+        String commentText = text(body, 300);
+        takeDaily(me, "comment", DAILY_COMMENTS, DAILY_COMMENTS_ANON, "오늘은 댓글을 충분히 많이 남겼어요. 내일 다시 남겨 주세요.");
         String commentId = Ids.uid();
         jdbc.sql("INSERT INTO comments (id, post_kind, post_id, author_id, text, parent_id) VALUES (?, ?, ?, ?, ?, ?)")
-            .param(commentId).param(kind).param(postId).param(me.id()).param(text(body, 300)).param(parent).update();
+            .param(commentId).param(kind).param(postId).param(me.id()).param(commentText).param(parent).update();
         points.commentCreated(commentId);
         badges.refresh(me.id());
         return loadStore(me);
@@ -423,6 +635,7 @@ public class CommunityService {
         String kind = assertKind(target.kind());
         PrivateCircleAccess.requireTarget(jdbc, me.id(), kind, target.id());
         if (!(reason instanceof String r) || !CommunityLogic.REPORT_REASON_IDS.contains(r)) throw ApiException.badRequest("신고 사유가 올바르지 않아요");
+        takeDaily(me, "report", DAILY_REPORTS, DAILY_REPORTS_ANON, "오늘 접수한 신고가 많아요. 잠시 후 다시 시도해 주세요.");
         jdbc.sql("INSERT INTO reports (id, reporter_id, target_kind, target_id, reason) VALUES (?, ?, ?, ?, ?) ON CONFLICT (reporter_id, target_kind, target_id) DO NOTHING")
             .param(Ids.uid()).param(me.id()).param(kind).param(target.id()).param(r).update();
         return loadStore(me);
@@ -500,6 +713,7 @@ public class CommunityService {
         if (list.size() > CommunityLogic.FEED_MAX_PAGES) list = new ArrayList<>(list.subList(0, CommunityLogic.FEED_MAX_PAGES));
         FeedPage first = list.get(0);
         String[] allImages = list.stream().map(FeedPage::image).filter(Objects::nonNull).toArray(String[]::new);
+        takeDaily(me, "feed", DAILY_FEED, DAILY_FEED_ANON, "오늘은 피드를 충분히 많이 올렸어요. 내일 다시 올려 주세요.");
         jdbc.sql("INSERT INTO creators (user_id, bio) VALUES (?, '') ON CONFLICT (user_id) DO NOTHING").param(me.id()).update();
         try {
             jdbc.sql("INSERT INTO feed_posts (id, author_id, title, text, bg, image, images, pages, client_request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::uuid)")
@@ -512,8 +726,14 @@ public class CommunityService {
         return loadStore(me);
     }
 
-    private static boolean okUrl(Object u) {
-        return u instanceof String s && URL.matcher(s.strip()).find();
+    /**
+     * 피드 사진·릴스 표지 주소: 우리 CDN·버킷 주소나 사이트 상대 경로만 받는다 (UPL-02·COMM-06).
+     * 외부 주소는 보는 사람의 IP·열람 시각을 모으거나 검토 뒤 그림을 바꿔치기하는 데 쓰일 수 있다.
+     * S3 가 설정되지 않은 곳(로컬 개발·테스트)에서는 예전처럼 형식만 본다.
+     */
+    private boolean okUrl(Object u) {
+        if (!(u instanceof String s) || !URL.matcher(s.strip()).find()) return false;
+        return s3 == null || !s3.configured() || s3.isAllowedMediaUrl(s);
     }
 
     @Transactional
@@ -527,7 +747,7 @@ public class CommunityService {
             Set<String> urls = new LinkedHashSet<>(r.get().images());
             if (r.get().image() != null) urls.add(r.get().image());
             for (FeedPage page : parsePages(r.get().pages())) if (page.video() != null) urls.add(page.video());
-            for (String u : urls) if (s3.ownedKeyFromUrl(u, me.id()) != null) s3.deleteUploadedImage(u);
+            queueOwnedMediaDeletion(me, urls);
         }
         return loadStore(me);
     }
@@ -589,7 +809,7 @@ public class CommunityService {
             upsertWeekly(b);
             store.weekly().put(week, b);
         }
-        return forViewer(store, me);
+        return forViewer(store, me, null);
     }
 
     /* ---------- 관리자 ---------- */
@@ -647,6 +867,11 @@ public class CommunityService {
     public Store adminBlock(DbUser me, String userId, Object reason) {
         Db.lockCommunity(jdbc);
         String r = reason instanceof String s ? (s.length() > 200 ? s.substring(0, 200) : s) : "";
+        // 자기 자신·다른 관리자는 정지하지 않는다 (관리자끼리 서로 막아 운영이 멈추지 않게)
+        if (userId.equals(me.id())) throw ApiException.badRequest("자신의 계정은 정지할 수 없어요.");
+        String role = jdbc.sql("SELECT role FROM users WHERE id = ?").param(userId).query(String.class).optional()
+            .orElseThrow(() -> ApiException.notFound("사용자를 찾을 수 없어요."));
+        if ("admin".equals(role)) throw ApiException.badRequest("관리자 계정은 정지할 수 없어요.");
         jdbc.sql("UPDATE users SET blocked_at = now(), blocked_reason = ? WHERE id = ?").param(r).param(userId).update();
         return loadStore(me);
     }

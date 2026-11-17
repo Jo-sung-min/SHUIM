@@ -78,8 +78,11 @@ class FeedVideoPostgresTest {
             assertEquals("퇴근길 하늘", post.text());
 
             community.deleteFeedPost(author, post.id());
-            verify(s3).deleteUploadedImage(CDN + "reel-author-abc.mp4");
-            verify(s3).deleteUploadedImage(CDN + "reel-author-cover.webp");
+            // S3 는 전역 잠금 안에서 부르지 않고, 글 삭제와 함께 커밋되는 삭제 작업 큐에 넣는다
+            verify(s3, never()).deleteUploadedImage(any());
+            verify(s3, never()).deleteObject(any());
+            assertEquals(List.of("feed/2026/11/10/reel-author-abc.mp4", "feed/2026/11/10/reel-author-cover.webp"),
+                jdbc.sql("SELECT object_key FROM object_deletion_jobs WHERE object_key LIKE 'feed/2026/11/10/reel-author-%' ORDER BY object_key").query(String.class).list());
         });
     }
 

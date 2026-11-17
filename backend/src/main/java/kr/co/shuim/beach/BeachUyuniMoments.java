@@ -1,6 +1,7 @@
 package kr.co.shuim.beach;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import kr.co.shuim.circle.CircleLogic;
 import kr.co.shuim.config.ApiException;
 
 import java.util.LinkedHashMap;
@@ -73,6 +74,18 @@ final class BeachUyuniMoments {
         return new Launch(event, now, next);
     }
 
+    /**
+     * 떠 있는 풍등을 내린다. ownerId 가 null 이 아니면 그 사람이 띄운 것만.
+     * 요청 기억은 남겨 둬서 같은 요청의 재시도가 새 풍등을 다시 띄우지 못한다(기억된 이벤트만 돌려받는다).
+     */
+    boolean remove(String eventId, String ownerId, long now) {
+        prune(now);
+        Saved saved = eventId == null ? null : active.get(eventId);
+        if (saved == null || (ownerId != null && !saved.userId().equals(ownerId))) return false;
+        active.remove(eventId);
+        return true;
+    }
+
     private void prune(long now) {
         active.values().removeIf(saved -> now - saved.event().startedAt() >= saved.event().durationMs());
         requests.values().removeIf(saved -> now - saved.event().startedAt() >= REQUEST_TTL_MS);
@@ -111,6 +124,8 @@ final class BeachUyuniMoments {
         String text = wish.substring(start, end);
         int length = text.codePointCount(0, text.length());
         if (length < 1 || length > 80) throw invalidWish();
+        // 방 전체에 보이는 글이라 커뮤니티 글과 같은 금칙어를 거른다.
+        if (CircleLogic.offensive(text)) throw ApiException.badRequest("소원에 쓸 수 없는 말이 들어 있어요.");
         return new Payload(kind, null, color, text);
     }
 

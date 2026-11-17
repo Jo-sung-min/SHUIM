@@ -1,5 +1,6 @@
 "use client";
 import { requireCommunityConsent } from "./consent";
+import { apiErrorMessage } from "./api-error";
 
 /** 프로필·메시지 클라이언트 (서버 API 호출) */
 
@@ -91,7 +92,7 @@ export interface Thread {
 
 async function j<T>(res: Response): Promise<T> {
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(json.error ?? `요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error(apiErrorMessage(res.status, json));
   return json;
 }
 const opts = (method: string, body?: unknown): RequestInit => ({

@@ -39,6 +39,8 @@ public class SiteController {
         if (b.containsKey("description")) site.setText("description", str(b.get("description")));
         if (b.containsKey("favicon")) site.setImage("favicon", str(b.get("favicon")));
         if (b.containsKey("og")) site.setImage("og", str(b.get("og")));
+        // 트랜잭션이 끝난 뒤 한 번 더 비워, 커밋 전에 다른 요청이 옛 값을 다시 채운 경우도 지운다
+        site.invalidate();
         return site.summary();
     }
 

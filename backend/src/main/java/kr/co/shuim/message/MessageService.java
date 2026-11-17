@@ -6,6 +6,7 @@ import kr.co.shuim.common.Ids;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.community.CommunityConsentService;
+import kr.co.shuim.community.DailyCaps;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +29,17 @@ public class MessageService {
 
     public record Message(String id, String senderId, String text, long at, Long readAt) {}
 
-    public record Thread(String otherId, Other other, List<Message> messages) {}
+    /** more = ?after 로 받은 것이 한 번에 줄 수 있는 수(AFTER_LIMIT)를 넘어 더 남아 있으면 true (아니면 JSON 에서 빠진다) */
+    public record Thread(String otherId, Other other, List<Message> messages, Boolean more) {
+        public Thread(String otherId, Other other, List<Message> messages) { this(otherId, other, messages, null); }
+    }
+
+    public static final String LOGIN_TO_SEND = "메시지는 로그인한 뒤 보낼 수 있어요.";
+    /** ?after 한 번에 돌려주는 최대 수. 화면은 받은 마지막 시각으로 이어서 받는다 */
+    static final int AFTER_LIMIT = 200;
+    /** 보낸 사람 하루 한도 (실제 대화로는 닿지 않을 만큼). 인스턴스 하나라 메모리로 센다 */
+    static final int DAILY_MESSAGES = 300;
+    private final DailyCaps caps = new DailyCaps();
 
     public record Sent(String conversationId, Message message) {}
 
@@ -85,11 +96,15 @@ public class MessageService {
         String otherId = assertMember(me, conversationId);
         Other other = jdbc.sql("SELECT u.id, u.nick, p.avatar_url FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = ?").param(otherId)
             .query((rs, i) -> new Other(rs.getString("id"), rs.getString("nick"), rs.getString("avatar_url"), null)).single();
-        List<Message> messages = after != null
-            ? jdbc.sql("SELECT * FROM messages WHERE conversation_id = ? AND created_at > to_timestamp(? / 1000.0) ORDER BY created_at")
-                .param(conversationId).param(after).query(MSG).list()
-            : jdbc.sql("SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 200) t ORDER BY created_at")
-                .param(conversationId).query(MSG).list();
+        if (after != null) {
+            // 오래된 쪽부터 AFTER_LIMIT 개까지. 하나 더 읽어 남은 것이 있는지 알린다
+            List<Message> page = jdbc.sql("SELECT * FROM messages WHERE conversation_id = ? AND created_at > to_timestamp(? / 1000.0) ORDER BY created_at, id LIMIT ?")
+                .param(conversationId).param(after).param(AFTER_LIMIT + 1).query(MSG).list();
+            boolean more = page.size() > AFTER_LIMIT;
+            return new Thread(otherId, other, more ? page.subList(0, AFTER_LIMIT) : page, more ? Boolean.TRUE : null);
+        }
+        List<Message> messages = jdbc.sql("SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 200) t ORDER BY created_at")
+            .param(conversationId).query(MSG).list();
         return new Thread(otherId, other, messages);
     }
 
@@ -103,6 +118,7 @@ public class MessageService {
 
     @Transactional
     public Sent sendMessage(DbUser me, String toUserId, String text) {
+        if (me.anonymous()) throw ApiException.unauthorized(LOGIN_TO_SEND);
         consent.requireAccepted(me);
         if (me.blocked()) throw ApiException.badRequest("차단된 계정은 메시지를 보낼 수 없어요.");
         if (toUserId.equals(me.id())) throw ApiException.badRequest("자기 자신에게는 보낼 수 없어요.");
@@ -114,6 +130,7 @@ public class MessageService {
         Optional<To> to = jdbc.sql("SELECT id, blocked_at FROM users WHERE id = ?").param(toUserId).query((rs, i) -> new To(rs.getString("id"), Db.ms(rs, "blocked_at"))).optional();
         if (to.isEmpty()) throw ApiException.badRequest("받는 사람을 찾을 수 없어요");
         if (to.get().blockedAt() != null) throw ApiException.badRequest("차단된 사용자에게는 보낼 수 없어요.");
+        if (!caps.tryTake("message", me.id(), DAILY_MESSAGES)) throw new ApiException(429, "오늘은 메시지를 많이 보냈어요. 내일 다시 보내 주세요.");
         String conversationId = conversationFor(me, toUserId);
         Message m = jdbc.sql("INSERT INTO messages (id, conversation_id, sender_id, text) VALUES (?, ?, ?, ?) RETURNING *")
             .param(Ids.uid()).param(conversationId).param(me.id()).param(t).query(MSG).single();

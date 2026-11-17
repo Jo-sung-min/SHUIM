@@ -161,6 +161,7 @@ function harness({ sessionStorage = storage(), component = "scene", props = { co
     if (name.endsWith("/daylight")) return { hourLabel: () => "낮", hourOverride: () => null, rainOverride: () => null };
     if (name.endsWith("/assets")) return { assetCssUrl: () => "none" };
     if (name.endsWith("/routes")) return { route: path => path };
+    if (name.endsWith("/platform")) return { isAndroidApp: () => false };
     if (name.endsWith("/auth")) return { fetchMe: async () => ({ admin, user: admin ? { id: "user-1" } : null }) };
     if (name.endsWith("/beach-preview")) return { createChibiPreview: async () => { chibi.created++; return { character: { name: "chibi" }, dispose() { chibi.disposed++; } }; } };
     if (name.endsWith("/toast")) return { showToast(message) { toasts.push(message); }, toastSuccess(message) { toasts.push(message); }, tick() {} };

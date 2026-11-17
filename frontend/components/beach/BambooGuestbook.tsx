@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { Sheet } from "@/components/ui";
+import { SafetyReportSheet } from "@/components/SafetyReport";
 import { BAMBOO_BOARD_CAPACITY, bambooNoteColor, bambooNoteDate, postBambooNote, type BambooNote } from "@/lib/beach/bamboo-notes";
 import styles from "./BambooGuestbook.module.css";
 
@@ -15,6 +16,7 @@ export default function BambooGuestbook({ ticket, initialName = "", entries, loa
   const [writing, setWriting] = useState(false), [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false), [saveError, setSaveError] = useState(""), [notice, setNotice] = useState("");
   const [name, setName] = useState(() => Array.from(initialName).slice(0, 24).join("")), [story, setStory] = useState("");
+  const [reportNote, setReportNote] = useState<BambooNote | null>(null);
   const alive = useRef(true), pending = useRef(false);
   const request = useRef<{ name: string; story: string; id: string } | null>(null);
   const nameInput = useRef<HTMLInputElement>(null), heading = useRef<HTMLHeadingElement>(null), attach = useRef<HTMLButtonElement>(null);
@@ -75,6 +77,7 @@ export default function BambooGuestbook({ ticket, initialName = "", entries, loa
       <article className={styles.letter} style={paperStyle(selected.id)}><h4 ref={heading} tabIndex={-1}>{selected.name}</h4>
         <p>{selected.story}</p><time dateTime={new Date(selected.createdAt).toISOString()}>{bambooNoteDate(selected.createdAt)}</time></article>
       <button type="button" onClick={() => board(selected.id)}>게시판으로</button>
+      {!selected.mine && <button type="button" className={styles.reportLink} aria-haspopup="dialog" onClick={() => setReportNote(selected)}>이 메모 신고하기</button>}
     </div> : <section className={styles.content} aria-label="전망대 메모">
       <div className={styles.toolbar}><span>붙은 메모 <strong>{notes.length} / {BAMBOO_BOARD_CAPACITY}</strong></span>
         <button ref={attach} type="button" className={styles.primary} disabled={loading && !notes.length || !!loadError && !notes.length}
@@ -90,5 +93,8 @@ export default function BambooGuestbook({ ticket, initialName = "", entries, loa
       </div>}
       {!loadError && !loading && notes.length > 0 && <p className={styles.hint}>메모를 눌러 이야기를 읽어보세요. 자리가 차면 가장 오래된 메모가 교체돼요.</p>}
     </section>}
-  </Sheet></div>, document.body);
+  </Sheet>
+  <SafetyReportSheet open={reportNote !== null} onClose={() => setReportNote(null)} kind="space" title="메모 신고"
+    targetId={reportNote ? `guestbook:${reportNote.id}` : undefined}
+    context={reportNote ? `${reportNote.name} · ${bambooNoteDate(reportNote.createdAt)}\n${reportNote.story}` : undefined} /></div>, document.body);
 }

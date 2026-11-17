@@ -176,10 +176,23 @@ public final class CircleLogic {
 
     /* ---------- 실명·연락처 가리기 (AI 가 없을 때, 그리고 보내기 전 경고용) ---------- */
 
+    /** 사연 본문 상한 (화면 MAX·제출 상한과 같다). 정규식·AI 에 넣기 전에 먼저 자른다 */
+    public static final int STORY_MAX = 1200;
+
+    /** 사연 본문을 상한까지 자른다 (null 은 빈 문자열) */
+    public static String clipStory(String text) {
+        if (text == null) return "";
+        return text.length() > STORY_MAX ? text.substring(0, STORY_MAX) : text;
+    }
+
     public record Masked(String text, List<String> found) {}
 
     private static final Pattern PHONE = Pattern.compile("01[016789][-\\s.]?\\d{3,4}[-\\s.]?\\d{4}");
-    private static final Pattern MAIL = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+    /**
+     * 메일: 토큰 첫 글자에서만 시작하고(앞 글자 확인) 앞부분은 되돌아가지 않게(possessive) 해, 긴 입력에서도 선형 시간으로 끝난다.
+     * 예전 식은 "aaaa…" 같은 긴 입력에서 시작 위치마다 끝까지 다시 훑어 이차 시간이 걸렸다
+     */
+    private static final Pattern MAIL = Pattern.compile("(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}+@[A-Za-z0-9.-]{1,253}\\.[A-Za-z]{2,24}");
     private static final Pattern LONG_NUMBER = Pattern.compile("(?<!\\d)\\d{7,10}(?!\\d)");
     private static final Pattern TITLED_NAME = Pattern.compile(
         "(?<![가-힣])([가-힣]{2,3})\\s?(교수님|교수|팀장님|팀장|부장님|부장|과장님|과장|차장님|차장|대리님|대리|사장님|사장|상무님|상무|전무님|전무|선생님|매니저님|매니저|선배|후배|조교)");

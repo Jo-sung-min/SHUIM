@@ -4,6 +4,7 @@ import kr.co.shuim.records.RecordsDtos.*;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -19,8 +20,18 @@ public final class RecordsLogic {
     public static final int ORDER_MAX = 20;
     public static final int DID_MAX = 30;
     public static final int MEMOS_MAX = 2000, GOALS_MAX = 200, STEPS_MAX = 30, SCHEDULE_MAX = 2000, DAYS_MAX = 3660;
+    /** 하루에 받는 기록 칸: 기본 5개 + 사용자 카테고리(지웠다 다시 만든 것까지 넉넉히) */
+    public static final int DAY_CATS_MAX = 15;
+    /** 한 요청에서 받는 기록 칸 전체 (하루 5칸 × 10년 남짓) */
+    public static final int JOURNAL_ENTRIES_MAX = 20000;
+    /** 쓰기로 받는 날짜 범위: 이 날부터 내일(한국 시간)까지. 일정은 앞으로 10년까지 */
+    public static final LocalDate EARLIEST = LocalDate.of(2020, 1, 1);
+    public static final int SCHEDULE_YEARS_AHEAD = 10;
+    static final ZoneId KST = ZoneId.of("Asia/Seoul");
     static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("HH:mm");
     private static final Pattern ID = Pattern.compile("^[A-Za-z0-9_-]{1,36}$");
+    /** UUID v3 모양 = 모루 마음기록 메모 id (PetService.memoId). 화면의 uid() 는 이 모양을 만들지 않는다 */
+    static final Pattern PET_MEMO_ID = Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-3[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
     private static final Pattern CAT = Pattern.compile("^[A-Za-z0-9_-]{1,40}$");
     private static final Pattern CUSTOM_CAT = Pattern.compile("^c_[a-z0-9]{1,38}$");
 
@@ -42,6 +53,23 @@ public final class RecordsLogic {
 
     static boolean okId(String id) { return id != null && ID.matcher(id).matches(); }
 
+    static LocalDate today() { return LocalDate.now(KST); }
+
+    /** 기록·오늘 한 일로 받을 수 있는 날짜인지 (2020-01-01 ~ 내일) */
+    public static boolean writable(LocalDate d) {
+        return d != null && !d.isBefore(EARLIEST) && !d.isAfter(today().plusDays(1));
+    }
+
+    static boolean schedulable(LocalDate d) {
+        return d != null && !d.isBefore(EARLIEST) && !d.isAfter(today().plusYears(SCHEDULE_YEARS_AHEAD));
+    }
+
+    /** 시각(ms)이 0 ~ 지금+1일 밖이면 대신 fallback (DB 타임스탬프 범위를 넘는 값 차단) */
+    static long safeMs(Long ms, long fallback) {
+        long now = System.currentTimeMillis();
+        return ms == null || ms < 0 || ms > now + 86_400_000L ? fallback : ms;
+    }
+
     /** 메모·목표·일정 카테고리: 기본 5개 + etc + 사용자 카테고리 id. 모르는 값은 etc */
     static String memoCat(String cat) { return cat != null && CAT.matcher(cat).matches() ? cat : "etc"; }
 
@@ -53,6 +81,7 @@ public final class RecordsLogic {
             Entry v = e.getValue();
             if (v == null || v.score() == null || e.getKey() == null || !CAT.matcher(e.getKey()).matches()) continue;
             out.put(e.getKey(), new Entry(clamp(v.score()), v.delta() == null ? null : clamp(v.delta()), str(v.note(), 500)));
+            if (out.size() >= DAY_CATS_MAX) break;
         }
         return out;
     }
@@ -78,8 +107,8 @@ public final class RecordsLogic {
             if (m == null || !okId(m.id()) || !seen.add(m.id())) continue;
             String text = str(m.text(), 2000);
             if (text.isEmpty()) continue;
-            long created = m.createdAt() == null ? now : m.createdAt();
-            out.add(new Memo(m.id(), memoCat(m.cat()), text, Boolean.TRUE.equals(m.pinned()), created, m.updatedAt() == null ? created : m.updatedAt()));
+            long created = safeMs(m.createdAt(), now);
+            out.add(new Memo(m.id(), memoCat(m.cat()), text, Boolean.TRUE.equals(m.pinned()), created, safeMs(m.updatedAt(), created)));
             if (out.size() >= MEMOS_MAX) break;
         }
         return out;
@@ -105,7 +134,7 @@ public final class RecordsLogic {
             }
             LocalDate due = date(g.due());
             out.add(new Goal(g.id(), title, memoCat(g.cat()), str(g.why(), 100), steps, due == null ? null : due.toString(),
-                g.createdAt() == null ? now : g.createdAt(), g.doneAt()));
+                safeMs(g.createdAt(), now), g.doneAt() == null ? null : safeMs(g.doneAt(), now)));
             if (out.size() >= GOALS_MAX) break;
         }
         return out;
@@ -119,7 +148,7 @@ public final class RecordsLogic {
             if (s == null || !okId(s.id()) || !seen.add(s.id())) continue;
             String title = str(s.title(), 60);
             LocalDate d = date(s.date());
-            if (title.isEmpty() || d == null) continue;
+            if (title.isEmpty() || !schedulable(d)) continue;
             LocalTime t = time(s.time());
             out.add(new ScheduleItem(s.id(), d.toString(), t == null ? null : t.format(HHMM), title, memoCat(s.cat()), Boolean.TRUE.equals(s.done())));
             if (out.size() >= SCHEDULE_MAX) break;
@@ -159,10 +188,14 @@ public final class RecordsLogic {
     public static Map<String, Map<String, Entry>> cleanJournal(Map<String, Map<String, Entry>> in) {
         Map<String, Map<String, Entry>> out = new TreeMap<>();
         if (in == null) return out;
+        int entries = 0;
         for (var e : in.entrySet()) {
-            if (date(e.getKey()) == null) continue;
+            if (!writable(date(e.getKey()))) continue;
             Map<String, Entry> day = cleanDay(e.getValue());
-            if (!day.isEmpty()) out.put(e.getKey(), day);
+            if (day.isEmpty()) continue;
+            if (entries + day.size() > JOURNAL_ENTRIES_MAX) break;
+            entries += day.size();
+            out.put(e.getKey(), day);
             if (out.size() >= DAYS_MAX) break;
         }
         return out;
@@ -172,7 +205,7 @@ public final class RecordsLogic {
         Map<String, List<String>> out = new TreeMap<>();
         if (in == null) return out;
         for (var e : in.entrySet()) {
-            if (date(e.getKey()) == null || e.getValue() == null) continue;
+            if (!writable(date(e.getKey())) || e.getValue() == null) continue;
             List<String> did = cleanDid(e.getValue().did());
             if (!did.isEmpty()) out.put(e.getKey(), did);
             if (out.size() >= DAYS_MAX) break;

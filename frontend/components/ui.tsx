@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, type ReactNode } from "react";
 import { IconClose, IconCloudOff, IconInbox } from "./Icons";
 import { CategoryIcon } from "./CategoryIcon";
 import { MEMO_CATEGORIES, MemoCat, memoCatById } from "@/lib/categories";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
+import { isNavigatingLinkClick, keepBackEntryForNavigation, useBackLayer } from "@/lib/use-back-layer";
 
 /* ---------- 상단 바 (인스타그램처럼 내리면 숨고 올리면 다시 나온다) ---------- */
 export function TopBar({ title, eyebrow, right, titleHidden }: { title: string; eyebrow?: ReactNode; right?: ReactNode; /** 본문 머리가 제목을 보여 주는 동안 상단 제목을 숨긴다 (스크롤해 머리가 사라지면 나타난다) */ titleHidden?: boolean }) {
@@ -129,11 +130,20 @@ export function CatTag({ cat }: { cat: MemoCat }) {
 /* ---------- 바텀시트 (작은 작업용. 긴 읽기는 별도 화면) ---------- */
 const openSheets: HTMLElement[] = [];
 let previousOverflow = "";
-export function Sheet({ open, onClose, title, children, className }: { open: boolean; onClose: () => void; title: string; children: ReactNode; /** 시트에 덧입힐 모양 (모루 방의 손그림 시트) */ className?: string }) {
+/**
+ * 시트가 안드로이드 뒤로 가기로 닫히게 할지 (기본: 켬). 화면이 뒤로 가기를 직접 다루는 곳(모루 방)은
+ * <SheetBackContext value={false}> 로 감싸 안쪽 시트가 따로 닫히지 않게 한다.
+ */
+export const SheetBackContext = createContext(true);
+
+export function Sheet({ open, onClose, title, children, className, backClose }: { open: boolean; onClose: () => void; title: string; children: ReactNode; /** 시트에 덧입힐 모양 (모루 방의 손그림 시트) */ className?: string; /** 뒤로 가기로 닫기 (기본: SheetBackContext, 보통 켬) */ backClose?: boolean }) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const titleId = useId();
+  const backByContext = useContext(SheetBackContext);
+  // 뒤로 가기 = 닫기 버튼. 닫기를 거부하면(처리 중) 열린 채로 기록을 다시 쌓고, 실제로 닫히면 기록이 걷힌다
+  useBackLayer(open && (backClose ?? backByContext), () => { closeRef.current(); return true; });
   useEffect(() => {
     if (!open || !sheetRef.current) return;
     const sheet = sheetRef.current;
@@ -166,7 +176,7 @@ export function Sheet({ open, onClose, title, children, className }: { open: boo
   return (
     <>
       <div className="sheet-backdrop" aria-hidden="true" onClick={() => { if (openSheets.at(-1) === sheetRef.current) onClose(); }} />
-      <div ref={sheetRef} className={className ? `sheet ${className}` : "sheet"} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+      <div ref={sheetRef} className={className ? `sheet ${className}` : "sheet"} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onClickCapture={(e) => { if (isNavigatingLinkClick(e)) keepBackEntryForNavigation(); }}>
         <div className="handle" aria-hidden="true" />
         <div className="sheet-title"><h3 id={titleId}>{title}</h3><button type="button" className="icon-btn sheet-close" onClick={onClose} aria-label={`${title} 닫기`}><IconClose /></button></div>
         {children}

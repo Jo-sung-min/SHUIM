@@ -29,8 +29,67 @@ class CommunityVisibilityTest {
         }
         var allowed = CommunityService.visibleStore(source, Set.of(), false, Set.of("private"),
             Map.of("private", "members"), 1_000, Set.of());
-        assertEquals(List.of(secret), allowed.posts());
+        assertEquals(List.of(secret.id()), allowed.posts().stream().map(Post::id).toList());
+        // 남이 누른 힘내요는 수만 남고 누가 눌렀는지는 가려진다
+        assertEquals(List.of(""), allowed.posts().get(0).cheers());
         assertEquals(List.of(comment), allowed.comments());
+    }
+
+    @Test
+    void nonAdminsGetOnlyReferencedPeopleWithoutRoleOrSuspensionDetailsAndMaskedIds() {
+        User me = new User("me", "me", "user", null, null);
+        User author = new User("author", "작성자", "admin", null, null, "칭호", true);
+        User commenter = new User("commenter", "댓글", "user", null, null);
+        User stranger = new User("stranger", "모르는 사람", "user", null, null);
+        User suspended = new User("suspended", "정지", "user", 5L, "관리자 메모");
+        User sender = new User("sender", "사연 보낸 사람", "user", null, null);
+        Post post = new Post("p", "free", "hello", "author", 0, List.of("me", "stranger", "commenter"), List.of(), false, null);
+        Post story = new Post("s", "free", "story", "sender", 0, List.of("sender"), List.of(), false, null, List.of(), "c1", 1, "소로우", "slug");
+        Comment comment = new Comment("c", "p", "reply", "commenter", 0, List.of("stranger"), List.of(), false, null);
+        FeedPost feed = new FeedPost("f", null, "feed", 0, null, List.of(), List.of(), "author", 0, List.of("stranger"), List.of(), List.of(), false, null);
+        Map<String, Creator> creators = new LinkedHashMap<>();
+        creators.put("author", new Creator("bio", List.of("stranger", "me"), 0));
+        creators.put("stranger", new Creator("old bio", List.of(), 0));
+        Store source = new Store(me, List.of(me, author, commenter, stranger, suspended, sender), List.of(post, story), List.of(comment), List.of(feed),
+            creators, List.of("author"), List.of(), Map.of());
+
+        Store filtered = CommunityService.visibleStore(source, Set.of(), false, Set.of(), Map.of("c1", "public"), 1_000);
+        assertEquals(List.of("author", "commenter"), filtered.users().stream().map(User::id).toList());
+        User shownAuthor = filtered.users().get(0);
+        assertNull(shownAuthor.role());
+        assertNull(shownAuthor.blockedAt());
+        assertNull(shownAuthor.blockedReason());
+        assertEquals("칭호", shownAuthor.title());
+        assertEquals(Boolean.TRUE, shownAuthor.registered());
+        assertEquals(List.of("me", "", ""), filtered.posts().get(0).cheers());
+        assertEquals("c:c1", filtered.posts().get(1).authorId());
+        assertEquals(List.of(""), filtered.posts().get(1).cheers());
+        assertEquals(List.of(""), filtered.comments().get(0).cheers());
+        assertEquals(List.of(""), filtered.feed().get(0).cheers());
+        assertEquals(Set.of("author"), filtered.creators().keySet());
+        assertEquals(List.of("", "me"), filtered.creators().get("author").followers());
+        assertEquals(List.of("author"), filtered.following());
+
+        Store admin = CommunityService.visibleStore(source, Set.of(), true, Set.of(), Map.of("c1", "public"), 1_000);
+        assertEquals(List.of("author", "commenter", "stranger", "suspended", "sender"), admin.users().stream().map(User::id).toList());
+        assertEquals("관리자 메모", admin.users().get(3).blockedReason());
+        assertEquals(List.of("me", "stranger", "commenter"), admin.posts().get(0).cheers());
+        assertEquals(Set.of("author", "stranger"), admin.creators().keySet());
+    }
+
+    @Test
+    void weakReportsAreKeptForAdminsButNeverAutoHideOrCountForOthers() {
+        List<Report> weak = new ArrayList<>();
+        for (int i = 0; i < CommunityLogic.REPORT_THRESHOLD; i++) weak.add(new Report("throwaway-" + i, "abuse", 100, true));
+        Post post = new Post("p", "free", "text", "author", 0, List.of(), weak, false, null);
+        assertFalse(CommunityLogic.isFlagged(post));
+        Store source = store(List.of(), List.of(post), List.of(), List.of(), List.of());
+        assertTrue(CommunityService.visibleStore(source, Set.of(), false).posts().get(0).reports().isEmpty());
+        assertEquals(CommunityLogic.REPORT_THRESHOLD, CommunityService.visibleStore(source, Set.of(), true).posts().get(0).reports().size());
+
+        List<Report> mixed = new ArrayList<>(weak);
+        for (int i = 0; i < CommunityLogic.REPORT_THRESHOLD; i++) mixed.add(new Report("member-" + i, "abuse", 100));
+        assertTrue(CommunityLogic.isFlagged(new Post("q", "free", "text", "author", 0, List.of(), mixed, false, null)));
     }
 
     @Test

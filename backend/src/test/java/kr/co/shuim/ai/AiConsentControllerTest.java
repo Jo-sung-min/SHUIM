@@ -31,15 +31,15 @@ class AiConsentControllerTest {
         PolicyConsentService policies = mock(PolicyConsentService.class);
         MockHttpServletRequest request = new MockHttpServletRequest();
         Map<String, Object> expected = Map.of("source", "ai");
-        when(today.run(null)).thenReturn(expected);
-        when(summarize.run(null)).thenReturn(expected);
+        when(today.run(null, null, null)).thenReturn(expected);
+        when(summarize.run(null, null)).thenReturn(expected);
         AiController controller = new AiController(today, summarize, policies);
         assertEquals(expected, controller.today(null, request));
         assertEquals(expected, controller.summarize(null, request));
         var order = inOrder(policies, today, summarize);
         order.verify(policies).requireAiConsent(request);
-        order.verify(today).run(null);
+        order.verify(today).run(null, null, null);
         order.verify(policies).requireAiConsent(request);
-        order.verify(summarize).run(null);
+        order.verify(summarize).run(null, null);
     }
 }

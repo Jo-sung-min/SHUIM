@@ -22,7 +22,7 @@ export default function DeleteAccount() {
   if (done) return <div role="status" className="notice">계정과 연결된 정보가 삭제되었습니다. 이 기기에 저장된 해당 계정의 기록도 정리했어요. 사진과 복구용 사본의 삭제 범위는 위 안내에서 확인할 수 있어요. <a href="/">홈으로</a></div>;
   if (!me) return <p role="status">계정 상태를 확인하고 있어요…</p>;
   if (!me.configured) return <p role="alert">지금은 계정을 확인하기 어려워요. 잠시 후 다시 시도하거나 아래 이메일로 삭제를 요청해 주세요.</p>;
-  if (!me.user) return <div className="stack"><p>계정을 삭제하려면 웹에서 로그인한 뒤 이 페이지로 돌아오세요. 앱을 설치하지 않아도 진행할 수 있습니다. 로그인할 수 없다면 아래 이메일로 요청해 주세요.</p><Link href="/auth?next=delete" className="btn">로그인하고 삭제하기</Link></div>;
+  if (!me.user) return <div className="stack"><p>계정을 삭제하려면 먼저 로그인해 주세요. 이메일이나 카카오로 로그인하면 이 페이지로 다시 돌아와요. 앱을 설치하지 않아도 진행할 수 있고, 로그인할 수 없다면 아래 이메일로 요청해 주세요.</p><Link href="/auth?next=delete" className="btn">로그인하고 삭제하기</Link></div>;
   return <form className="card stack" aria-busy={busy} onSubmit={async (e) => {
     e.preventDefault();
     if (submitting.current || confirmation !== "계정 삭제") return;

@@ -4,7 +4,10 @@
  * 계정 클라이언트. 세션은 httpOnly 쿠키, 계정 정보는 /api/auth 에서 온다.
  * 로그인한 계정 id를 localStorage(SESSION_KEY)에도 적어 두어 기록·메모 같은 개인 데이터가 계정별로 분리되게 한다.
  */
-import { SESSION_KEY, adoptGuestData, clearAccountCache, flushRecords, resetRecordsSync, sessionUserId } from "./storage";
+import { SESSION_KEY, adoptGuestData, clearAccountCache, clearAccountLocal, resetRecordsSync, sessionUserId } from "./storage";
+import { flushForLogout } from "./records-sync";
+import { showToast } from "./toast";
+import { apiErrorMessage } from "./api-error";
 import { resetCommunityCache } from "./community";
 import { IS_AIT, tossLogin } from "./ait";
 
@@ -52,7 +55,7 @@ function syncSessionKey(user: Account | null) {
 async function post<T>(path: string, body: unknown): Promise<T & { error?: string }> {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "same-origin" });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok && !json.error) json.error = `요청 실패 (${res.status})`;
+  if (!res.ok) json.error = apiErrorMessage(res.status, json);
   return json;
 }
 
@@ -98,7 +101,10 @@ export function validate(email: string, nick: string, password: string): string 
   return null;
 }
 
-export async function signUp(email: string, nick: string, password: string, consent: { signupConsentVersion: string; aiDisclosureAccepted: boolean }): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
+/** 로그인할 때 이 기기의 게스트 기록을 계정으로 옮길지 (사용자가 고른 경우만. 기본은 옮기지 않는다) */
+export interface GuestChoice { adoptGuest?: boolean }
+
+export async function signUp(email: string, nick: string, password: string, consent: { signupConsentVersion: string; aiDisclosureAccepted: boolean }, choice: GuestChoice = {}): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
   const err = validate(email, nick, password);
   if (err) return { ok: false, error: err };
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/signup", { email, nick, password, ...consent });
@@ -106,26 +112,36 @@ export async function signUp(email: string, nick: string, password: string, cons
   meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false, memberFireworks: meCache?.memberFireworks };
   resetRecordsSync();
   syncSessionKey(r.user);
-  adoptGuestData(r.user.id); // 가입 전 이 기기에서 쓰던 기록을 새 계정으로 (서버에도 한 번 올린다)
+  if (choice.adoptGuest) adoptGuestData(r.user.id); // 가입 전 이 기기에서 쓰던 기록을 새 계정으로 (서버에도 한 번 올린다)
   return { ok: true, account: r.user };
 }
 
-export async function signIn(email: string, password: string): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
+export async function signIn(email: string, password: string, choice: GuestChoice = {}): Promise<{ ok: true; account: Account } | { ok: false; error: string }> {
   const r = await post<{ user: Account | null; admin: boolean }>("/api/auth/login", { email, password });
   if (r.error || !r.user) return { ok: false, error: r.error ?? "로그인하지 못했어요" };
   meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: meCache?.kakao ?? false, toss: meCache?.toss ?? false, memberFireworks: meCache?.memberFireworks };
   resetRecordsSync();
   syncSessionKey(r.user);
-  adoptGuestData(r.user.id); // 게스트 기록은 계정(서버)에 아직 없는 부분에만 들어간다
+  if (choice.adoptGuest) adoptGuestData(r.user.id); // 게스트 기록은 계정(서버)에 아직 없는 부분에만 들어간다
   return { ok: true, account: r.user };
 }
 
-export async function signOut() {
-  await flushRecords(); // 아직 서버로 못 보낸 기록이 있으면 먼저
+/**
+ * 로그아웃. 못 보낸 기록을 먼저 보내고, 모두 서버에 갔으면 이 기기에 남은 그 계정의 기록 사본(기록·메모·AI 결과·초안 등)을 지운다.
+ * 서버에 없는 이 기기만의 것(작은 한 걸음·돌보기·모루 방 등)은 남긴다 (storage.clearAccountLocal 의 "logout").
+ * 못 보낸 것이 남으면 사본을 그대로 두고 알린다 (다시 로그인하면 이어서 보낸다). 네트워크가 끊겼으면 예외로 끝나 아무것도 바뀌지 않는다.
+ */
+export async function signOut(): Promise<{ keptUnsent: boolean }> {
+  const uid = sessionUserId();
+  const synced = uid ? await flushForLogout() : true;
   await post("/api/auth/logout", {});
   meCache = null;
   resetRecordsSync();
+  if (uid && synced) clearAccountLocal(uid, "logout");
   syncSessionKey(null);
+  const keptUnsent = Boolean(uid && !synced);
+  if (keptUnsent) showToast("아직 서버로 보내지 못한 기록이 있어 이 기기에 남겨 두었어요. 다시 로그인하면 이어서 보내요.", { kind: "info" });
+  return { keptUnsent };
 }
 
 export async function deleteAccount(confirmation: string, expectedUserId: string): Promise<void> {
@@ -141,6 +157,7 @@ export async function deleteAccount(confirmation: string, expectedUserId: string
   if (!response.ok || result.ok !== true) throw new Error(result.error || "삭제 결과를 확인하지 못했어요. 계정 상태를 다시 확인해 주세요.");
   resetRecordsSync();
   clearAccountCache(expectedUserId);
+  clearAccountLocal(expectedUserId);
   syncSessionKey(null);
   meCache = null;
 }
@@ -149,7 +166,7 @@ export async function deleteAccount(confirmation: string, expectedUserId: string
  * 미니앱 "토스로 시작하기": TossAuth.login() 의 인가 코드를 서버로 보낸다.
  * 처음 온 사람이 가입 안내에 아직 동의하지 않았으면 consentRequired — 동의를 저장한 뒤 다시 부르면 된다 (두 번째부터는 토스 화면 없이 코드가 온다)
  */
-export async function signInWithToss(): Promise<{ ok: true; account: Account } | { ok: false; error: string; consentRequired?: boolean }> {
+export async function signInWithToss(choice: GuestChoice = {}): Promise<{ ok: true; account: Account } | { ok: false; error: string; consentRequired?: boolean }> {
   let code: { authorizationCode: string; referrer: string };
   try {
     code = await tossLogin();
@@ -162,22 +179,40 @@ export async function signInWithToss(): Promise<{ ok: true; account: Account } |
   meCache = { user: r.user, admin: Boolean(r.admin), configured: true, kakao: false, toss: true, memberFireworks: meCache?.memberFireworks };
   resetRecordsSync();
   syncSessionKey(r.user);
-  adoptGuestData(r.user.id); // 로그인 전 이 기기에서 쓰던 기록을 계정으로
+  if (choice.adoptGuest) adoptGuestData(r.user.id); // 로그인 전 이 기기에서 쓰던 기록을 계정으로 (고른 경우만)
   return { ok: true, account: r.user };
 }
 
-/** "카카오로 시작하기": 서버가 state 쿠키를 심고 카카오 동의 화면으로 보낸다. 끝나면 /?kakao=1 로 돌아온다 */
-export function startKakaoLogin() {
+const KAKAO_RETURN_KEY = "sorow:kakao-return";
+/** 카카오 로그인 뒤 돌아갈 수 있는 곳 (정해 둔 값만) */
+const KAKAO_RETURN_PATHS = new Set(["/account-deletion", "/me", "/points", "/fund"]);
+
+/**
+ * "카카오로 시작하기": 서버가 state 쿠키를 심고 카카오 동의 화면으로 보낸다. 끝나면 /?kakao=1 로 돌아온다.
+ * 서버는 돌아갈 곳(next)을 받지 않으므로, 돌아갈 곳과 게스트 기록 이전 선택을 이 탭(sessionStorage)에 적어 두었다가 completeKakaoLogin 에서 쓴다
+ */
+export function startKakaoLogin(options: GuestChoice & { returnTo?: string } = {}) {
+  try {
+    const returnTo = options.returnTo && KAKAO_RETURN_PATHS.has(options.returnTo) ? options.returnTo : "";
+    window.sessionStorage.setItem(KAKAO_RETURN_KEY, JSON.stringify({ returnTo, adoptGuest: options.adoptGuest === true }));
+  } catch { /* 저장할 수 없으면 홈으로 돌아오고 게스트 기록은 옮기지 않는다 */ }
   window.location.href = "/api/auth/kakao";
 }
 
 /** 카카오 콜백에서 돌아왔을 때(/?kakao=1): 세션 쿠키는 이미 있으니 계정을 읽고, 가입 때처럼 이 기기의 게스트 기록을 계정으로 옮긴다 */
 export async function completeKakaoLogin(): Promise<Me> {
+  let saved: { returnTo?: string; adoptGuest?: boolean } = {};
+  try {
+    saved = JSON.parse(window.sessionStorage.getItem(KAKAO_RETURN_KEY) || "{}") ?? {};
+    window.sessionStorage.removeItem(KAKAO_RETURN_KEY);
+  } catch { saved = {}; }
   const m = await fetchMe(true);
   if (m.user) {
     resetRecordsSync();
     syncSessionKey(m.user);
-    adoptGuestData(m.user.id);
+    if (saved.adoptGuest === true) adoptGuestData(m.user.id);
+    // 계정 삭제 화면 등에서 카카오로 로그인했으면 그 화면으로 돌아간다
+    if (saved.returnTo && KAKAO_RETURN_PATHS.has(saved.returnTo)) window.location.replace(saved.returnTo);
   }
   return m;
 }

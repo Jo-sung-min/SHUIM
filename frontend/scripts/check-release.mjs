@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-const origin = new URL(process.argv[2] || "https://sorow.co.kr");
+const origin = new URL(process.argv[2] || "https://www.sorow.co.kr");
 if (origin.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(origin.hostname)) throw new Error("배포 주소는 HTTPS여야 합니다.");
 const expectedPackage = process.env.ANDROID_PACKAGE_NAME || "kr.co.sorow.app";
 let failed = 0;

@@ -17,11 +17,14 @@ public class KakaoAuthController {
 
     public KakaoAuthController(KakaoLoginService kakao) { this.kakao = kakao; }
 
-    /** GET /api/auth/kakao — state 쿠키를 심고 카카오 동의 화면으로. 키가 없으면 /auth?error=kakao */
+    /**
+     * GET /api/auth/kakao[?next=/같은-사이트-경로] — state 쿠키를 심고 카카오 동의 화면으로. 키가 없으면 /auth?error=kakao
+     * next 가 안전한 상대 경로면 성공 뒤 그 경로(+kakao=1)로, 아니면 지금처럼 /?kakao=1 로 돌아온다.
+     */
     @GetMapping("/api/auth/kakao")
-    public ResponseEntity<Void> start(HttpServletResponse res) {
+    public ResponseEntity<Void> start(@RequestParam(required = false) String next, HttpServletResponse res) {
         if (!kakao.configured()) return redirect(kakao.failureUri());
-        return redirect(kakao.begin(res));
+        return redirect(kakao.begin(res, next));
     }
 
     /** GET /api/auth/kakao/callback?code&state — 카카오가 돌려보내는 곳. 세션 쿠키를 내려주고 앱으로 보낸다 */

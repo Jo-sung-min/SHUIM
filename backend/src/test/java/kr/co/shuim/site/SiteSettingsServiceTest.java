@@ -39,4 +39,24 @@ class SiteSettingsServiceTest {
         byte[] tooBigForOg = new byte[SiteSettingsService.OG_MAX_BYTES + 1];
         assertThrows(ApiException.class, () -> SiteSettingsService.decode("og", dataUrl("image/jpeg", tooBigForOg)));
     }
+
+    @Test
+    void publicReadsAreCachedUntilTtlOrInvalidate() {
+        java.util.concurrent.atomic.AtomicInteger loads = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
+        java.util.Map<String, SiteSettingsService.Row> rows = new java.util.HashMap<>();
+        rows.put("title", new SiteSettingsService.Row("title", "소로우", 1));
+        SiteSettingsService s = new SiteSettingsService(() -> { loads.incrementAndGet(); return rows; }, now::get);
+        assertEquals("소로우", s.summary().get("title"));
+        s.summary();
+        s.image("og");
+        assertEquals(1, loads.get());
+        rows.put("title", new SiteSettingsService.Row("title", "새 제목", 2));
+        s.invalidate();
+        assertEquals("새 제목", s.summary().get("title"));
+        assertEquals(2, loads.get());
+        now.addAndGet(SiteSettingsService.CACHE_MS);
+        s.summary();
+        assertEquals(3, loads.get());
+    }
 }

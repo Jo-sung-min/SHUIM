@@ -27,6 +27,8 @@ export default function SponsorsPage() {
   const [sponsors, setSponsors] = useState<Sponsor[] | null>(null);
   const [contact, setContact] = useState<SponsorContact | null>(null);
   const [mine, setMine] = useState<Mine | null>(null); // null = 비로그인
+  // 회원 불꽃놀이가 닫혀 있으면 멋져요(이용권 받기)도 닫는다 — 서버도 이때는 멋져요를 받지 않는다 (기업 폭죽이 쓰지 못할 이용권으로 새지 않게)
+  const [fireworksOpen, setFireworksOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [cheering, setCheering] = useState(false);
@@ -39,6 +41,7 @@ export default function SponsorsPage() {
       const [list, me] = await Promise.all([fetchSponsors(), fetchMe(true)]);
       if (!mounted.current) return;
       setSponsors(list.sponsors); setContact(list.contact);
+      setFireworksOpen(me.memberFireworks === true);
       if (!me.user) { setMine(null); return; }
       try {
         const account = await fetchFireworkTickets();
@@ -52,7 +55,7 @@ export default function SponsorsPage() {
   useBackLayer(openId !== null, () => { if (lock.current) return true; setOpenId(null); return false; });
 
   const cheer = async (sponsor: Sponsor) => {
-    if (lock.current || !mine) return;
+    if (lock.current || !mine || !fireworksOpen) return;
     lock.current = true; setCheering(true);
     try {
       const result = await cheerSponsor(sponsor.id);
@@ -121,8 +124,8 @@ export default function SponsorsPage() {
       </div>
     </div>
 
-    <Sheet open={opened !== null} onClose={close} title={opened?.name ?? "후원 기업"}>
-      {opened && <SponsorCard sponsor={opened} rank={rankOf(opened, sponsors.indexOf(opened))} mine={mine} cheering={cheering} onCheer={() => void cheer(opened)} />}
+    <Sheet open={opened !== null} onClose={close} title={opened?.name ?? "후원 기업"} backClose={false}>
+      {opened && <SponsorCard sponsor={opened} rank={rankOf(opened, sponsors.indexOf(opened))} mine={mine} open={fireworksOpen} cheering={cheering} onCheer={() => void cheer(opened)} />}
     </Sheet>
   </>;
 }
@@ -137,7 +140,7 @@ function Crown() {
 }
 
 /** 기업 시트: 큰 액자, 소개, 숫자 셋, 홈페이지·멋져요 */
-function SponsorCard({ sponsor, rank, mine, cheering, onCheer }: { sponsor: Sponsor; rank: number; mine: Mine | null; cheering: boolean; onCheer: () => void }) {
+function SponsorCard({ sponsor, rank, mine, open, cheering, onCheer }: { sponsor: Sponsor; rank: number; mine: Mine | null; open: boolean; cheering: boolean; onCheer: () => void }) {
   const cheered = mine?.cheeredToday.includes(sponsor.id) ?? false;
   const soldOut = sponsor.remaining === 0;
   const exhausted = mine !== null && mine.cheersLeftToday === 0;
@@ -158,10 +161,12 @@ function SponsorCard({ sponsor, rank, mine, cheering, onCheer }: { sponsor: Spon
       <div><dt>멋져요</dt><dd>{count(sponsor.cheers)}</dd></div>
       <div><dt>남은 폭죽</dt><dd>{count(sponsor.remaining)}</dd></div>
     </dl>
-    {ready && <p className={styles.hint}>멋져요를 보내면 폭죽 이용권 1장을 받아요</p>}
+    {open && ready && <p className={styles.hint}>멋져요를 보내면 폭죽 이용권 1장을 받아요</p>}
+    {!open && <p className={styles.hint}>불꽃놀이가 열리면 멋져요로 폭죽 이용권을 받을 수 있어요</p>}
     <div className="sheet-actions">
       {sponsor.linkUrl && <a className="btn ghost" href={sponsor.linkUrl} target="_blank" rel="noopener noreferrer sponsored">홈페이지</a>}
-      {mine === null ? <Link href="/auth?next=sponsors" className="btn">로그인하고 멋져요</Link>
+      {!open ? <button type="button" className="btn ghost" disabled>곧 열려요</button>
+        : mine === null ? <Link href="/auth?next=sponsors" className="btn">로그인하고 멋져요</Link>
         : <button type="button" className={`btn ${ready ? "" : "ghost"}`} disabled={cheering || !ready} aria-busy={cheering} onClick={onCheer}>{ready && !cheering && <IconSparkle />}{label}</button>}
     </div>
   </>;

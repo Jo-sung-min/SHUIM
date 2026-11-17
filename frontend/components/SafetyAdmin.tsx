@@ -7,14 +7,30 @@ import { toastSuccess } from "@/lib/toast";
 type Report = {
   id: string;
   reporterId: string;
-  kind: "user" | "message" | "ai";
+  kind: "user" | "message" | "ai" | "circle" | "space";
   targetId?: string | null;
   detail: string;
   createdAt: string | number;
   reviewedAt?: string | number | null;
 };
 
-const LABELS: Record<Report["kind"], string> = { user: "사용자", message: "메시지", ai: "AI 답변" };
+const LABELS: Record<Report["kind"], string> = { user: "사용자", message: "메시지", ai: "AI 답변", circle: "소로우", space: "공간 글" };
+
+/** 이용 정지로 처리할 수 있는 신고: 작성자를 서버가 특정할 수 있는 것만 (소로우·풍등은 검토 완료로만) */
+const canSuspend = (report: Report) => Boolean(report.targetId) && (report.kind === "user" || report.kind === "message"
+  || (report.kind === "space" && report.targetId!.startsWith("guestbook:")));
+
+/** 신고 대상 번호를 사람이 읽기 쉬운 말로 */
+function targetLabel(report: Report): string | null {
+  const id = report.targetId;
+  if (!id) return null;
+  if (report.kind === "space") {
+    if (id.startsWith("guestbook:")) return `대나무숲 방명록 글 #${id.slice(10)}`;
+    if (id.startsWith("lantern:")) return `우유니 풍등 소원 (${id.slice(8)}) · 저장되지 않는 글이라 신고 내용에 적힌 문구로 확인해 주세요`;
+  }
+  if (report.kind === "circle") return `소로우 번호: ${id}`;
+  return `대상 번호: ${id}`;
+}
 
 function timestamp(value: string | number) {
   const date = new Date(value);
@@ -53,7 +69,7 @@ export default function SafetyAdmin() {
   }, [load]);
 
   const review = async (report: Report, action: "dismiss" | "block") => {
-    if (reviewing.current || (action === "block" && (report.kind === "ai" || !report.targetId))) return;
+    if (reviewing.current || (action === "block" && !canSuspend(report))) return;
     reviewing.current = true;
     setBusy(true);
     setError(null);
@@ -83,12 +99,12 @@ export default function SafetyAdmin() {
   const visible = showReviewed ? reports : pending;
 
   return (
-    <section aria-label="사용자와 AI 신고 검토" style={{ marginBottom: 24 }}>
+    <section aria-label="사용자·소로우·공간·AI 신고 검토" style={{ marginBottom: 24 }}>
       <div className="section-title">
-        <span>사용자 · 메시지 · AI 신고 {pending.length > 0 ? `(${pending.length})` : ""}</span>
+        <span>사용자 · 메시지 · 소로우 · 공간 · AI 신고 {pending.length > 0 ? `(${pending.length})` : ""}</span>
         <button type="button" className="text-btn" onClick={() => void load()} disabled={loading || busy}>새로고침</button>
       </div>
-      <p className="tiny muted">신고 내용을 검토한 뒤 필요한 조치를 취해 주세요. AI 신고는 답변과 안전 기능을 개선하는 데 반영하고, 처리 후 검토 완료로 표시하세요.</p>
+      <p className="tiny muted">신고 내용을 검토한 뒤 필요한 조치를 취해 주세요. AI 신고는 답변과 안전 기능을 개선하는 데 반영하고, 소로우·풍등 신고는 내용을 확인해 조치한 뒤 검토 완료로 표시하세요.</p>
       <label className="tiny row" style={{ gap: 8, margin: "12px 0" }}>
         <input type="checkbox" checked={showReviewed} onChange={(e) => setShowReviewed(e.target.checked)} />검토 완료 포함
       </label>
@@ -102,13 +118,13 @@ export default function SafetyAdmin() {
                 <span className="badge gray">{report.reviewedAt ? "검토 완료" : "대기"}</span>
               </div>
               <p className="tiny muted">접수 {timestamp(report.createdAt)}</p>
-              {report.targetId && <p className="tiny muted">대상 번호: {report.targetId}</p>}
+              {targetLabel(report) && <p className="tiny muted">{targetLabel(report)}</p>}
               <p style={{ whiteSpace: "pre-wrap", margin: "12px 0" }}>{report.detail}</p>
               <details className="tiny muted"><summary>접수 정보</summary><p>접수 번호: {report.id}<br />신고자 번호: {report.reporterId}</p></details>
               {report.reviewedAt ? <p className="tiny muted">검토 {timestamp(report.reviewedAt)}</p> : (
                 <div className="row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void review(report, "dismiss")}>검토 완료</button>
-                  {report.kind !== "ai" && report.targetId && <button type="button" className="btn ghost danger sm" disabled={busy} onClick={() => { setError(null); setConfirm(report); }}>대상 이용 정지</button>}
+                  {canSuspend(report) && <button type="button" className="btn ghost danger sm" disabled={busy} onClick={() => { setError(null); setConfirm(report); }}>대상 이용 정지</button>}
                 </div>
               )}
             </article>
@@ -116,7 +132,7 @@ export default function SafetyAdmin() {
         </div>
       )}
       <Sheet open={confirm !== null} onClose={() => { if (!reviewing.current) setConfirm(null); }} title="신고 대상을 이용 정지할까요?">
-        <p className="sheet-text">{confirm?.kind === "message" ? "이 메시지를 보낸 사용자의 계정을 이용 정지해요." : "신고된 사용자의 계정을 이용 정지해요."} 신고 내용과 대상을 확인한 뒤 진행하세요.</p>
+        <p className="sheet-text">{confirm?.kind === "message" ? "이 메시지를 보낸 사용자의 계정을 이용 정지해요." : confirm?.kind === "space" ? "이 방명록 글을 쓴 사용자의 계정을 이용 정지해요." : "신고된 사용자의 계정을 이용 정지해요."} 신고 내용과 대상을 확인한 뒤 진행하세요.</p>
         {confirm?.targetId && <p className="tiny muted" style={{ overflowWrap: "anywhere" }}>대상 번호: {confirm.targetId}</p>}
         {error && <p className="notice warn" role="alert">{error}</p>}
         <div className="sheet-actions">

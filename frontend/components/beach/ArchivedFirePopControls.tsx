@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { createPortal } from "react-dom";
 import { Sheet } from "@/components/ui";
 import { IS_AIT } from "@/lib/ait";
+import { isAndroidApp } from "@/lib/platform";
 import { buyFirePop, getFireCatalog, getFireOrders, restoreFirePops, FirePurchaseError, type FireCatalog, type PurchaseReceipt } from "@/lib/beach/fire-commerce";
 import type { FireState, PopColor } from "@/lib/beach/net";
 import styles from "./CampfireControls.module.css";
@@ -110,6 +111,8 @@ export default function ArchivedFirePopControls(props: Props) {
 
   const purchase = async () => {
     if (buying.current || !catalog?.available || loading || disconnected) return;
+    // Play 결제 정책: 안드로이드 앱 안에서는 디지털 상품을 팔지 않는다
+    if (isAndroidApp()) { setError("앱에서는 불씨팝을 판매하지 않아요."); return; }
     buying.current = true; setBusy(true); setError(""); setNotice("");
     if (!purchaseAttempt.current || purchaseAttempt.current.color !== chosen) purchaseAttempt.current = { color: chosen, id: crypto.randomUUID() };
     try {

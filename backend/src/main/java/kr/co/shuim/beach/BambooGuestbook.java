@@ -31,6 +31,7 @@ public class BambooGuestbook {
             WHERE id < :before AND NOT EXISTS (
               SELECT 1 FROM user_blocks b WHERE (b.blocker_id = :viewer AND b.blocked_id = g.author_id)
                  OR (b.blocked_id = :viewer AND b.blocker_id = g.author_id))
+              AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = g.author_id AND u.blocked_at IS NOT NULL)
             ORDER BY id DESC
             """).param("viewer", viewer).param("community", community).param("before", before == null ? Long.MAX_VALUE : before)
             .param("capacity", BOARD_CAPACITY).query(ENTRY).list();
@@ -60,5 +61,15 @@ public class BambooGuestbook {
             INSERT INTO bamboo_guestbook (community_id, author_id, request_id, display_name, story)
             VALUES (?, ?, ?, ?, ?) RETURNING id, display_name, story, created_at, true AS mine
             """).param(community).param(author).param(requestId).param(name).param(story).query(ENTRY).single();
+    }
+
+    /** 작성자가 자기 글을 지운다. 지운 글은 목록에서 바로 빠진다 */
+    public boolean deleteOwn(String author, long id) {
+        return jdbc.sql("DELETE FROM bamboo_guestbook WHERE id=? AND author_id=?").param(id).param(author).update() > 0;
+    }
+
+    /** 관리자가 신고된 글을 지운다 */
+    public boolean deleteAny(long id) {
+        return jdbc.sql("DELETE FROM bamboo_guestbook WHERE id=?").param(id).update() > 0;
     }
 }

@@ -6,6 +6,7 @@ import kr.co.shuim.ai.OpenAiClient;
 import kr.co.shuim.ai.Crisis;
 import kr.co.shuim.ai.JsonText;
 import kr.co.shuim.auth.DbUser;
+import kr.co.shuim.auth.PolicyConsentService;
 import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Ids;
 import kr.co.shuim.common.SpaceCapacity;
@@ -15,6 +16,7 @@ import kr.co.shuim.config.ApiException;
 import kr.co.shuim.profile.BadgeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,19 @@ public class CircleService {
     private final ObjectMapper json;
     private final BadgeService badges;
     private boolean privateTestCreationEnabled;
+    /** AI 동의 확인. 생성자를 바꾸지 않으려고 세터로 받는다 (없으면 동의하지 않은 것으로 본다) */
+    private PolicyConsentService policies;
+    /** 개발 환경에서 메일 설정 전이라도 인증 코드를 응답에 실을지 (운영은 늘 false) */
+    private boolean devCodeInResponse;
+    /** 한 사람이 한 시간에 AI 다듬기를 부를 수 있는 횟수 */
+    private int aiHourlyLimit = 20;
+    /**
+     * AI 다듬기 횟수 세기. 백엔드가 한 대(EB 인스턴스 1개)라 메모리 카운터로 충분하다.
+     * 키: 사용자 id, 값: [이번 시간 창 시작(ms), 횟수]
+     */
+    private final Map<String, long[]> aiUse = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 동시에 기다리는 AI 다듬기 수 상한. 넘치면 규칙 기반 결과로 돌려준다 (스레드가 OpenAI 응답에 묶이지 않게) */
+    private final java.util.concurrent.Semaphore aiSlots = new java.util.concurrent.Semaphore(3);
 
     public CircleService(JdbcClient jdbc, MailService mail, OpenAiClient ai, ObjectMapper json, BadgeService badges) {
         this.jdbc = jdbc;
@@ -53,6 +68,21 @@ public class CircleService {
     @Value("${app.circle.private-test-creation-enabled:false}")
     void setPrivateTestCreationEnabled(boolean enabled) {
         this.privateTestCreationEnabled = enabled;
+    }
+
+    @Autowired(required = false)
+    void setPolicies(PolicyConsentService policies) {
+        this.policies = policies;
+    }
+
+    @Value("${app.circle.dev-code-in-response:false}")
+    void setDevCodeInResponse(boolean enabled) {
+        this.devCodeInResponse = enabled;
+    }
+
+    @Value("${app.circle.ai-hourly-limit:20}")
+    void setAiHourlyLimit(int limit) {
+        this.aiHourlyLimit = Math.max(0, limit);
     }
 
     public Map<String, Object> privateTestStatus(DbUser me) {
@@ -237,6 +267,9 @@ public class CircleService {
     private static boolean appAdmin(DbUser u) { return u != null && "admin".equals(u.role()) && !u.anonymous() && !u.blocked(); }
 
     private Member requireKeeper(Circle c, DbUser me) {
+        if (me == null) throw ApiException.forbidden("소로우지기만 할 수 있어요");
+        // 운영진이 이용을 제한한 계정은 소로우지기 권한도 쓰지 못한다 (앱 관리자도 차단되면 appAdmin 이 false)
+        if (me.blocked()) throw ApiException.forbidden("이용이 제한된 계정이라 소로우를 관리할 수 없어요");
         requireAccess(c, me);
         Member m = member(c.id(), me.id()).orElse(null);
         if (m != null && m.keeper()) return m;
@@ -273,6 +306,14 @@ public class CircleService {
 
     /** 내가 속한 소로우 (대표 먼저) + 리스닝 중인 소로우 */
     public Map<String, Object> mine(DbUser me) {
+        if (me == null) {
+            // 세션이 없는 방문자: 익명 계정을 만들지 않고 빈 목록만 돌려준다
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("member", List.of());
+            empty.put("listening", List.of());
+            empty.put("publicSpace", publicSpace());
+            return empty;
+        }
         List<Map<String, Object>> member = new ArrayList<>();
         jdbc.sql(CIRCLE_SELECT.replace("SELECT c.*,", "SELECT c.*, mm.role, mm.status, mm.is_primary,") + " JOIN community_members mm ON mm.community_id = c.id WHERE mm.user_id = :userId AND " + VISIBLE_CIRCLE + " ORDER BY c.pinned DESC, mm.is_primary DESC, mm.joined_at")
             .param("userId", me.id()).param("viewerId", viewerId(me)).query((rs, i) -> {
@@ -414,7 +455,8 @@ public class CircleService {
 
     @Transactional
     public Map<String, Object> create(DbUser me, CreateInput in) {
-        // 오픈채팅방처럼 누구나 연다. 연 사람이 소로우지기(owner)가 되어 이름·아이콘·가입 방식·멤버까지 관리한다
+        // 가입한 회원이면 누구나 연다. 연 사람이 소로우지기(owner)가 되어 이름·아이콘·가입 방식·멤버까지 관리한다
+        requireRegisteredToCreate(me);
         assertNotBlocked(me);
         String name = CircleLogic.normalizeName(in.name());
         if (name == null) throw ApiException.badRequest("이름은 2~26자로 해요 (끝에 '소로우'가 붙어요)");
@@ -448,6 +490,13 @@ public class CircleService {
             .param(id).param(me.id()).param(!hasPrimary).update();
         badges.refresh(me.id());
         return detail(me, slug);
+    }
+
+    static final String CREATE_NEEDS_ACCOUNT = "소로우는 가입한 뒤에 열 수 있어요. 로그인해 주세요.";
+
+    /** 쿠키만 지우면 새로 생기는 가입 전(익명) 계정으로는 소로우를 열지 못한다 */
+    public static void requireRegisteredToCreate(DbUser me) {
+        if (me == null || me.anonymous()) throw ApiException.unauthorized(CREATE_NEEDS_ACCOUNT);
     }
 
     /* ---------- 묶음 ---------- */
@@ -587,6 +636,10 @@ public class CircleService {
                 }
             }
             if (b.get("visibility") instanceof String v && CircleLogic.VISIBILITIES.contains(v)) {
+                // 멤버에게만 보이던 사연이 이미 있으면, 모두에게로 바꾸는 순간 지난 사연이 비회원에게까지 열린다
+                if ("public".equals(v) && "members".equals(c.visibility()) && c.postSeq() > 0) {
+                    throw ApiException.badRequest("멤버에게만 보이던 사연이 있어서 모두에게 공개로 바꿀 수 없어요");
+                }
                 jdbc.sql("UPDATE communities SET visibility = ? WHERE id = ?").param(v).param(c.id()).update();
             }
             if (b.get("joinMode") instanceof String j && CircleLogic.JOIN_MODES.contains(j) && !"domain".equals(j)) {
@@ -691,6 +744,9 @@ public class CircleService {
         }
         long recent = jdbc.sql("SELECT count(*) FROM community_email_codes WHERE user_id = ? AND created_at > now() - INTERVAL '1 hour'").param(me.id()).query(Long.class).single();
         if (recent >= 5) throw ApiException.badRequest("인증 메일은 한 시간에 5번까지 보낼 수 있어요");
+        // 같은 주소로 여러 계정이 번갈아 보내 메일을 쏟아붓지 못하게 주소별로도 센다
+        long recentAddress = jdbc.sql("SELECT count(*) FROM community_email_codes WHERE email_hash = ? AND created_at > now() - INTERVAL '1 hour'").param(hash).query(Long.class).single();
+        if (recentAddress >= 3) throw ApiException.badRequest("이 메일로는 잠시 후 다시 시도해 주세요.");
         String code = String.format("%06d", RANDOM.nextInt(1_000_000));
         String id = Ids.uid();
         jdbc.sql("INSERT INTO community_email_codes (id, community_id, user_id, email_hash, code_hash, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -705,9 +761,10 @@ public class CircleService {
                 throw ApiException.unavailable("인증 메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요");
             }
             out.put("sent", true);
-        } else if (mail.devFallback()) {
+        } else if (devCodeInResponse && mail.devFallback()) {
+            // 개발 환경 전용: app.circle.dev-code-in-response=true 를 직접 켠 경우에만 화면에 코드를 보여 준다
             out.put("sent", false);
-            out.put("devCode", code); // 개발 환경 전용: 메일 설정 전이라 화면에 코드를 보여 준다
+            out.put("devCode", code);
         } else {
             throw ApiException.unavailable("아직 인증 메일을 보낼 수 없어요. 운영자에게 알려 주세요");
         }
@@ -810,11 +867,49 @@ public class CircleService {
         출력은 아래 JSON 하나만. 코드블록이나 다른 텍스트 없이.
         { "text": "정리한 사연", "masked": ["가린 정보의 종류 (예: 실명, 학번)"] }""";
 
-    /** AI 정리 + 가림 제안. AI 가 없거나 실패하면 규칙 기반(공백 정리 + 실명·연락처 가리기) */
+    static final String AI_CONSENT_NEEDED = "AI 로 다듬으려면 'AI 이용 및 정보 제공'에 먼저 동의해 주세요. 동의하지 않아도 사연은 그대로 보낼 수 있어요.";
+    static final String AUTHOR_AI_CONSENT_NEEDED = "보낸 분이 AI 이용에 동의하지 않은 사연이라 AI 로 다듬을 수 없어요. 직접 다듬어 주세요.";
+    static final String AI_TOO_OFTEN = "AI 다듬기를 많이 썼어요. 잠시 후 다시 시도해 주세요.";
+
+    /** 규칙 기반 정리(공백 정리 + 실명·연락처 가리기). OpenAI 로 아무것도 보내지 않는다 */
+    public Draft localDraft(String text) {
+        CircleLogic.Masked rule = CircleLogic.mask(CircleLogic.tidy(CircleLogic.clipStory(text)));
+        return new Draft(rule.text(), rule.found(), "local");
+    }
+
+    /** 이 사용자가 지금 버전의 'AI 이용 및 정보 제공'에 동의했는지 */
+    boolean aiAccepted(DbUser user) {
+        return user != null && policies != null && policies.state(user).aiAccepted();
+    }
+
+    private boolean aiAccepted(String userId) {
+        if (userId == null || policies == null) return false;
+        return jdbc.sql("SELECT * FROM users WHERE id = ?").param(userId).query(DbUser.MAPPER).optional()
+            .map(this::aiAccepted).orElse(false);
+    }
+
+    /** 사용자별 한 시간 AI 다듬기 횟수를 하나 쓴다. 넘치면 429 */
+    void takeAiQuota(String userId) {
+        long now = System.currentTimeMillis();
+        long[] used = aiUse.compute(userId, (k, v) -> {
+            if (v == null || now - v[0] >= 3_600_000L) return new long[] { now, 1 };
+            v[1]++;
+            return v;
+        });
+        if (used[1] > aiHourlyLimit) throw new ApiException(429, AI_TOO_OFTEN);
+        if (aiUse.size() > 10_000) aiUse.entrySet().removeIf(e -> now - e.getValue()[0] >= 3_600_000L);
+    }
+
+    /**
+     * AI 정리 + 가림 제안. AI 가 없거나 실패하면 규칙 기반(공백 정리 + 실명·연락처 가리기).
+     * 동의 확인은 부르는 쪽(preview·draft)에서 한다. 정규식·AI 에 넣기 전에 본문을 상한으로 자른다.
+     * DB 트랜잭션 안에서 부르지 않는다 (OpenAI 응답을 기다리는 동안 커넥션을 잡지 않게)
+     */
     public Draft tidy(String text) {
-        String raw = text == null ? "" : text;
+        String raw = CircleLogic.clipStory(text);
         CircleLogic.Masked rule = CircleLogic.mask(CircleLogic.tidy(raw));
         if (!ai.configured()) return new Draft(rule.text(), rule.found(), "local");
+        if (!aiSlots.tryAcquire()) return new Draft(rule.text(), rule.found(), "local");
         try {
             String out = ai.complete(ai.resolveModel(null), 4000, DRAFT_PROMPT, "사연:\n" + raw);
             String j = JsonText.extract(out);
@@ -831,14 +926,20 @@ public class CircleService {
         } catch (Exception e) {
             log.warn("circle tidy failed: {}", e.getMessage());
             return new Draft(rule.text(), rule.found(), "local");
+        } finally {
+            aiSlots.release();
         }
     }
 
-    /** 보내기 전 미리보기 (멤버) */
+    /** 보내기 전 미리보기 (멤버). AI 에 동의한 사람만 OpenAI 로 보낸다 */
     public Draft preview(DbUser me, String slug, String text) {
         Circle c = bySlug(slug);
         requireActiveMember(c, me);
-        return tidy(text);
+        String raw = CircleLogic.clipStory(text);
+        if (!ai.configured()) return localDraft(raw);
+        if (!aiAccepted(me)) throw ApiException.forbidden(AI_CONSENT_NEEDED);
+        takeAiQuota(me.id());
+        return tidy(raw);
     }
 
     @Transactional
@@ -902,14 +1003,30 @@ public class CircleService {
         return r;
     }
 
-    @Transactional
+    /**
+     * 소로우지기의 AI 정리본. 트랜잭션을 걸지 않는다: ① 짧은 조회 → ② 트랜잭션 밖에서 OpenAI → ③ UPDATE 한 번.
+     * (OpenAI 응답을 기다리는 동안 DB 커넥션을 잡으면 작은 풀이 금방 바닥난다.) ai_draft 는 캐시 칸이라 원자성이 필요 없다.
+     * 남의 사연이므로 지기 본인과 보낸 사람 모두 AI 에 동의했을 때만 OpenAI 로 보낸다
+     */
     public Draft draft(DbUser me, String slug, String id) {
         Circle c = bySlug(slug);
         requireKeeper(c, me);
-        String text = jdbc.sql("SELECT text FROM submissions WHERE id = ? AND community_id = ?").param(id).param(c.id()).query(String.class).optional()
+        record Sub(String text, String authorId) {}
+        Sub s = jdbc.sql("SELECT text, author_id FROM submissions WHERE id = ? AND community_id = ?").param(id).param(c.id())
+            .query((rs, i) -> new Sub(rs.getString("text"), rs.getString("author_id"))).optional()
             .orElseThrow(() -> ApiException.notFound("사연을 찾을 수 없어요"));
-        Draft d = tidy(text);
-        jdbc.sql("UPDATE submissions SET ai_draft = ? WHERE id = ?").param(d.text()).param(id).update();
+        Draft d;
+        if (!ai.configured()) {
+            d = localDraft(s.text());
+        } else {
+            if (!aiAccepted(me)) throw ApiException.forbidden(AI_CONSENT_NEEDED);
+            if (!aiAccepted(s.authorId())) throw ApiException.forbidden(AUTHOR_AI_CONSENT_NEEDED);
+            takeAiQuota(me.id());
+            d = tidy(s.text());
+        }
+        // 그사이 게시·반려된 사연에는 정리본을 다시 쓰지 않는다
+        jdbc.sql("UPDATE submissions SET ai_draft = ? WHERE id = ? AND community_id = ? AND status IN ('pending', 'held')")
+            .param(d.text()).param(id).param(c.id()).update();
         return d;
     }
 
@@ -935,6 +1052,9 @@ public class CircleService {
                     .param(postId).param(s.authorId()).param(s.cat()).param(body).param(new String[0]).param(c.id()).param(no).param(at).update();
                 jdbc.sql("UPDATE submissions SET status = 'published', post_id = ?, reply = COALESCE(CAST(? AS VARCHAR), reply), reason = NULL, decided_at = now() WHERE id = ?")
                     .param(postId).param(rep).param(id).update();
+                // 지기가 본문을 고쳐 게시했는지 운영진이 추적할 수 있게 남긴다. 원문은 submissions.text, 게시본은 shout_posts.text (post_id 로 이어짐)
+                boolean edited = !body.equals(CircleLogic.clipStory(s.text()).strip());
+                log.info("circle publish: circle={} submission={} post={} keeper={} edited={}", c.id(), id, postId, me.id(), edited);
                 badges.refresh(s.authorId());
             }
             case "hold" -> jdbc.sql("UPDATE submissions SET status = 'held', reason = ?, reply = COALESCE(CAST(? AS VARCHAR), reply), decided_at = now() WHERE id = ?")
@@ -956,20 +1076,31 @@ public class CircleService {
         return t.length() > max ? t.substring(0, max) : t;
     }
 
-    /** 소로우지기: 이 소로우에 게시된 사연 가리기/되돌리기 */
+    static final String REPORTED_UNHIDE = "신고가 들어온 사연은 운영진이 확인해야 다시 보이게 할 수 있어요";
+
+    /**
+     * 소로우지기: 이 소로우에 게시된 사연 가리기/되돌리기.
+     * 신고 확인(reviewed_at)은 운영진만 하므로 여기서는 건드리지 않는다. 신고가 들어온 사연(운영진이 숨겼을 수 있다)은 지기가 되돌리지 못한다
+     */
     @Transactional
     public Map<String, Object> toggleHidden(DbUser me, String slug, String postId) {
         Circle c = bySlug(slug);
         requireKeeper(c, me);
-        int n = jdbc.sql("UPDATE shout_posts SET hidden = NOT hidden, reviewed_at = now() WHERE id = ? AND community_id = ?").param(postId).param(c.id()).update();
-        if (n == 0) throw ApiException.notFound("이 소로우의 사연이 아니에요");
+        Boolean hidden = jdbc.sql("SELECT hidden FROM shout_posts WHERE id = ? AND community_id = ? FOR UPDATE").param(postId).param(c.id())
+            .query(Boolean.class).optional().orElseThrow(() -> ApiException.notFound("이 소로우의 사연이 아니에요"));
+        if (hidden && !appAdmin(me)) {
+            boolean reported = jdbc.sql("SELECT count(*) FROM reports WHERE target_kind = 'post' AND target_id = ?").param(postId).query(Long.class).single() > 0;
+            if (reported) throw ApiException.forbidden(REPORTED_UNHIDE);
+        }
+        jdbc.sql("UPDATE shout_posts SET hidden = ? WHERE id = ? AND community_id = ?").param(!hidden).param(postId).param(c.id()).update();
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("hidden", jdbc.sql("SELECT hidden FROM shout_posts WHERE id = ?").param(postId).query(Boolean.class).single());
+        out.put("hidden", !hidden);
         return out;
     }
 
     /** 내 사연함: 내가 보낸 사연의 상태·사유·익명 답장 */
     public List<Map<String, Object>> mySubmissions(DbUser me) {
+        if (me == null) return List.of();
         return jdbc.sql("""
             SELECT s.id, s.cat, s.text, s.status, s.crisis, s.ai_draft, s.reason, s.reply, s.created_at, s.decided_at,
                    p.post_no, p.id AS post_id, p.created_at AS publish_at, c.name AS circle_name, c.slug AS circle_slug

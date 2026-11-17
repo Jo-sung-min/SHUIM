@@ -33,10 +33,13 @@ public class ProfileController {
         this.consent = consent;
     }
 
-    /** GET /api/profile — 내 프로필(비공개 필드·칭호·새 배지 포함) */
+    /**
+     * GET /api/profile — 내 프로필(비공개 필드·칭호·새 배지 포함).
+     * 세션이 없으면 익명 회원을 만들지 않고 401 (화면은 로그인한 뒤에만 부르고, 실패는 잡아서 처리한다)
+     */
     @GetMapping("/api/profile")
-    public Map<String, Object> mine(HttpServletRequest req, HttpServletResponse res) {
-        return profiles.getMyProfile(auth.requireUser(req, res));
+    public Map<String, Object> mine(HttpServletRequest req) {
+        return profiles.getMyProfile(auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인이 필요해요")));
     }
 
     /** PUT /api/profile { nick?, bio?, avatarUrl?, name?, phone?, titleBadge?, mbti? } — titleBadge "" 이면 칭호 해제, mbti "" 이면 지움 (없으면 그대로) */
@@ -56,8 +59,9 @@ public class ProfileController {
 
     /** POST /api/profile/badges/seen — 새 배지 축하 시트를 봤다 */
     @PostMapping("/api/profile/badges/seen")
-    public Map<String, Object> badgesSeen(HttpServletRequest req, HttpServletResponse res) {
-        badges.markSeen(auth.requireUser(req, res).id());
+    public Map<String, Object> badgesSeen(HttpServletRequest req) {
+        // 세션이 없으면 볼 배지도 없다 (익명 회원을 만들지 않는다)
+        auth.currentUser(req).ifPresent(me -> badges.markSeen(me.id()));
         return Map.of("ok", true);
     }
 

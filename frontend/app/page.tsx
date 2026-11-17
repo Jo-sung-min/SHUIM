@@ -44,6 +44,7 @@ import Highlighted from "@/components/Highlighted";
 import { stripHighlights } from "@/lib/highlight";
 import { useHideOnScroll } from "@/lib/use-hide-on-scroll";
 import { AI_CONTEXT_VERSION, buildTodayContext, currentAiResult, type TodayRecords } from "@/lib/today-context";
+import { apiErrorMessage } from "@/lib/api-error";
 import { useCurrentDay } from "@/lib/use-current-day";
 import styles from "./account-screens.module.css";
 
@@ -165,7 +166,9 @@ export default function HomePage() {
         body: JSON.stringify({ mode, companion: companion.name, ...buildTodayContext(records, requestDay, mode === "review"),
           categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()), prompts: loadPrompts() }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
+      if (!res.ok) {
+        throw new Error(apiErrorMessage(res.status, await res.json().catch(() => null), "정리하지 못했어요"));
+      }
       const json = await res.json();
       if (!isCurrent()) return;
       if (mode !== "review") setAnsweredAt(Date.now());

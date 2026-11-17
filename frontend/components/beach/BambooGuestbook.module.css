@@ -47,3 +47,6 @@
 }
 @media(min-width:670px) { .board { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media(min-width:930px) { .board { grid-template-columns:repeat(6,minmax(0,1fr)); max-height:min(69dvh,750px); } }
+
+/* 신고는 눈에 띄지 않게, 그래도 손가락이 닿을 만큼 */
+.reader > .reportLink { justify-self:end; min-height:44px; padding:8px 4px; border:0; border-radius:10px; background:none; color:var(--text-3); font-size:13px; font-weight:500; text-decoration:underline; text-underline-offset:3px; }

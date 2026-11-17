@@ -457,7 +457,7 @@ class BeachFireworksTest {
                 .andExpect(jsonPath("$.fireworks[0].id").value(event.id()))
                 .andExpect(jsonPath("$.fireworks[0].variant").value(variant))
                 .andExpect(jsonPath("$.fireworks[0].startedAt").value(startedAt));
-            mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
+            String lateTicket = com.jayway.jsonpath.JsonPath.read(mvc.perform(post("/api/beach/enter").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"communityId\":\"room\",\"mapId\":\"%s\"}".formatted(map)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.fireworksControl").value(false))
                 .andExpect(jsonPath("$.fireworks.length()").value(1))
@@ -465,7 +465,10 @@ class BeachFireworksTest {
                 .andExpect(jsonPath("$.fireworks[0].variant").value(variant))
                 .andExpect(jsonPath("$.fireworks[0].startedAt").value(startedAt))
                 .andExpect(jsonPath("$.fireworks[0].durationMs").value(12000))
-                .andExpect(jsonPath("$.serverTime").value(startedAt + 5000));
+                .andExpect(jsonPath("$.serverTime").value(startedAt + 5000))
+                .andReturn().getResponse().getContentAsString(), "$.ticket");
+            // 늦게 온 탭은 확인만 하고 나간다 (한 계정의 방문은 방마다 둘까지라 계속 쌓으면 첫 방문이 밀려난다)
+            beach.leave(lateTicket);
             for (var other : List.of(otherMap, thirdMap, elsewhere)) {
                 assertTrue(poll(other).fireworks().isEmpty());
                 assertEquals(0, poll(other).fireworksCooldownUntil());

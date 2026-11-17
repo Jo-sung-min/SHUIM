@@ -40,10 +40,18 @@ public class TodayService {
      * comfort: 이 사람이 위로받고 싶어 하는 방향 (프로필의 MBTI 에서 온 지침, 없으면 null).
      * 칭찬받기·사랑받기의 AI 응답에만 쓴다. 위험 신호가 있는 날은 109 안내가 먼저라 붙이지 않고, 규칙 기반 응답(키 없음·실패)에도 쓰지 않는다
      */
-    public Map<String, Object> run(Request raw, MbtiComfortService.Guide comfort) {
+    public Map<String, Object> run(Request raw, MbtiComfortService.Guide comfort) { return run(raw, comfort, null); }
+
+    /** 프롬프트에 넣는 기록 글자 수 상한 (점검은 메모 전체를 보므로 더 길다). 넘으면 뒤를 자른다 */
+    static final int TEXT_MAX = 20_000, REVIEW_TEXT_MAX = 140_000;
+
+    /** userId: OpenAI 남용 추적용 가명 식별자(safety_identifier)를 만들 때만 쓴다. 없으면 보내지 않는다 */
+    public Map<String, Object> run(Request raw, MbtiComfortService.Guide comfort, String userId) {
+        if (raw == null) throw kr.co.shuim.config.ApiException.badRequest("정리할 기록이 없어요");
         Request b = raw.normalized();
         String mode = b.mode();
         String text = "review".equals(mode) ? reviewText(b) : toPlainText(b);
+        text = cut(text, "review".equals(mode) ? REVIEW_TEXT_MAX : TEXT_MAX);
         boolean crisis = Crisis.hasSignal(text);
         // The server chooses exclusively from administrator-reviewed entries. Quote text is
         // reference material, never evidence about the user's life or additional instructions.
@@ -55,7 +63,7 @@ public class TodayService {
         String override = b.prompts().get(mode);
         // Saved administrator prompts must also preserve the dates of the supplied evidence.
         String system = override != null && !override.isBlank()
-            ? cut(override, Prompts.MAX_LEN) + "\n\n" + Prompts.TEMPORAL_GROUNDING : Prompts.DEFAULTS.get(mode);
+            ? cut(override, Prompts.MAX_LEN) + "\n\n" + Prompts.TEMPORAL_GROUNDING + "\n\n" + Prompts.SAFETY : Prompts.DEFAULTS.get(mode);
         // 정리·칭찬·사랑은 모루가 건넨다: 관리자 프롬프트를 덮어써도 화자와 말투는 서버가 붙인다 (분석하기는 그대로)
         if (!"review".equals(mode)) system += "\n\n" + Prompts.companion(b.companion());
         if (comfort != null && !crisis && ("praise".equals(mode) || "love".equals(mode)))
@@ -71,22 +79,26 @@ public class TodayService {
             default -> "오늘의 나 브리핑을 만들어줘.";
         };
         try {
-            String rawText = ai.complete(ai.resolveModel(b.prompts().get("model")), "review".equals(mode) ? 6000 : 5000, system, ask + "\n\n" + text);
+            String model = ai.resolveModel(b.prompts().get("model"));
+            int maxTokens = "review".equals(mode) ? 6000 : 5000;
+            String input = ask + "\n\n" + text;
+            String rawText = userId == null ? ai.complete(model, maxTokens, system, input) : ai.complete(model, maxTokens, system, input, userId);
             Map<String, Object> out = new LinkedHashMap<>();
+            // 로그에는 AI 응답 본문을 남기지 않는다 (사용자 기록을 인용하므로 길이만)
             switch (mode) {
                 case "briefing" -> {
                     Briefing br = parseBriefing(rawText);
-                    if (br == null) throw new IllegalStateException("JSON 파싱 실패: " + cut(rawText, 200));
+                    if (br == null) throw new IllegalStateException("JSON 파싱 실패 (length=" + rawText.length() + ")");
                     out.put("briefing", br);
                 }
                 case "review" -> {
                     Review rv = parseReview(rawText);
-                    if (rv == null) throw new IllegalStateException("JSON 파싱 실패: " + cut(rawText, 200));
+                    if (rv == null) throw new IllegalStateException("JSON 파싱 실패 (length=" + rawText.length() + ")");
                     out.put("review", rv);
                 }
                 default -> {
                     Moment m = parseMoment(rawText);
-                    if (m == null) throw new IllegalStateException("JSON 파싱 실패: " + cut(rawText, 200));
+                    if (m == null) throw new IllegalStateException("JSON 파싱 실패 (length=" + rawText.length() + ")");
                     out.put("moment", m);
                 }
             }
@@ -94,8 +106,12 @@ public class TodayService {
             out.put("crisis", crisis);
             if (quote != null) out.put("quote", quoteReference(quote));
             return out;
+        } catch (kr.co.shuim.config.ApiException e) {
+            // 동시 요청이 많아 OpenAI 호출 자리를 얻지 못함: 규칙 기반 결과로 오늘 칸을 채우지 않고 잠시 후 다시 시도하게 한다
+            throw e;
         } catch (Exception e) {
-            log.error("today {} failed: {}", mode, e.getMessage());
+            // 예외 메시지에는 OpenAI 오류 본문(입력 일부)이 섞일 수 있어 종류만 남긴다
+            log.error("today {} failed: {}", mode, e.getClass().getSimpleName());
             return local(b, mode, crisis, quote);
         }
     }
@@ -103,15 +119,40 @@ public class TodayService {
     private Map<String, Object> local(Request b, String mode, boolean crisis, Quote quote) {
         Map<String, Object> out = new LinkedHashMap<>();
         switch (mode) {
-            case "praise" -> out.put("moment", withPhilosophy(localPraise(b), quote, mode));
-            case "love" -> out.put("moment", withPhilosophy(localLove(b), quote, mode));
-            case "review" -> out.put("review", localReview(b));
-            default -> out.put("briefing", localBriefing(b));
+            case "praise" -> out.put("moment", withCrisisLine(withPhilosophy(localPraise(b), quote, mode), crisis));
+            case "love" -> out.put("moment", withCrisisLine(withPhilosophy(localLove(b), quote, mode), crisis));
+            case "review" -> out.put("review", withCrisisLine(localReview(b), crisis));
+            default -> out.put("briefing", withCrisisLine(localBriefing(b), crisis));
         }
         out.put("source", "local");
         out.put("crisis", crisis);
         if (quote != null) out.put("quote", quoteReference(quote));
         return out;
+    }
+
+    /* 위험 신호가 있는 날의 규칙 기반 응답: 도움 받을 곳(109·1577-0199)을 맨 앞에 둔다 */
+
+    static Briefing withCrisisLine(Briefing br, boolean crisis) {
+        if (!crisis) return br;
+        List<String> highlights = new ArrayList<>();
+        highlights.add(Prompts.CRISIS_LINE);
+        highlights.addAll(TodayDtos.head(br.highlights(), 2));
+        return new Briefing(br.headline(), br.momentum(), highlights, br.today(), br.nextStep(), br.question());
+    }
+
+    static Moment withCrisisLine(Moment m, boolean crisis) {
+        if (!crisis || m.lines().isEmpty()) return m;
+        List<String> lines = new ArrayList<>(m.lines());
+        lines.set(0, Prompts.CRISIS_LINE + " " + lines.get(0));
+        return new Moment(m.title(), lines, m.closing());
+    }
+
+    static Review withCrisisLine(Review rv, boolean crisis) {
+        if (!crisis) return rv;
+        List<String> changes = new ArrayList<>();
+        changes.add(Prompts.CRISIS_LINE);
+        changes.addAll(TodayDtos.head(rv.changes(), 4));
+        return new Review(rv.headline(), rv.cautions(), changes, rv.growth(), rv.question());
     }
 
     private static final String PHILOSOPHY_CONTEXT_RULES = """

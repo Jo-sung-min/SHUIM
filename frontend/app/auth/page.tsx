@@ -7,24 +7,38 @@ import { Me, fetchMe, signIn, signInWithToss, signOut, signUp, startKakaoLogin, 
 import { IS_AIT } from "@/lib/ait";
 import { Empty, Segmented, SkeletonCard, TopBar, fmtDate } from "@/components/ui";
 import { toastSuccess } from "@/lib/toast";
-import { todayKey } from "@/lib/storage";
+import { hasGuestData, todayKey } from "@/lib/storage";
 import { POLICY_VERSION, acceptPolicyConsent, fetchPolicyConsent, type PolicyConsent } from "@/lib/safety";
 import { IconChevronL, IconChevronR, IconKakao, IconUser } from "@/components/Icons";
 import styles from "../account-screens.module.css";
 
 type Mode = "login" | "signup";
 
+/** 가입 동의: 필수(이용약관·개인정보 처리방침, 만 14세 이상)와 선택(AI 정보 처리)을 따로 받는다 */
+interface Consent { terms: boolean; age: boolean; ai: boolean }
+const NO_CONSENT: Consent = { terms: false, age: false, ai: false };
+const requiredConsent = (c: Consent) => c.terms && c.age;
+
 /**
- * 가입 전 동의 한 번: 이용약관에 동의하고 개인정보 처리방침과 AI 기능의 정보 처리(OpenAI 전달)를 함께 확인한다.
- * 가입할 때 AI 동의도 같이 저장해서(aiDisclosureAccepted: true) AI 기능을 처음 쓸 때 따로 묻지 않는다. AI 는 서비스 안내의 AI 이용 안내에서 언제든 끌 수 있다
+ * 가입 전 동의. [필수] 이용약관·개인정보 처리방침, [필수] 만 14세 이상(화면에서만 확인), [선택] AI 기능의 정보 처리(OpenAI·국외 이전).
+ * AI 는 기본으로 꺼져 있고 고르지 않아도 가입할 수 있다 (aiDisclosureAccepted 에 고른 값을 그대로 보낸다).
+ * 동의하지 않은 계정은 AI 기능을 처음 쓸 때 AI 이용 안내(/info/ai, requestAiProcessing)에서 다시 묻는다
  */
-function SignupConsent({ checked, onChange, disabled, note }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; note: string }) {
+function SignupConsent({ value, onChange, disabled, note }: { value: Consent; onChange: (value: Consent) => void; disabled?: boolean; note: string }) {
+  const set = (patch: Partial<Consent>) => onChange({ ...value, ...patch });
   return <section className={styles.consent} aria-labelledby="signup-consent-title">
     <h3 id="signup-consent-title">가입 전 확인해 주세요</h3>
-    <label className={styles.check}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} required /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고, <Link href="/privacy">개인정보 처리방침</Link>과 AI 기능의 정보 처리를 확인했어요.</strong></span></label>
+    <label className={styles.check}><input type="checkbox" checked={value.terms} onChange={(e) => set({ terms: e.target.checked })} disabled={disabled} required /><span><strong>[필수] <Link href="/terms">이용약관</Link>에 동의하고, <Link href="/privacy">개인정보 처리방침</Link>을 확인했어요.</strong></span></label>
+    <label className={styles.check}><input type="checkbox" checked={value.age} onChange={(e) => set({ age: e.target.checked })} disabled={disabled} required /><span><strong>[필수] 만 14세 이상이에요.</strong></span></label>
     <p>{note}</p>
-    <p>AI 기능을 쓰면 관련 기록·메모·목표·일정과 위로 요청 내용을 OpenAI의 GPT에 전달해 답변을 만들어요. 분석에는 전체 메모가 포함될 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. AI는 서비스 안내에서 언제든 끌 수 있어요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
+    <label className={styles.check}><input type="checkbox" checked={value.ai} onChange={(e) => set({ ai: e.target.checked })} disabled={disabled} /><span>[선택] AI 기능을 위한 정보 처리와 국외 이전(미국 OpenAI)에 동의해요.</span></label>
+    <p>AI 기능을 쓰면 관련 기록·메모·목표·일정과 위로 요청 내용을 미국의 OpenAI로 보내 답변을 만들어요. 기록에는 건강·감정 같은 민감한 내용이 들어 있을 수 있어요. 동의하지 않아도 가입할 수 있고, AI 기능을 처음 쓸 때 다시 고를 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
   </section>;
+}
+
+/** 이 기기에 로그인 전(게스트) 기록이 있을 때만: 계정으로 옮길지 고른다 (말없이 옮기지 않는다) */
+function GuestImportChoice({ checked, onChange, disabled }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
+  return <label className={styles.check}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} /><span>이 기기에 로그인 전에 쓴 기록이 있어요. 이 계정으로 옮길게요.</span></label>;
 }
 type Pending = "submit" | "nick" | "logout" | "kakao" | "toss" | null;
 
@@ -40,8 +54,11 @@ export default function AuthPage() {
   const pendingRef = useRef(false);
   const navigatingRef = useRef(false);
   const [editNick, setEditNick] = useState<string | null>(null);
-  /** 가입 동의 하나: 이용약관·개인정보 처리방침과 AI 기능의 정보 처리를 함께 확인한다 (AI 를 처음 쓸 때 따로 묻지 않게) */
-  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [consent, setConsent] = useState<Consent>(NO_CONSENT);
+  const termsAccepted = requiredConsent(consent);
+  /** 게스트 기록이 있는지, 옮길지 (고르지 않았으면 가입은 옮기기, 로그인은 옮기지 않기를 보여 준다) */
+  const [guestData, setGuestData] = useState(false);
+  const [adoptChoice, setAdoptChoice] = useState<boolean | null>(null);
   const [kakaoSignup, setKakaoSignup] = useState(false);
   const [tossSignup, setTossSignup] = useState(false);
   const [policy, setPolicy] = useState<PolicyConsent | null>(null);
@@ -51,11 +68,14 @@ export default function AuthPage() {
     const q = new URLSearchParams(window.location.search);
     if (q.get("mode") === "signup") setMode("signup");
     if (q.get("provider") === "kakao") setKakaoSignup(true);
-    if (q.get("error") === "kakao") {
-      setError("카카오 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.");
-      window.history.replaceState(null, "", "/auth");
-    }
-    fetchMe(true).then(setMe);
+    const kakaoFailed = q.get("error") === "kakao";
+    if (kakaoFailed) window.history.replaceState(null, "", "/auth");
+    setGuestData(hasGuestData());
+    fetchMe(true).then((m) => {
+      setMe(m);
+      // 로그인 직후 뒤로 가기로 카카오 콜백에 다시 들르면 서버는 실패로 돌려보내지만, 이미 로그인돼 있으면 실패가 아니다
+      if (kakaoFailed && !m.user) setError("카카오 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.");
+    });
     fetchPolicyConsent().then(setPolicy).catch(() => setError("가입 안내를 확인하지 못했어요. 새로고침한 뒤 다시 시도해 주세요."));
     const restore = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
@@ -84,14 +104,15 @@ export default function AuthPage() {
     }
   };
 
+  const adoptGuest = guestData && (adoptChoice ?? mode === "signup");
   const submit = () => run("submit", async () => {
     if (mode === "signup" && !termsAccepted) {
-      setError("이용약관·개인정보 처리방침과 AI 정보 처리를 확인하고 동의해 주세요.");
+      setError("이용약관·개인정보 처리방침 동의와 만 14세 이상 확인이 필요해요.");
       return;
     }
     const result = mode === "signup"
-      ? await signUp(email, nick, password, { signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: true })
-      : await signIn(email, password);
+      ? await signUp(email, nick, password, { signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: consent.ai }, { adoptGuest })
+      : await signIn(email, password, { adoptGuest });
     if (!result.ok) {
       setError(result.error);
       return;
@@ -111,9 +132,9 @@ export default function AuthPage() {
   const tossStart = () => run("toss", async () => {
     if (tossSignup) {
       if (!termsAccepted || !policy) return;
-      setPolicy(await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: true, expectedUserId: policy.userId }));
+      setPolicy(await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: consent.ai, expectedUserId: policy.userId }));
     }
-    const result = await signInWithToss();
+    const result = await signInWithToss({ adoptGuest });
     if (!result.ok) {
       if (result.consentRequired && !tossSignup) setTossSignup(true);
       else setError(result.error);
@@ -155,6 +176,7 @@ export default function AuthPage() {
         <p className={styles.mutedNote}>로그인한 기록은 다른 기기에서도 이어서 볼 수 있어요. 계정 및 데이터 삭제는 <Link href="/info">서비스 안내</Link>에서.</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <button type="button" className={`btn ghost block ${styles.logout}`} disabled={busy} onClick={() => run("logout", async () => { await signOut(); navigatingRef.current = true; router.push("/"); })}>{pending === "logout" ? "로그아웃 중…" : "로그아웃"}</button>
+        <p className={styles.mutedNote}>로그아웃하면 이 기기에 저장된 내 기록 사본도 지워요. 서버에 보관된 기록은 다시 로그인하면 볼 수 있어요.</p>
       </div>
     </>;
   }
@@ -168,7 +190,8 @@ export default function AuthPage() {
         <h2>마음을 기록하고,<br />익명으로 위로를 나눠요.</h2>
         <p>{tossSignup ? "토스로 처음 오셨네요. 가입 안내를 확인해 주세요." : "하루의 마음을 적으면 흐름을 보여 주고, 털어놓은 고민에는 다른 사람들이 위로를 남겨요. 토스로 시작하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요."}</p>
       </section>
-      {tossSignup && <SignupConsent checked={termsAccepted} onChange={setTermsAccepted} disabled={busy} note="토스에서는 사용자를 구분하는 값만 받고, 이름·연락처 같은 정보는 받지 않아요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
+      {guestData && <GuestImportChoice checked={adoptGuest} onChange={setAdoptChoice} disabled={busy} />}
+      {tossSignup && <SignupConsent value={consent} onChange={setConsent} disabled={busy} note="토스에서는 사용자를 구분하는 값만 받고, 이름·연락처 같은 정보는 받지 않아요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
       {error && <p className={styles.error} role="alert">{error}</p>}
       {!me.toss && <p className={styles.mutedNote} role="status">지금은 토스 로그인을 준비하고 있어요. 잠시 후 다시 시도해 주세요.</p>}
       <button type="button" className="btn block" disabled={busy || !me.toss || (tossSignup && (!termsAccepted || !policy))} aria-busy={pending === "toss"} onClick={tossStart}>
@@ -185,7 +208,7 @@ export default function AuthPage() {
       <section className={styles.intro}>
         <div className={styles.brandMark} aria-hidden="true" />
         <h2>{mode === "signup" ? <>당신의 하루를<br />함께 기록해요.</> : <>다시 만나서 반가워요.<br />오늘도, 소로우.</>}</h2>
-        <p>{mode === "signup" ? (kakaoSignup ? "카카오로 처음 방문하셨네요. 가입 안내를 확인해 주세요." : "이 기기에 쓴 기록도 새 계정으로 이어져요.") : "소중한 기록과 나를 위한 작은 위로를 이어가요."}</p>
+        <p>{mode === "signup" ? (kakaoSignup ? "카카오로 처음 방문하셨네요. 가입 안내를 확인해 주세요." : "이 기기에 쓴 기록도 새 계정으로 옮길 수 있어요.") : "소중한 기록과 나를 위한 작은 위로를 이어가요."}</p>
       </section>
       <Segmented value={mode} onChange={(value) => { if (!busy) { setMode(value); setKakaoSignup(false); setError(null); } }} options={[{ value: "login", label: "로그인" }, { value: "signup", label: "회원가입" }]} />
       <form className={`stack ${styles.form}`} onSubmit={(e) => { e.preventDefault(); submit(); }} aria-busy={pending === "submit"}>
@@ -195,7 +218,8 @@ export default function AuthPage() {
           {mode === "signup" && <div className="field"><label htmlFor="auth-nick">닉네임</label><input id="auth-nick" value={nick} onChange={(e) => setNick(e.target.value)} autoComplete="nickname" placeholder="나를 부를 이름, 2~12자" minLength={2} maxLength={12} required /></div>}
           <div className="field"><label htmlFor="auth-password">비밀번호</label><input id="auth-password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6자 이상 입력해 주세요" minLength={mode === "signup" ? 6 : undefined} required /></div>
           </>}
-          {mode === "signup" && <SignupConsent checked={termsAccepted} onChange={setTermsAccepted} note="계정 정보는 가입과 로그인에 사용해요. 로그인하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
+          {guestData && <GuestImportChoice checked={adoptGuest} onChange={setAdoptChoice} />}
+          {mode === "signup" && <SignupConsent value={consent} onChange={setConsent} note="계정 정보는 가입과 로그인에 사용해요. 로그인하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
         </fieldset>
         {error && <p className={styles.error} role="alert">{error}</p>}
         {!kakaoSignup && <button type="submit" className="btn block" disabled={busy || (mode === "signup" && !termsAccepted)}>{pending === "submit" ? (mode === "signup" ? "가입하는 중…" : "로그인하는 중…") : mode === "signup" ? "동의하고 가입하기" : "로그인"}</button>}
@@ -205,11 +229,12 @@ export default function AuthPage() {
         <button type="button" className="btn block kakao" disabled={busy || (mode === "signup" && (!termsAccepted || !policy))} onClick={() => run("kakao", async () => {
           if (mode === "signup") {
             if (!termsAccepted || !policy) return;
-            const saved = await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: true, expectedUserId: policy.userId });
+            const saved = await acceptPolicyConsent({ signupConsentVersion: POLICY_VERSION, aiDisclosureAccepted: consent.ai, expectedUserId: policy.userId });
             setPolicy(saved);
           }
           navigatingRef.current = true;
-          startKakaoLogin();
+          const next = afterLogin();
+          startKakaoLogin({ adoptGuest, returnTo: next === "/" ? undefined : next });
         })}><IconKakao />{pending === "kakao" ? "카카오로 연결 중…" : mode === "signup" ? "동의하고 카카오로 가입하기" : "카카오로 로그인"}</button>
         <p className={styles.mutedNote}>{mode === "signup" ? "동의한 내용은 가입 정보와 함께 저장해요." : "처음 이용하는 경우 가입 안내를 확인한 뒤 시작해요."}</p>
       </>}

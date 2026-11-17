@@ -5,11 +5,24 @@ import type { NextConfig } from "next";
  * 운영(Vercel 등)에서는 BACKEND_ORIGIN 환경변수에 백엔드 주소를 넣는다.
  *
  * 앱인토스 미니앱 빌드(NEXT_PUBLIC_AIT=1, npm run build:ait)는 서버 없이 정적 파일만 낸다 (SSR 금지):
- * 경로마다 index.html, 이미지 최적화 끔, 프록시·헤더 없음 (API 는 lib/ait-fetch.ts 가 백엔드로 바로 보낸다).
+ * 경로마다 index.html, 이미지 최적화 끔, 프록시(proxy.ts 포함)·헤더 없음 (API 는 lib/ait-fetch.ts 가 백엔드로 바로 보낸다).
  * 결과는 out-ait/ 에 나오고, 그 폴더를 ait build 가 그대로 .ait 로 묶는다.
  */
 const backendOrigin = (process.env.BACKEND_ORIGIN ?? "http://localhost:8080").replace(/\/+$/, "");
 const ait = process.env.NEXT_PUBLIC_AIT === "1";
+
+/**
+ * 웹(Vercel·TWA) 응답 전체에 붙이는 보안 헤더. 스크립트·스타일 출처는 아직 막지 않는다 (인라인 테마 스크립트·Next 부트스트랩·토스 결제).
+ * 다른 사이트가 iframe 으로 띄우지 못하게 하고, 앱이 쓰지 않는 카메라·마이크·위치 권한은 처음부터 끈다.
+ * (공유·클립보드·진동·결제는 쓰므로 건드리지 않는다)
+ */
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), usb=(), serial=(), hid=(), bluetooth=(), browsing-topics=()" },
+  { key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'" },
+];
 
 const nextConfig: NextConfig = ait
   ? {
@@ -23,8 +36,12 @@ const nextConfig: NextConfig = ait
     }
   : {
       reactStrictMode: true,
+      poweredByHeader: false,
       async headers() {
-        return [{ source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }] }];
+        return [
+          { source: "/:path*", headers: securityHeaders },
+          { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }] },
+        ];
       },
       async rewrites() {
         return [{ source: "/api/:path*", destination: `${backendOrigin}/api/:path*` }];

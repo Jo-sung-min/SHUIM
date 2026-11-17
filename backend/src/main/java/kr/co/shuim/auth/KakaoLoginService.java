@@ -25,6 +25,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Optional;
 
 /**
@@ -61,7 +62,7 @@ public class KakaoLoginService {
                              @Value("${app.origin}") String appOrigin,
                              @Value("${app.kakao.client-id:}") String clientId,
                              @Value("${app.kakao.client-secret:}") String clientSecret,
-                             @Value("${app.auth.secure-cookie:false}") boolean secureCookie) {
+                             @Value("${app.auth.secure-cookie:true}") boolean secureCookie) {
         this.jdbc = jdbc;
         this.auth = auth;
         this.policies = policies;
@@ -89,10 +90,47 @@ public class KakaoLoginService {
     /* ---------- 1단계: 동의 화면으로 ---------- */
 
     /** state 를 만들어 쿠키에 두고 동의 화면 주소를 돌려준다 */
-    public URI begin(HttpServletResponse res) {
+    public URI begin(HttpServletResponse res) { return begin(res, null); }
+
+    /**
+     * next: 로그인 뒤 돌아갈 같은 사이트 경로 (예: /account-deletion). 안전한 상대 경로가 아니면 버리고 기본(/?kakao=1)으로 간다.
+     * state 쿠키에 "state.base64url(next)" 로 함께 두어, 카카오 쪽 주소에는 드러나지 않는다.
+     */
+    public URI begin(HttpServletResponse res, String next) {
         String state = Ids.randomHex(24);
-        res.addHeader(HttpHeaders.SET_COOKIE, stateCookie(state, STATE_TTL).toString());
+        String safeNext = safeNext(next);
+        String value = safeNext == null ? state
+            : state + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(safeNext.getBytes(StandardCharsets.UTF_8));
+        res.addHeader(HttpHeaders.SET_COOKIE, stateCookie(value, STATE_TTL).toString());
         return authorizationUri(state);
+    }
+
+    private static final String NEXT_SAFE_CHARS = "-._~/?#&=%+:@!$'()*,;";
+
+    /** 같은 사이트의 상대 경로만: "/" 로 시작하고 "//"·"/\" 로 시작하지 않으며, 영문·숫자와 URL 에 쓰는 기호만, 200자 이하 */
+    static String safeNext(String next) {
+        if (next == null || next.isEmpty() || next.length() > 200) return null;
+        if (next.charAt(0) != '/' || next.startsWith("//") || next.startsWith("/\\")) return null;
+        for (int i = 0; i < next.length(); i++) {
+            char ch = next.charAt(i);
+            boolean ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || NEXT_SAFE_CHARS.indexOf(ch) >= 0;
+            if (!ok) return null; // 역슬래시·공백·제어 문자·한글 등은 퍼센트 인코딩해서 보내야 한다
+        }
+        try {
+            URI.create(next);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        return next;
+    }
+
+    /** 성공 뒤 갈 곳: next 가 있으면 그 경로에 kakao=1 을 붙여(프론트가 계정을 다시 읽도록), 없으면 지금처럼 /?kakao=1 */
+    URI successUri(String next) {
+        if (next == null) return appUri("/?kakao=1");
+        int hash = next.indexOf('#');
+        String path = hash >= 0 ? next.substring(0, hash) : next;
+        String fragment = hash >= 0 ? next.substring(hash) : "";
+        return appUri(path + (path.indexOf('?') >= 0 ? "&" : "?") + "kakao=1" + fragment);
     }
 
     URI authorizationUri(String state) {
@@ -113,8 +151,19 @@ public class KakaoLoginService {
 
     /** 콜백 처리. 성공하면 세션 쿠키를 내려주고 앱 홈(/?kakao=1)을, 실패하면 /auth?error=kakao 를 돌려준다 */
     public URI complete(HttpServletRequest req, HttpServletResponse res, String code, String state, String providerError) {
-        String expected = readStateCookie(req);
+        String cookie = readStateCookie(req);
         res.addHeader(HttpHeaders.SET_COOKIE, stateCookie("", Duration.ZERO).toString()); // 한 번 쓴 state 는 지운다
+        String expected = cookie;
+        String next = null;
+        int dot = cookie == null ? -1 : cookie.indexOf('.');
+        if (dot >= 0) {
+            expected = cookie.substring(0, dot);
+            try {
+                next = safeNext(new String(Base64.getUrlDecoder().decode(cookie.substring(dot + 1)), StandardCharsets.UTF_8));
+            } catch (IllegalArgumentException ignored) {
+                next = null;
+            }
+        }
         if (expected == null || state == null
             || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), state.getBytes(StandardCharsets.UTF_8))) {
             log.warn("kakao login: state 불일치");
@@ -129,7 +178,7 @@ public class KakaoLoginService {
             String anonId = auth.currentUser(req).filter(DbUser::anonymous).map(DbUser::id).orElse(null);
             String userId = signIn(p, anonId);
             auth.switchSession(req, res, userId);
-            return appUri("/?kakao=1");
+            return successUri(next);
         } catch (SignupConsentRequiredException e) {
             return appUri("/auth?mode=signup&provider=kakao");
         } catch (Exception e) {
@@ -198,12 +247,12 @@ public class KakaoLoginService {
         Optional<String> existing = jdbc.sql("SELECT id FROM users WHERE kakao_id = ?").param(p.kakaoId()).query(String.class).optional();
         if (existing.isPresent()) return new Account(existing.get(), false);
         if (!policies.hasSignupConsent(anonUserId)) throw new SignupConsentRequiredException();
-        String nick = p.nick() == null || p.nick().length() < 2 ? null : (p.nick().length() > 12 ? p.nick().substring(0, 12) : p.nick());
+        // 카카오 프로필 닉네임은 실명인 경우가 많아 공개 닉네임으로 쓰지 않는다. 익명 때의 무작위 닉네임을 그대로 둔다
         // 이미 이메일 계정이 쓰는 주소면 비워 둔다 (users.email UNIQUE)
         String email = p.email() != null && jdbc.sql("SELECT count(*) FROM users WHERE email = ?").param(p.email()).query(Long.class).single() == 0 ? p.email() : null;
         if (anonUserId != null) {
-            int n = jdbc.sql("UPDATE users SET kakao_id = ?, email = COALESCE(?, email), nick = COALESCE(?, nick), is_anonymous = FALSE, registered_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = ? AND is_anonymous = TRUE")
-                .param(p.kakaoId()).param(email).param(nick).param(anonUserId).update();
+            int n = jdbc.sql("UPDATE users SET kakao_id = ?, email = COALESCE(?, email), is_anonymous = FALSE, registered_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') WHERE id = ? AND is_anonymous = TRUE")
+                .param(p.kakaoId()).param(email).param(anonUserId).update();
             if (n > 0) return new Account(anonUserId, true);
         }
         // If the consenting anonymous row changed concurrently, require another review instead of creating an unrelated account.

@@ -74,3 +74,16 @@ Thumbs.db
 !frontend/public/feed/curation/*.webp
 # V39 명화(미술관 원본을 줄인 것)는 CDN 에만 둔다 (V50)
 frontend/public/feed/curation/met-*.webp
+
+# 브라우저 자동화 기록·작업용 산출물은 올리지 않는다
+.playwright-mcp/
+
+# 인증서·개인 키·서비스 계정 파일 (토스 mTLS 인증서, Play 업로드 키 등)
+*.pem
+*.p12
+*.pfx
+*.key
+*.jks
+*.keystore
+keystore.properties
+*service-account*.json

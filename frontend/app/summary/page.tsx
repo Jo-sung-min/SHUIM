@@ -7,6 +7,7 @@ import Link from "next/link";
 import { CATEGORIES, Category, CategoryId, allCategories, orderCategories } from "@/lib/categories";
 import { Journal, loadCategoryOrder, loadCustomCategories, loadJournal, sessionUserId, syncRecords, todayKey } from "@/lib/storage";
 import { summaryEntries } from "@/lib/today-context";
+import { apiErrorMessage } from "@/lib/api-error";
 import { useCurrentDay } from "@/lib/use-current-day";
 import HelpBanner from "@/components/HelpBanner";
 import { TopBar } from "@/components/ui";
@@ -80,7 +81,7 @@ export default function SummaryPage() {
         body: JSON.stringify({ date: requestDate, entries: currentEntries, category: sel, days: range,
           categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()) }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "정리하지 못했어요");
+      if (!res.ok) throw new Error(apiErrorMessage(res.status, await res.json().catch(() => null), "정리하지 못했어요"));
       const json = await res.json();
       if (isCurrent()) setResult({ ...json, date: requestDate, category: sel, days: range });
     } catch (e) {

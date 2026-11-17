@@ -1,6 +1,6 @@
 # 소로우 Android 앱
 
-기존 `https://sorow.co.kr` 서비스를 Android 앱으로 여는 **Trusted Web Activity(TWA)** 프로젝트입니다. 웹의 로그인 쿠키, 서버 데이터, 화면을 그대로 사용합니다. 일반 앱 아이콘으로 실행하며, 앱과 웹사이트의 소유권 연결이 검증되면 주소 표시줄 없이 열립니다. 웹 수정은 웹 서버에 배포하고, 앱 아이콘·패키지·SDK·서명 변경은 새 Android 버전으로 배포합니다.
+기존 `https://www.sorow.co.kr` 서비스를 Android 앱으로 여는 **Trusted Web Activity(TWA)** 프로젝트입니다. 웹의 로그인 쿠키, 서버 데이터, 화면을 그대로 사용합니다. 일반 앱 아이콘으로 실행하며, 앱과 웹사이트의 소유권 연결이 검증되면 주소 표시줄 없이 열립니다. 웹 수정은 웹 서버에 배포하고, 앱 아이콘·패키지·SDK·서명 변경은 새 Android 버전으로 배포합니다.
 
 이번 작업의 테스트 APK·검증용 AAB·실행 확인 결과는 [VALIDATION.md](VALIDATION.md)에 정리했습니다. `dist/`의 AAB는 서명 없는 검증용이며 실제 Play 제출에는 아래 절차로 생성한 서명된 AAB를 사용합니다.
 
@@ -10,10 +10,10 @@
 | --- | --- |
 | 앱 이름 | 소로우 |
 | 패키지 ID | `kr.co.sorow.app` |
-| 첫 실행 주소 | `https://sorow.co.kr/?source=android` |
-| 앱 링크 도메인 | `sorow.co.kr` (www 도메인은 포함하지 않음) |
+| 첫 실행 주소 | `https://www.sorow.co.kr/?source=android` |
+| 앱 링크 도메인 | `www.sorow.co.kr` (apex `sorow.co.kr` 는 www 로 308 이동하므로 넣지 않음. Android 11 이하는 도메인 하나라도 검증에 실패하면 앱 링크 전체가 실패함) |
 | 최초 버전 | `versionCode 1`, `versionName 1.0.0` |
-| 지원 Android | 6.0(API 23) 이상 |
+| 지원 Android | 7.0(API 24) 이상 (Android 6 의 Chrome 은 106 에서 업데이트가 멈춰 웹 앱이 제대로 돌지 않음) |
 | 대상·컴파일 SDK | Android 16(API 36) |
 | 빌드 도구 | Gradle 8.14.3, Android Gradle Plugin 8.10.1, JDK 17 또는 21 |
 | 브라우저 연결 라이브러리 | 공식 `android-browser-helper 2.7.3` |
@@ -77,7 +77,7 @@ Play Console에 앱을 만들고 **Play App Signing**을 사용합니다. 업로
 2. 웹 서버의 `ANDROID_SHA256_FINGERPRINTS`에 그 값을 설정합니다. 여러 인증서가 필요한 경우 쉼표로 구분합니다. 기본 패키지 ID는 `kr.co.sorow.app`입니다. 패키지 ID를 바꿨다면 웹 서버의 `ANDROID_PACKAGE_NAME`도 변경합니다.
 3. 프런트엔드를 배포한 후 아래 주소가 **리다이렉트 없이 HTTP 200 및 JSON**을 반환하는지 확인합니다.
 
-   `https://sorow.co.kr/.well-known/assetlinks.json`
+   `https://www.sorow.co.kr/.well-known/assetlinks.json`
 
 반환해야 하는 연결 정보의 형태입니다. 아래 SHA-256 문구를 실제 값으로 교체해야 하며 예시 자체는 사용할 수 없습니다.
 
@@ -103,7 +103,7 @@ adb shell pm verify-app-links --re-verify kr.co.sorow.app
 adb shell pm get-app-links kr.co.sorow.app
 ```
 
-사이트가 `www.sorow.co.kr`이나 다른 도메인으로 이동한다면 그 도메인도 별도 검증·앱 설정이 필요합니다. 현재 앱은 기본 운영 주소 `https://sorow.co.kr`만 신뢰합니다.
+운영 주소가 다른 도메인으로 바뀌면 그 도메인도 별도 검증·앱 설정이 필요합니다. 현재 앱은 `https://www.sorow.co.kr`만 신뢰합니다 (apex `sorow.co.kr` 는 www 로 308 이동하고, 리다이렉트되는 주소의 assetlinks 는 검증되지 않음).
 
 ## 5. 기기에서 확인할 항목
 

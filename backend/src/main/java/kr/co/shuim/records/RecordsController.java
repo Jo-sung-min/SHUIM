@@ -63,6 +63,8 @@ public class RecordsController {
     public Map<String, Boolean> day(@PathVariable String date, @RequestBody(required = false) DayInput body, HttpServletRequest req) {
         LocalDate d = RecordsLogic.date(date);
         if (d == null) throw ApiException.badRequest("날짜는 YYYY-MM-DD 로 보내요");
+        // 범위 밖 날짜(2020년 이전·모레 이후)는 저장하지 않는다. 화면의 보내기 줄이 400 에 막혀 계속 다시 보내지 않도록 ok 로 답한다
+        if (!RecordsLogic.writable(d)) return Map.of("ok", true);
         records.saveDay(me(req).id(), d, body == null ? new DayInput(null, null) : body);
         return Map.of("ok", true);
     }

@@ -27,6 +27,14 @@ public class NotificationController {
     private final AuthService auth;
     private final BlockService blocks;
     private final JdbcClient jdbc;
+    /*
+     * 알림 SQL 은 댓글 전체를 훑어서 무겁다. 탭을 옮길 때마다 부르므로 사람별로 잠깐(15초) 같은 결과를 쓴다.
+     * 백엔드 인스턴스가 하나라 메모리 캐시로 충분하다. 읽음 표시(seenAt)와 차단은 매번 새로 적용한다.
+     */
+    private static final long CACHE_MS = 15_000;
+    private static final int CACHE_MAX = 5_000;
+    private record Cached(List<Item> items, long at) {}
+    private final java.util.concurrent.ConcurrentHashMap<String, Cached> cache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public NotificationController(AuthService auth, BlockService blocks, JdbcClient jdbc) {
         this.auth = auth;
@@ -43,7 +51,31 @@ public class NotificationController {
         if (me.isEmpty()) return Map.of("items", List.of(), "unread", 0);
         String uid = me.get().id();
         Set<String> excluded = blocks.excludedIds(uid);
-        List<Item> items = jdbc.sql("""
+        boolean admin = "admin".equals(me.get().role()) && !me.get().anonymous() && !me.get().blocked();
+        List<Item> items = recent(uid, admin).stream()
+            .map(it -> new Item(it.id(), it.kind(), it.postKind(), it.postId(), it.postText(), it.actorId(), it.actorNick(), it.text(), it.at(), it.at() <= seenAt))
+            .filter(it -> !excluded.contains(it.actorId())).limit(LIMIT).toList();
+        long unread = items.stream().filter(it -> !it.read()).count();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", items);
+        out.put("unread", unread);
+        return out;
+    }
+
+    /** 차단·읽음을 적용하기 전의 최근 알림 (사람별 짧은 캐시) */
+    private List<Item> recent(String uid, boolean admin) {
+        String key = uid + (admin ? ":admin" : "");
+        long now = System.currentTimeMillis();
+        Cached c = cache.get(key);
+        if (c != null && now - c.at() < CACHE_MS) return c.items();
+        List<Item> items = load(uid, admin);
+        if (cache.size() >= CACHE_MAX) cache.clear();
+        cache.put(key, new Cached(items, now));
+        return items;
+    }
+
+    private List<Item> load(String uid, boolean admin) {
+        return jdbc.sql("""
             WITH mine AS (SELECT id, post_id, created_at FROM comments WHERE author_id = :me),
                  first_on AS (SELECT post_id, min(created_at) AS first_at FROM mine GROUP BY post_id)
             SELECT c.id, c.post_kind, c.post_id, c.author_id, u.nick, c.text, c.created_at,
@@ -68,17 +100,10 @@ public class NotificationController {
              ORDER BY c.created_at DESC
              LIMIT :lim
             """.formatted(PrivateCircleAccess.visibleTo("cc", ":me"))).param("me", uid).param("lim", LIMIT * 2)
-            .param("admin", "admin".equals(me.get().role()) && !me.get().anonymous() && !me.get().blocked())
-            .query((rs, i) -> {
-                long at = Db.msReq(rs, "created_at");
-                return new Item(rs.getString("id"), rs.getString("kind"), rs.getString("post_kind"), rs.getString("post_id"),
-                    strip(rs.getString("post_text")), rs.getString("author_id"), rs.getString("nick"), rs.getString("text"), at, at <= seenAt);
-            }).list().stream().filter(it -> !excluded.contains(it.actorId())).limit(LIMIT).toList();
-        long unread = items.stream().filter(it -> !it.read()).count();
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("items", items);
-        out.put("unread", unread);
-        return out;
+            .param("admin", admin)
+            .query((rs, i) -> new Item(rs.getString("id"), rs.getString("kind"), rs.getString("post_kind"), rs.getString("post_id"),
+                strip(rs.getString("post_text")), rs.getString("author_id"), rs.getString("nick"), rs.getString("text"), Db.msReq(rs, "created_at"), false))
+            .list();
     }
 
     /** "==강조==" 표시를 뗀다 (화면의 stripHighlights 와 같은 규칙) */

@@ -11,10 +11,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.*;
 
 /**
@@ -44,8 +41,6 @@ public class RecordsService {
     private void feedPet(String userId, LocalDate date) {
         if (pets != null) pets.rewardRecords(userId, date);
     }
-
-    private static LocalDateTime ts(Long ms) { return ms == null ? null : LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneOffset.UTC); }
 
     /* ---------- 읽기 ---------- */
 
@@ -125,11 +120,30 @@ public class RecordsService {
 
     private void writeDay(String userId, LocalDate date, Map<String, Entry> day) {
         jdbc.sql("DELETE FROM journal_entries WHERE user_id = ? AND date = ?").param(userId).param(date).update();
-        for (var e : day.entrySet()) {
-            jdbc.sql("INSERT INTO journal_entries (user_id, date, cat, score, delta, note) VALUES (?, ?, ?, ?, ?, ?)")
-                .param(userId).param(date).param(e.getKey()).param(e.getValue().score()).param(e.getValue().delta()).param(e.getValue().note()).update();
-        }
+        insertJournal(userId, Map.of(date.toString(), day));
     }
+
+    private static String text(Object v) { return v == null ? null : String.valueOf(v); }
+
+    /*
+     * 여러 행은 배열 매개변수 + unnest 한 문장으로 넣는다 (행마다 왕복하면 큰 목록 하나가 DB 연결을 오래 붙잡는다).
+     * 모든 열을 text[] 로 보내고 SQL 에서 형을 바꾼다. 시각은 epoch ms 문자열 → UTC TIMESTAMP (LocalDateTime UTC 와 같은 값).
+     */
+    private static final String MS_TO_TS = "timestamp 'epoch' + (%s)::bigint * interval '1 millisecond'";
+
+    /** 날짜 → (카테고리 → 기록) 전체를 한 번에 넣는다. 같은 날 행은 미리 지워 둔 상태여야 한다 */
+    private void insertJournal(String userId, Map<String, Map<String, Entry>> days) {
+        List<String> dates = new ArrayList<>(), cats = new ArrayList<>(), scores = new ArrayList<>(), deltas = new ArrayList<>(), notes = new ArrayList<>();
+        for (var d : days.entrySet()) for (var e : d.getValue().entrySet()) {
+            dates.add(d.getKey()); cats.add(e.getKey()); scores.add(text(e.getValue().score())); deltas.add(text(e.getValue().delta())); notes.add(e.getValue().note());
+        }
+        if (dates.isEmpty()) return;
+        jdbc.sql("INSERT INTO journal_entries (user_id, date, cat, score, delta, note) "
+                + "SELECT ?, d::date, c, s::int, dl::int, n FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS t(d, c, s, dl, n)")
+            .param(userId).param(arr(dates)).param(arr(cats)).param(arr(scores)).param(arr(deltas)).param(arr(notes)).update();
+    }
+
+    private static String[] arr(List<String> l) { return l.toArray(String[]::new); }
 
     private void writeDid(String userId, LocalDate date, List<String> did) {
         if (did.isEmpty()) {
@@ -146,12 +160,23 @@ public class RecordsService {
     public void replaceJournal(String userId, Map<String, Map<String, Entry>> journal, Map<String, DayLog> log) {
         if (journal != null) {
             jdbc.sql("DELETE FROM journal_entries WHERE user_id = ?").param(userId).update();
-            for (var e : RecordsLogic.cleanJournal(journal).entrySet()) writeDay(userId, LocalDate.parse(e.getKey()), e.getValue());
+            insertJournal(userId, RecordsLogic.cleanJournal(journal));
             if (pets != null) pets.rewardToday(userId);
         }
         if (log != null) {
             jdbc.sql("DELETE FROM day_logs WHERE user_id = ?").param(userId).update();
-            for (var e : RecordsLogic.cleanLog(log).entrySet()) writeDid(userId, LocalDate.parse(e.getKey()), e.getValue());
+            Map<String, List<String>> days = RecordsLogic.cleanLog(log);
+            if (!days.isEmpty()) {
+                List<String> dates = new ArrayList<>(), dids = new ArrayList<>();
+                for (var e : days.entrySet()) {
+                    dates.add(e.getKey());
+                    try { dids.add(json.writeValueAsString(e.getValue())); } catch (Exception ex) { throw new IllegalStateException(ex); }
+                }
+                jdbc.sql("INSERT INTO day_logs (user_id, date, did) SELECT ?, d::date, "
+                        + "ARRAY(SELECT x.e FROM jsonb_array_elements_text(j::jsonb) WITH ORDINALITY AS x(e, i) ORDER BY x.i) "
+                        + "FROM unnest(?::text[], ?::text[]) AS t(d, j)")
+                    .param(userId).param(arr(dates)).param(arr(dids)).update();
+            }
         }
     }
 
@@ -161,12 +186,29 @@ public class RecordsService {
         // Deleting/editing the memo also deletes its form; the reward ledger stays intact.
         record PetForm(String text, String answers) {}
         Map<String, PetForm> petForms = new HashMap<>();
-        jdbc.sql("SELECT id, text, pet_answers::text AS answers FROM memos WHERE user_id = ? AND pet_answers IS NOT NULL")
-            .param(userId).query((RowCallbackHandler) rs -> petForms.put(rs.getString("id"), new PetForm(rs.getString("text"), rs.getString("answers"))));
+        Set<String> owned = new HashSet<>();
+        jdbc.sql("SELECT id, text, pet_answers::text AS answers FROM memos WHERE user_id = ?")
+            .param(userId).query((RowCallbackHandler) rs -> {
+                owned.add(rs.getString("id"));
+                if (rs.getString("answers") != null) petForms.put(rs.getString("id"), new PetForm(rs.getString("text"), rs.getString("answers")));
+            });
         jdbc.sql("DELETE FROM memos WHERE user_id = ?").param(userId).update();
-        for (Memo m : RecordsLogic.cleanMemos(memos)) {
-            jdbc.sql("INSERT INTO memos (id, user_id, cat, text, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                .param(m.id()).param(userId).param(m.cat()).param(m.text()).param(m.pinned()).param(ts(m.createdAt())).param(ts(m.updatedAt())).update();
+        // memos.id 는 계정과 무관한 전역 키다. 모루 마음기록 id(UUID v3, 날짜로 계산됨)는 이미 이 계정 것일 때만 받는다 —
+        // 남의 마음기록 id 를 먼저 차지해 그 사람의 일기를 가로채거나 저장을 막지 못하게.
+        List<Memo> clean = RecordsLogic.cleanMemos(memos).stream()
+            .filter(m -> !RecordsLogic.PET_MEMO_ID.matcher(m.id()).matches() || owned.contains(m.id())).toList();
+        if (clean.isEmpty()) return;
+        List<String> ids = new ArrayList<>(), cats = new ArrayList<>(), texts = new ArrayList<>(), pinned = new ArrayList<>(), created = new ArrayList<>(), updated = new ArrayList<>();
+        for (Memo m : clean) {
+            ids.add(m.id()); cats.add(m.cat()); texts.add(m.text()); pinned.add(text(m.pinned())); created.add(text(m.createdAt())); updated.add(text(m.updatedAt()));
+        }
+        // 다른 계정이 가진 id 와 겹치면 그 행은 건드리지 않고 버린다 (DO NOTHING: 남의 행을 바꾸지도, 요청 전체를 실패시키지도 않음)
+        jdbc.sql("INSERT INTO memos (id, user_id, cat, text, pinned, created_at, updated_at) "
+                + "SELECT i, ?, c, tx, p::boolean, " + MS_TO_TS.formatted("ca") + ", " + MS_TO_TS.formatted("ua") + " "
+                + "FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS t(i, c, tx, p, ca, ua) "
+                + "ON CONFLICT (id) DO NOTHING")
+            .param(userId).param(arr(ids)).param(arr(cats)).param(arr(texts)).param(arr(pinned)).param(arr(created)).param(arr(updated)).update();
+        for (Memo m : clean) {
             PetForm form = petForms.get(m.id());
             if (form != null && form.text().equals(m.text())) {
                 jdbc.sql("UPDATE memos SET pet_answers = CAST(? AS jsonb) WHERE id = ? AND user_id = ?")
@@ -178,25 +220,48 @@ public class RecordsService {
     @Transactional
     public void replaceGoals(String userId, List<Goal> goals) {
         jdbc.sql("DELETE FROM goals WHERE user_id = ?").param(userId).update(); // goal_steps 는 CASCADE
-        for (Goal g : RecordsLogic.cleanGoals(goals)) {
-            jdbc.sql("INSERT INTO goals (id, user_id, title, cat, why, due, created_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                .param(g.id()).param(userId).param(g.title()).param(g.cat()).param(g.why()).param(g.due() == null ? null : LocalDate.parse(g.due()))
-                .param(ts(g.createdAt())).param(ts(g.doneAt())).update();
+        List<Goal> clean = RecordsLogic.cleanGoals(goals);
+        if (clean.isEmpty()) return;
+        List<String> ids = new ArrayList<>(), titles = new ArrayList<>(), cats = new ArrayList<>(), whys = new ArrayList<>(), dues = new ArrayList<>(), created = new ArrayList<>(), done = new ArrayList<>();
+        for (Goal g : clean) {
+            ids.add(g.id()); titles.add(g.title()); cats.add(g.cat()); whys.add(g.why()); dues.add(g.due()); created.add(text(g.createdAt())); done.add(text(g.doneAt()));
+        }
+        // 전역 키라 다른 계정의 목표 id 와 겹치면 버린다. 실제로 이 계정에 들어간 목표에만 단계를 붙인다 (남의 목표에 단계가 붙지 않게)
+        Set<String> inserted = new HashSet<>(jdbc.sql("INSERT INTO goals (id, user_id, title, cat, why, due, created_at, done_at) "
+                + "SELECT i, ?, ti, c, w, du::date, " + MS_TO_TS.formatted("ca") + ", " + MS_TO_TS.formatted("dn") + " "
+                + "FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS t(i, ti, c, w, du, ca, dn) "
+                + "ON CONFLICT (id) DO NOTHING RETURNING id")
+            .param(userId).param(arr(ids)).param(arr(titles)).param(arr(cats)).param(arr(whys)).param(arr(dues)).param(arr(created)).param(arr(done))
+            .query(String.class).list());
+        List<String> stepIds = new ArrayList<>(), goalIds = new ArrayList<>(), positions = new ArrayList<>(), texts = new ArrayList<>(), dones = new ArrayList<>();
+        for (Goal g : clean) {
+            if (!inserted.contains(g.id())) continue;
             int pos = 0;
             for (GoalStep s : g.steps()) {
-                jdbc.sql("INSERT INTO goal_steps (id, goal_id, position, text, done) VALUES (?, ?, ?, ?, ?)")
-                    .param(s.id()).param(g.id()).param(pos++).param(s.text()).param(s.done()).update();
+                stepIds.add(s.id()); goalIds.add(g.id()); positions.add(String.valueOf(pos++)); texts.add(s.text()); dones.add(text(s.done()));
             }
         }
+        if (stepIds.isEmpty()) return;
+        jdbc.sql("INSERT INTO goal_steps (id, goal_id, position, text, done) "
+                + "SELECT i, g, p::int, tx, d::boolean FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS t(i, g, p, tx, d) "
+                + "ON CONFLICT (id) DO NOTHING")
+            .param(arr(stepIds)).param(arr(goalIds)).param(arr(positions)).param(arr(texts)).param(arr(dones)).update();
     }
 
     @Transactional
     public void replaceSchedule(String userId, List<ScheduleItem> items) {
         jdbc.sql("DELETE FROM schedule_items WHERE user_id = ?").param(userId).update();
-        for (ScheduleItem s : RecordsLogic.cleanSchedule(items)) {
-            jdbc.sql("INSERT INTO schedule_items (id, user_id, date, time, title, cat, done) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                .param(s.id()).param(userId).param(LocalDate.parse(s.date())).param(RecordsLogic.time(s.time())).param(s.title()).param(s.cat()).param(s.done()).update();
+        List<ScheduleItem> clean = RecordsLogic.cleanSchedule(items);
+        if (clean.isEmpty()) return;
+        List<String> ids = new ArrayList<>(), dates = new ArrayList<>(), times = new ArrayList<>(), titles = new ArrayList<>(), cats = new ArrayList<>(), done = new ArrayList<>();
+        for (ScheduleItem s : clean) {
+            ids.add(s.id()); dates.add(s.date()); times.add(s.time()); titles.add(s.title()); cats.add(s.cat()); done.add(text(s.done()));
         }
+        // 다른 계정의 일정 id 와 겹치면 버린다 (남의 행을 바꾸지 않음)
+        jdbc.sql("INSERT INTO schedule_items (id, user_id, date, time, title, cat, done) "
+                + "SELECT i, ?, d::date, tm::time, ti, c, dn::boolean FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS t(i, d, tm, ti, c, dn) "
+                + "ON CONFLICT (id) DO NOTHING")
+            .param(userId).param(arr(ids)).param(arr(dates)).param(arr(times)).param(arr(titles)).param(arr(cats)).param(arr(done)).update();
     }
 
     /** 사용자 카테고리 목록과 카드 순서. null 인 쪽은 건드리지 않는다 */

@@ -256,6 +256,28 @@ export function syncRecords(): Promise<boolean> {
   return syncing;
 }
 
+/**
+ * 로그아웃 직전: 못 보낸 부분(dirty)과 보관 중인 게스트 이전본까지 다시 넣어 보낸다.
+ * 서버에 모두 갔을 때만 true (그때만 이 기기의 계정 사본을 지워도 된다)
+ */
+export function flushForLogout(): Promise<boolean> {
+  const uid = hooks?.userId() ?? null;
+  if (!uid || !hooks) return Promise.resolve(false);
+  if (!enqueueGuestImport(uid)) return Promise.resolve(false);
+  const dirty = readDirty(uid);
+  if (dirty.length) {
+    const body: Record<string, unknown> = {};
+    for (const s of dirty) Object.assign(body, hooks.sectionBody(s));
+    outbox.push({ userId: uid, key: "resend", path: "/api/records", method: "PUT", body });
+  }
+  return flushRecords().then((sent) => {
+    try {
+      return sent && outbox.length === 0 && readDirty(uid).length === 0
+        && window.localStorage.getItem(`${GUEST_IMPORT_KEY}:${uid}`) === null;
+    } catch { return false; }
+  });
+}
+
 /** 로그아웃·계정 전환: 보내던 것 버림 */
 export function resetRecordsSync() {
   generation++;

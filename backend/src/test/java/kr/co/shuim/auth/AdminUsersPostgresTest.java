@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /** Entirely isolated schema in the opt-in disposable loopback database; never uses application credentials. */
-@EnabledIfEnvironmentVariable(named = "SOROW_TEST_DATABASE_URL", matches = "jdbc:postgresql://127\\.0\\.0\\.1:[0-9]+/sorow_test")
+@EnabledIfEnvironmentVariable(named = "SOROW_TEST_DATABASE_URL", matches = "jdbc:postgresql://127\\.0\\.0\\.1:[0-9]+/sorow_(test|wt_[a-z0-9_]+)")
 class AdminUsersPostgresTest {
     private static final String SCHEMA = "admin_users_" + UUID.randomUUID().toString().replace("-", "");
     private static JdbcClient jdbc;

@@ -80,6 +80,48 @@ class RecordsLogicTest {
     }
 
     @Test
+    void writesAreCappedPerDayAndLimitedToASaneDateRange() {
+        Map<String, Entry> many = new LinkedHashMap<>();
+        for (int i = 0; i < 40; i++) many.put("c_x" + i, new Entry(1, null, ""));
+        assertEquals(RecordsLogic.DAY_CATS_MAX, RecordsLogic.cleanDay(many).size());
+
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+        assertTrue(RecordsLogic.writable(java.time.LocalDate.of(2020, 1, 1)));
+        assertTrue(RecordsLogic.writable(today.plusDays(1)));
+        assertFalse(RecordsLogic.writable(java.time.LocalDate.of(2019, 12, 31)));
+        assertFalse(RecordsLogic.writable(today.plusDays(2)));
+        assertFalse(RecordsLogic.writable(java.time.LocalDate.of(9999, 1, 1)));
+
+        Map<String, Map<String, Entry>> journal = new HashMap<>();
+        journal.put("1900-01-01", Map.of("mind", new Entry(1, null, "")));
+        journal.put(today.plusYears(1).toString(), Map.of("mind", new Entry(1, null, "")));
+        journal.put("2026-10-20", Map.of("mind", new Entry(1, null, "")));
+        assertEquals(Set.of("2026-10-20"), RecordsLogic.cleanJournal(journal).keySet());
+        assertEquals(Set.of("2026-10-20"), RecordsLogic.cleanLog(Map.of("1900-01-01", new DayLog(List.of("a")), "2026-10-20", new DayLog(List.of("b")))).keySet());
+
+        // 일정은 앞으로의 날짜를 받지만 터무니없는 날짜는 버린다
+        List<ScheduleItem> plans = RecordsLogic.cleanSchedule(List.of(
+            new ScheduleItem("p1", today.plusMonths(3).toString(), null, "다음 계절", "etc", false),
+            new ScheduleItem("p2", "9999-12-31", null, "먼 미래", "etc", false)));
+        assertEquals(List.of("p1"), plans.stream().map(ScheduleItem::id).toList());
+
+        // 하루 칸 상한을 지켜도 요청 전체 칸 수는 JOURNAL_ENTRIES_MAX 를 넘지 않는다
+        Map<String, Map<String, Entry>> big = new HashMap<>();
+        Map<String, Entry> full = new LinkedHashMap<>();
+        for (int i = 0; i < RecordsLogic.DAY_CATS_MAX; i++) full.put("c_y" + i, new Entry(1, null, ""));
+        for (java.time.LocalDate d = java.time.LocalDate.of(2020, 1, 1); !d.isAfter(today); d = d.plusDays(1)) big.put(d.toString(), full);
+        int total = RecordsLogic.cleanJournal(big).values().stream().mapToInt(Map::size).sum();
+        assertTrue(total <= RecordsLogic.JOURNAL_ENTRIES_MAX);
+    }
+
+    @Test
+    void absurdTimestampsFallBackInsteadOfBreakingTheSave() {
+        Memo m = RecordsLogic.cleanMemos(List.of(new Memo("m1", "mind", "글", false, Long.MAX_VALUE, -5L))).get(0);
+        assertTrue(m.createdAt() <= System.currentTimeMillis() + 86_400_000L);
+        assertEquals(m.createdAt(), m.updatedAt());
+    }
+
+    @Test
     void journalDropsBadDatesAndEmptyDays() {
         Map<String, Map<String, Entry>> in = new HashMap<>();
         in.put("2026-10-20", Map.of("mind", new Entry(1, null, "")));

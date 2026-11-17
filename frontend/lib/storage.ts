@@ -186,6 +186,52 @@ export function clearAccountCache(userId: string | null) {
   } catch { /* Browser storage may be unavailable. */ }
 }
 
+/**
+ * 이 기기 저장소 정리 (로그아웃·계정 삭제 뒤).
+ * 로그아웃(scope "logout") — 서버에 있는 개인 기록의 사본(기록·메모·목표·일정·카테고리, 다시 로그인하면 서버에서 받는다),
+ *   그 기록으로 만든 AI 결과(briefing·moments·review), 이름·전화번호 사본(profile), 못 보낸 표시(dirty)·게스트 이전 보관본만 지운다.
+ *   서버에 없는 이 기기만의 것 — 작은 한 걸음(steps)·돌보기(care-*)·모루 방(moru:*)·바닷가 캐릭터 등 — 은 남긴다 (지우면 되찾을 수 없다).
+ * 계정 삭제(scope "deleted") — 계정 이름이 붙은 localStorage 키(`…:<userId>`)를 모두 지운다.
+ * 두 경우 모두 sessionStorage 는 기기 표시(DEVICE_SESSION_KEYS)만 남기고 지운다: 화면 위치·목록 사본(sorow:scroll:*), 글 초안(sorow:draft:*) 등.
+ * 늘 남기는 것 — 기기 설정: 화면 모드(sorow:theme), 소리·음악 설정, 바닷가 보기, 스플래시, 안드로이드 앱 표시, 계정 없는 게스트 기록.
+ * Cache Storage 에는 오프라인 안내 화면만 있어(public/sw.js) 지울 계정 데이터가 없다.
+ */
+const DEVICE_SESSION_KEYS = new Set(["sorow:android-app", "sorow:splash-seen"]);
+const LOGOUT_CLEAR_KEYS = [K.journal, K.log, K.memos, K.goals, K.schedule, K.cats, K.catOrder, K.briefing, K.moments, K.review, K.profile, "maeum-accel:dirty:v1", "maeum-accel:guest-import:v1"];
+export function clearAccountLocal(userId: string, scope: "logout" | "deleted" = "deleted") {
+  if (!userId) return;
+  const suffixes = [`:${userId}`, `:${encodeURIComponent(userId)}`];
+  const logoutKeys = new Set(LOGOUT_CLEAR_KEYS.flatMap((base) => suffixes.map((suffix) => base + suffix)));
+  try {
+    const local = window.localStorage;
+    for (let index = local.length - 1; index >= 0; index--) {
+      const key = local.key(index);
+      if (!key) continue;
+      if (scope === "deleted" ? suffixes.some((suffix) => key.endsWith(suffix)) : logoutKeys.has(key)) local.removeItem(key);
+    }
+  } catch { /* 저장소를 쓸 수 없으면 그대로 */ }
+  try {
+    const session = window.sessionStorage;
+    for (let index = session.length - 1; index >= 0; index--) {
+      const key = session.key(index);
+      if (key && !DEVICE_SESSION_KEYS.has(key)) session.removeItem(key);
+    }
+  } catch { /* 저장소를 쓸 수 없으면 그대로 */ }
+}
+
+/** 로그인 전(게스트)으로 이 기기에 쓴 기록이 있는지 — 로그인할 때 계정으로 옮길지 묻는 데 쓴다 */
+export function hasGuestData(): boolean {
+  try {
+    for (const key of [K.journal, K.log, K.memos, K.goals, K.schedule, K.cats]) {
+      const raw = window.localStorage.getItem(key);
+      if (raw === null) continue;
+      const value: unknown = JSON.parse(raw);
+      if (Array.isArray(value) ? value.length > 0 : value && typeof value === "object" ? Object.keys(value).length > 0 : Boolean(value)) return true;
+    }
+  } catch { /* 읽을 수 없으면 없는 것으로 */ }
+  return false;
+}
+
 /** 개인 데이터 키를 계정별로 분리. 게스트는 원래 키 그대로(기존 데이터 유지). */
 function ns(key: string): string {
   const u = sessionUserId();

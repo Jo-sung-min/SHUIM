@@ -1,6 +1,7 @@
 /** Shared connection checks. Health responses are never saved or exposed in the UI. */
 export const SERVICE_HEALTH_PATH = "/api/db";
-export const SERVICE_CHECK_INTERVAL_MS = 30_000;
+/** 정상일 때 다시 확인하는 간격. 화면이 보일 때만 돌고, 앱으로 돌아오거나(포커스) API 가 5xx 를 내면 바로 확인한다 */
+export const SERVICE_CHECK_INTERVAL_MS = 90_000;
 export const SERVICE_RETRY_INTERVAL_MS = 10_000;
 export const SERVICE_TIMEOUT_MS = 7_000;
 

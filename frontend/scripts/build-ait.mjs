@@ -7,7 +7,7 @@
  * 웹 빌드(npm run build)와 웹 개발 서버 상태(.next/dev)는 건드리지 않는다.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +22,7 @@ const SERVER_ONLY = [
   "app/robots.ts",
   "app/manifest.ts", // 홈 화면에 추가(PWA) 정보
   "app/og", // 공유 이미지를 그리는 라우트
+  "proxy.ts", // /api 요청에 백엔드 확인 헤더를 붙이는 프록시 (정적 export 에는 프록시가 있을 수 없다)
 ];
 
 /**
@@ -41,6 +42,71 @@ function loadEnv(file) {
   return env;
 }
 
+/**
+ * 옮긴 파일·바꾼 파일을 .ait-stash/manifest.json 에 적어 두고, 끝나면(오류·Ctrl+C 포함) 되돌린다.
+ * 지난 빌드가 강제로 끊겨 stash 가 남아 있으면 지우지 않고 먼저 되돌린다.
+ */
+const manifestFile = path.join(stash, "manifest.json");
+const manifest = { moved: [], rewritten: [] }; // moved: [stash 안 이름, 원래 상대 경로], rewritten: [상대 경로, stash 안 원본 사본]
+
+function saveManifest() {
+  writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
+}
+
+/** stash 에 적힌 것을 모두 제자리로. 되돌리지 못한 것이 있으면 stash 를 남기고 false */
+function restoreStash() {
+  if (!existsSync(stash)) return true;
+  let saved;
+  try {
+    saved = JSON.parse(readFileSync(manifestFile, "utf8"));
+  } catch {
+    if (readdirSync(stash).length === 0) {
+      rmSync(stash, { recursive: true, force: true });
+      return true;
+    }
+    console.error(".ait-stash 에 목록(manifest.json)이 없어요. 안의 파일을 직접 제자리로 되돌린 뒤 폴더를 지워 주세요.");
+    return false;
+  }
+  let ok = true;
+  for (const [rel, copy] of saved.rewritten ?? []) {
+    const original = path.join(stash, copy);
+    if (existsSync(original)) writeFileSync(path.join(root, rel), readFileSync(original));
+  }
+  for (const [name, rel] of [...(saved.moved ?? [])].reverse()) {
+    const from = path.join(stash, name);
+    const to = path.join(root, rel);
+    if (!existsSync(from)) continue;
+    if (existsSync(to)) {
+      console.error(`되돌릴 자리에 이미 파일이 있어요: ${rel} (옮겨 둔 것은 .ait-stash/${name} 에 남겨 둡니다)`);
+      ok = false;
+      continue;
+    }
+    renameSync(from, to);
+  }
+  if (ok) rmSync(stash, { recursive: true, force: true });
+  return ok;
+}
+
+let restored = true;
+function restoreOnce() {
+  if (restored) return;
+  restored = restoreStash();
+}
+process.on("exit", restoreOnce);
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) {
+  try {
+    process.on(signal, () => {
+      restoreOnce();
+      process.exit(130);
+    });
+  } catch {}
+}
+process.on("uncaughtException", (error) => {
+  console.error(error);
+  restoreOnce();
+  process.exit(1);
+});
+
 function run(cmd, args, env) {
   const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", env, shell: process.platform === "win32" });
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(" ")} 실패 (${r.status})`);
@@ -54,31 +120,40 @@ if (!/^https:\/\/[^/]+$/.test(api) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)
   process.exit(1);
 }
 
-const moved = [];
-const rewritten = [];
+if (!restoreStash()) {
+  console.error("지난 빌드에서 옮겨 둔 파일을 다 되돌리지 못했어요. 위 안내대로 정리한 뒤 다시 실행해 주세요.");
+  process.exit(1);
+}
+mkdirSync(stash, { recursive: true });
+restored = false;
 try {
+  saveManifest();
   for (const rel of FORCE_STATIC) {
     const file = path.join(root, rel);
     const text = readFileSync(file, "utf8");
     if (!text.includes(DYNAMIC)) continue;
-    rewritten.push([file, text]);
+    const copy = `original__${rel.replace(/[\\/]/g, "__")}`;
+    writeFileSync(path.join(stash, copy), text); // 원본 사본을 먼저 남기고 목록에 적은 뒤 바꾼다
+    manifest.rewritten.push([rel, copy]);
+    saveManifest();
     writeFileSync(file, text.replace(DYNAMIC, `export const dynamic = "force-static";`));
   }
-  rmSync(stash, { recursive: true, force: true });
-  mkdirSync(stash, { recursive: true });
   for (const rel of SERVER_ONLY) {
     const from = path.join(root, rel);
     if (!existsSync(from)) continue;
-    const to = path.join(stash, rel.replace(/[\\/]/g, "__"));
-    renameSync(from, to);
-    moved.push([to, from]);
+    const name = rel.replace(/[\\/]/g, "__");
+    manifest.moved.push([name, rel]);
+    saveManifest(); // 옮기기 전에 적는다: 옮기다 끊겨도 다음 실행이 찾아서 되돌린다
+    renameSync(from, path.join(stash, name));
   }
   rmSync(outDir, { recursive: true, force: true });
   run("npx", ["next", "build"], env);
 } finally {
-  for (const [file, text] of rewritten) writeFileSync(file, text);
-  for (const [from, to] of moved.reverse()) renameSync(from, to);
-  rmSync(stash, { recursive: true, force: true });
+  restoreOnce();
+}
+if (!restored) {
+  console.error("옮겨 둔 파일을 다 되돌리지 못했어요. .ait-stash 를 확인해 주세요.");
+  process.exit(1);
 }
 
 if (!existsSync(path.join(outDir, "index.html"))) {

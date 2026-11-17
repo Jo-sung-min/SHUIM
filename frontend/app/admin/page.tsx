@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CommunityStore, FlaggedItem, REPORT_REASONS, REPORT_THRESHOLD, api, blockedUsers, fetchCommunity, listFlagged, shoutCatById } from "@/lib/community";
+import { CommunityStore, FlaggedItem, REPORT_REASONS, REPORT_THRESHOLD, activeReports, api, blockedUsers, fetchCommunity, isBlocked, shoutCatById, userById, type Base } from "@/lib/community";
+import { stripHighlights } from "@/lib/highlight";
 import { Empty, Hero, LoadError, Segmented, Sheet, SkeletonScreen, TopBar, fmtRelative } from "@/components/ui";
 import { IconBubble, IconChevronL, IconFilm, IconLock, IconShield } from "@/components/Icons";
 import { ShoutCatIcon } from "@/components/CategoryIcon";
@@ -66,7 +67,7 @@ export default function AdminPage() {
     );
   }
 
-  const flagged = listFlagged(s);
+  const flagged = listReported(s);
   const blocked = blockedUsers(s);
 
   return (
@@ -110,12 +111,26 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
-            <p className="tiny muted" style={{ textAlign: "center", marginTop: 24 }}>{`신고가 ${REPORT_THRESHOLD}번 이상 접수된 글·댓글·피드를 모아 보여드려요.`}</p>
+            <p className="tiny muted" style={{ textAlign: "center", marginTop: 24 }}>{`신고가 한 번이라도 접수된 글·댓글·피드를 신고가 많은 순으로 모아 보여드려요. 공개 화면에서는 ${REPORT_THRESHOLD}번 쌓이면 흐리게 가려져요.`}</p>
           </>
         )}
       </div>
     </>
   );
+}
+
+/**
+ * 관리자 검토 목록: 신고가 1건이라도 남아 있는 글·댓글·피드 전부 (신고 수 → 최근 순).
+ * 공개 화면의 흐림 처리(REPORT_THRESHOLD)와 달리, 아동 안전·자해 같은 신고는 한 건만으로도 바로 봐야 한다.
+ */
+function listReported(s: CommunityStore): FlaggedItem[] {
+  const out: FlaggedItem[] = [];
+  const ok = (item: Base) => !item.hidden && activeReports(item).length > 0 && !isBlocked(userById(s, item.authorId));
+  for (const p of s.posts ?? []) if (ok(p)) out.push({ target: { kind: "post", id: p.id }, item: p, author: userById(s, p.authorId), reports: activeReports(p) });
+  for (const f of s.feed ?? []) if (ok(f)) out.push({ target: { kind: "feed", id: f.id }, item: f, author: userById(s, f.authorId), reports: activeReports(f) });
+  for (const c of s.comments ?? []) if (ok(c)) out.push({ target: { kind: "comment", id: c.id }, item: c, author: userById(s, c.authorId), reports: activeReports(c),
+    postText: stripHighlights((s.posts.find((p) => p.id === c.postId) ?? s.feed.find((f) => f.id === c.postId))?.text ?? "") });
+  return out.sort((a, b) => b.reports.length - a.reports.length || b.item.createdAt - a.item.createdAt);
 }
 
 /* ================= AI 프롬프트 관리 (이 기기에 저장, 요청마다 서버로 전달) ================= */

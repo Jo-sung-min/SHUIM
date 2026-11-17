@@ -10,6 +10,7 @@ import type { CommunityStore, FeedPage, ReportReason, ShoutCat, Target } from ".
 import { listNotifications } from "./community-core";
 import { loadNotifSeen } from "./storage";
 import { requireCommunityConsent } from "./consent";
+import { apiErrorMessage } from "./api-error";
 
 async function call<T = CommunityStore>(path: string, body?: unknown, method = "POST"): Promise<T> {
   if (method === "POST" && /\/(post\.create|comment\.create|comment\.accept|feed\.create|bio|light\.give)$/.test(path)) await requireCommunityConsent();
@@ -23,7 +24,7 @@ async function call<T = CommunityStore>(path: string, body?: unknown, method = "
   });
   const json = await res.json().catch(() => ({}));
   if (generation !== cacheGeneration) throw new Error("계정이 변경되었어요. 화면을 다시 열어 주세요.");
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? `요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error(apiErrorMessage(res.status, json));
   cached = method === "GET" || isStore(json) ? (json as CommunityStore) : cached;
   return json as T;
 }

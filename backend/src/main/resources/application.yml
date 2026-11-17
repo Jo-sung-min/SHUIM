@@ -26,7 +26,8 @@ app:
   origin: ${APP_ORIGIN:http://localhost:3000}
   allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:3000}
   auth:
-    secure-cookie: ${AUTH_SECURE_COOKIE:false}
+    # 운영 기본값은 Secure 쿠키. Chrome 은 http://localhost 에서도 Secure 쿠키를 받아 주므로 로컬 개발도 그대로 된다
+    secure-cookie: ${AUTH_SECURE_COOKIE:true}
     session-days: ${AUTH_SESSION_DAYS:90}
   db:
     # jdbc:postgresql://host:6543/db?user=..&password=..  또는  postgresql://user:pass@host:6543/db
@@ -34,8 +35,43 @@ app:
     pool-max: ${DB_POOL_MAX:3}
     keep-session-mode: ${DB_KEEP_SESSION_MODE:false}
   community:
-    # 개발용 샘플 유저 자동 답글 (운영에서는 false)
-    simulate: ${COMMUNITY_SIMULATE:true}
+    # 개발용 샘플 유저 자동 답글. 기본은 꺼짐, 로컬에서만 .env 로 COMMUNITY_SIMULATE=true
+    simulate: ${COMMUNITY_SIMULATE:false}
+  security:
+    # 설정하면 /api/** 는 X-Sorow-Origin-Secret 헤더가 같아야 한다 (Vercel 프록시만 통과). 비우면 검사하지 않는다
+    origin-secret: ${ORIGIN_SHARED_SECRET:}
+  http:
+    # 요청 본문 상한 (바이트). 관리자 화면·사이트 설정·기록 가져오기는 large 한도
+    max-body-bytes: ${MAX_BODY_BYTES:2097152}
+    max-large-body-bytes: ${MAX_LARGE_BODY_BYTES:8388608}
+  rate-limit:
+    # 메모리 토큰 버킷 (단일 인스턴스 전제). 형식은 개수/기간 (예: 30/10m, 20/1h), off 면 그 키는 세지 않는다
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    # 모든 한도에 곱하는 배율 (예: 2 면 두 배로 느슨하게)
+    scale: ${RATE_LIMIT_SCALE:1}
+    max-keys: ${RATE_LIMIT_MAX_KEYS:100000}
+    general-ip: ${RATE_LIMIT_GENERAL_IP:6000/1m}
+    general-session: ${RATE_LIMIT_GENERAL_SESSION:1200/1m}
+    auth-ip: ${RATE_LIMIT_AUTH_IP:30/5m}
+    auth-session: ${RATE_LIMIT_AUTH_SESSION:10/1m}
+    ai-ip: ${RATE_LIMIT_AI_IP:100/10m}
+    ai-session: ${RATE_LIMIT_AI_SESSION:20/10m}
+    mail-ip: ${RATE_LIMIT_MAIL_IP:30/10m}
+    mail-session: ${RATE_LIMIT_MAIL_SESSION:10/10m}
+    dm-ip: ${RATE_LIMIT_DM_IP:120/1m}
+    dm-session: ${RATE_LIMIT_DM_SESSION:30/1m}
+    report-ip: ${RATE_LIMIT_REPORT_IP:60/10m}
+    report-session: ${RATE_LIMIT_REPORT_SESSION:20/10m}
+    upload-ip: ${RATE_LIMIT_UPLOAD_IP:120/1m}
+    upload-session: ${RATE_LIMIT_UPLOAD_SESSION:30/1m}
+    payment-ip: ${RATE_LIMIT_PAYMENT_IP:60/1m}
+    payment-session: ${RATE_LIMIT_PAYMENT_SESSION:20/1m}
+    banner-click-ip: ${RATE_LIMIT_BANNER_CLICK_IP:30/1m}
+    banner-click-session: ${RATE_LIMIT_BANNER_CLICK_SESSION:10/1m}
+    # 쿠키·토큰 없는 쓰기 요청 (매번 익명 계정을 만들 수 있다)
+    anon-write-ip: ${RATE_LIMIT_ANON_WRITE_IP:20/1h}
+    anon-create-ip: ${RATE_LIMIT_ANON_CREATE_IP:30/1h}
+    anon-create-global: ${RATE_LIMIT_ANON_CREATE_GLOBAL:3000/1h}
   circle:
     private-test-creation-enabled: ${PRIVATE_TEST_CIRCLES_ENABLED:false}
   fireworks:

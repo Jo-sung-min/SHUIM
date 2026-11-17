@@ -6,6 +6,7 @@ import kr.co.shuim.auth.AuthService;
 import kr.co.shuim.auth.DbUser;
 import kr.co.shuim.config.ApiException;
 import kr.co.shuim.community.CommunityConsentService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,11 +17,19 @@ public class UploadController {
     private final AuthService auth;
     private final S3Service s3;
     private final CommunityConsentService consent;
+    /** 하루 발급 한도. 손으로 만든 테스트 인스턴스에서는 없다 */
+    private final UploadQuota quota;
 
     public UploadController(AuthService auth, S3Service s3, CommunityConsentService consent) {
+        this(auth, s3, consent, null);
+    }
+
+    @Autowired
+    public UploadController(AuthService auth, S3Service s3, CommunityConsentService consent, UploadQuota quota) {
         this.auth = auth;
         this.s3 = s3;
         this.consent = consent;
+        this.quota = quota;
     }
 
     /** GET /api/upload/presign — 업로드 가능 여부와 제한 */
@@ -39,6 +48,8 @@ public class UploadController {
         if (me.blocked()) throw ApiException.forbidden("차단된 계정은 올릴 수 없어요");
         Map<String, Object> b = body == null ? Map.of() : body;
         long size = b.get("size") instanceof Number n ? n.longValue() : 0;
-        return s3.presignUpload(me.id(), String.valueOf(b.getOrDefault("contentType", "")), size);
+        String contentType = String.valueOf(b.getOrDefault("contentType", ""));
+        if (quota != null && S3Service.ALLOWED_TYPES.containsKey(contentType)) quota.check(me, contentType);
+        return s3.presignUpload(me.id(), contentType, size);
     }
 }

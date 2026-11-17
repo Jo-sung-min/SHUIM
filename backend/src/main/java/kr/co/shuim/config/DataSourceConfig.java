@@ -20,6 +20,7 @@ import java.util.Map;
  *  - postgresql://user:password@host:port/db              (Node 스타일)
  * Supabase 풀러(*.pooler.supabase.com)는 5432(세션 모드, 동시 15개)를 6543(트랜잭션 모드)으로 바꾸고,
  * 트랜잭션 모드에선 서버측 prepared statement 를 쓸 수 없으므로 prepareThreshold=0 을 붙인다.
+ * 로컬이 아닌 호스트인데 sslmode·ssl 이 없으면 sslmode=require 를 붙여 평문 연결을 막는다 (INFRA-11).
  */
 @Configuration
 public class DataSourceConfig {
@@ -84,6 +85,7 @@ public class DataSourceConfig {
             }
             if (port == 6543) q.putIfAbsent("prepareThreshold", "0");
         }
+        if (!isLocalHost(host) && !q.containsKey("sslmode") && !q.containsKey("ssl")) q.put("sslmode", "require");
         StringBuilder sb = new StringBuilder("jdbc:postgresql://").append(host).append(':').append(port).append(u.getPath() == null || u.getPath().isEmpty() ? "/postgres" : u.getPath());
         if (!q.isEmpty()) {
             sb.append('?');
@@ -95,6 +97,17 @@ public class DataSourceConfig {
             }
         }
         return new Parsed(sb.toString(), user == null ? "" : user, password == null ? "" : password);
+    }
+
+    /** 개발 PC·같은 머신의 DB 인지 (이때는 TLS 를 강제하지 않는다. 끄려면 DB_URL 에 sslmode=disable 을 직접 넣는다) */
+    static boolean isLocalHost(String host) {
+        if (host == null || host.isBlank()) return true;
+        String h = host.strip().toLowerCase(java.util.Locale.ROOT);
+        if (h.startsWith("[") && h.endsWith("]")) h = h.substring(1, h.length() - 1);
+        return h.equals("localhost") || h.endsWith(".localhost") || h.startsWith("127.") || h.equals("::1")
+            || h.equals("0:0:0:0:0:0:0:1") || h.equals("host.docker.internal")
+            // 점 없는 이름(docker compose 의 db·postgres 등)은 같은 네트워크 안이다
+            || (h.indexOf('.') < 0 && h.indexOf(':') < 0);
     }
 
     private static String decode(String s) { return URLDecoder.decode(s, StandardCharsets.UTF_8); }

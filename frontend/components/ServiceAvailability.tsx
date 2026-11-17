@@ -44,6 +44,7 @@ export default function ServiceAvailability({ children }: { children: ReactNode 
     let inFlight = false;
     let checkAgain = false;
     let previous: Status = "checking";
+    let lastCheckAt = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let controller: AbortController | undefined;
     const originalFetch = window.fetch;
@@ -70,6 +71,7 @@ export default function ServiceAvailability({ children }: { children: ReactNode 
         return;
       }
       inFlight = true;
+      lastCheckAt = Date.now();
       setPending(true);
       controller = new AbortController();
       const healthy = await probeServiceHealth(request, controller.signal);
@@ -109,7 +111,10 @@ export default function ServiceAvailability({ children }: { children: ReactNode 
         void check();
       }
     };
+    // 앱으로 돌아오면 확인한다. 화면 전환(visibilitychange)과 겹쳐 연달아 부르지 않도록 15초 안에는 건너뛴다
+    const onFocus = () => { if (Date.now() - lastCheckAt > 15_000) void check(); };
     retry.current = () => { void check(); };
+    window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     document.addEventListener("visibilitychange", onVisibility);
@@ -119,6 +124,7 @@ export default function ServiceAvailability({ children }: { children: ReactNode 
       controller?.abort();
       if (timer !== undefined) clearTimeout(timer);
       if (window.fetch === monitoredFetch) window.fetch = originalFetch;
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);

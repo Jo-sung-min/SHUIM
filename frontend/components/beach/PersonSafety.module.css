@@ -1,0 +1,16 @@
+/* 3D 공간에서 사람을 신고·차단하는 시트. 맵 위에 뜨는 다른 시트(구슬·사진)와 같은 밝은 유리 빛 */
+.scope { --surface:#fff; --surface-2:#f0f4f1; --text:#34433e; --text-2:#55665f; --text-3:#738179; --muted:#738179; --border:#dfe7e1; --border-strong:#c5d2c9; color:var(--text); color-scheme:light; }
+.scope :global(.sheet) { background:linear-gradient(145deg,#fffffff5,#f6faf4ed); border-top-color:#fff; box-shadow:0 -14px 40px #143c2214; -webkit-backdrop-filter:blur(24px) saturate(120%); backdrop-filter:blur(24px) saturate(120%); }
+.scope :global(.sheet-backdrop) { background:#17332935; }
+.list { display:grid; gap:4px; margin:4px 0 0; }
+.row { display:flex; align-items:center; gap:12px; width:100%; min-height:52px; padding:10px 12px; border:0; border-radius:14px; background:transparent; color:var(--text); font:inherit; font-size:15px; font-weight:600; text-align:left; cursor:pointer; }
+.row svg { flex:0 0 auto; width:20px; height:20px; color:var(--text-3); }
+.row:hover { background:var(--surface-2); }
+.row:focus-visible { outline:2px solid #59866a; outline-offset:-2px; }
+.row:disabled { opacity:.5; cursor:default; }
+.row small { display:block; margin-top:2px; color:var(--text-3); font-size:12.5px; font-weight:500; line-height:1.45; word-break:keep-all; overflow-wrap:anywhere; }
+.row span { min-width:0; }
+.danger, .danger svg { color:#b4503f; }
+.wishes { margin:10px 0 0; padding-top:10px; border-top:1px solid var(--border); }
+.wishes h4 { margin:0 12px 2px; color:var(--text-3); font-size:12.5px; font-weight:600; }
+.note { margin:10px 4px 0; color:var(--text-3); font-size:12.5px; line-height:1.5; word-break:keep-all; }

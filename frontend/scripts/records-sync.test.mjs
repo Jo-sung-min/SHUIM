@@ -15,7 +15,7 @@ function setup(network) {
     window: { localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) } },
     fetch: async (path, options) => { calls.push({ path, ...options }); return network(path, options, calls.length); },
   };
-  vm.runInNewContext(`${source}\nglobalThis.api = { installSyncHooks, pushRecords, flushRecords, resetRecordsSync };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.api = { installSyncHooks, pushRecords, flushRecords, resetRecordsSync, flushForLogout };`, context);
   let user = "test-user";
   context.api.installSyncHooks({ userId: () => user, sectionBody: () => ({}), apply: () => {} });
   return { api: context.api, calls, stored, signInAs: (id) => { user = id; } };
@@ -489,4 +489,22 @@ test("offline changes survive a refresh: the next sync resends the whole journal
   assert.deepEqual(JSON.parse(stored.get(journalKey("alice"))), { [DAY]: score(1) });
   assert.deepEqual(JSON.parse(stored.get(logKey("alice"))), { [DAY]: { did: ["산책"] } });
   assert.equal(stored.has("maeum-accel:dirty:v1:alice"), false);
+});
+
+test("logout flush resends dirty sections left by an earlier session and reports success only when nothing is pending", async () => {
+  const { api, calls, stored } = setup(async () => ({ ok: true, status: 200 }));
+  stored.set("maeum-accel:dirty:v1:test-user", JSON.stringify(["memos"]));
+  assert.equal(await api.flushForLogout(), true);
+  assert.equal(calls.length, 1, "the dirty section must be sent before logout clears local copies");
+  assert.equal(calls[0].path, "/api/records");
+  assert.equal(stored.has("maeum-accel:dirty:v1:test-user"), false);
+});
+
+test("logout flush keeps local state when the guest import or a dirty section cannot be sent", async () => {
+  const { api, stored } = setup(async () => { throw new Error("offline"); });
+  stored.set("maeum-accel:dirty:v1:test-user", JSON.stringify(["memos"]));
+  stored.set("maeum-accel:guest-import:v1:test-user", JSON.stringify({ memos: ["from guest"] }));
+  assert.equal(await api.flushForLogout(), false);
+  assert.ok(stored.has("maeum-accel:dirty:v1:test-user"));
+  assert.ok(stored.has("maeum-accel:guest-import:v1:test-user"));
 });

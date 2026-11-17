@@ -12,6 +12,7 @@ import Splash from "@/components/Splash";
 import { THEME_SCRIPT } from "@/lib/theme";
 import InlineScript from "@/components/InlineScript";
 import AitRuntime from "@/components/AitRuntime";
+import EarlyClient from "@/components/EarlyClient";
 import { IS_AIT } from "@/lib/ait";
 import { SITE, faviconHref, loadSiteSettings, ogHref, siteDescription, siteTitle } from "@/lib/site";
 import { ASSET_ORIGIN, assetUrl, publicAssetStyles } from "@/lib/assets";
@@ -84,6 +85,19 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * <script type="application/ld+json"> 안에 넣을 문자열. 관리자가 바꾸는 제목·설명이 </script>·<!-- 로 태그를 닫지 못하게
+ * <, >, & 와 줄 구분자(U+2028·U+2029)를 \u 이스케이프로 바꾼다. JSON 으로 읽으면 같은 값이다 (Next JSON-LD 가이드)
+ */
+function safeJsonLd(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const s = await loadSiteSettings(); // 메타데이터와 같은 60초 캐시 및 연결 제한을 사용한다
   const jsonLd = {
@@ -113,10 +127,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+          // 버전이 고정된 파일이라 해시로 묶어 둔다: CDN 에서 내용이 바뀌면 브라우저가 적용하지 않는다 (글꼴만 기본 글꼴로)
+          integrity="sha384-GIdEBaqGN9mNkDkMkzMHW8EKUqtpPIe/sLj1X7DIrnc9uPtLROJgmuDlh+3rBw0j"
+          crossOrigin="anonymous"
         />
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
       </head>
       <body style={publicAssetStyles as CSSProperties}>
+        <EarlyClient />
         <AitRuntime />
         <Splash />
         <AppRuntime />

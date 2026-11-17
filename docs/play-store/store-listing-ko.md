@@ -10,12 +10,12 @@
 | 기본 언어 | 한국어(ko-KR) |
 | 개발자/운영 주체 | 루체 — 콘솔 표시명과 법적 주체 확인 |
 | 고객 문의 이메일 | developer@lucelab.co.kr — 수신 시험 필수 |
-| 웹사이트 | https://sorow.co.kr |
+| 웹사이트 | https://www.sorow.co.kr |
 | 카테고리 | 최종 주기능에 따라 운영자가 결정. 커뮤니티 중심이면 Social, 마음 관리 중심이면 건강 관련 분류·선언을 검토. 의무 회피 목적으로 분류하지 않음 |
 | 국가 / 연령 / 가격 | 한국 우선·성인 대상·무료 제안. 출시 전 운영자가 확정 |
-| 개인정보처리방침 | https://sorow.co.kr/privacy — 운영 정보 확정·배포 후 접근 확인 |
-| 계정 삭제 URL | https://sorow.co.kr/account-deletion — 웹 본인 확인·삭제 시험 후 입력 |
-| 이용약관·커뮤니티 기준 | https://sorow.co.kr/terms — 준비용 배너 해제 전 운영 검토 |
+| 개인정보처리방침 | https://www.sorow.co.kr/privacy — 운영 정보 확정·배포 후 접근 확인 |
+| 계정 삭제 URL | https://www.sorow.co.kr/account-deletion — 웹 본인 확인·삭제 시험 후 입력 |
+| 이용약관·커뮤니티 기준 | https://www.sorow.co.kr/terms — 준비용 배너 해제 전 운영 검토 |
 
 앱 이름 30자, 간단한 설명 80자, 자세한 설명 4,000자 제한 안에서 작성했습니다. [등록 항목과 제한](https://support.google.com/googleplay/android-developer/answer/9859152)
 

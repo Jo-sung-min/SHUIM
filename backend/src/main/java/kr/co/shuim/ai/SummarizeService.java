@@ -42,7 +42,13 @@ public class SummarizeService {
         return List.of(Categories.byId(b.category(), b.categories()));
     }
 
-    public Map<String, Object> run(Request raw) {
+    /** 프롬프트에 넣는 기록 글자 수 상한 (60일 × 카테고리 × 메모 300자에도 보통은 닿지 않는다) */
+    static final int TEXT_MAX = 60_000;
+
+    public Map<String, Object> run(Request raw) { return run(raw, null); }
+
+    /** userId: OpenAI 남용 추적용 가명 식별자(safety_identifier)를 만들 때만 쓴다 */
+    public Map<String, Object> run(Request raw, String userId) {
         if (raw == null) throw ApiException.badRequest("정리할 기록이 없어요");
         String referenceDate = raw.date() == null ? Dates.todayKey() : raw.date();
         if (!validDate(referenceDate)) throw ApiException.badRequest("기준 날짜를 다시 확인해 주세요");
@@ -50,13 +56,16 @@ public class SummarizeService {
             .filter(e -> e != null && validDate(e.date())).sorted(Comparator.comparing(EntryDay::date)).toList();
         if (entries.isEmpty()) throw ApiException.badRequest("정리할 기록이 없어요");
         if (entries.size() > 60) entries = entries.subList(entries.size() - 60, entries.size());
-        Request b = new Request(entries, raw.category(), raw.days() == null ? entries.size() : raw.days(), raw.categories(), referenceDate);
-        String text = toPlainText(b);
+        // 카테고리 목록·이름은 Categories.of 의 상한으로, 고른 카테고리 id 는 40자로 자른다
+        List<Category> categories = raw.categories() == null || raw.categories().isEmpty() ? raw.categories() : Categories.of(raw.categories());
+        String category = raw.category() == null ? null : cut(raw.category(), 40);
+        Request b = new Request(entries, category, raw.days() == null ? entries.size() : raw.days(), categories, referenceDate);
+        String text = cut(toPlainText(b), TEXT_MAX);
         boolean crisis = Crisis.hasSignal(text);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("crisis", crisis);
         if (text.isBlank() || !ai.configured()) {
-            out.put("summary", localSummary(b));
+            out.put("summary", localWithCrisis(b, crisis));
             out.put("source", "local");
             return out;
         }
@@ -67,12 +76,18 @@ public class SummarizeService {
                 + "기록 날짜는 작성일이며 사건 발생일을 확정하지 않아. 메모의 어제·지난주·내일 같은 상대 시점은 해당 작성일을 기준으로 해석하고, 예정은 완료로 바꾸지 마.\n"
                 + "기준일보다 이전의 기록은 그 날짜의 과거 이야기로, 이후의 기록은 미래 날짜의 기록으로 구분해. 최신 기록을 오늘 일로 바꾸지 마.\n"
                 + "기준일의 기록이 없거나 날짜가 빠진 구간의 상태는 알 수 없어. 과거 감정이 오늘도 이어진다거나 예정된 일을 이미 마쳤다고 추정하지 마.\n\n";
-            String summary = ai.complete(ai.resolveModel(null), 3000, Prompts.SUMMARY, context + text).strip();
+            String model = ai.resolveModel(null);
+            String summary = (userId == null ? ai.complete(model, 3000, Prompts.SUMMARY, context + text)
+                : ai.complete(model, 3000, Prompts.SUMMARY, context + text, userId)).strip();
             out.put("summary", summary);
             out.put("source", "ai");
+        } catch (ApiException e) {
+            // 동시 요청이 많아 OpenAI 호출 자리를 얻지 못함: 잠시 후 다시 시도하게 한다
+            throw e;
         } catch (Exception e) {
-            log.error("summarize failed: {}", e.getMessage());
-            out.put("summary", localSummary(b));
+            // 예외 메시지에는 OpenAI 오류 본문(입력 일부)이 섞일 수 있어 종류만 남긴다
+            log.error("summarize failed: {}", e.getClass().getSimpleName());
+            out.put("summary", localWithCrisis(b, crisis));
             out.put("source", "local");
         }
         return out;
@@ -92,6 +107,11 @@ public class SummarizeService {
             if (!parts.isEmpty()) lines.add(d.date() + " | " + String.join(" / ", parts));
         }
         return String.join("\n", lines);
+    }
+
+    /** 위험 신호가 있으면 도움 받을 곳(109·1577-0199)을 맨 앞에 둔다 */
+    static String localWithCrisis(Request b, boolean crisis) {
+        return crisis ? Prompts.CRISIS_LINE + "\n\n" + localSummary(b) : localSummary(b);
     }
 
     /** API 키가 없을 때 쓰는 간단한 규칙 기반 정리 */

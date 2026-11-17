@@ -69,6 +69,9 @@ class S3ConfigurationTest {
         assertEquals("public, max-age=300", result.headers().get("Cache-Control"));
         assertFalse(query(result.uploadUrl()).containsKey("X-Amz-Security-Token"));
         assertTrue(query(result.uploadUrl()).get("X-Amz-SignedHeaders").contains("content-type"));
+        // 크기 제한이 서명에 들어가야 S3 가 다른 크기의 본문을 거절한다 (UPL-08 회귀 방지)
+        assertTrue(query(result.uploadUrl()).get("X-Amz-SignedHeaders").contains("content-length"));
+        assertTrue(query(result.uploadUrl()).get("X-Amz-SignedHeaders").contains("cache-control"));
         verify(jdbc).sql("INSERT INTO uploaded_objects (object_key, user_id) VALUES (?, ?)");
         s3.close();
     }

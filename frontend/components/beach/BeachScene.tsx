@@ -15,7 +15,8 @@ import { fetchMe } from "@/lib/auth";
 import type { ChibiPreview } from "@/lib/chibi/beach-preview";
 import { createBeachPhoto, type BeachPhoto } from "@/lib/beach/photo";
 import { showToast, toastSuccess, tick as haptic } from "@/lib/toast";
-import { IconBoat, IconCheck, IconChevronL, IconChevronR, IconClose, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconSorowSmile, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
+import { isAndroidApp } from "@/lib/platform";
+import { IconBoat, IconCheck, IconChevronL, IconChevronR, IconClose, IconFlag, IconFloat, IconHeart, IconLeaf, IconLie, IconLock, IconMoon, IconPen, IconSeat, IconSorowSmile, IconStand, IconSun, IconUser, IconUsers, IconSparkle, IconWave } from "@/components/Icons";
 import { route } from "@/lib/routes";
 import CampfireControls, { type WoodPhase } from "./CampfireControls";
 import Joystick from "./Joystick";
@@ -38,6 +39,7 @@ import type { BambooNote } from "@/lib/beach/bamboo-notes";
 import FieldSoundControl from "./FieldSoundControl";
 import RoomMusicControls from "./RoomMusicControls";
 import BeachMenu from "./BeachMenu";
+import PersonSafetySheet, { type SpaceSafetyTarget } from "./PersonSafetySheet";
 import menuStyles from "./BeachMenu.module.css";
 import { readRoomMusic, type RoomMusicState } from "@/lib/beach/room-music";
 import { readBeachReturn } from "@/lib/beach/return";
@@ -97,6 +99,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const blockedRef = useRef(false);
   const tickRunnerRef = useRef<() => Promise<unknown>>(async () => {});
   const selectedRef = useRef<RemotePlayer | null>(null);
+  // 이번 방문에서 차단한 사람: 서버가 다시 들어간 방문에서 빼 주기 전에도 곧바로 가린다
+  const hiddenUserIdsRef = useRef(new Set<string>());
+  const hiddenPidsRef = useRef(new Set<string>());
   const fireTimeRef = useRef(0);
   const fireLogsRef = useRef<number | null>(null);
   const fireEnabledRef = useRef(false);
@@ -158,6 +163,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const [careCapabilities, setCareCapabilities] = useState({ wave: false, hug: false });
   const [careBusy, setCareBusy] = useState(false);
   const [people, setPeople] = useState<RemotePlayer[]>([]);
+  const [safetyTarget, setSafetyTarget] = useState<SpaceSafetyTarget | null>(null);
+  // Play 결제 정책: 안드로이드 앱 안에서는 디지털 상품(불꽃놀이 이용권)을 팔지 않는다 (이 화면은 서버 렌더링 없이 열린다)
+  const [androidApp] = useState(() => isAndroidApp());
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionOverflow, setActionOverflow] = useState({ previous: false, next: false });
   const [hudHidden, setHudHidden] = useState(false);
@@ -409,7 +417,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     const time = serverTime!, previous = momentClockRef.current;
     if (time < previous.time) return;
     const live = new Map((append ? previous.events : []).map(event => [event.id, event]));
-    for (const event of events ?? []) live.set(event.id, event);
+    for (const event of events ?? []) if (!hiddenPidsRef.current.has(event.fromPid)) live.set(event.id, event);
     const current = [...live.values()].filter(event => event.startedAt + event.durationMs > time);
     engineRef.current?.applyUyuniMoments(current, time, ownPid);
     momentClockRef.current = { time, events: current, cooldowns };
@@ -443,7 +451,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   useEffect(() => { if (hudHidden || photo || phase !== "ready" || lost || mapId === "uyuni") setFieldOpen(false); }, [hudHidden, photo, phase, lost, mapId]);
   // Only a board that is really on screen may take the controls away.
   const boardPanelOpen = boardTableId !== null && boardGames.some(board => board.id === boardTableId);
-  const controlsPaused = bookOpen || boardPanelOpen || Boolean(photo) || Boolean(orb.found) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing";
+  const controlsPaused = bookOpen || boardPanelOpen || Boolean(photo) || Boolean(orb.found) || fieldOpen || guestbookOpen || characterPickerOpen || lightingOpen || momentOpen || momentBusy || bunkerBusy !== null || (!hudHidden && selected !== null) || powderOpen || powderPhase === "adding" || skyPhase === "joining" || skyPhase === "standing" || safetyTarget !== null;
   useEffect(() => {
     engineRef.current?.setInputPaused(controlsPaused);
     controlsPausedRef.current = controlsPaused;
@@ -476,7 +484,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   };
 
   useEffect(() => {
-    if (!actionsOpen || photo || powderOpen || characterPickerOpen || momentOpen) return;
+    if (!actionsOpen || photo || powderOpen || characterPickerOpen || momentOpen || safetyTarget) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -487,10 +495,10 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [actionsOpen, photo, powderOpen, characterPickerOpen, momentOpen]);
+  }, [actionsOpen, photo, powderOpen, characterPickerOpen, momentOpen, safetyTarget]);
 
   useEffect(() => {
-    if (!selected || characterPickerOpen || photo || powderOpen) return;
+    if (!selected || characterPickerOpen || photo || powderOpen || safetyTarget) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -498,7 +506,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selected, characterPickerOpen, photo, powderOpen]);
+  }, [selected, characterPickerOpen, photo, powderOpen, safetyTarget]);
 
   useEffect(() => {
     if (!characterPickerOpen) return;
@@ -544,7 +552,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const handleEvent = useCallback((ev: CareEvent) => {
     const engine = engineRef.current;
     const me = meRef.current;
-    if (!engine || !me) return;
+    if (!engine || !me || hiddenPidsRef.current.has(ev.fromPid) || hiddenPidsRef.current.has(ev.toPid)) return;
     engine.playCare(ev.kind, ev.toPid === me.pid ? null : ev.toPid, ev.fromPid === me.pid ? null : ev.fromPid);
     if (ev.toPid === me.pid) {
       setFlash({ kind: ev.kind, id: ev.at + Math.random() });
@@ -743,12 +751,14 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       if (!belongsToVisit() || blockedRef.current) return false;
       if (res.sequence !== undefined && res.sequence < requestSequence) return false;
       sequenceRef.current = Math.max(sequenceRef.current, res.sequence ?? requestSequence);
-      engine.setPlayers(res.players, { serverTime: res.serverTime, sentAt, receivedAt: performance.now() });
+      const hidden = hiddenUserIdsRef.current;
+      const players = hidden.size ? res.players.filter(player => !hidden.has(player.id)) : res.players;
+      engine.setPlayers(players, { serverTime: res.serverTime, sentAt, receivedAt: performance.now() });
       // Someone across the board should see a move almost at once.
       const myPid = meRef.current?.pid;
-      remoteMovingRef.current = res.players.some(player => player.moving) || Boolean(res.boardGames?.some(board => board.turn !== null && (board.black?.pid === myPid || board.white?.pid === myPid)));
+      remoteMovingRef.current = players.some(player => player.moving) || Boolean(res.boardGames?.some(board => board.turn !== null && (board.black?.pid === myPid || board.white?.pid === myPid)));
       applyBoardGames(res.boardGames);
-      setPeople(previous => sameBeachRoster(previous, res.players) ? previous : res.players);
+      setPeople(previous => sameBeachRoster(previous, players) ? previous : players);
       if (res.careCapabilities) setCareCapabilities(previous => previous.wave === (res.careCapabilities!.wave === true)
         && previous.hug === (res.careCapabilities!.hug === true) ? previous : { wave: res.careCapabilities!.wave === true, hug: res.careCapabilities!.hug === true });
       if (res.selfRest) engine.applyRest(res.selfRest);
@@ -1207,10 +1217,16 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     }
   };
 
+  /** 이용권 시트(결제). 안드로이드 앱 안에서는 Play 결제 정책 때문에 열지 않고 안내만 한다 */
+  const openTicketSheet = () => {
+    if (androidApp) { showToast("불꽃놀이 이용권이 없어요. 앱에서는 이용권을 판매하지 않아요.", { kind: "info" }); return; }
+    setTicketSheetOpen(true);
+  };
+
   const launchFireworks = async (variant: FireworkVariant) => {
     const ticket = ticketRef.current, engine = engineRef.current, visit = visitGenerationRef.current;
     if (!ticket || !engine || engine.bunkerId || bunkerBusyRef.current || !fireworksControl || fireworksBusyRef.current || blockedRef.current || lost || Date.now() < fireworksDeadline) return;
-    if (!fireworksFree && (fireworkTickets ?? 0) <= 0) { setTicketSheetOpen(true); return; }
+    if (!fireworksFree && (fireworkTickets ?? 0) <= 0) { openTicketSheet(); return; }
     const belongsToVisit = () => aliveRef.current && !blockedRef.current && engineRef.current === engine && ticketRef.current === ticket && visitGenerationRef.current === visit;
     fireworksBusyRef.current = true; setFireworksBusy(true);
     const request = fireworksRequestRef.current ?? { id: crypto.randomUUID(), variant };
@@ -1229,7 +1245,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       // Reuse the request on an uncertain transport failure; a retry must not launch twice.
       if (cause instanceof BeachUnavailable || cause instanceof BeachCooldown || cause instanceof BeachGone) fireworksRequestRef.current = null;
       // 402: another tab spent the last ticket. Show the ticket sheet instead of a toast.
-      if (cause instanceof BeachUnavailable && cause.status === 402) { setFireworkTickets(0); setTicketSheetOpen(true); return; }
+      if (cause instanceof BeachUnavailable && cause.status === 402) { setFireworkTickets(0); openTicketSheet(); return; }
       if (cause instanceof BeachUnavailable && (cause.status === 401 || cause.status === 403)) setFireworksControl(false);
       if (cause instanceof BeachGone) { ticketRef.current = null; setFireworksControl(false); scheduleTick(0); }
       if (cause instanceof BeachCooldown) scheduleTick(0);
@@ -1591,6 +1607,36 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     }
   }, [runTick, scheduleTick, stopWithError]);
 
+  /** 고른 사람의 신고·차단 시트. 그 사람이 지금 띄워 둔 풍등 소원도 함께 신고할 수 있게 모은다 */
+  const openSafety = (person: RemotePlayer) => {
+    const wishes = momentClockRef.current.events
+      .filter(event => event.kind === "lantern" && event.fromPid === person.pid && typeof event.wish === "string")
+      .map(event => ({ id: event.id, wish: event.wish as string }));
+    setSafetyTarget({ id: person.id, pid: person.pid, nick: person.nick, wishes });
+  };
+
+  /** 차단이 끝나면 이번 방문에서 바로 가리고, 같은 방문으로 다시 들어가 서버도 서로를 빼게 한다 */
+  const hideBlockedPerson = (person: SpaceSafetyTarget) => {
+    hiddenUserIdsRef.current.add(person.id);
+    hiddenPidsRef.current.add(person.pid);
+    setSafetyTarget(null);
+    if (pendingCareRef.current?.to === person.pid) pendingCareRef.current = null;
+    engineRef.current?.select(null);
+    setPeople(previous => previous.filter(player => player.id !== person.id));
+    const clock = momentClockRef.current;
+    if (clock.events.some(event => event.fromPid === person.pid)) {
+      const events = clock.events.filter(event => event.fromPid !== person.pid);
+      momentClockRef.current = { ...clock, events };
+      engineRef.current?.applyUyuniMoments(events, clock.time, meRef.current?.pid);
+    }
+    toastSuccess(`${person.nick}님을 차단했어요`);
+    if (ticketRef.current && !blockedRef.current) {
+      rememberVisit(true);
+      ticketRef.current = null; // 다음 tick 이 저장된 방문으로 다시 들어가며 서버의 차단 목록을 새로 읽는다
+      scheduleTick(0);
+    }
+  };
+
   const sendCare = (kind: CareKind) => {
     if (careBusyRef.current || (kind === "hug" && !careCapabilities.hug) || (kind === "wave" && !careCapabilities.wave)) return;
     const target = selectedRef.current;
@@ -1691,8 +1737,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
       const engine = engineRef.current;
       if (engine) { engine.setUyuniMusicVolume(volume); setUyuniMusicVolume(engine.uyuniMusicVolume); }
     } } : undefined} />;
-  const fireworksTool = fireworksControl && !bunker.inside && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost || bunkerBusy !== null}
-    tickets={fireworksFree ? null : fireworkTickets ?? 0} onUnlock={() => setTicketSheetOpen(true)}
+  // 안드로이드 앱: 이용권이 없으면 잠긴 버튼(구매로 이어짐)을 아예 숨긴다. 이미 가진 이용권과 무료 사용은 그대로
+  const fireworksTool = fireworksControl && !bunker.inside && !(androidApp && !fireworksFree && (fireworkTickets ?? 0) <= 0) && <RoomFireworksControls mapId={mapId} deadline={fireworksDeadline} busy={fireworksBusy} disabled={lost || bunkerBusy !== null}
+    tickets={fireworksFree ? null : fireworkTickets ?? 0} onUnlock={openTicketSheet}
     inline buttonClass={menuStyles.row}
     onLaunch={(variant) => void launchFireworks(variant)} />;
   const lightingTool = lightingControl && lighting && <RoomLightingControls mapId={mapId} mode={lighting.mode} open={lightingOpen}
@@ -1801,6 +1848,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
             <button type="button" className={styles.actionTile + " " + styles.waveTile} disabled={cooling || lost || !careCapabilities.wave} onClick={() => sendCare("wave")}><span className={styles.actionIcon}><IconWave /></span><strong>인사하기</strong></button>
             <button type="button" className={styles.actionTile + " " + styles.comfortTile} disabled={cooling || lost} onClick={() => sendCare("comfort")}><span className={styles.actionIcon}><IconLeaf /></span><strong>위로 건네기</strong></button>
             {careCapabilities.hug && <button type="button" className={styles.actionTile + " " + styles.hugTile} disabled={cooling || lost} onClick={() => sendCare("hug")}><span className={styles.actionIcon}><IconHeart /></span><strong>안아주기</strong></button>}
+            {selected && <button type="button" className={styles.actionTile + " " + styles.personTile} aria-haspopup="dialog" aria-label={`${selected.nick}님 신고·차단`} onClick={() => openSafety(selected)}><span className={styles.actionIcon}><IconFlag /></span><strong>신고·차단</strong></button>}
           </div>
           <button type="button" className={styles.actionArrow} aria-label="다음 행동 보기" aria-controls={actionTrayId + "-list"} disabled={!actionOverflow.next} onClick={() => scrollActions(1)}><IconChevronR /></button>
           <button type="button" className={styles.trayClose} aria-label={carePrompt ? "사람 고르기 닫기" : "행동 접기"} onClick={() => { if (carePrompt) setCarePrompt(null); else { setActionsOpen(false); engineRef.current?.select(null); actionsTriggerRef.current?.focus(); } }}><IconClose /></button>
@@ -1896,10 +1944,11 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
           <Link href={returnHref} className={styles.glass}><IconChevronL />소로우로 돌아가기</Link>
         </div>
       )}
-      {!fireworksFree && <FireworkTicketSheet portal open={ticketSheetOpen} loginNext={mapId} onClose={() => setTicketSheetOpen(false)}
+      {!fireworksFree && !androidApp && <FireworkTicketSheet portal open={ticketSheetOpen} loginNext={mapId} onClose={() => setTicketSheetOpen(false)}
         onTickets={(next) => setFireworkTickets(next)} />}
       {photo && <PhotoPreview key={photo.url} photo={photo} onClose={closePhoto} mapId={mapId} ticket={() => ticketRef.current} />}
       {orb.found && <OrbFound found={orb.found} onClose={orb.dismiss} />}
+      {safetyTarget && <PersonSafetySheet key={safetyTarget.pid} target={safetyTarget} onClose={() => setSafetyTarget(null)} onBlocked={hideBlockedPerson} />}
       <UyuniBookReader open={bookOpen && bunker.inside} onClose={() => setBookOpen(false)} />
       {openBoard && <BunkerBoardGame title={boardTitle} board={openBoard} myPid={myBoardPid} busy={boardBusy} onAction={(action, cell) => void playBoard(action, cell)} onClose={() => setBoardTableId(null)} />}
       {guestbookInSight && phase === "ready" && mapId === "bamboo" && ticketRef.current &&

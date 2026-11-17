@@ -4,7 +4,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.co.shuim.config.ApiException;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -57,9 +56,11 @@ public class AuthController {
         return out;
     }
 
-    /** POST /api/auth/signup | login | logout | nick */
+    /**
+     * POST /api/auth/signup | login | logout | nick
+     * 트랜잭션을 여기서 열지 않는다: 비밀번호 해시(scrypt) 동안 DB 연결을 잡지 않도록 AuthService 가 쓰기만 짧게 묶는다.
+     */
     @PostMapping("/api/auth/{action}")
-    @Transactional
     public Map<String, Object> post(@PathVariable String action, @RequestBody(required = false) Map<String, Object> body,
                                     HttpServletRequest req, HttpServletResponse res) {
         Map<String, Object> b = body == null ? Map.of() : body;
@@ -73,8 +74,8 @@ public class AuthController {
                 if (!(b.get("aiDisclosureAccepted") instanceof Boolean aiAccepted)) {
                     throw ApiException.badRequest("AI 정보 제공 동의 여부를 선택해 주세요.");
                 }
-                DbUser u = auth.signUp(req, res, email, nick, password);
-                policies.accept(u, version, aiAccepted);
+                // 계정 쓰기와 동의 저장은 한 트랜잭션: 동의를 못 남기면 계정·세션도 되돌린다
+                DbUser u = auth.signUp(req, res, email, nick, password, created -> policies.accept(created, version, aiAccepted));
                 return Map.of("user", publicUser(u), "admin", auth.isAdmin(u));
             }
             case "login" -> {

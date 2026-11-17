@@ -13,6 +13,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.*;
 
@@ -40,7 +41,55 @@ class KakaoLoginServiceTest {
 
     private void upgradesAnonymousRow() {
         when(policies.hasSignupConsent("anon-1")).thenReturn(true);
-        when(jdbc.sql(startsWith("UPDATE users")).param(any()).param(any()).param(any()).param(any()).update()).thenReturn(1);
+        when(jdbc.sql(startsWith("UPDATE users")).param(any()).param(any()).param(any()).update()).thenReturn(1);
+    }
+
+    @Test
+    void kakaoProfileNicknameIsNeverPublished() {
+        kakaoIdExists(Optional.empty());
+        upgradesAnonymousRow();
+        signupService().signIn(profile, "anon-1");
+        verify(jdbc, never()).sql(contains("nick"));
+    }
+
+    @Test
+    void nextAcceptsOnlySameSiteRelativePaths() {
+        assertEquals("/account-deletion", KakaoLoginService.safeNext("/account-deletion"));
+        assertEquals("/me?tab=a#x", KakaoLoginService.safeNext("/me?tab=a#x"));
+        assertNull(KakaoLoginService.safeNext(null));
+        assertNull(KakaoLoginService.safeNext("//evil.example"));
+        assertNull(KakaoLoginService.safeNext("/\\evil.example"));
+        assertNull(KakaoLoginService.safeNext("https://evil.example"));
+        assertNull(KakaoLoginService.safeNext("/a\\b"));
+        assertNull(KakaoLoginService.safeNext("/a b"));
+        assertNull(KakaoLoginService.safeNext("/a\r\nSet-Cookie:x"));
+        assertNull(KakaoLoginService.safeNext("/" + "a".repeat(250)));
+    }
+
+    @Test
+    void successUriKeepsDefaultAndAppendsKakaoFlagToNext() {
+        KakaoLoginService s = svc("k");
+        assertEquals("https://sorow.co.kr/?kakao=1", s.successUri(null).toString());
+        assertEquals("https://sorow.co.kr/account-deletion?kakao=1", s.successUri("/account-deletion").toString());
+        assertEquals("https://sorow.co.kr/me?tab=a&kakao=1#x", s.successUri("/me?tab=a#x").toString());
+    }
+
+    @Test
+    void stateCookieCarriesNextAndCallbackRejectsMismatchedState() {
+        KakaoLoginService s = svc("k");
+        var res = new org.springframework.mock.web.MockHttpServletResponse();
+        String authorize = s.begin(res, "/account-deletion").toString();
+        String setCookie = res.getHeader("Set-Cookie");
+        assertNotNull(setCookie);
+        assertTrue(setCookie.contains("Secure"), setCookie);
+        String value = setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';'));
+        String state = value.substring(0, value.indexOf('.'));
+        assertTrue(authorize.contains("state=" + state), authorize);
+        assertFalse(authorize.contains("account-deletion"), authorize);
+        // state 가 다르면 next 와 관계없이 실패 화면으로
+        var req = new org.springframework.mock.web.MockHttpServletRequest();
+        req.setCookies(new jakarta.servlet.http.Cookie(KakaoLoginService.STATE_COOKIE, value));
+        assertEquals(s.failureUri(), s.complete(req, new org.springframework.mock.web.MockHttpServletResponse(), "code", "other", null));
     }
 
     @Test

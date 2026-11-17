@@ -5,6 +5,7 @@ import kr.co.shuim.community.Model.*;
 
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
 
 /** lib/community-core.ts 의 순수 계산 로직(가시성, 주간 집계, 샘플 자동 답글)을 그대로 옮긴 것 */
 public final class CommunityLogic {
@@ -50,18 +51,35 @@ public final class CommunityLogic {
         return new User(id, "익명", null, null, null);
     }
 
+    /**
+     * 요청 한 번에 여러 번 찾을 때 쓰는 사람 색인. userById 를 글·댓글마다 부르면 회원 수만큼 훑어서
+     * (글+댓글) x 회원 수가 되므로, 한 번 만들어 O(1) 로 찾는다.
+     */
+    public static Function<String, User> userIndex(Store s) {
+        Map<String, User> byId = new HashMap<>(Math.max(16, s.users().size() * 2));
+        for (User u : s.users()) byId.putIfAbsent(u.id(), u);
+        User me = s.me();
+        return id -> me.id().equals(id) ? me : byId.getOrDefault(id, new User(id, "익명", null, null, null));
+    }
+
     public static List<Report> activeReports(Item item) {
         if (item.reviewedAt() == null) return item.reports();
         return item.reports().stream().filter(r -> r.at() > item.reviewedAt()).toList();
     }
 
+    /** 자동 가리기는 익명·갓 가입한 계정의 신고(weak)를 세지 않는다 (일회용 계정 5개로 아무 글이나 가리지 못하게) */
     public static boolean isFlagged(Item item) {
-        return !Boolean.TRUE.equals(item.hidden()) && activeReports(item).size() >= REPORT_THRESHOLD;
+        return !Boolean.TRUE.equals(item.hidden()) && activeReports(item).stream().filter(r -> !r.weak()).count() >= REPORT_THRESHOLD;
     }
 
     public static boolean isVisible(Store s, Item item) {
         if (Boolean.TRUE.equals(item.hidden())) return false;
         return !userById(s, item.authorId()).blocked();
+    }
+
+    public static boolean isVisible(Function<String, User> users, Item item) {
+        if (Boolean.TRUE.equals(item.hidden())) return false;
+        return !users.apply(item.authorId()).blocked();
     }
 
     /* ---------- 주간 집계 ---------- */
@@ -80,10 +98,11 @@ public final class CommunityLogic {
      * 돈을 모아 순위대로 나누던 모의 모금은 없어졌고, 별은 준 순간 글쓴이 지갑으로 간다. 여기서는 세기만 한다.
      */
     public static WeeklyBatch computeWeekly(Store s, String week, boolean finalized) {
+        Function<String, User> users = userIndex(s);
         Map<String, Agg> byUser = new LinkedHashMap<>();
         Set<String> weekPosts = new HashSet<>();
         for (Post p : s.posts()) {
-            if (p.inCircle() || !"misfortune".equals(p.cat()) || !week.equals(Dates.weekKeyOf(p.createdAt())) || !isVisible(s, p)) continue;
+            if (p.inCircle() || !"misfortune".equals(p.cat()) || !week.equals(Dates.weekKeyOf(p.createdAt())) || !isVisible(users, p)) continue;
             weekPosts.add(p.id());
             int n = p.cheers().size();
             Agg cur = byUser.get(p.authorId());
@@ -106,7 +125,7 @@ public final class CommunityLogic {
             var e = sorted.get(i);
             Agg v = e.getValue();
             String topText = v.top.text().length() > 80 ? v.top.text().substring(0, 80) : v.top.text();
-            rows.add(new RankRow(i + 1, e.getKey(), userById(s, e.getKey()).nick(), v.cheers, v.posts, v.top.id(), topText, 0, 0, v.light));
+            rows.add(new RankRow(i + 1, e.getKey(), users.apply(e.getKey()).nick(), v.cheers, v.posts, v.top.id(), topText, 0, 0, v.light));
         }
         long total = 0;
         int count = 0;

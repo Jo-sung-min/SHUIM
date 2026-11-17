@@ -304,6 +304,7 @@ public class BeachController {
     public BeachRoom.TickResult tick(@RequestBody(required = false) TickBody body, HttpServletRequest req) {
         if (body == null || body.ticket() == null || body.ticket().isBlank()) throw ApiException.gone(GONE);
         DbUser privateActor = requirePrivateVisit(body.ticket(), req);
+        recheckVisit(body.ticket(), req);
         String careTo = body.care() == null ? null : body.care().to();
         String careKind = body.care() == null ? null : body.care().kind();
         BeachRoom.CareCapabilities capabilities = null;
@@ -332,6 +333,35 @@ public class BeachController {
             Boolean.TRUE.equals(body.moving()), denied ? null : careTo, careKind, body.character(), capabilities != null && capabilities.hug(), body.sequence(), body.bunkerId());
         if (r == null) throw ApiException.gone(GONE);
         return capabilities == null ? r : r.withCareCapabilities(capabilities, denied);
+    }
+
+    /**
+     * 위치 폴링은 평소 DB 를 보지 않으므로, 방문마다 {@link BeachService#RECHECK_MS} 에 한 번만 세션·이용 제한·멤버 자격을 다시 보고
+     * 차단 목록을 새로 읽는다. 세션이 바뀌었거나 사라졌으면 410(다시 들어오며 인증), 정지·강퇴·탈퇴면 403 으로 방문을 내보낸다.
+     */
+    private void recheckVisit(String ticket, HttpServletRequest req) {
+        if (req == null || !beach.claimRecheck(ticket)) return;
+        DbUser me = auth.currentUser(req).orElse(null);
+        if (me == null) {
+            // 로그아웃했거나 계정이 지워졌다. 다시 들어오며 인증하게 한다.
+            beach.leave(ticket);
+            throw ApiException.gone(GONE);
+        }
+        BeachService.Visit visit;
+        try {
+            visit = beach.requireVisit(ticket, me.id());
+        } catch (ApiException e) {
+            // 같은 브라우저에서 다른 계정으로 바꿔 로그인한 경우: 이 방문의 주인을 이 세션으로 판단할 수 없으니 넘어간다.
+            if (e.status() == 403) return;
+            throw e;
+        }
+        try {
+            requireSpace(visit.communityId(), me);
+        } catch (ApiException e) {
+            beach.leave(ticket);
+            throw e;
+        }
+        beach.refreshExcluded(ticket, blocks.excludedIds(me.id()));
     }
 
     /** POST /api/beach/rest: lie on the map's starlight/hut/hotel spots, sit, or stand. Ticket scopes the visit. */
@@ -422,8 +452,10 @@ public class BeachController {
         if (!fireworksAllowed(me)) throw ApiException.forbidden("가입한 회원만 불꽃놀이를 쏠 수 있어요.");
         if ("songi".equals(variant))
             throw ApiException.forbidden("송이에게 보내는 문구 불꽃은 관리자만 띄울 수 있어요.");
+        // 이미 쓴 요청 번호의 재시도는 이 방의 기억으로만 답하고 새로 쏘지 않는다(다른 방·재시작 뒤 재사용은 409).
         FireworkTickets.Consumed<BeachRoom.FireworkLaunch> consumed = tickets.consume(me.id(), body.requestId(), visit.communityId(), visit.mapId(), variant,
-            () -> beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant));
+            () -> beach.launchFireworks(body.ticket(), me.id(), body.requestId(), variant),
+            () -> beach.replayFireworks(body.ticket(), me.id(), body.requestId()));
         return consumed.result().withTickets(consumed.tickets());
     }
 
@@ -435,7 +467,26 @@ public class BeachController {
         if (body == null) throw ApiException.badRequest("함께 띄울 내용을 다시 확인해 주세요.");
         BeachService.Visit visit = beach.requireVisit(body.ticket(), me.id());
         requireSpace(visit.communityId(), me);
+        // 소원 문구는 방 전체에 보이는 이용자 글이라 다른 글쓰기처럼 커뮤니티 이용규칙 동의를 확인한다.
+        if ("lantern".equals(body.kind()) && consent != null) consent.requireAccepted(me);
         return beach.launchUyuniMoment(body.ticket(), me.id(), body.requestId(), body.kind(), body.letter(), body.color(), body.wish(), blocks.excludedIds(me.id()));
+    }
+
+    public record MomentRemoveBody(String ticket, String eventId) {}
+
+    /** POST /api/beach/moments/remove { ticket, eventId } → { removed }. 내가 띄운 소원 풍등을 내 방문이 있는 방에서 내린다 */
+    @PostMapping("/api/beach/moments/remove")
+    public Map<String, Object> removeMoment(@RequestBody(required = false) MomentRemoveBody body, HttpServletRequest req) {
+        DbUser me = auth.currentUser(req).orElseThrow(() -> ApiException.unauthorized("로그인한 뒤 이용해 주세요."));
+        if (body == null || body.eventId() == null) throw ApiException.badRequest("내릴 풍등을 다시 골라 주세요.");
+        return Map.of("removed", beach.removeOwnLantern(body.ticket(), me.id(), body.eventId()));
+    }
+
+    /** DELETE /api/admin/beach/lanterns/{eventId} → { removed }. 관리자가 어느 방이든 신고된 소원 풍등을 내린다 */
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/admin/beach/lanterns/{eventId}")
+    public Map<String, Object> adminRemoveLantern(@org.springframework.web.bind.annotation.PathVariable String eventId, HttpServletRequest req) {
+        if (!auth.isAdmin(auth.currentUser(req).orElse(null))) throw ApiException.forbidden("관리자만 풍등을 내릴 수 있어요.");
+        return Map.of("removed", beach.removeLanternAnywhere(eventId));
     }
 
     public record FestivalBody(String ticket, java.util.UUID requestId, String choice) {}

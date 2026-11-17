@@ -42,32 +42,56 @@ public final class TodayDtos {
             return name.codePointCount(0, name.length()) > Prompts.COMPANION_MAX ? name.substring(0, name.offsetByCodePoints(0, Prompts.COMPANION_MAX)) : name;
         }
 
+        /** 관리자가 아닌 요청: 작성 지침 덮어쓰기(prompts)만 빼고 그대로 */
+        public Request withoutPrompts() {
+            return new Request(mode, categories, date, today, todayDid, recent, memos, goals, schedule, allMemos, Map.of(), companion);
+        }
+
+        /*
+         * 입력 상한. 개수와 함께 항목마다 글자 수도 자른다 (기록 저장 상한 RecordsLogic 보다 넉넉하게 잡아
+         * 보통 사용자의 기록은 잘리지 않는다). 프롬프트에 들어가는 길이는 TodayService 가 한 번 더 자른다
+         */
+        static final int DID_MAX = 30, DID_LEN = 100, NOTE_LEN = 1000, RECORD_KEYS_MAX = 20;
+        static final int MEMO_LEN = 2000, ALL_MEMOS_MAX = 300, GOAL_TITLE_LEN = 100, GOAL_WHY_LEN = 300, STEPS_MAX = 30, STEP_LEN = 100;
+        static final int SCHEDULE_TITLE_LEN = 100, SHORT_LEN = 40;
+
         /** 비어 있는 값은 기본값으로, 목록은 서버가 감당할 길이로 자른다 */
         public Request normalized() {
             if (date != null && !validDate(date)) throw kr.co.shuim.config.ApiException.badRequest("기준 날짜를 다시 확인해 주세요");
             String day = date == null ? kr.co.shuim.common.Dates.todayKey() : date;
             List<RecentDay> r = recent == null ? List.of() : recent.stream().filter(x -> x != null && validDate(x.date()) && x.date().compareTo(day) < 0)
                 .sorted(Comparator.comparing(RecentDay::date))
-                .map(x -> new RecentDay(x.date(), x.record() == null ? Map.of() : clean(x.record()), x.did() == null ? List.of() : x.did())).toList();
+                .map(x -> new RecentDay(x.date(), x.record() == null ? Map.of() : clean(x.record()), dids(x.did()))).toList();
             if (r.size() > 7) r = r.subList(r.size() - 7, r.size());
             List<MemoIn> m = memos == null ? List.of() : memos.stream().filter(x -> x != null && x.text() != null)
                 .filter(x -> !validDate(x.date()) || x.date().compareTo(day) <= 0)
-                .map(x -> new MemoIn(x.cat(), x.text(), x.pinned(), validDate(x.date()) ? x.date() : null))
+                .map(x -> new MemoIn(opt(x.cat(), SHORT_LEN), cut(x.text(), MEMO_LEN), x.pinned(), validDate(x.date()) ? x.date() : null))
                 .sorted(Comparator.comparing((MemoIn x) -> !day.equals(x.date())))
                 .toList();
             if (m.size() > 20) m = m.subList(0, 20);
-            List<GoalIn> g = goals == null ? List.of() : goals.stream().filter(x -> x != null && x.title() != null)
-                .map(x -> new GoalIn(x.title(), x.cat(), x.why() == null ? "" : x.why(), x.due(), x.steps() == null ? List.of() : x.steps().stream().filter(s -> s != null && s.text() != null).toList())).toList();
-            if (g.size() > 8) g = g.subList(0, 8);
-            List<ScheduleIn> s = schedule == null ? List.of() : schedule.stream().filter(x -> x != null && x.title() != null).toList();
-            if (s.size() > 20) s = s.subList(0, 20);
+            List<GoalIn> g = goals == null ? List.of() : goals.stream().filter(x -> x != null && x.title() != null).limit(8)
+                .map(x -> new GoalIn(cut(x.title(), GOAL_TITLE_LEN), opt(x.cat(), SHORT_LEN), x.why() == null ? "" : cut(x.why(), GOAL_WHY_LEN), opt(x.due(), SHORT_LEN),
+                    x.steps() == null ? List.of() : x.steps().stream().filter(s -> s != null && s.text() != null).limit(STEPS_MAX)
+                        .map(s -> new GoalStep(cut(s.text(), STEP_LEN), s.done())).toList())).toList();
+            List<ScheduleIn> s = schedule == null ? List.of() : schedule.stream().filter(x -> x != null && x.title() != null).limit(20)
+                .map(x -> new ScheduleIn(opt(x.date(), SHORT_LEN), opt(x.time(), SHORT_LEN), cut(x.title(), SCHEDULE_TITLE_LEN), opt(x.cat(), SHORT_LEN), x.done())).toList();
             List<DatedMemo> all = allMemos == null ? List.of() : allMemos.stream().filter(x -> x != null && x.text() != null && validDate(x.date()) && x.date().compareTo(day) <= 0)
                 .sorted(Comparator.comparing(DatedMemo::date)).toList();
-            if (all.size() > 300) all = all.subList(all.size() - 300, all.size());
+            if (all.size() > ALL_MEMOS_MAX) all = all.subList(all.size() - ALL_MEMOS_MAX, all.size());
+            all = all.stream().map(x -> new DatedMemo(x.date(), opt(x.cat(), SHORT_LEN), cut(x.text(), MEMO_LEN), x.pinned())).toList();
             String md = "praise".equals(mode) || "love".equals(mode) || "review".equals(mode) ? mode : "briefing";
             return new Request(md, Categories.of(categories), day,
-                today == null ? Map.of() : clean(today), todayDid == null ? List.of() : todayDid, r, m, g, s, all, prompts == null ? Map.of() : prompts,
+                today == null ? Map.of() : clean(today), dids(todayDid), r, m, g, s, all, prompts == null ? Map.of() : prompts,
                 companionName(companion));
+        }
+
+        private static String cut(String value, int max) { return kr.co.shuim.common.Korean.cut(value, max); }
+
+        /** null 은 null 그대로 (일정 시간·마감일·카테고리는 비어 있음을 뜻한다) */
+        private static String opt(String value, int max) { return value == null ? null : cut(value, max); }
+
+        private static List<String> dids(List<String> in) {
+            return in == null ? List.of() : in.stream().filter(java.util.Objects::nonNull).limit(DID_MAX).map(d -> cut(d, DID_LEN)).toList();
         }
 
         private static boolean validDate(String value) {
@@ -78,7 +102,12 @@ public final class TodayDtos {
 
         private static Map<String, Entry> clean(Map<String, Entry> in) {
             Map<String, Entry> out = new LinkedHashMap<>();
-            for (var e : in.entrySet()) if (e.getValue() != null && e.getValue().score() != null) out.put(e.getKey(), e.getValue());
+            for (var e : in.entrySet()) {
+                if (out.size() >= RECORD_KEYS_MAX) break;
+                Entry v = e.getValue();
+                if (e.getKey() != null && v != null && v.score() != null)
+                    out.put(cut(e.getKey(), SHORT_LEN), v.note() == null || v.note().length() <= NOTE_LEN ? v : new Entry(v.score(), v.delta(), cut(v.note(), NOTE_LEN)));
+            }
             return out;
         }
 

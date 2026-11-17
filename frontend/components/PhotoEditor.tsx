@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type P
 import { IconChevronL, IconRefresh } from "./Icons";
 import { calculatePhotoCrop, clamp, drawPhotoCrop, exportPhotoCrop, loadEditablePhoto, normalizeRotation, type PhotoPosition } from "@/lib/photo-edit";
 import { ADJUST_FIELDS, DEFAULT_ADJUST, DEFAULT_LOOK, LOOK_PRESETS, type LookAdjust, type LookRenderer, type PhotoLook, createLookRenderer, isIdentityLook, layerStyle } from "@/lib/photo-look";
+import { useBackLayer } from "@/lib/use-back-layer";
 import styles from "./PhotoEditor.module.css";
 
 export interface PhotoEditorProps {
@@ -48,6 +49,8 @@ export default function PhotoEditor({ file, aspectRatio = 4 / 5, allowAspectChan
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
   closeRef.current = onClose;
+  // 안드로이드 뒤로 가기 = 편집 취소 (저장 중이면 그대로 둔다)
+  useBackLayer(true, () => { if (!saveLock.current) closeRef.current(); return true; });
   const titleId = useId();
   const helpId = useId();
   const rotated = normalizeRotation(rotation) % 180 !== 0;

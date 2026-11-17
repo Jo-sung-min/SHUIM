@@ -25,6 +25,10 @@ function memoDate(memo: Memo): string | null {
   return Number.isFinite(created.getTime()) ? todayKey(created) : null;
 }
 
+/** 메모 점검(review)에 보내는 메모: 서버가 쓰는 만큼만 (최근 300개, 각 400자). 요청 본문이 1MB 한도에 닿지 않게 */
+export const REVIEW_MEMO_MAX = 300;
+export const REVIEW_MEMO_CHARS = 400;
+
 export function buildTodayContext(data: TodayRecords, date: string, includeAllMemos = false) {
   const recentDates = [...new Set([...Object.keys(data.journal), ...Object.keys(data.log)])]
     .filter((key) => validDate(key) && key < date && key >= addDays(date, -7)).sort();
@@ -46,7 +50,9 @@ export function buildTodayContext(data: TodayRecords, date: string, includeAllMe
     schedule: data.schedule.filter((item) => validDate(item.date) && item.date >= date && item.date <= addDays(date, 3))
       .sort((a, b) => (a.date + (a.time ?? "99")).localeCompare(b.date + (b.time ?? "99")))
       .map((item) => ({ date: item.date, time: item.time, title: item.title, cat: item.cat, done: item.done })),
-    allMemos: includeAllMemos ? [...datedMemos].sort((a, b) => a.memo.createdAt - b.memo.createdAt).map(presentMemo) : undefined,
+    allMemos: includeAllMemos ? [...datedMemos]
+      .sort((a, b) => a.memo.createdAt - b.memo.createdAt).slice(-REVIEW_MEMO_MAX)
+      .map((item) => ({ ...presentMemo(item), text: typeof item.memo.text === "string" ? item.memo.text.slice(0, REVIEW_MEMO_CHARS) : item.memo.text })) : undefined,
   };
 }
 

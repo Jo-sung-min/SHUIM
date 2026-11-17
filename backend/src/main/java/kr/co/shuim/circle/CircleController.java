@@ -29,6 +29,11 @@ public class CircleController {
     }
 
     private static String s(Map<String, Object> b, String k) { return b != null && b.get(k) instanceof String str ? str : null; }
+    /** 소로우지기 읽기 화면: 세션이 없으면 새 익명 계정을 만들지 않고 예전과 같은 403 을 돌려준다 */
+    private DbUser keeperSession(HttpServletRequest req) {
+        return auth.currentUser(req).orElseThrow(() -> ApiException.forbidden("소로우지기만 할 수 있어요"));
+    }
+
     private static Map<String, Object> body(Map<String, Object> b) { return b == null ? Map.of() : b; }
 
     /** GET /api/circles?kind=&q= — 둘러보기 (멤버 10명 이상) */
@@ -51,14 +56,17 @@ public class CircleController {
 
     /** GET /api/circles/mine — 내 소로우(대표 먼저)와 리스닝 중인 소로우 */
     @GetMapping("/api/circles/mine")
-    public Map<String, Object> mine(HttpServletRequest req, HttpServletResponse res) {
-        return circles.mine(auth.requireUser(req, res));
+    public Map<String, Object> mine(HttpServletRequest req) {
+        // 읽기 요청이 익명 계정을 만들지 않게 지금 세션만 본다. 세션이 없으면 빈 목록
+        return circles.mine(auth.currentUser(req).orElse(null));
     }
 
     /** POST /api/circles { name, slug, kind | group, intro, joinMode, visibility, icon? } — 소로우 열기 (누구나, 연 사람이 소로우지기). group 은 새 묶음 이름 */
     @PostMapping("/api/circles")
     public Map<String, Object> create(@RequestBody(required = false) Map<String, Object> b, HttpServletRequest req, HttpServletResponse res) {
-        DbUser me = auth.requireUser(req, res);
+        // 가입 회원만 연다. 익명 계정을 새로 만들지 않도록 지금 세션만 본다
+        DbUser me = auth.currentUser(req).orElse(null);
+        CircleService.requireRegisteredToCreate(me);
         consent.requireAccepted(me);
         return circles.create(me, new CircleService.CreateInput(s(b, "name"), s(b, "slug"), s(b, "kind"), s(b, "intro"), s(b, "joinMode"), s(b, "visibility"), s(b, "domain"), s(b, "icon"), s(b, "group")));
     }
@@ -143,8 +151,8 @@ public class CircleController {
 
     /** GET /api/circles/{slug}/members — 소로우지기 */
     @GetMapping("/api/circles/{slug}/members")
-    public Map<String, Object> members(@PathVariable String slug, HttpServletRequest req, HttpServletResponse res) {
-        return Map.of("members", circles.members(auth.requireUser(req, res), slug));
+    public Map<String, Object> members(@PathVariable String slug, HttpServletRequest req) {
+        return Map.of("members", circles.members(keeperSession(req), slug));
     }
 
     /** POST /api/circles/{slug}/members/{userId} { action: approve|remove|keeper|unkeeper } */
@@ -170,8 +178,8 @@ public class CircleController {
 
     /** GET /api/circles/{slug}/submissions?status=pending|held|done — 소로우지기 검토 큐 */
     @GetMapping("/api/circles/{slug}/submissions")
-    public Map<String, Object> queue(@PathVariable String slug, @RequestParam(defaultValue = "pending") String status, HttpServletRequest req, HttpServletResponse res) {
-        return Map.of("submissions", circles.queue(auth.requireUser(req, res), slug, status));
+    public Map<String, Object> queue(@PathVariable String slug, @RequestParam(defaultValue = "pending") String status, HttpServletRequest req) {
+        return Map.of("submissions", circles.queue(keeperSession(req), slug, status));
     }
 
     /** POST /api/circles/{slug}/submissions/{id}/draft — AI 정리본 만들기 */
@@ -195,7 +203,8 @@ public class CircleController {
 
     /** GET /api/submissions/mine — 내 사연함 */
     @GetMapping("/api/submissions/mine")
-    public Map<String, Object> mySubmissions(HttpServletRequest req, HttpServletResponse res) {
-        return Map.of("submissions", circles.mySubmissions(auth.requireUser(req, res)));
+    public Map<String, Object> mySubmissions(HttpServletRequest req) {
+        // 세션이 없으면 보낸 사연도 없다 (익명 계정을 만들지 않는다)
+        return Map.of("submissions", circles.mySubmissions(auth.currentUser(req).orElse(null)));
     }
 }

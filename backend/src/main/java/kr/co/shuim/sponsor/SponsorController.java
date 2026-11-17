@@ -41,9 +41,33 @@ public class SponsorController {
 
     /** POST /api/sponsors/banners/{id}/click → 204. 참고용 하루 카운터, 누가 눌렀는지는 남기지 않는다. */
     @PostMapping("/api/sponsors/banners/{id}/click")
-    public ResponseEntity<Void> click(@PathVariable String id) {
-        sponsors.recordClick(id);
+    public ResponseEntity<Void> click(@PathVariable String id, HttpServletRequest request) {
+        // 같은 세션·같은 IP 의 반복 클릭은 그날 한 번만 센다(응답은 언제나 204).
+        if (request == null || clicks.first(id, kr.co.shuim.points.PointsPolicy.day(System.currentTimeMillis()), sessionKey(request), clientIp(request)))
+            sponsors.recordClick(id);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
+    }
+
+    public ResponseEntity<Void> click(String id) { return click(id, null); }
+
+    private final BannerClickDedup clicks = new BannerClickDedup();
+
+    private static String sessionKey(HttpServletRequest request) {
+        if (request.getCookies() != null)
+            for (var c : request.getCookies())
+                if (AuthService.COOKIE.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) return c.getValue();
+        String bearer = request.getHeader(org.springframework.http.HttpHeaders.AUTHORIZATION);
+        return bearer == null || bearer.isBlank() ? null : bearer.strip();
+    }
+
+    /** Vercel 이 X-Forwarded-For 를 덮어쓰므로 첫 항목이 실제 이용자다. 없으면 연결한 주소 */
+    private static String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            String first = forwarded.split(",", 2)[0].strip();
+            if (!first.isEmpty()) return first;
+        }
+        return request.getRemoteAddr();
     }
 
     /** GET /api/sponsors → 공개 후원 기업 순위(누적 후원액↓·멋져요↓) */

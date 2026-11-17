@@ -1,5 +1,6 @@
 package kr.co.shuim.community;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
@@ -20,7 +21,15 @@ public final class Model {
         public boolean blocked() { return blockedAt != null; }
     }
 
-    public record Report(String by, String reason, long at) {}
+    /**
+     * 신고 한 건. weak = 자동 가리기 기준(REPORT_THRESHOLD)에 세지 않는 신고
+     * (익명 계정이나 가입한 지 하루가 안 된 계정이 낸 것). 관리자 검토 목록에는 그대로 남고, JSON 에는 나가지 않는다.
+     */
+    public record Report(String by, String reason, long at, @JsonIgnore boolean weak) {
+        public Report(String by, String reason, long at) {
+            this(by, reason, at, false);
+        }
+    }
 
     /** 외침·댓글·피드 공통 */
     public interface Item {
@@ -61,6 +70,10 @@ public final class Model {
         public boolean inCircle() { return communityId != null; }
         /** 같은 글, 작성자만 바꿔서 (소로우 사연의 작성자 가리기) */
         public Post withAuthor(String author, List<Report> reports) {
+            return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, light);
+        }
+        /** 보는 사람에 맞춘 같은 글: 작성자·힘내요·신고만 바꾼다 */
+        public Post forViewer(String author, List<String> cheers, List<Report> reports) {
             return new Post(id, cat, text, author, createdAt, cheers, reports, hidden, reviewedAt, images, communityId, postNo, circle, circleSlug, acceptedCommentId, light);
         }
         /** 같은 글, 받은 별 합계만 채워서 */

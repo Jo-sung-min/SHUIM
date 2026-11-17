@@ -14,12 +14,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * 사이트 설정 (site_settings). 값이 없으면 프론트가 lib/site.ts 의 기본값을 쓴다.
  * 이미지는 data URL 로 받아 base64 그대로 저장하고 /api/site/{favicon,og} 가 바이트로 내려준다.
+ * 공개 읽기는 요청마다 DB 를 치지 않게 전체 행을 60초 메모리 캐시하고, 관리자가 바꾸면 바로 비운다 (ADM-08).
+ * 서버가 한 대라는 전제다. 여러 대면 다른 인스턴스는 최대 60초 늦게 반영된다.
  */
 @Service
 public class SiteSettingsService {
@@ -30,16 +34,48 @@ public class SiteSettingsService {
     private static final Set<String> IMAGE_TYPES = Set.of("image/png", "image/jpeg", "image/webp", "image/x-icon", "image/vnd.microsoft.icon");
     private static final Pattern DATA_URL = Pattern.compile("^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=\\s]+)$", Pattern.CASE_INSENSITIVE);
 
-    private final JdbcClient jdbc;
+    static final long CACHE_MS = 60_000;
 
-    public SiteSettingsService(JdbcClient jdbc) { this.jdbc = jdbc; }
+    private final JdbcClient jdbc;
+    private final Supplier<Map<String, Row>> loader;
+    private final LongSupplier clock;
+    private volatile Cached cached;
+
+    private record Cached(Map<String, Row> rows, long at) {}
+
+    @org.springframework.beans.factory.annotation.Autowired // 생성자가 둘이라 스프링이 쓸 것을 밝혀 둔다 (없으면 기동 실패)
+    public SiteSettingsService(JdbcClient jdbc) {
+        this.jdbc = jdbc;
+        this.loader = this::load;
+        this.clock = System::currentTimeMillis;
+    }
+
+    /** 테스트용: DB 대신 행을 주는 함수와 시계 */
+    SiteSettingsService(Supplier<Map<String, Row>> loader, LongSupplier clock) {
+        this.jdbc = null;
+        this.loader = loader;
+        this.clock = clock;
+    }
 
     /** 저장된 이미지 한 장 */
     public record Image(String type, byte[] bytes, long updatedAt) {}
 
-    private record Row(String key, String value, long updatedAt) {}
+    record Row(String key, String value, long updatedAt) {}
 
+    /** 캐시가 비었거나 60초가 지났으면 다시 읽는다 */
     private Map<String, Row> all() {
+        Cached c = cached;
+        long now = clock.getAsLong();
+        if (c != null && now - c.at() < CACHE_MS) return c.rows();
+        Map<String, Row> rows = Map.copyOf(loader.get());
+        cached = new Cached(rows, now);
+        return rows;
+    }
+
+    /** 관리자가 바꾼 뒤 부른다 (다음 읽기에서 DB 를 다시 본다) */
+    public void invalidate() { cached = null; }
+
+    private Map<String, Row> load() {
         Map<String, Row> m = new HashMap<>();
         jdbc.sql("SELECT key, value, updated_at FROM site_settings")
             .query((rs, i) -> new Row(rs.getString("key"), rs.getString("value"), Db.msReq(rs, "updated_at")))
@@ -111,6 +147,7 @@ public class SiteSettingsService {
     }
 
     private void upsert(String key, String value) {
+        invalidate();
         jdbc.sql("""
             INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, ?)
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
@@ -118,6 +155,7 @@ public class SiteSettingsService {
     }
 
     private void delete(String key) {
+        invalidate();
         jdbc.sql("DELETE FROM site_settings WHERE key = ?").param(key).update();
     }
 }

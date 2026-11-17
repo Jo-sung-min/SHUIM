@@ -92,13 +92,23 @@ public class FireworkTicketService implements FireworkTickets {
 
     @Override
     @Transactional
-    public <T> Consumed<T> consume(String userId, String requestId, String communityId, String mapId, String variant, Supplier<T> launcher) {
+    public <T> Consumed<T> consume(String userId, String requestId, String communityId, String mapId, String variant,
+                                   Supplier<T> launcher, Supplier<T> replay) {
         UUID key = requestKey(requestId, "불꽃놀이 요청을 다시 시도해 주세요.");
         long now = clock.getAsLong();
         int balance = lock(userId, now);
         String eventKey = "use:" + key;
-        // A retried launch is answered by the room's own request memory; the ticket was already spent.
-        if (recorded(eventKey)) return new Consumed<>(launcher.get(), balance);
+        // 이미 이용권을 쓴 요청 번호: 같은 사람·같은 소로우·같은 지도의 재시도만, 방이 기억하는 불꽃으로 답한다.
+        // 다른 사람·다른 방의 재사용은 409, 방이 잊었으면(재시작·24시간 뒤) replay 가 409 를 던진다. 새로 쏘지는 않는다.
+        record Used(String userId, String communityId, String mapId) {}
+        var used = jdbc.sql("SELECT user_id,community_id,map_id FROM firework_ticket_ledger WHERE event_key=?").param(eventKey)
+            .query((rs, i) -> new Used(rs.getString("user_id"), rs.getString("community_id"), rs.getString("map_id"))).optional();
+        if (used.isPresent()) {
+            Used row = used.get();
+            if (!userId.equals(row.userId()) || !java.util.Objects.equals(communityId, row.communityId()) || !java.util.Objects.equals(mapId, row.mapId()))
+                throw new ApiException(409, REUSED);
+            return new Consumed<>(replay.get(), balance);
+        }
         if (balance < 1) throw new ApiException(402, NO_TICKET);
         T result = launcher.get();
         int after = balance - 1;

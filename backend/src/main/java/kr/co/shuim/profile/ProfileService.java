@@ -5,11 +5,12 @@ import kr.co.shuim.common.Db;
 import kr.co.shuim.common.Mbti;
 import kr.co.shuim.community.BlockService;
 import kr.co.shuim.profile.BadgeService.EarnedBadge;
+import kr.co.shuim.upload.S3Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * 프로필. 공개: 닉네임·사진·소개·칭호·위로 배지·숫자(위로글·리스너·리스닝). 비공개(본인만): 이름·전화번호·이메일.
@@ -18,16 +19,29 @@ import java.util.regex.Pattern;
  */
 @Service
 public class ProfileService {
-    private static final Pattern URL = Pattern.compile("^(/|https?://)");
     public static final int LIST_PAGE = 50;
     private final JdbcClient jdbc;
     private final BlockService blocks;
     private final BadgeService badges;
+    /** 프로필 사진 주소 검사·옛 사진 정리. 손으로 만든 테스트 인스턴스에서는 없다(그때는 사이트 상대 경로만 받는다) */
+    private final S3Service s3;
 
     public ProfileService(JdbcClient jdbc, BlockService blocks, BadgeService badges) {
+        this(jdbc, blocks, badges, null);
+    }
+
+    @Autowired
+    public ProfileService(JdbcClient jdbc, BlockService blocks, BadgeService badges, S3Service s3) {
         this.jdbc = jdbc;
         this.blocks = blocks;
         this.badges = badges;
+        this.s3 = s3;
+    }
+
+    /** 프로필 사진으로 받을 주소: 우리 CDN·버킷 주소 또는 사이트 상대 경로 */
+    private boolean allowedAvatar(String url) {
+        if (s3 != null) return s3.isAllowedMediaUrl(url);
+        return url.startsWith("/") && !url.startsWith("//") && url.indexOf('\\') < 0;
     }
 
     /** followers = 리스너 수, following = 리스닝 수 (JSON 이름은 화면 코드와 맞추려고 그대로 둔다) */
@@ -120,18 +134,25 @@ public class ProfileService {
             if (err != null) return err;
         }
         if (in.nick() == null && in.bio() == null && in.avatarUrl() == null && in.name() == null && in.phone() == null) return null; // 칭호만 바꿀 때
+        // 프로필 사진: 외부 주소는 보는 사람의 IP·열람 시각 추적, 검토 뒤 바꿔치기에 쓰일 수 있어 받지 않는다.
+        // 지금 저장된 값과 같으면(예전 값) 그대로 둔다 — 화면은 저장할 때마다 현재 사진 주소를 함께 보낸다.
+        String oldAvatar = jdbc.sql("SELECT avatar_url FROM profiles WHERE user_id = ?").param(me.id()).query(String.class).optional().orElse(null);
+        String avatar = null;
+        if (in.avatarUrl() != null && !in.avatarUrl().isBlank()) {
+            avatar = in.avatarUrl().strip();
+            if (!avatar.equals(oldAvatar) && (avatar.length() > 500 || !allowedAvatar(avatar))) return "프로필 사진을 다시 올려 주세요.";
+        }
         if (in.nick() != null) {
             String n = in.nick().strip();
-            if (n.length() < 2 || n.length() > 12) return "닉네임은 2~12자로 해요.";
+            // 가입·닉네임 변경과 같은 규칙(길이·보이지 않는 문자·운영진 사칭). 지금 쓰는 닉네임을 그대로 보내면(예전 규칙으로 정한 이름) 다시 막지 않는다
+            if (!n.equals(me.nick())) {
+                String nickErr = kr.co.shuim.auth.AuthService.nickError(n);
+                if (nickErr != null) return nickErr;
+            }
             jdbc.sql("UPDATE users SET nick = ? WHERE id = ?").param(n).param(me.id()).update();
         }
         String bio = in.bio() == null ? "" : in.bio().strip();
         if (bio.length() > 160) bio = bio.substring(0, 160);
-        String avatar = null;
-        if (in.avatarUrl() != null && URL.matcher(in.avatarUrl().strip()).find()) {
-            avatar = in.avatarUrl().strip();
-            if (avatar.length() > 500) avatar = avatar.substring(0, 500);
-        }
         String name = in.name() == null ? "" : in.name().strip();
         if (name.length() > 20) name = name.substring(0, 20);
         String phone = in.phone() == null ? "" : in.phone().replaceAll("[^0-9-]", "");
@@ -142,6 +163,8 @@ public class ProfileService {
             INSERT INTO profiles (user_id, name, phone, bio, avatar_url, updated_at) VALUES (?, ?, ?, ?, ?, now())
             ON CONFLICT (user_id) DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone, bio = EXCLUDED.bio, avatar_url = EXCLUDED.avatar_url, updated_at = now()
             """).param(me.id()).param(name).param(digits).param(bio).param(avatar).update();
+        // 바꾸거나 지운 옛 사진이 본인 업로드이고 더는 쓰이지 않으면 CDN 에서도 지운다
+        if (s3 != null && oldAvatar != null && !oldAvatar.equals(avatar)) s3.enqueueDeletionIfUnused(oldAvatar, me.id());
         return null;
     }
 

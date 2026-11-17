@@ -251,6 +251,11 @@ function MemoSheet({
   const [cat, setCat] = useState<MemoCat | "all">(memo?.cat ?? defaultCat);
   const [text, setText] = useState(memo?.text ?? "");
   const [pinned, setPinned] = useState(memo?.pinned ?? false);
+  /** 닫기·뒤로 가기·바깥 누르기: 쓰던 내용이 있으면 한 번 묻는다 (안드로이드 뒤로 가기로 말없이 사라지지 않게) */
+  const close = () => {
+    if (text.trim() && text !== (memo?.text ?? "") && !window.confirm("쓰던 메모를 버릴까요?")) return;
+    onClose();
+  };
 
   const save = () => {
     const t = text.trim();
@@ -267,7 +272,7 @@ function MemoSheet({
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title={memo ? "메모 수정" : "새 메모"}>
+    <Sheet open={open} onClose={close} title={memo ? "메모 수정" : "새 메모"}>
       <div className="stack">
         <div className="field">
           <label>카테고리</label>
@@ -288,7 +293,7 @@ function MemoSheet({
             삭제
           </button>
         )}
-        <button className="btn ghost" onClick={onClose}>취소</button>
+        <button className="btn ghost" onClick={close}>취소</button>
         <button className="btn" onClick={save} disabled={!text.trim()}>저장</button>
       </div>
     </Sheet>

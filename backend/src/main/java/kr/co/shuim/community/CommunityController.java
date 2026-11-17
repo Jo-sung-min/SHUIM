@@ -23,10 +23,14 @@ public class CommunityController {
         this.consent = consent;
     }
 
-    /** GET /api/community — 현재 유저(없으면 익명 유저 생성) 기준의 커뮤니티 전체 상태 */
+    /**
+     * GET /api/community — 현재 유저 기준의 커뮤니티 상태.
+     * 세션이 없으면 익명 회원을 만들지 않고(쿠키도 주지 않고) 저장하지 않는 손님(me.id = "guest")으로 보여 준다.
+     * 익명 회원은 첫 쓰기(POST)에서 만든다.
+     */
     @GetMapping("/api/community")
-    public Store get(HttpServletRequest req, HttpServletResponse res) {
-        return community.loadStore(auth.requireUser(req, res));
+    public Store get(HttpServletRequest req) {
+        return community.viewerStore(auth.currentUser(req).orElse(CommunityService.GUEST));
     }
 
     private static Target target(Map<String, Object> b) {
@@ -63,7 +67,7 @@ public class CommunityController {
             case "light.give" -> community.giveLight(me, str(b, "postId"), b.get("amount"), b.get("requestId"));
             // 원화 모의 모금은 별 모으기로 바뀌었다. 옛 화면이 보내는 요청에는 안내만 돌려준다
             case "donate" -> throw ApiException.gone("불행 모금이 별 모으기로 바뀌었어요. 화면을 새로 열어 주세요.");
-            case "weekly.refresh" -> community.refreshCurrentWeek(me);
+            case "weekly.refresh" -> community.weeklyRefresh(me);
             case "admin.hide", "admin.dismiss", "admin.block", "admin.unblock" -> {
                 if (!auth.isAdmin(me)) throw ApiException.forbidden("관리자만 할 수 있어요");
                 yield switch (action) {

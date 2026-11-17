@@ -2,6 +2,8 @@
 
 현재 상태: **Android 테스트 앱 설치·실행 및 release AAB 구성 검증 완료. 운영 서명·도메인 연결·Play Console 제출은 미완료.**
 
+> 2026-11-17 변경: 운영 주소가 `https://www.sorow.co.kr` 로 정해져(apex 는 www 로 308 이동) 앱의 첫 화면·저장공간 관리 주소·앱 링크 도메인·asset_statements 를 www 로 바꿨고, minSdk 를 24(Android 7.0)로 올렸습니다. 아래 기록은 그 전(apex, minSdk 23) 기준이라 서명된 AAB 로 다시 확인해야 합니다. 배포 순서는 [docs/ANDROID_RELEASE_PLAN.md](../docs/ANDROID_RELEASE_PLAN.md) 를 따릅니다.
+
 ## 전달 파일
 
 | 파일 | 용도 | 상태 |

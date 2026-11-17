@@ -35,6 +35,8 @@ public class BeachRoom {
     /** 각 소로우의 해변에 동시에 머물 수 있는 최대 방문 수 */
     public static final int CAPACITY = SpaceCapacity.MAX;
     private int capacity = CAPACITY;
+    /** 한 계정이 한 방에 동시에 둘 수 있는 방문 수. 넘게 들어오면 가장 오래된 방문을 내보낸다 */
+    public static final int MAX_VISITS_PER_USER = 2;
 
     /** Admission limits come from the community policy, never from the visitor's request. */
     public synchronized void setCapacity(int capacity) {
@@ -532,7 +534,9 @@ public class BeachRoom {
         public FireworkLaunch(FireworkEvent event, long serverTime, long cooldownUntil) { this(event, serverTime, cooldownUntil, null); }
         public FireworkLaunch withTickets(int remaining) { return new FireworkLaunch(event, serverTime, cooldownUntil, remaining); }
     }
-    private final LinkedHashMap<UUID, FireworkEvent> fireworkRequests = new LinkedHashMap<>();
+    /** 요청 번호는 쏜 사람과 묶어 기억한다. 다른 사람이 같은 번호를 보내도 그 사람의 불꽃을 돌려받지 못한다 */
+    private record FireworkRequest(String userId, UUID requestId) {}
+    private final LinkedHashMap<FireworkRequest, FireworkEvent> fireworkRequests = new LinkedHashMap<>();
     private FireworkEvent activeFirework;
     private long fireworksCooldownUntil;
     private final BeachUyuniMoments uyuniMoments = new BeachUyuniMoments();
@@ -618,22 +622,9 @@ public class BeachRoom {
         if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
         if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
         if (me.bunkerId != null) throw new ApiException(409, "지상으로 올라온 뒤 불꽃놀이를 시작해 주세요.");
-        UUID key;
-        try {
-            if (requestId == null || requestId.length() != 36) throw new IllegalArgumentException();
-            key = UUID.fromString(requestId);
-            if (!key.toString().equalsIgnoreCase(requestId)) throw new IllegalArgumentException();
-        } catch (IllegalArgumentException e) {
-            throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
-        }
+        FireworkRequest key = new FireworkRequest(userId, fireworkRequestId(requestId));
         String selected = requireFireworkVariant(variant);
-        // Keep retry identities beyond the animation lifetime without growing indefinitely.
-        // At one launch per 15 seconds this holds at most 5,761 entries per room.
-        var previous = fireworkRequests.entrySet().iterator();
-        while (previous.hasNext()) {
-            if (now - previous.next().getValue().startedAt() < FIREWORK_REQUEST_TTL_MS) break;
-            previous.remove();
-        }
+        pruneFireworkRequests(now);
         FireworkEvent retried = fireworkRequests.get(key);
         if (retried != null) return new FireworkLaunch(retried, now, fireworksCooldownUntil);
         if (now < fireworksCooldownUntil) throw new ApiException(429, "불꽃놀이가 끝난 뒤 잠시 기다려 주세요.");
@@ -644,6 +635,78 @@ public class BeachRoom {
         fireworksCooldownUntil = now + duration + (FIREWORK_COOLDOWN_MS - FIREWORK_DURATION_MS);
         fireworkRequests.put(key, event);
         return new FireworkLaunch(event, now, fireworksCooldownUntil);
+    }
+
+    /**
+     * 이용권을 이미 쓴 요청의 재시도. 이 방이 그 요청을 기억할 때만 같은 불꽃을 돌려주고, 새 불꽃은 절대 만들지 않는다.
+     * 다른 방·재시작 뒤·기억이 지난 뒤의 재사용은 409 라서 한 장으로 여러 번 쏠 수 없다.
+     */
+    synchronized FireworkLaunch replayFireworks(String ticket, String userId, String requestId) {
+        long now = clock.getAsLong();
+        Presence me = ticket == null ? null : byTicket.get(ticket);
+        if (me == null || me.bot() || !live(me, now)) throw ApiException.gone(BeachController.GONE);
+        if (!me.userId.equals(userId)) throw ApiException.forbidden("내 방문에서만 이용할 수 있어요.");
+        FireworkRequest key = new FireworkRequest(userId, fireworkRequestId(requestId));
+        pruneFireworkRequests(now);
+        FireworkEvent retried = fireworkRequests.get(key);
+        if (retried == null) throw new ApiException(409, "이미 사용한 요청이에요. 다시 눌러 주세요.");
+        return new FireworkLaunch(retried, now, fireworksCooldownUntil);
+    }
+
+    private static UUID fireworkRequestId(String requestId) {
+        try {
+            if (requestId == null || requestId.length() != 36) throw new IllegalArgumentException();
+            UUID key = UUID.fromString(requestId);
+            if (!key.toString().equalsIgnoreCase(requestId)) throw new IllegalArgumentException();
+            return key;
+        } catch (IllegalArgumentException e) {
+            throw ApiException.badRequest("불꽃놀이 요청을 다시 시도해 주세요.");
+        }
+    }
+
+    // Keep retry identities beyond the animation lifetime without growing indefinitely.
+    // At one launch per 15 seconds this holds at most 5,761 entries per room.
+    private void pruneFireworkRequests(long now) {
+        var previous = fireworkRequests.entrySet().iterator();
+        while (previous.hasNext()) {
+            if (now - previous.next().getValue().startedAt() < FIREWORK_REQUEST_TTL_MS) break;
+            previous.remove();
+        }
+    }
+
+    /** 소원 풍등을 내린다. ownerId 가 있으면 그 사람이 띄운 것만(작성자 삭제), null 이면 누구 것이든(관리자) */
+    synchronized boolean removeUyuniMoment(String eventId, String ownerId) {
+        return uyuniMoments.remove(eventId, ownerId, clock.getAsLong());
+    }
+
+    /** 살아 있는 방문의 자격을 다시 볼 차례인지 (tick 이 확인한다) */
+    boolean claimRecheck(String ticket, long intervalMs) {
+        Presence p = presence(ticket);
+        return p != null && !p.bot() && p.claimRecheck(clock.getAsLong(), intervalMs);
+    }
+
+    /** 새로 읽은 차단 목록을 살아 있는 방문에 반영한다. 서로 보이지 않게 되고, 쌓인 위로도 버린다 */
+    synchronized void refreshExcluded(String ticket, Set<String> excluded) {
+        Presence p = ticket == null ? null : byTicket.get(ticket);
+        if (p == null || p.bot()) return;
+        synchronized (p) {
+            p.excluded = excluded == null ? Set.of() : Set.copyOf(excluded);
+            Set<String> refreshed = p.excluded;
+            p.inbox.removeIf(event -> refreshed.contains(event.fromId()) || refreshed.contains(event.toId()));
+            uyuniMoments.refreshExclusions(p.userId, refreshed);
+            gardenMoments.refreshExclusions(p.userId, refreshed);
+        }
+    }
+
+    /**
+     * 지워도 되는 빈 방: 사람·가짜 방문자·재입장 기록이 없고, 음악이 멈췄고, 조명이 기본값이다.
+     * 재입장 기록은 {@link #RESUME_MS} 동안 남으므로 마지막 방문자가 떠나고 그만큼 지나야 비게 된다.
+     */
+    synchronized boolean idle() {
+        long now = clock.getAsLong();
+        sweep(now);
+        return bots.isEmpty() && byTicket.isEmpty() && resumeTickets.isEmpty()
+            && !musicAt(now).playing() && defaultLighting(map).equals(lighting);
     }
 
     /** Called only after the controller verifies the current administrator and owned visit. */
@@ -752,6 +815,8 @@ public class BeachRoom {
         private long lastResumeInput = -2;
         private ResumeBookmark bookmark;
         private volatile long lastCareAt = NEVER;
+        /** 마지막으로 로그인·이용 자격·차단 목록을 확인한 시각. tick 이 일정 간격마다 한 번씩 다시 확인한다 */
+        private long checkedAt;
         private final Map<String, Long> lastCareTo = new ConcurrentHashMap<>();
         private final ConcurrentLinkedQueue<CareEvent> inbox = new ConcurrentLinkedQueue<>();
         private final AtomicInteger receivedComfort = new AtomicInteger();
@@ -772,6 +837,14 @@ public class BeachRoom {
             this.yaw = yaw;
             this.lastSeen = now;
             this.updatedAt = now;
+            this.checkedAt = now;
+        }
+
+        /** 자격을 다시 볼 차례면 시각을 먼저 갱신하고 true. 동시에 온 tick 중 하나만 확인한다 */
+        synchronized boolean claimRecheck(long now, long intervalMs) {
+            if (now >= checkedAt && now - checkedAt < intervalMs) return false;
+            checkedAt = now;
+            return true;
         }
 
         public String pid() { return pid; }
@@ -913,9 +986,21 @@ public class BeachRoom {
                 resumeFence(previous, sequence);
                 previous.suspended = false;
                 previous.moving = false;
+                previous.checkedAt = now;
                 previous.lastSeen = now;
                 previous.updatedAt = Math.max(previous.updatedAt + 1, now);
                 return new Entry(previous, restoredPosition);
+            }
+        }
+        // 한 계정은 한 지도에 방문을 MAX_VISITS_PER_USER 개(두 탭·기기)까지만 둔다. 넘으면 가장 오래 소식이 없던 방문을 내보내
+        // 한 사람이 입장을 되풀이해 정원을 채우지 못하게 한다. 1개로 두면 보이는 탭 둘이 서로를 계속 내보내며 재입장을 되풀이한다.
+        // 내보낸 방문의 자리는 재입장 기록으로 남는다.
+        List<Presence> mine = new ArrayList<>(byTicket.values().stream().filter(o -> !o.bot() && o.userId.equals(userId)).toList());
+        mine.sort(Comparator.comparingLong(o -> o.lastSeen));
+        for (int i = 0; i <= mine.size() - MAX_VISITS_PER_USER; i++) {
+            Presence old = mine.get(i);
+            synchronized (old) {
+                if (byTicket.remove(old.ticket, old)) remember(old, now);
             }
         }
         if (byTicket.size() >= capacity) throw new ApiException(409, "지금 " + capacity + "명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
