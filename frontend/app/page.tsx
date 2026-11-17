@@ -4,6 +4,7 @@ import SafetyReport from "@/components/SafetyReport";
 import DailyQuote from "@/components/DailyQuote";
 import MoruPet from "@/components/MoruPet";
 import MoruCompanion from "@/components/MoruCompanion";
+import OutingHomeCard from "@/components/outing/OutingHomeCard";
 import { BRIEFING_WAITING, LOVE_WAITING, loadCompanion, praiseWaiting, type Companion } from "@/lib/moru";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -272,6 +273,8 @@ export default function HomePage() {
         <MoruPet userId={sessionUserId()} thinking={thinking} answeredAt={answeredAt}
           onCompanion={setCompanion} onRecordsChange={() => setData(readTodayRecords())}
           journal={data.journal} today={today} onBreathe={empty ? undefined : () => setBreathing(true)} />
+
+        <OutingHomeCard name={companion.name} />
 
         {/* 처음 온 날: 위의 오늘의 문장처럼, 문구는 명언과 시적인 한 줄로. 카드는 인용 + 출처 + 무엇을 하는 곳인지 */}
         {empty && <section aria-labelledby="home-start-title">

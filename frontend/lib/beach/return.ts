@@ -5,7 +5,11 @@ const KEY = "beach:return";
  * 그래야 소로우 페이지의 뒤로가기가 다시 바닷가로 돌아오는 무한 루프가 생기지 않는다.
  */
 export function rememberBeachReturn() {
-  try { sessionStorage.setItem(KEY, location.pathname + location.search); } catch { /* 저장 못 해도 나가기는 된다 */ }
+  try { rememberBeachReturnTo(location.pathname + location.search); } catch { /* SSR or unavailable browser location */ }
+}
+export function rememberBeachReturnTo(href: string) {
+  if (!href.startsWith("/") || href.startsWith("//")) return;
+  try { sessionStorage.setItem(KEY, href); } catch { /* 저장 못 해도 나가기는 된다 */ }
 }
 export function readBeachReturn(): string | null {
   try { return sessionStorage.getItem(KEY); } catch { return null; }

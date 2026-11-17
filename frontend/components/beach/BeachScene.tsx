@@ -1660,11 +1660,12 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const skyFull = !lying && restArea.occupied >= restArea.capacity;
   // 공용 공간은 소로우 화면이 없으므로 소로우 홈으로 돌아간다.
   const shared = (community?.id ?? communityId) === PUBLIC_SPACE_ID;
-  const returnHref = community && !shared ? route(`/c/${community.slug}`) : "/c/home";
+  const outingReturn = shared && readBeachReturn() === "/outing";
+  const returnHref = outingReturn ? "/outing" : community && !shared ? route(`/c/${community.slug}`) : "/c/home";
   /** 나가기: 소로우 페이지에서 들어왔으면 history 를 되돌려 (뒤로가기가 다시 바닷가로 오지 않게), 아니면 바닷가 기록을 소로우 페이지로 바꾼다 */
   const exitRoom = (event: MouseEvent) => {
     event.preventDefault();
-    if (readBeachReturn() === returnHref && window.history.length > 1) router.back();
+    if (!outingReturn && readBeachReturn() === returnHref && window.history.length > 1) router.back();
     else router.replace(returnHref);
   };
   const hideHud = () => { setHudHidden(true); setCharacterPickerOpen(false); setPowderOpen(false); setActionsOpen(false); setCarePrompt(null); engineRef.current?.select(null); haptic(); window.requestAnimationFrame(() => restoreTriggerRef.current?.focus()); };

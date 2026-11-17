@@ -8,6 +8,7 @@
     "build:ait": "node scripts/build-ait.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:outing": "node --test scripts/outing.test.mjs",
     "test:offline": "node --test scripts/service-worker.test.mjs",
     "test:records": "node --test scripts/records-sync.test.mjs",
     "test:privacy": "node --test scripts/community-cache.test.mjs",
