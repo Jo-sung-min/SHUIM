@@ -72,7 +72,7 @@ interface CareTile { action: CareAction; label: string; done: boolean; on: boole
 
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
-  love: { label: "사랑받기", heading: "오늘의 사랑" },
+  love: { label: "사랑해줘", heading: "오늘의 사랑" },
 };
 
 export default function HomePage() {

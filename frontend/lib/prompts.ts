@@ -9,7 +9,7 @@ export type PromptKey = "briefing" | "praise" | "love" | "review";
 export const PROMPT_META: { key: PromptKey; label: string; desc: string }[] = [
   { key: "briefing", label: "오늘의 나 브리핑", desc: "기록·메모·목표·일정을 모아 오늘의 방향을 정리" },
   { key: "praise", label: "칭찬받기", desc: "위로 → 공감 → 칭찬, 반말 3문단으로 은근하게" },
-  { key: "love", label: "사랑받기", desc: "공감 → 위로 → 조건 없는 사랑, 반말 3문단으로 다정하게" },
+  { key: "love", label: "사랑해줘", desc: "공감 → 위로 → 조건 없는 사랑, 반말 3문단으로 다정하게" },
   { key: "review", label: "메모로 나를 점검하기", desc: "과거 메모(다짐·원칙)와 오늘을 대조해 주의할 점과 달라진 점" },
 ];
 
