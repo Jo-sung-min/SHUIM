@@ -69,3 +69,12 @@ test("navigation aborts in-flight requests instead of keeping private responses 
   });
   await assert.rejects(() => a.outingRequest("", undefined, abort.signal), e => e.status === 0);
 });
+
+test("companion sprites are sized through the outer svg only, so Moring's one-frame window is not stretched", async () => {
+  // 모링은 그림 띠(네 칸)를 안쪽 svg 창으로 한 칸만 보여 준다. `.동행 svg { width: 100% }` 처럼 안쪽까지 잡으면 여러 마리가 한꺼번에 보인다
+  const css = await readFile(new URL("../components/outing/Outing.module.css", import.meta.url), "utf8");
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "").split("}").map((rule) => rule.split("{")[0].trim());
+  const companions = rules.flatMap((selector) => selector.split(",")).map((s) => s.trim()).filter((s) => /introCompanion|walkingCompanion|companionSays/.test(s) && /\bsvg$/.test(s));
+  assert.equal(companions.length >= 4, true, companions.join(" | "));
+  for (const selector of companions) assert.match(selector, />\s*svg$/, `${selector} must size the outer svg only`);
+});

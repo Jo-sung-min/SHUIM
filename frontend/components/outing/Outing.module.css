@@ -27,7 +27,7 @@
 .intro > p { color: var(--outing-muted); font-size: 13px; line-height: 1.9; margin: 0; }
 .introCompanion { position: absolute; width: 150px; right: 45px; bottom: 50px; transform: rotate(-6deg); filter: drop-shadow(0 14px 10px #4a533910); }
 .introCompanion::before { content: ""; position: absolute; inset: -15px; border-radius: 50%; background: radial-gradient(ellipse, #dce2c768, transparent 70%); z-index: -1; }
-.introCompanion svg { width: 100%; height: auto; }
+.introCompanion > svg { width: 100%; height: auto; }
 .bond { border: 1px solid var(--outing-line); border-radius: 17px; padding: 21px 24px 16px; background: #f0f2e9; }
 .bondTop, .bondNumbers, .bondFoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .bondTop > span { display: inline-flex; gap: 7px; align-items: center; font-size: 12px; }
@@ -162,8 +162,9 @@
 .mapPin[data-locked] .pinLabel { background: #ecebe1ce; }
 .mapPin[data-done] .pinGlyph { box-shadow: 0 0 0 3px #c7debca8, 0 5px 14px #21352624; }
 .walkingCompanion { position: absolute; width: 95px; height: 100px; border: 0; background: transparent; transform: translate(-50%, -100%) scale(var(--companion-size, 1)); transform-origin: bottom center; transition: left 1.4s ease-in-out, top 1.4s ease-in-out, transform 1.4s ease-in-out; }
-.walkingCompanion svg { width: 100%; height: 100%; filter: drop-shadow(0 2px 1px #3e40362a); }
-.walkingCompanion[data-moving] svg { animation: walk .32s ease-in-out infinite alternate; }
+/* 동행의 크기는 바깥 svg 에만 준다(> svg): 모링은 그림 띠를 한 칸으로 자르는 안쪽 svg 창이 있어서, 안쪽까지 100% 로 늘리면 여러 칸이 한꺼번에 보인다 */
+.walkingCompanion > svg { width: 100%; height: 100%; filter: drop-shadow(0 2px 1px #3e40362a); }
+.walkingCompanion[data-moving] > svg { animation: walk .32s ease-in-out infinite alternate; }
 .companionShadow { position: absolute; bottom: 5px; left: 13%; width: 74%; height: 10px; background: #3d402a50; border-radius: 50%; filter: blur(4px); }
 .nameTag { display: block; position: absolute; bottom: -19px; left: 50%; transform: translateX(-50%); color: #4a5944; background: #fffdf0da; border-radius: 7px; padding: 3px 9px; font-size: 9px; white-space: nowrap; }
 .sceneBottom { position: absolute; z-index: 5; left: 50%; bottom: calc(15px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(430px, calc(100% - 40px)); pointer-events: none; }
@@ -181,7 +182,7 @@
 .activityDetail { color: var(--outing-muted); font-size: 12px; line-height: 1.8; margin: 0 0 18px; }
 .companionSays { display: flex; gap: 15px; align-items: center; padding: 13px 16px; border: 1px solid #e5e8db; background: #eff2e8; border-radius: 16px; min-height: 92px; }
 .companionSays > div { width: 65px; flex-shrink: 0; }
-.companionSays svg { width: 100%; height: 68px; }
+.companionSays > div > svg { width: 100%; height: 68px; }
 .companionSays p { margin: 0; font-size: 12px; line-height: 1.8; word-break: keep-all; }
 .companionSays small { display: block; font-size: 9px; color: #75856b; margin-bottom: 5px; }
 .breathing { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 28px 0 12px; }
