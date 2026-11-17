@@ -115,7 +115,7 @@
 .careGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .careTile {
   position: relative; aspect-ratio: 1; min-width: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
   padding: 10px 4px; border-radius: 20px; color: var(--text);
   background: var(--surface);
   border: 1px solid var(--glass-edge);
@@ -132,7 +132,9 @@
 /* 아이콘은 칸 위에 바로 (안쪽 네모 없음) — 칸 하나가 버튼 하나로 보이게 */
 .careIcon { display: grid; place-items: center; color: var(--tone); transition: color var(--dur) var(--ease); }
 .careIcon svg { width: 28px; height: 28px; }
-.careLabel { font-size: 13px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; white-space: nowrap; }
+/* 두 줄 문구("나 잘하고 / 있는거지?")도 들어가게 줄바꿈을 허락하되 낱말 안에서는 끊지 않고,
+   한 줄 문구 칸과 아이콘 높이가 맞도록 모든 칸에 두 줄 자리를 잡아 둔다 */
+.careLabel { font-size: 13px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; min-height: 2.4em; max-width: 100%; display: grid; place-items: center; text-align: center; word-break: keep-all; }
 .careDone .careLabel { color: var(--text-2); }
 /* 오늘 했으면 모서리에 작은 체크 (빨간 점 자리) */
 .careCheck { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--tone); color: var(--surface); }
@@ -163,7 +165,7 @@
 }
 @media (max-width: 360px) {
   .careGrid { gap: 8px; }
-  .careTile { border-radius: 16px; gap: 6px; }
+  .careTile { border-radius: 16px; gap: 4px; }
   .careIcon svg { width: 24px; height: 24px; }
   .careLabel { font-size: 12px; }
 }

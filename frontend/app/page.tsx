@@ -71,8 +71,8 @@ function HomeHeader() {
 interface CareTile { action: CareAction; label: string; done: boolean; on: boolean; busy: boolean; disabled: boolean; aria: string; onPress: () => void }
 
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
-  praise: { label: "칭찬받기", heading: "오늘의 칭찬" },
-  love: { label: "사랑해줘", heading: "오늘의 사랑" },
+  praise: { label: "나 잘하고 있는거지?", heading: "오늘의 칭찬" },
+  love: { label: "그냥.. 사랑해줘", heading: "오늘의 사랑" },
 };
 
 export default function HomePage() {

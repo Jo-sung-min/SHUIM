@@ -32,8 +32,8 @@ export interface CareAction {
 /** 기본 4칸 (순서 고정, 뺄 수 없음). 실제 동작은 app/page.tsx 의 press() */
 export const CARE_BUILTIN: CareAction[] = [
   { id: "briefing", label: "정리하기", desc: "오늘 기록을 AI 가 한 번 정리해요", kind: "ai", icon: "sparkle", tone: "briefing" },
-  { id: "praise", label: "칭찬받기", desc: "오늘의 나를 칭찬하는 말", kind: "ai", icon: "star", tone: "praise" },
-  { id: "love", label: "사랑해줘", desc: "나를 사랑하는 법 한 가지", kind: "ai", icon: "heart", tone: "love" },
+  { id: "praise", label: "나 잘하고 있는거지?", desc: "오늘의 나를 칭찬하는 말", kind: "ai", icon: "star", tone: "praise" },
+  { id: "love", label: "그냥.. 사랑해줘", desc: "나를 사랑하는 법 한 가지", kind: "ai", icon: "heart", tone: "love" },
   { id: "flow", label: "흐름 보기", desc: "최근 7·14·30일의 마음 흐름", kind: "link", icon: "chart", tone: "review", href: "/flow" },
 ];
 

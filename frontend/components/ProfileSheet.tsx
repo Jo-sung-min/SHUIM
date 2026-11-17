@@ -17,7 +17,7 @@ const mbtiLetters = (value: string | undefined): string[] => MBTI_AXES.map((axis
 
 /**
  * 프로필 편집: 사진·닉네임·소개·칭호(공개) + 이름·전화·MBTI(비공개). 나 화면(사진 누르기)과 설정에서 연다.
- * MBTI 는 고르지 않아도 된다. 적어 두면 홈의 칭찬받기·사랑해줘가 그 유형이 위로받고 싶어 하는 방향으로 말한다 (서버 mbti_comfort_guides)
+ * MBTI 는 고르지 않아도 된다. 적어 두면 홈의 ‘나 잘하고 있는거지?’·‘그냥.. 사랑해줘’가 그 유형이 위로받고 싶어 하는 방향으로 말한다 (서버 mbti_comfort_guides)
  */
 export default function ProfileSheet({ open, profile, onClose, onSaved }: { open: boolean; profile: MyProfile; onClose: () => void; onSaved: (p: MyProfile) => void }) {
   const [nick, setNick] = useState(profile.nick);
@@ -148,7 +148,7 @@ export default function ProfileSheet({ open, profile, onClose, onSaved }: { open
             ))}
             {mbtiPicked > 0 && <button type="button" className="text-btn muted" disabled={busy} onClick={() => setMbti(MBTI_AXES.map(() => ""))}>지우기</button>}
           </div>
-          {mbtiOk ? <span className="tiny muted">적어 두면 칭찬받기·사랑해줘가 내가 위로받고 싶은 방향으로 말해 줘요. 다른 사람에게는 보이지 않아요.</span>
+          {mbtiOk ? <span className="tiny muted">적어 두면 ‘나 잘하고 있는거지?’·‘그냥.. 사랑해줘’가 내가 위로받고 싶은 방향으로 말해 줘요. 다른 사람에게는 보이지 않아요.</span>
             : <span className="form-error">네 자리를 모두 고르거나, 모두 비워 주세요.</span>}
         </div>}
         {error && <p className={styles.error} role="alert">{error}</p>}
