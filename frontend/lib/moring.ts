@@ -13,9 +13,10 @@ export type MoringLoop = (typeof MORING_LOOPS)[number];
 
 /**
  * 띠의 버전. CDN 의 버전 파일은 1년 캐시라 같은 이름으로 덮어쓰지 않고 새 버전으로 올린다.
- * 평소·웃음·먹기·잠의 v2 는 감정 띠와 같은 원본(콩 눈·꼬리 깃)으로 다시 만든 것이다 (v1 은 CDN 에 그대로 남는다)
+ * 평소·웃음·먹기·잠의 v2 는 감정 띠와 같은 원본(콩 눈·꼬리 깃)으로 다시 만든 것이다 (v1 은 CDN 에 그대로 남는다).
+ * 가벼움·행복·포근·걱정의 v2 는 두 눈을 같은 높이로 다시 만든 것이다: v1 은 몸은 둥근데 얼굴만 기울어 눈이 삐뚤어 보였다
  */
-const VERSION: Record<MoringLoop, number> = { idle: 2, happy: 2, eat: 2, sleep: 2, gloomy: 1, light: 1, joy: 1, cozy: 1, worry: 1, curious: 1 };
+const VERSION: Record<MoringLoop, number> = { idle: 2, happy: 2, eat: 2, sleep: 2, gloomy: 1, light: 2, joy: 2, cozy: 2, worry: 2, curious: 1 };
 /** 띠 그림의 경로 (assetUrl 로 CDN 주소가 된다) */
 export const moringArt = (name: MoringLoop) => `/moru/moring/moring-${name}-v${VERSION[name]}.webp`;
 

@@ -969,6 +969,12 @@
       "contentType": "image/webp"
     },
     {
+      "key": "moru/moring/moring-cozy-v2.webp",
+      "bytes": 51542,
+      "sha256": "8e3534644ec0b9dae4fde62bc79d7dbf0058d61d452a0781b532d5c4a7487611",
+      "contentType": "image/webp"
+    },
+    {
       "key": "moru/moring/moring-curious-v1.webp",
       "bytes": 71882,
       "sha256": "f0f1d130bf9a84bc728a741a536e19c28e6cbd862680a564fc563f46526f9f14",
@@ -1023,9 +1029,21 @@
       "contentType": "image/webp"
     },
     {
+      "key": "moru/moring/moring-joy-v2.webp",
+      "bytes": 56638,
+      "sha256": "b7229d8a4ce30b1892b6bb5cba39906d1964e1be73c2324609418b755dbc6104",
+      "contentType": "image/webp"
+    },
+    {
       "key": "moru/moring/moring-light-v1.webp",
       "bytes": 52126,
       "sha256": "7ab3d20a1ce6f6c728c90e5e8cfa49fb5eb796116ec444e7bf3c260763ff2710",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-light-v2.webp",
+      "bytes": 50718,
+      "sha256": "ea306bab927a18493d4e0e6da2757fb83f8c7c3ebde363d59d3ba690630d0563",
       "contentType": "image/webp"
     },
     {
@@ -1044,6 +1062,12 @@
       "key": "moru/moring/moring-worry-v1.webp",
       "bytes": 55660,
       "sha256": "d0eb3251808ada14a32f50324420830fc08620eb2c551ad5a221e92e8020cc1a",
+      "contentType": "image/webp"
+    },
+    {
+      "key": "moru/moring/moring-worry-v2.webp",
+      "bytes": 50800,
+      "sha256": "e054384cff8a18b2348d79f3247771e7bee237c55c6495d9bd2e53056544a1a7",
       "contentType": "image/webp"
     },
     {

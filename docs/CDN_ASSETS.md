@@ -92,6 +92,7 @@ CDN에서 SHA256·파일 크기·형식·CORS 검증을 끝낸 49개 이미지�
 - 50개 모두 `--verify`로 SHA256·형식·CORS를 확인한 뒤 로컬 사본을 지웠습니다.
 - **모링 감정 띠 6개(같은 날 추가):** `moru/moring/moring-{gloomy,light,joy,cozy,worry,curious}-v1.webp`(한 칸 300×350, 51~72KB). `--apply --only moru/moring/`로 올리고 `--verify`로 확인한 뒤 로컬 사본을 지웠습니다. 만든 법은 [MORU_TAMAGOTCHI.md](MORU_TAMAGOTCHI.md)의 "캐릭터".
 - **모링 기본 띠 v2 4개(2026-11-13):** 평소·웃음·먹기·잠을 감정 띠와 같은 원본으로 다시 만들어 `moru/moring/moring-{idle,happy,eat,sleep}-v2.webp`(300×350, 51~58KB)로 올리고 같은 방법으로 확인했습니다. v1 은 지우지 않았습니다. 이 PC의 기본 `python`에는 `botocore`가 없어 EB CLI가 깔린 Python 3.13(`AppData\Local\Programs\Python\Python313\python.exe`)으로 실행했습니다.
+- **모링 감정 띠 v2 4개(2026-11-17):** 가벼움·행복·포근·걱정을 두 눈이 같은 높이가 되게 다시 만들어 `moru/moring/moring-{light,joy,cozy,worry}-v2.webp`(300×350, 51~57KB)로 올리고 같은 방법으로 확인했습니다. v1 은 지우지 않았습니다.
 
 ### 업로드 스크립트 변경
 
