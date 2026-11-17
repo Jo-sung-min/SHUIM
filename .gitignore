@@ -72,9 +72,6 @@ Thumbs.db
 !frontend/public/cloudspa/art/*.webp
 # 명화 큐레이션 피드(CDN feed/curation/ 에 올릴 원본, 사용자 요청으로 Git 에도 보관)
 !frontend/public/feed/curation/*.webp
-
-# Outing artwork ships with the app so newly generated scenes work before CDN sync.
-!frontend/public/outing/*.webp
 # V39 명화(미술관 원본을 줄인 것)는 CDN 에만 둔다 (V50)
 frontend/public/feed/curation/met-*.webp
 

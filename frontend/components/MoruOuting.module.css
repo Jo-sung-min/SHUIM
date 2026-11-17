@@ -1,0 +1,43 @@
+/* 방 안의 외출 (components/MoruOuting.tsx, docs/OUTINGS.md "방 안의 외출"). 방(.world) 안에 깔린다.
+   무대는 방 그림과 같은 480×700 (바닥 600, MoruRoom.module.css 의 .stage 와 같은 자리): 풍경·숨은 것·친구·말풍선이 모두 무대 좌표다.
+   풍경 그림은 멈춰 있다: 떨리는 외곽선 필터(#moru-sketch)가 한 번만 그려지게, 그림 안에서는 아무것도 움직이지 않는다. 움직이는 것은 친구와 말풍선뿐이다. */
+.out{position:absolute;inset:0;transform:scale(var(--world-fit,1));transform-origin:50% 100%}
+/* 꽉 찬 화면에서는 풍경을 가로에 맞춰 줄여 그린다 (--world-fit, MoruPet 의 fit): 숨은 것들이 양옆으로 잘려 나가지 않게.
+   그러면 세로가 긴 화면에서 그림 위가 모자랄 수 있어, 같은 하늘색을 뒤에 넓게 깔아 둔다 */
+.sky{position:absolute;left:-150%;right:-150%;top:-250%;bottom:0;background:var(--out-sky,#cfe8f2)}
+.stage{position:absolute;left:50%;bottom:-100px;width:480px;height:700px;margin-left:-240px;overflow:hidden}
+.art{position:absolute;inset:0;display:block;pointer-events:none;filter:url(#moru-sketch);will-change:transform}
+
+/* 빈 땅: 누르면 그쪽으로 걷는다. 숨은 것: 그림 위의 보이지 않는 단추 (이름표도 표시도 없다) */
+.ground{position:absolute;left:0;right:0;bottom:100px;padding:0;border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.spot{position:absolute;z-index:1;padding:0;border:0;border-radius:16px;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.spot:focus-visible,.ground:focus-visible{outline:2px dashed #fff6e0;outline-offset:-3px}
+button.spot.spot:disabled{opacity:1;cursor:default}
+
+/* 친구: 발끝이 (left, top)에 온다. 멀리(위) 설수록 작다 (--s). 걸을 때는 깡충거린다 */
+.walker{position:absolute;z-index:2;width:124px;height:118px;padding:0;border:0;background:none;cursor:pointer;transform:translate(-50%,-93%) scale(var(--s,1));transform-origin:50% 93%;transition:left .9s ease-in-out,top .9s ease-in-out,transform .9s ease-in-out;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none}
+.walker > svg{display:block;width:100%;height:100%;overflow:visible}
+.walker[data-moving] > svg{animation:outHop .3s ease-in-out infinite alternate}
+.walker[data-doing] > svg{transform-origin:50% 92%;animation:outSway 2.6s ease-in-out infinite}
+.walker:focus-visible{outline:2px dashed #fff6e0;outline-offset:-10px;border-radius:24px}
+@keyframes outHop{from{transform:translateY(0)}to{transform:translateY(-7px)}}
+@keyframes outSway{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+
+/* 말풍선: 친구의 머리 위. 방 밖으로 나가지 않게 가운데가 맞춰지고, 꼬리만 친구 쪽으로 간다 (--tail) */
+.bubble{position:absolute;z-index:3;transform:translate(-50%,-100%);isolation:isolate;width:max-content;max-width:226px;padding:9px 13px 11px;color:#4a3528;font-size:13.5px;line-height:1.45;text-align:center;word-break:keep-all;animation:outBubble .3s ease both}
+.bubble > i{position:absolute;inset:0;z-index:-1;filter:url(#moru-sketch)}
+.bubble > i::before{content:"";position:absolute;inset:0;border:2.5px solid #4a3528;border-radius:16px 19px 15px 18px/18px 15px 19px 16px;background:#fff6e0;box-shadow:0 3px 0 #2a1b1347}
+.bubble > i::after{content:"";position:absolute;left:clamp(14px,calc(50% - 6px + var(--tail,0px)),calc(100% - 26px));bottom:-5px;width:10px;height:10px;border:solid #4a3528;border-width:0 2.5px 2.5px 0;border-radius:0 0 3px;background:#fff6e0;transform:rotate(45deg)}
+.bubble p{margin:0}
+.answers{display:flex;justify-content:center;gap:8px;margin-top:9px}
+.answers button{position:relative;isolation:isolate;min-width:72px;min-height:38px;padding:0 12px 3px;border:0;background:none;color:#4a3528;font:inherit;font-size:13px;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform .12s ease}
+.answers button::before{content:"";position:absolute;inset:0;z-index:-1;border:2.2px solid #4a3528;border-radius:13px 15px 12px 14px/14px 12px 15px 13px;background:#cfbdf2;box-shadow:inset 0 -3px 0 #a890d8}
+.answers button + button::before{border-radius:15px 12px 14px 13px/12px 15px 13px 14px;background:#ffeccb;box-shadow:inset 0 -3px 0 #e6c48d}
+.answers button:not(:disabled):active{transform:translateY(2px)}
+.answers button:focus-visible,.quiet:focus-visible{outline:2px dashed #4a3528;outline-offset:2px;border-radius:13px}
+.progress{display:block;height:10px;margin:9px 2px 0;border:1.8px solid #4a3528;border-radius:6px 7px 6px 7px/7px 6px 7px 6px;background:#fff;overflow:hidden}
+.progress b{display:block;height:100%;background:#f29aab;border-right:1.8px solid #4a3528;transition:width .25s linear}
+.quiet{display:block;margin:5px auto -3px;min-height:32px;padding:2px 10px;border:0;background:none;color:#7a5f4d;font:inherit;font-size:12px;text-decoration:underline dashed #b89a72;text-underline-offset:4px;cursor:pointer}
+@keyframes outBubble{from{opacity:0;transform:translate(-50%,calc(-100% + 6px))}to{opacity:1;transform:translate(-50%,-100%)}}
+
+@media(prefers-reduced-motion:reduce){.walker{transition:none}.walker > svg,.bubble{animation:none!important}.progress b{transition:none}}

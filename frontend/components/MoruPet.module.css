@@ -437,6 +437,12 @@ button.decorItem[data-dragging]{z-index:2;cursor:grabbing;filter:drop-shadow(0 6
 .decorGrid button:not(:disabled):active{transform:translateY(2px);box-shadow:none}
 .decorGrid button:disabled{border-color:#b89a72;background:#f3e6cc;color:#6f5545;box-shadow:none;opacity:1;cursor:default}
 .decorShop .secondary{width:100%;min-height:44px;font:inherit;font-size:14px;cursor:pointer}
+/* 단추가 다섯인 패드(나가기가 생긴 뒤): 좁은 화면에서도 글자가 잘리지 않게 조금 작게. 나가 있을 때 지금 있는 곳은 버터색 */
+.keys[data-many]{gap:5px}
+.keys[data-many] .key{padding:0 2px 3px;font-size:12px}
+.keys[data-many] .keyMain{flex-grow:1.3;font-size:13px}
+.keys[data-many] .key svg{width:21px;height:21px}
+.key[aria-pressed="true"]::before{background:var(--hd-butter);box-shadow:inset 0 -4px 0 var(--hd-butter-lip)}
 /* 가구 상자: 가진 것과 아직 없는 것을 색으로 가른다. 가진 것은 연두 칸·굵은 선·보라 "놓기", 아직 없는 것은 빛바랜 점선 칸·버터색 값 딱지와 "사러 가기" */
 .decorLegend{display:flex;gap:14px;margin:10px 2px 0;font-size:12px;color:#7a5f4d}
 .decorLegend span{display:inline-flex;align-items:center;gap:6px}

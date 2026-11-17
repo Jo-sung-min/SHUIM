@@ -1,3 +1,11 @@
-import { Suspense } from "react";
-import OutingSpace from "@/components/outing/OutingSpace";
-export default function OutingSpacePage() { return <Suspense fallback={<p role="status">함께 갈 풍경을 준비하고 있어요.</p>}><OutingSpace /></Suspense>; }
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+/** 외출은 이제 홈의 방 안에서 나간다 (방의 "나가기"). 예전 주소로 오면 홈으로 보낸다 */
+export default function OutingPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/"); }, [router]);
+  return <p role="status" style={{ padding: 24 }}>방으로 돌아가는 중이에요.</p>;
+}

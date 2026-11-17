@@ -39,7 +39,6 @@ export const CARE_BUILTIN: CareAction[] = [
 
 /** 추가할 수 있는 칸 */
 export const CARE_CATALOG: CareAction[] = [
-  { id: "outing", label: "같이 나갈까?", desc: "공원·바다·산에서 모루와 함께 쉬기", kind: "link", icon: "leaf", tone: "mint", href: "/outing" },
   { id: "review", label: "분석하기", desc: "메모 전체로 그때와 오늘을 AI 가 비교", kind: "ai", icon: "note", tone: "plum" },
   { id: "breath", label: "숨 고르기", desc: "1분 동안 천천히 숨 쉬어요", kind: "breath", icon: "lotus", tone: "mint" },
   { id: "step", label: "작은 한 걸음", desc: "기운에 맞는 아주 작은 행동 하나", kind: "link", icon: "leaf", tone: "mint", href: "/log" },

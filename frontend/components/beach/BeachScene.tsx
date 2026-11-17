@@ -1661,7 +1661,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   // 공용 공간은 소로우 화면이 없으므로 소로우 홈으로 돌아간다.
   const shared = (community?.id ?? communityId) === PUBLIC_SPACE_ID;
   const outingReturn = shared && readBeachReturn() === "/outing";
-  const returnHref = outingReturn ? "/outing" : community && !shared ? route(`/c/${community.slug}`) : "/c/home";
+  const returnHref = outingReturn ? "/" : community && !shared ? route(`/c/${community.slug}`) : "/c/home";
   /** 나가기: 소로우 페이지에서 들어왔으면 history 를 되돌려 (뒤로가기가 다시 바닷가로 오지 않게), 아니면 바닷가 기록을 소로우 페이지로 바꾼다 */
   const exitRoom = (event: MouseEvent) => {
     event.preventDefault();

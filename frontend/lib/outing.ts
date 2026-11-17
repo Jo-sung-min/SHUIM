@@ -6,9 +6,9 @@ export interface OutingActivity {
   kind: ActivityKind; icon: string; x: number; y: number; lines: string[]; keepsake: string;
 }
 export const OUTING_PLACES = {
-  park: { id: "park", name: "공원에 앉아 있기", short: "오후의 공원", english: "A LITTLE GREEN", description: "나뭇잎 사이로, 마음에도 햇살이.", whisper: "아무 말 없이 앉아 있어도 좋아.", image: "/outing/park.webp", color: "#758b69", mood: "햇살 · 나뭇잎 · 작은 벤치" },
-  sea: { id: "sea", name: "바다 보러 가기", short: "보랏빛 바다", english: "BY THE SEA", description: "다 말하지 못한 마음은 파도에게.", whisper: "오늘은 파도가 대신 이야기해 줄 거야.", image: "/outing/sea.webp", color: "#778db1", mood: "파도 · 조개껍데기 · 노을" },
-  mountain: { id: "mountain", name: "산에 앉아 있기", short: "구름 위의 산", english: "ABOVE THE CLOUDS", description: "멀리 바라보면, 조금 가벼워질까.", whisper: "여기까지 온 것만으로도 충분해.", image: "/outing/mountain.webp", color: "#8c89aa", mood: "산바람 · 따뜻한 차 · 먼 능선" },
+  park: { id: "park", name: "공원에 앉아 있기", short: "오후의 공원", english: "A LITTLE GREEN", description: "나뭇잎 사이로, 마음에도 햇살이.", whisper: "아무 말 없이 앉아 있어도 좋아.", color: "#758b69", mood: "햇살 · 나뭇잎 · 작은 벤치" },
+  sea: { id: "sea", name: "바다 보러 가기", short: "보랏빛 바다", english: "BY THE SEA", description: "다 말하지 못한 마음은 파도에게.", whisper: "오늘은 파도가 대신 이야기해 줄 거야.", color: "#778db1", mood: "파도 · 조개껍데기 · 노을" },
+  mountain: { id: "mountain", name: "산에 앉아 있기", short: "구름 위의 산", english: "ABOVE THE CLOUDS", description: "멀리 바라보면, 조금 가벼워질까.", whisper: "여기까지 온 것만으로도 충분해.", color: "#8c89aa", mood: "산바람 · 따뜻한 차 · 먼 능선" },
 } as const;
 export const OUTING_MILESTONES = [
   { day: 0, level: 1, name: "처음 나란히", gift: "세 곳의 풍경과 조용히 쉬기" },
