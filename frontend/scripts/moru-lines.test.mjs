@@ -17,7 +17,7 @@ const allOf = (look) => [...l.tickleLines(look), ...l.hugLines(look), ...l.bathL
 const OWN = { moru: ["새싹"], noa: ["리본", "달빛"], leo: ["망토"], lumi: ["베레모", "별빛"], moring: ["깃털", "솜털", "날개", "꼬리 깃", "둥지", "삐삐", "파드득"] };
 
 test("every character has its own lines for tickling, hugging, bathing, a light day and waiting", () => {
-  assert.deepEqual(LOOKS, ["moru", "noa", "leo", "lumi", "moring"]);
+  assert.deepEqual(LOOKS, ["moru", "noa", "leo", "lumi", "moring", "bamu", "mongul"]);
   for (const look of LOOKS) {
     for (const table of [l.TICKLE_BY, l.HUG_BY, l.BATH_BY]) assert.equal(table[look].length, 3, look);
     assert.equal(l.PRAISE_WAITING_BY[look].length, 4, look);

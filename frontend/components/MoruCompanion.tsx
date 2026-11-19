@@ -1,5 +1,6 @@
 import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoringSprite from "./MoringSprite";
+import CompanionSheetSprite from "./CompanionSheetSprite";
 import type { MoodStage } from "@/lib/moru-rules";
 import styles from "./MoruPet.module.css";
 
@@ -9,8 +10,10 @@ export const COMPANIONS = [
   { id: "leo", name: "레오", detail: "금발 · 작은 망토" },
   { id: "lumi", name: "루미", detail: "라벤더 · 별빛 베레모" },
   { id: "moring", name: "모링", detail: "눈밭의 흰 솜털 새" },
+  { id: "bamu", name: "바무", detail: "작은 까만 강아지" },
+  { id: "mongul", name: "몽울", detail: "동그란 밤빛 친구" },
 ];
-/** 서버가 처음부터 알던 모습. 그 뒤에 생긴 모습(모링)은 서버가 받아 준다고 알려 줄 때만 고르게 한다 */
+/** 서버가 선택 가능한 모습을 보내지 않는 예전 버전에서는 처음 네 모습만 지원한다. */
 const FIRST_LOOKS = ["moru", "noa", "leo", "lumi"];
 export const companionChoices = (allowed?: string[]) => COMPANIONS.filter((c) => (allowed ?? FIRST_LOOKS).includes(c.id));
 
@@ -32,10 +35,11 @@ const LOOKS: Record<string, { hair: string; dress: string }> = {
  */
 export default function MoruCompanion({ appearance = "moru", mood, level = 1, stage = 3, talk = null }: {
   appearance?: string; mood: MoruMood; level?: number; stage?: MoodStage;
-  /** 말 걸기에서 고른 기분(TALK_TOPICS id). 감정마다 얼굴이 따로 있는 모링만 쓴다 */
+  /** 말 걸기에서 고른 기분(TALK_TOPICS id). */
   talk?: string | null;
 }) {
   if (appearance === "moring") return <MoringSprite mood={mood} level={level} stage={stage} talk={talk} />;
+  if (appearance === "bamu" || appearance === "mongul") return <CompanionSheetSprite appearance={appearance} mood={mood} stage={stage} talk={talk} />;
   const look = LOOKS[appearance];
   if (!look) return <MoruSprite mood={mood} level={level} stage={stage} />;
   const boy = appearance === "leo";

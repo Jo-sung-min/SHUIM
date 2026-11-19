@@ -4,7 +4,7 @@
  * 말투는 모두 같다 (lib/moru.ts 머리말): 짧은 반말, 탓하거나 재촉하지 않는다. 표에 없는 모습은 모루의 말을 쓴다.
  */
 export type LinesByLook = Record<string, string[]>;
-export const LOOKS = ["moru", "noa", "leo", "lumi", "moring"] as const;
+export const LOOKS = ["moru", "noa", "leo", "lumi", "moring", "bamu", "mongul"] as const;
 const pick = (table: LinesByLook, appearance: string): string[] => table[appearance] ?? table.moru;
 
 /** 문질러 간질이기 */
@@ -14,6 +14,8 @@ export const TICKLE_BY: LinesByLook = {
   leo: ["하하. 간지러워.", "망토 속까지 간지러워.", "…항복, 항복."],
   lumi: ["히히. 간지러워.", "베레모가 떨어지겠어.", "…히히, 이제 그만."],
   moring: ["삐삐. 간지러워.", "깃털이 다 일어났어.", "…히히, 날개 밑은 안 돼."],
+  bamu: ["귀 뒤가 간질간질해.", "꼬리가 자꾸 흔들려.", "히히. 앞발도 간지러워."],
+  mongul: ["히히, 거긴 내 옆구리야.", "웃다가 데굴 구를 것 같아.", "잠깐만. 아직도 간질거려."],
 };
 export const tickleLines = (appearance: string) => pick(TICKLE_BY, appearance);
 
@@ -24,6 +26,8 @@ export const HUG_BY: LinesByLook = {
   leo: ["…따뜻해.", "조금만 이대로 있자.", "망토보다 포근해."],
   lumi: ["…따뜻해.", "조금만 이대로 있자.", "별빛처럼 따뜻해."],
   moring: ["…따뜻해.", "솜털 속까지 따뜻해.", "네 손, 둥지 같아."],
+  bamu: ["네 무릎에 턱 좀 얹을게.", "손바닥에 코를 대고 싶어.", "여기 누우면 네 숨이 들려."],
+  mongul: ["여기 쏙 들어가도 돼?", "네 품에 딱 맞네.", "조금만 더 동그랗게 있을래."],
 };
 export const hugLines = (appearance: string) => pick(HUG_BY, appearance);
 
@@ -34,6 +38,8 @@ export const BATH_BY: LinesByLook = {
   leo: ["보글보글. 따뜻해.", "망토도 같이 빨아야겠다.", "…비누 냄새, 좋다."],
   lumi: ["보글보글. 따뜻해.", "베레모는 잠깐 벗어 뒀어.", "…비누 냄새, 좋다."],
   moring: ["보글보글. 따뜻해.", "깃털이 뽀송해졌어.", "…파드득. 물 튀었어?"],
+  bamu: ["앞발 사이까지 포근해.", "코끝에 거품이 앉았어.", "푸르르. 이제 수건에 누울래."],
+  mongul: ["거품이 나만큼 동그래.", "손끝으로 톡 하니까 터졌어.", "수건 속에 쏙 들어왔어."],
 };
 export const bathLines = (appearance: string) => pick(BATH_BY, appearance);
 
@@ -44,6 +50,8 @@ export const LIGHT_MURMUR_BY: Record<string, string> = {
   leo: "오늘은 망토가 좀 가벼워.",
   lumi: "오늘은 발걸음이 좀 가벼워.",
   moring: "오늘은 깃털이 좀 가벼워.",
+  bamu: "오늘은 꼬리가 먼저 인사하네.",
+  mongul: "오늘은 데굴 한 바퀴 구르고 싶어.",
 };
 export const lightMurmur = (appearance: string): string => LIGHT_MURMUR_BY[appearance] ?? LIGHT_MURMUR_BY.moru;
 
@@ -55,5 +63,7 @@ export const PRAISE_WAITING_BY: LinesByLook = {
   leo: praise("눈이 반짝했어. 좋은 걸 찾았나 봐."),
   lumi: praise("베레모의 별이 반짝했어. 좋은 걸 찾았나 봐."),
   moring: praise("꼬리 깃이 살짝 흔들렸어. 좋은 걸 찾았나 봐."),
+  bamu: praise("꼬리가 살랑거려. 좋은 대목을 찾았어."),
+  mongul: praise("여기서 눈길이 멈췄어. 좋은 걸 찾았어."),
 };
 export const praiseWaiting = (appearance: string) => pick(PRAISE_WAITING_BY, appearance);

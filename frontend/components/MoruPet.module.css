@@ -361,6 +361,10 @@
 .petButton[data-touch="hug"] .sprite[data-moring]{animation:moringPuff 1.8s ease both}
 @keyframes moringPuff{0%,100%{transform:scale(1)}20%{transform:scale(1.08,1.05)}45%{transform:scale(1.04,1.02)}70%{transform:scale(1.06,1.03)}}
 @media(prefers-reduced-motion:reduce){.moringLoop{animation:none}}
+
+.companionSheetLoop{animation:companionSheetLoop 3.6s steps(6,end) infinite}
+@keyframes companionSheetLoop{to{transform:translateX(-576px)}}
+@media(prefers-reduced-motion:reduce){.companionSheetLoop{animation:none}}
 /* ---------- ☰ 메뉴 · 돌보기 판 (양옆 기둥 대신) ----------
    메뉴는 오른쪽 위 ☰ 아래에, 돌보기·말 걸기 판은 아래 패널 바로 위에 뜬다. 한 번에 하나만 열리고, 바깥(투명 막)을 누르면 닫힌다 */
 .panelScrim{position:absolute;inset:0;z-index:5;padding:0;border:0;background:transparent;cursor:default;-webkit-tap-highlight-color:transparent}

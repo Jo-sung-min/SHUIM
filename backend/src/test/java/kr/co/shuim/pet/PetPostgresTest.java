@@ -46,12 +46,16 @@ class PetPostgresTest {
         assertEquals(changed, tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("noa"))));
         assertEquals("noa", tx.execute(s -> pets.get(uid)).appearance());
     }
-    @Test void moringCanBeChosenAndTheViewListsEveryAppearance() {
-        var view = tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("moring")));
-        assertEquals("moring", view.appearance());
-        assertEquals(List.of("moru", "noa", "leo", "lumi", "moring"), view.appearances());
+    @Test void everyAppearanceCanBeSavedAndReadBack() {
+        var appearances = List.of("moru", "noa", "leo", "lumi", "moring", "bamu", "mongul");
+        assertEquals(appearances, tx.execute(s -> pets.get(uid)).appearances());
+        for (String id : appearances) {
+            var view = tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput(id)));
+            assertEquals(id, view.appearance());
+            assertEquals(id, tx.execute(s -> pets.get(uid)).appearance());
+        }
         assertThrows(Exception.class, () -> tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("dragon"))));
-        assertEquals("moring", tx.execute(s -> pets.get(uid)).appearance());
+        assertEquals("mongul", tx.execute(s -> pets.get(uid)).appearance());
     }
     @Test void visitsAndRecordsPayOnlyOnceAndPurchasesAreIdempotent() throws Exception {
         try (var pool = Executors.newFixedThreadPool(4)) {

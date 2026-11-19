@@ -18,6 +18,38 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfEnvironmentVariable(named = "SOROW_TEST_DATABASE_URL", matches = "jdbc:postgresql://127\\.0\\.0\\.1:[0-9]+/sorow_test")
 class CuratedFeedMigrationPostgresTest {
     @Test
+    void addsFiftyArtReflectionsWithoutReplacingPreviousCards() {
+        DriverManagerDataSource source = new DriverManagerDataSource(System.getenv("SOROW_TEST_DATABASE_URL"), "sorow_test", "");
+        String schema = "curated_reflections_" + UUID.randomUUID().toString().replace("-", "");
+        JdbcClient jdbc = JdbcClient.create(source);
+        String posts = schema + ".feed_posts";
+        try {
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("54").load().migrate();
+            long existing = jdbc.sql("SELECT count(*) FROM " + posts).query(Long.class).single();
+            String previousCards = "SELECT to_jsonb(p)::text FROM " + posts + " p WHERE id NOT IN"
+                + " (SELECT 'curation-' || n FROM generate_series(21, 70) n) ORDER BY id";
+            List<String> before = jdbc.sql(previousCards).query(String.class).list();
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("55").load().migrate();
+
+            assertEquals(existing + 50, jdbc.sql("SELECT count(*) FROM " + posts).query(Long.class).single());
+            assertEquals(before, jdbc.sql(previousCards).query(String.class).list());
+            String newCards = " FROM " + posts + " JOIN generate_series(21, 70) n ON id = 'curation-' || n";
+            assertEquals(50L, jdbc.sql("SELECT count(DISTINCT image)" + newCards).query(Long.class).single());
+            assertEquals(50L, jdbc.sql("SELECT count(DISTINCT pages->0->'overlays'->0->>'text')" + newCards
+                + " WHERE author_id = 'sorow-curator' AND hidden = false AND image = images[1]"
+                + " AND cardinality(images) = 1 AND length(text) > 0 AND length(title) > 0"
+                + " AND image = pages->0->>'image' AND title = pages->0->>'title'"
+                + " AND pages->0->>'text' LIKE '%' || text || '%'"
+                + " AND jsonb_array_length(pages) = 1 AND jsonb_array_length(pages->0->'overlays') = 2"
+                + " AND length(pages->0->'overlays'->0->>'text') BETWEEN 1 AND 120"
+                + " AND length(pages->0->'overlays'->1->>'text') > 0"
+                + " AND pages->0->>'text' LIKE '%https://%https://%'").query(Long.class).single());
+        } finally {
+            jdbc.sql("DROP SCHEMA IF EXISTS " + schema + " CASCADE").update();
+        }
+    }
+
+    @Test
     void replacesOnlySampleFeedPostsWithTenValidCuratedPosts() throws Exception {
         DriverManagerDataSource source = new DriverManagerDataSource(System.getenv("SOROW_TEST_DATABASE_URL"), "sorow_test", "");
         String schema = "curated_" + UUID.randomUUID().toString().replace("-", "");

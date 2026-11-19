@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Sheet, SheetBackContext } from "./ui";
-import MoruSprite, { type MoruMood } from "./MoruSprite";
+import type { MoruMood } from "./MoruSprite";
 import MoruCompanion, { companionChoices } from "./MoruCompanion";
 import MoruHomeScene, { HOME_NAMES } from "./MoruHomeScene";
 import type { Sky } from "./MoruScene";
@@ -825,7 +825,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     </Sheet>
     <Sheet open={sheet === "guide"} title={`${petName}와 천천히, 함께`} onClose={() => setSheet(null)} className={styles.handSheet}>
       <div className={styles.guide}>
-        <MoruSprite mood="happy" />
+        <MoruCompanion appearance={appearance} mood="happy" level={pet?.level} />
         <p>오늘의 기록 하나 = 마음밥 1개 (하루 {DAILY_FOOD_MAX}개)<br />아침 8시 · 점심 13시 · 저녁 19시에 스스로 먹어요<br />간식·목욕은 하루 한 번 · 길게 누르면 안아 주기, 문지르면 간질이기<br />먼지는 톡 눌러 치우고, 밤에는 불을 꺼서 재워 주세요.<br />"나가기"로 공원·바다·산에 함께 나가요. 풍경 속 물건을 누르면 {petName}가 가서 말해 줘요. 가까워질수록 같이 할 수 있는 것이 늘어요.<br />화분은 하루 한 번 물을 주면 일곱 번 만에 꽃이 피어요. 작은 나무와 이끼 병은 하루 한 번 돌보면 한 달쯤 걸려 다 자라요.<br />방에 날아드는 것과 발치에 놓인 것은 톡 눌러 주워요.<br />온기·말끔함·기운이 낮아도 잃는 건 없어요. 쉬어 가도 괜찮아요.<br />{petName}의 기분은 내 기록을 닮아요 (메뉴에서 끌 수 있어요). 하트는 {petName}의 것이에요.</p>
         <Link href="/memo">기록장 ↗</Link>
       </div>

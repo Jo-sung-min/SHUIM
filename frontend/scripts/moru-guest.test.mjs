@@ -41,5 +41,28 @@ test("a companion the server does not list yet (Moring on an older backend) is n
   const ids = (allowed) => module.exports.companionChoices(allowed).map((c) => c.id).join(" ");
   assert.equal(ids(undefined), "moru noa leo lumi"); // 옛 서버: 응답에 appearances 가 없다
   assert.equal(ids(["moru", "noa", "leo", "lumi", "moring"]), "moru noa leo lumi moring");
+  assert.equal(ids(["bamu", "mongul"]), "bamu mongul");
   assert.equal(ids(["moru"]), "moru"); // 서버가 받아 주는 것만
+});
+
+test("both dark companions render their own complete atlas across moods, care and talk", () => {
+  const source = readFileSync(new URL("../components/CompanionSheetSprite.tsx", import.meta.url), "utf8");
+  const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
+  const module = { exports: {} };
+  vm.runInNewContext(js, { require: (name) => name.endsWith(".module.css") ? {} : require(name), module, exports: module.exports });
+  const poses = [
+    ...[1, 2, 3, 4, 5].map((stage) => ({ mood: "idle", stage })),
+    ...["happy", "pet", "eat", "sleep"].map((mood) => ({ mood })),
+    ...["tired", "happy", "sad", "anxious", "bored", "just"].map((talk) => ({ mood: "pet", talk })),
+  ];
+  for (const appearance of ["bamu", "mongul"]) {
+    const atlas = readFileSync(new URL(`../public/companions/${appearance}.png`, import.meta.url));
+    assert.equal(atlas.readUInt32BE(16), 576);
+    assert.equal(atlas.readUInt32BE(20), 1440);
+    for (const [row, pose] of poses.entries()) {
+      const html = renderToStaticMarkup(React.createElement(module.exports.default, { appearance, ...pose }));
+      assert.ok(html.includes(`href="/companions/${appearance}.png"`));
+      assert.ok(html.includes(`y="${-96 * row}" width="576" height="1440"`), JSON.stringify(pose));
+    }
+  }
 });

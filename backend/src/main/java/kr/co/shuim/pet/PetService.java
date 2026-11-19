@@ -32,7 +32,7 @@ public class PetService {
     public record Task(String id, boolean done) {}
     private record DayTasks(List<String> tasks, int done, boolean rewarded) {}
     /** 고를 수 있는 모습. 화면은 이 목록에 있는 것만 보여 준다 (새 모습을 모르는 옛 서버에서는 고르지 못하게) */
-    static final List<String> APPEARANCES = List.of("moru", "noa", "leo", "lumi", "moring");
+    static final List<String> APPEARANCES = List.of("moru", "noa", "leo", "lumi", "moring", "bamu", "mongul");
     private record CareRow(PetRules.Care care, LocalDate careDate, LocalDate bathDate, LocalDate lightsNight, boolean lightsOff) {}
     private record Pet(String name, PetRules.State state) {}
     private static final Answers EMPTY = new Answers(null, null, null, null, null);
