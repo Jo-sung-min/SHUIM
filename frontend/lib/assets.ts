@@ -45,6 +45,7 @@ export function assetLoader<T extends { crossOrigin?: string; withCredentials?: 
 }
 
 export const publicAssetStyles = {
+  "--sorow-logo-image": assetCssUrl("/sorow-logo.png"),
   "--sorow-brand-image": assetCssUrl("/brand/half-mask-192-v1.png"),
   "--beach-character-atlas": assetCssUrl("/beach/chars-v2.png"),
   "--beach-landscape-image": assetCssUrl("/beach/real/paradise-panorama-v1.webp"),

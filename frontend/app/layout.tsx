@@ -44,10 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: s.faviconAt
       ? { icon: [{ url: favicon }], shortcut: [{ url: favicon }], apple: [{ url: favicon }] }
       : {
-          icon: [
-            { url: favicon, type: "image/png", sizes: "48x48" },
-            { url: assetUrl("/brand/half-mask-192-v1.png"), type: "image/png", sizes: "192x192" },
-          ],
+          icon: [{ url: favicon, type: "image/png", sizes: "48x48" }],
           shortcut: [{ url: favicon }],
           apple: [{ url: assetUrl("/brand/half-mask-180-v1.png"), sizes: "180x180", type: "image/png" }],
         },

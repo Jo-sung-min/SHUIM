@@ -63,8 +63,8 @@
 }
 .homeWrite:global(.icon-btn):active { background-color: var(--lg-fill-strong); }
 .homeWrite svg { width: 27px; height: 27px; }
-.homeHeader h1 { margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 17px; letter-spacing: .13em; }
-.logoMark { display: block; width: 33px; height: 33px; border-radius: 9px; background: var(--sorow-brand-image) center / cover; }
+.homeHeader h1 { margin: 0; display: flex; justify-content: center; }
+.logoMark { display: block; height: 22px; aspect-ratio: 640 / 125; background-color: var(--text); -webkit-mask: var(--sorow-logo-image) center / contain no-repeat; mask: var(--sorow-logo-image) center / contain no-repeat; }
 /* 오늘의 기록: 단색 버튼 하나 (나를 위한 시간 타일과 같은 바탕, 그라데이션 없음). 왼쪽 아이콘 · 제목/진행 · 오른쪽 행동 */
 .recordBtn {
   --tone: var(--tone-briefing);

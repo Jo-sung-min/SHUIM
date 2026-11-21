@@ -13,6 +13,10 @@ const resizeIcon = size => sharp(original).resize(size, size, { fit: "contain", 
 for (const size of [48, 180, 192, 512]) {
   await resizeIcon(size).removeAlpha().png({compressionLevel:9}).toFile(path.join(brand, `half-mask-${size}-v1.png`));
 }
+const faviconMask = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" rx="12" fill="white"/></svg>');
+await sharp(path.join(brand, "half-mask-48-v1.png")).ensureAlpha()
+  .composite([{ input: faviconMask, blend: "dest-in" }])
+  .png({ compressionLevel: 9 }).toFile(path.join(brand, "favicon-rounded-v2.png"));
 await resizeIcon(512).ensureAlpha().png({compressionLevel:9}).toFile(path.join(here, "store-icon-512.png"));
 
 const art = path.join(here, "feature-background.jpg");

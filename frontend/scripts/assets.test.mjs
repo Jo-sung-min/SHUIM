@@ -75,6 +75,7 @@ test("shared CSS images and anonymous loader credentials follow the same configu
   assert.equal(api.assetLoader(loader), loader);
   assert.deepEqual(loader, { crossOrigin: "anonymous", withCredentials: false });
   assert.equal(api.publicAssetStyles["--sorow-brand-image"], 'url("/brand/half-mask-192-v1.png")');
+  assert.equal(api.publicAssetStyles["--sorow-logo-image"], `url("${CDN}/sorow-logo.png")`);
   assert.equal(api.publicAssetStyles["--beach-character-atlas"], `url("${CDN}/beach/chars-v2.png")`);
   assert.equal(api.publicAssetStyles["--beach-landscape-image"], `url("${CDN}/beach/real/paradise-panorama-v1.webp")`);
 });
@@ -90,7 +91,7 @@ test("bundled brand icons work before S3 publication and administrator overrides
   const siteContext = { ...assetsFor(), process: { env: {} } };
   vm.runInNewContext(`${siteSource}\nglobalThis.api = { SITE, EMPTY_SITE, faviconHref, ogHref, siteDescription, siteTitle };`, siteContext);
   const site = siteContext.api;
-  assert.equal(site.faviconHref(site.EMPTY_SITE), "/brand/half-mask-48-v1.png");
+  assert.equal(site.faviconHref(site.EMPTY_SITE), "/brand/favicon-rounded-v2.png");
   assert.equal(site.faviconHref({ ...site.EMPTY_SITE, faviconAt: 123 }), "/api/site/favicon?v=123");
   assert.equal(site.ogHref(site.EMPTY_SITE), "/brand/share-v1.jpg");
   assert.equal(site.ogHref({ ...site.EMPTY_SITE, ogAt: 456 }), "/api/site/og?v=456");

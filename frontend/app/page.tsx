@@ -61,7 +61,7 @@ function HomeHeader() {
   const hidden = useHideOnScroll();
   return <header className={styles.homeHeader} data-hidden={hidden || undefined}>
     <span aria-hidden="true" />
-    <h1 aria-label="소로우"><span aria-hidden="true" className={styles.logoMark} /><span aria-hidden="true">SOROW</span></h1>
+    <h1 aria-label="소로우"><span aria-hidden="true" className={styles.logoMark} /></h1>
     <Link href="/write" className={`icon-btn ${styles.homeWrite}`} aria-label="새 외침 쓰기" title="새 외침 쓰기"><IconSquarePlus /></Link>
   </header>;
 }

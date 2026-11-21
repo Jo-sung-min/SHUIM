@@ -40,8 +40,8 @@ export function normalizeSite(j: Partial<Record<keyof SiteSettings, unknown>> | 
 
 export const siteTitle = (s: SiteSettings) => s.title?.trim() || SITE.fullName;
 export const siteDescription = (s: SiteSettings) => s.description?.trim() || SITE.description;
-/** 파비콘 주소: 올린 게 있으면 API, 없으면 CDN의 기본 아이콘 */
-export const faviconHref = (s: SiteSettings) => (s.faviconAt ? `/api/site/favicon?v=${s.faviconAt}` : assetUrl("/brand/half-mask-48-v1.png"));
+/** 기본 탭 아이콘은 모서리가 투명한 PNG이며, 관리자 업로드가 있으면 그 파일을 사용한다. */
+export const faviconHref = (s: SiteSettings) => (s.faviconAt ? `/api/site/favicon?v=${s.faviconAt}` : "/brand/favicon-rounded-v2.png");
 /** 공유 카드의 버전별 주소는 메신저에서도 새 이미지를 불러오게 한다. */
 export const ogHref = (s: SiteSettings) => (s.ogAt ? `/api/site/og?v=${s.ogAt}` : assetUrl("/brand/share-v1.jpg"));
 
