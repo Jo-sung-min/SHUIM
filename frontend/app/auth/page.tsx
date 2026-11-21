@@ -32,7 +32,7 @@ function SignupConsent({ value, onChange, disabled, note }: { value: Consent; on
     <label className={styles.check}><input type="checkbox" checked={value.age} onChange={(e) => set({ age: e.target.checked })} disabled={disabled} required /><span><strong>[필수] 만 14세 이상이에요.</strong></span></label>
     <p>{note}</p>
     <label className={styles.check}><input type="checkbox" checked={value.ai} onChange={(e) => set({ ai: e.target.checked })} disabled={disabled} /><span>[선택] AI 기능을 위한 정보 처리와 국외 이전(미국 OpenAI)에 동의해요.</span></label>
-    <p>AI 기능을 쓰면 관련 기록·메모·목표·일정과 위로 요청 내용을 미국의 OpenAI로 보내 답변을 만들어요. 기록에는 건강·감정 같은 민감한 내용이 들어 있을 수 있어요. 동의하지 않아도 가입할 수 있고, AI 기능을 처음 쓸 때 다시 고를 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
+    <p>선택한 AI 기능에 필요한 기록·메모·목표·일정 또는 모임 사연을 미국 OpenAI로 보내요. 제출한 사연은 나와 모임 운영자 모두 동의하고 운영자가 AI 정리를 요청할 때도 전달돼요. 건강·감정 같은 민감한 내용이 포함될 수 있어요. 동의하지 않아도 가입할 수 있고 나중에 선택을 바꿀 수 있어요. AI 답변은 의료 진단이나 치료가 아니에요. <Link href="/privacy#ai-processing">AI 정보 처리 자세히 보기</Link></p>
   </section>;
 }
 
@@ -49,6 +49,9 @@ export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [nick, setNick] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const passwordsMatch = confirmPassword !== "" && password === confirmPassword;
+  const passwordMismatch = confirmPassword !== "" && !passwordsMatch;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending>(null);
   const pendingRef = useRef(false);
@@ -106,6 +109,7 @@ export default function AuthPage() {
 
   const adoptGuest = guestData && (adoptChoice ?? mode === "signup");
   const submit = () => run("submit", async () => {
+    if (kakaoSignup || (mode === "signup" && !passwordsMatch)) return;
     if (mode === "signup" && !termsAccepted) {
       setError("이용약관·개인정보 처리방침 동의와 만 14세 이상 확인이 필요해요.");
       return;
@@ -210,19 +214,33 @@ export default function AuthPage() {
         <h2>{mode === "signup" ? <>당신의 하루를<br />함께 기록해요.</> : <>다시 만나서 반가워요.<br />오늘도, 소로우.</>}</h2>
         <p>{mode === "signup" ? (kakaoSignup ? "카카오로 처음 방문하셨네요. 가입 안내를 확인해 주세요." : "이 기기에 쓴 기록도 새 계정으로 옮길 수 있어요.") : "소중한 기록과 나를 위한 작은 위로를 이어가요."}</p>
       </section>
-      <Segmented value={mode} onChange={(value) => { if (!busy) { setMode(value); setKakaoSignup(false); setError(null); } }} options={[{ value: "login", label: "로그인" }, { value: "signup", label: "회원가입" }]} />
+      <Segmented value={mode} onChange={(value) => {
+        if (busy) return;
+        if (value !== mode) setConfirmPassword("");
+        setMode(value);
+        setKakaoSignup(false);
+        setError(null);
+      }} options={[{ value: "login", label: "로그인" }, { value: "signup", label: "회원가입" }]} />
       <form className={`stack ${styles.form}`} onSubmit={(e) => { e.preventDefault(); submit(); }} aria-busy={pending === "submit"}>
         <fieldset disabled={busy}>
           {!kakaoSignup && <>
           <div className="field"><label htmlFor="auth-email">이메일</label><input id="auth-email" type="email" autoComplete="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="이메일 주소" required /></div>
           {mode === "signup" && <div className="field"><label htmlFor="auth-nick">닉네임</label><input id="auth-nick" value={nick} onChange={(e) => setNick(e.target.value)} autoComplete="nickname" placeholder="나를 부를 이름, 2~12자" minLength={2} maxLength={12} required /></div>}
           <div className="field"><label htmlFor="auth-password">비밀번호</label><input id="auth-password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6자 이상 입력해 주세요" minLength={mode === "signup" ? 6 : undefined} required /></div>
+          {mode === "signup" && <div className="field">
+            <label htmlFor="auth-confirm-password">비밀번호 확인</label>
+            <input id="auth-confirm-password" type="password" autoComplete="new-password" required
+              value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="비밀번호를 한 번 더 입력해 주세요"
+              aria-invalid={passwordMismatch} aria-describedby={passwordMismatch ? "auth-password-mismatch" : undefined} />
+            {passwordMismatch && <p id="auth-password-mismatch" className={styles.error} role="status">비밀번호가 일치하지 않아요.</p>}
+          </div>}
           </>}
           {guestData && <GuestImportChoice checked={adoptGuest} onChange={setAdoptChoice} />}
           {mode === "signup" && <SignupConsent value={consent} onChange={setConsent} note="계정 정보는 가입과 로그인에 사용해요. 로그인하면 기록을 보관하고 다른 기기에서도 이어서 볼 수 있어요. 입력하는 내용에 민감한 정보가 포함되지 않도록 확인해 주세요." />}
         </fieldset>
         {error && <p className={styles.error} role="alert">{error}</p>}
-        {!kakaoSignup && <button type="submit" className="btn block" disabled={busy || (mode === "signup" && !termsAccepted)}>{pending === "submit" ? (mode === "signup" ? "가입하는 중…" : "로그인하는 중…") : mode === "signup" ? "동의하고 가입하기" : "로그인"}</button>}
+        {!kakaoSignup && <button type="submit" className="btn block" disabled={busy || (mode === "signup" && (!termsAccepted || !passwordsMatch))}>{pending === "submit" ? (mode === "signup" ? "가입하는 중…" : "로그인하는 중…") : mode === "signup" ? "동의하고 가입하기" : "로그인"}</button>}
       </form>
       {me.kakao && <>
         {!kakaoSignup && <div className="or-line"><span>또는</span></div>}

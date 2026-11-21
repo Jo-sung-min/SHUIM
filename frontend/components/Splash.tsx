@@ -1,10 +1,9 @@
-import type { CSSProperties } from "react";
 import { SITE } from "@/lib/site";
 import { assetUrl } from "@/lib/assets";
 import InlineScript from "./InlineScript";
 
 /**
- * 시작 화면: 바위를 밀어 올리는 시지프. 앱을 열면 1초 보여 준 뒤 서서히 옅어지며 메인 화면이 드러난다.
+ * 시작 화면: 소로우 반가면. 앱을 열면 1초 보여 준 뒤 서서히 옅어지며 메인 화면이 드러난다.
  *
  * - 서버가 그린 HTML 에 바로 들어 있어 JS 가 뜨기 전 첫 화면부터 보인다.
  * - 바로 뒤의 인라인 스크립트가 HTML 을 읽는 도중에 실행돼(첫 페인트 전) 상태를 정한다.
@@ -17,12 +16,7 @@ import InlineScript from "./InlineScript";
  */
 
 const STORAGE_KEY = "sorow:splash-seen";
-/** CDN의 시작 그림을 18×32 로 줄인 자리표시. 큰 이미지가 오기 전에도 같은 색감이 보이게 */
-const PLACEHOLDER =
-  "data:image/webp;base64,UklGRvYAAABXRUJQVlA4IOoAAABwBgCdASoSACAAPu1iqU2ppaOiMAgBMB2JQBWGbOZ8/XtbUgPWvGPb6uzBlxqGcl/MZ25gjT7pCsxR7cAA4VrTWVEDArlLSX//odMXhS3mn7EiKEchKBmsPywXl8/VuT3sXs6h+2jPVrRCq/7A/BKxcjccM5+4Cs623+qQI/3yJctR+18yZcSLaxKtRXjYAL4ySdtheU6pRlko5wxplmi0AaCk93PEWcN4MRZ7gstB0VBj0xDegPCI9HmsCDndsEiu72Rab4eGbxNAgr1lLgdHQD5TVRyLsNRr/F+38qJs8npF6Wdx/dvqAAA=";
-
-/** body 맨 앞의 img 라 브라우저가 HTML 을 읽자마자 받기 시작한다 (따로 preload 하지 않음: 건너뛸 때 경고가 남) */
-const SPLASH_SRC = assetUrl("/splash.webp");
+const SPLASH_SRC = assetUrl("/brand/half-mask-512-v1.png");
 
 /**
  * 1초 기다림 + 0.9초 옅어짐 (globals.css 의 .splash[data-state="play"] 와 같은 값).
@@ -36,12 +30,11 @@ const CLEANUP_MARGIN_MS = 1000;
 const SCRIPT = `(function(){var s=document.getElementById("sorow-splash");if(!s)return;function off(){s.setAttribute("data-state","off")}try{if(sessionStorage.getItem("${STORAGE_KEY}")){off();return}sessionStorage.setItem("${STORAGE_KEY}","1")}catch(e){}var done=false;function play(){if(done)return;done=true;s.setAttribute("data-state","play");setTimeout(off,${HOLD_MS + FADE_MS + CLEANUP_MARGIN_MS})}s.addEventListener("animationend",function(e){if(e.target===s)off()});var i=s.querySelector("img");if(i&&!i.complete){i.addEventListener("load",play);i.addEventListener("error",play);setTimeout(play,2500)}else play()})()`;
 
 export default function Splash() {
-  const style = { "--splash-blur": `url(${PLACEHOLDER})`, backgroundColor: SITE.splashColor } as CSSProperties;
   return (
     <>
-      <div id="sorow-splash" className="splash" data-state="hold" aria-hidden="true" style={style} suppressHydrationWarning>
+      <div id="sorow-splash" className="splash" data-state="hold" aria-hidden="true" style={{ backgroundColor: SITE.splashColor }} suppressHydrationWarning>
         {/* eslint-disable-next-line @next/next/no-img-element -- 첫 페인트에 바로 떠야 해서 next/image 의 지연 로딩·래퍼를 쓰지 않는다 */}
-        <img src={SPLASH_SRC} alt="" width={941} height={1672} fetchPriority="high" decoding="async" draggable={false} />
+        <img src={SPLASH_SRC} alt="" width={512} height={512} fetchPriority="high" decoding="async" draggable={false} />
       </div>
       <InlineScript html={SCRIPT} />
       <noscript>

@@ -36,11 +36,11 @@ await check("오프라인 화면·서비스워커", async () => {
   const html = await (await get("/offline.html", "text/html")).text();
   assert.ok(html.includes("다시 연결하기"));
 });
-for (const path of ["/privacy", "/terms", "/account-deletion"]) await check(`공개 안내 ${path}`, async () => {
+for (const path of ["/privacy", "/terms", "/account-deletion", "/child-safety"]) await check(`공개 안내 ${path}`, async () => {
   const html = await (await get(path, "text/html")).text();
   assert.ok(html.includes("소로우") && html.includes("루체"));
   assert.ok(html.includes("developer@lucelab.co.kr"), "지원 연락처 확인 필요");
-  assert.ok(!html.includes("배포 준비용 안내입니다"), "운영 정보·보유기간·위탁/국외이전 검토 및 승인 필요");
+  assert.ok(html.includes('data-policy-status="published"'), "운영 안내 배포·승인 상태 확인 필요");
 });
 console.log(results.join("\n"));
 console.log("이 점검은 공개 웹 경로만 확인합니다. 로그인·삭제·차단·실기기·Play 정책 심사는 별도 검증이 필요합니다.");

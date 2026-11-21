@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import { assetUrl } from "@/lib/assets";
 
 type P = SVGProps<SVGSVGElement>;
 const base = (p: P): P => ({
@@ -237,13 +238,10 @@ export const IconSmile = (p: P) => (
     <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 10h.01M15 10h.01" />
   </svg>
 );
-/** 소로우의 둥근 웃는 얼굴: 행동 버튼에 쓰는 채움 마크. */
+/** 공용 공간 행동 메뉴의 소로우 얼굴. */
 export const IconSorowSmile = (p: P) => (
   <svg {...base({ fill: "none", stroke: "none", ...p })} data-icon="sorow-smile">
-    <circle cx="12" cy="12" r="9.5" fill="#f5f8f5" />
-    <circle cx="8.65" cy="9.45" r="1.1" fill="#18231d" />
-    <circle cx="15.35" cy="9.45" r="1.1" fill="#18231d" />
-    <path d="M8.35 13.65c.65 1.75 2 2.7 3.65 2.7s3-.95 3.65-2.7" stroke="#18231d" strokeWidth="1.7" />
+    <image href={assetUrl("/brand/half-mask-48-v1.png")} width="24" height="24" style={{ clipPath: "inset(0 round 6px)" }} />
   </svg>
 );
 export const IconMoon = (p: P) => (

@@ -14,8 +14,8 @@ export const SITE = {
   keywords: ["소로우", "SOROW", "슬픔", "위로", "마음 기록", "감정 일기", "익명 커뮤니티", "멘탈 케어", "마음 가속도"],
   themeLight: "#f7f7fb",
   themeDark: "#15141c",
-  /** 시작 화면(시지프 그림)의 어두운 바탕. PWA·Android 앱의 첫 화면 색도 이것으로 맞춰 밝게 번쩍이지 않게 한다 */
-  splashColor: "#1b1611",
+  /** 시작 화면(반가면)의 어두운 바탕. PWA·Android 앱의 첫 화면 색도 이것으로 맞춰 밝게 번쩍이지 않게 한다 */
+  splashColor: "#08080a",
 } as const;
 
 /** GET /api/site 응답 (없는 값은 null = 기본값) */
@@ -40,10 +40,10 @@ export function normalizeSite(j: Partial<Record<keyof SiteSettings, unknown>> | 
 
 export const siteTitle = (s: SiteSettings) => s.title?.trim() || SITE.fullName;
 export const siteDescription = (s: SiteSettings) => s.description?.trim() || SITE.description;
-/** 파비콘 주소: 올린 게 있으면 API, 없으면 CDN의 기본 SVG */
-export const faviconHref = (s: SiteSettings) => (s.faviconAt ? `/api/site/favicon?v=${s.faviconAt}` : assetUrl("/favicon.svg"));
-/** 공유(OG) 이미지 주소: 올린 게 있으면 API, 없으면 /og 에서 그려 주는 기본 이미지 */
-export const ogHref = (s: SiteSettings) => (s.ogAt ? `/api/site/og?v=${s.ogAt}` : "/og");
+/** 파비콘 주소: 올린 게 있으면 API, 없으면 CDN의 기본 아이콘 */
+export const faviconHref = (s: SiteSettings) => (s.faviconAt ? `/api/site/favicon?v=${s.faviconAt}` : assetUrl("/brand/half-mask-48-v1.png"));
+/** 공유 카드의 버전별 주소는 메신저에서도 새 이미지를 불러오게 한다. */
+export const ogHref = (s: SiteSettings) => (s.ogAt ? `/api/site/og?v=${s.ogAt}` : assetUrl("/brand/share-v1.jpg"));
 
 /**
  * 서버 컴포넌트용: 백엔드에서 직접 설정을 읽는다 (브라우저 프록시를 거치지 않으므로 BACKEND_ORIGIN).

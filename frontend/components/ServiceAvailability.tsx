@@ -147,9 +147,7 @@ export default function ServiceAvailability({ children }: { children: ReactNode 
       {blocked && <main ref={preparing} tabIndex={-1} className="service-state" style={{ height: "100dvh", overflowY: "auto" }}>
       <Link href="/info" className="service-state__brand" aria-label="소로우 서비스 안내">SOROW<span>소로우</span></Link>
       <div className="service-state__body">
-        <div className="service-state__mark" aria-hidden="true">
-          <svg viewBox="0 0 96 72" fill="none"><circle cx="35" cy="36" r="27" fill="currentColor" opacity=".3" /><circle cx="61" cy="36" r="27" fill="currentColor" opacity=".65" /></svg>
-        </div>
+        <div className="service-state__mark" aria-hidden="true" />
         <div role="status" aria-live="polite" aria-atomic="true">
           <p className="service-state__eyebrow">조금만 기다려 주세요</p>
           <h1 className="service-state__title">잠시 준비 중이에요</h1>

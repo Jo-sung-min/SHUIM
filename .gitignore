@@ -70,6 +70,9 @@ Thumbs.db
 # Generated map artwork is kept in Git at the user's request.
 !frontend/public/garden/art/*.webp
 !frontend/public/cloudspa/art/*.webp
+# Keep the site's identity available at first paint and when the CDN is unreachable.
+!frontend/public/brand/*.png
+!frontend/public/brand/*.jpg
 # 명화 큐레이션 피드(CDN feed/curation/ 에 올릴 원본, 사용자 요청으로 Git 에도 보관)
 !frontend/public/feed/curation/*.webp
 # V39 명화(미술관 원본을 줄인 것)는 CDN 에만 둔다 (V50)

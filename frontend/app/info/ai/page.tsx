@@ -69,6 +69,7 @@ export default function AiPreferencesPage() {
         <dl className="consent-facts">
           <div><dt>어떤 정보가 전달되나요?</dt><dd>선택한 기록의 날짜·점수·메모, 관련 메모·목표·일정을 소로우가 받아 OpenAI의 GPT에 전달해요. 메모 점검에는 전체 메모 중 최대 300개가 포함될 수 있어요. 프로필에 MBTI를 적어 두었다면 ‘나 잘하고 있는거지?’·‘그냥.. 사랑해줘’에는 그 유형에 맞춘 말투 지침이 함께 전달돼요(MBTI 글자 자체는 보내지 않아요).</dd></div>
           <div><dt>왜 사용하나요?</dt><dd>브리핑, 칭찬, 자기 돌봄, 메모 점검과 기록 흐름 정리에 사용해요. 비밀번호나 1:1 대화 내용은 현재 AI 요청에 포함하지 않아요.</dd></div>
+          <div><dt>모임에 보낸 사연도 전달되나요?</dt><dd>내가 AI 미리보기를 요청하거나, 나와 모임 운영자가 모두 동의하고 운영자가 AI 정리본을 요청하면 사연 본문을 미국의 OpenAI에 보내요. 개인정보는 사연을 보내기 전에 지워 주세요.</dd></div>
           <div><dt>알아두면 좋아요</dt><dd>해외 AI 제공업체의 서비스를 이용해 정보를 처리해요. 답변은 틀릴 수 있으며 의료 진단·치료를 대신하지 않아요. 민감한 개인정보나 다른 사람의 개인정보는 입력하지 말아 주세요.</dd></div>
         </dl>
         <p className="consent-help">정보 처리와 보관에 관한 자세한 내용은 <Link href="/privacy#ai-processing" style={{ textDecoration: "underline" }}>개인정보 처리방침</Link>에서 확인할 수 있어요.</p>
@@ -83,9 +84,8 @@ export default function AiPreferencesPage() {
           <input type="checkbox" checked={ai} disabled={saving} onChange={(event) => { setAi(event.target.checked); setMessage(""); }} />
           <span>AI 응답 생성을 위해 위의 기록을 OpenAI에 전달해 처리하는 것에 동의해요.</span>
         </label>
-        {/* 지금 가입하면 가입 동의에 AI 정보 처리가 함께 들어 있다. 이 화면은 끄거나 다시 켤 때, 그리고 그 전에 만든 계정이 처음 동의할 때 쓴다 */}
         <p className="consent-help">{consent.aiAccepted
-          ? "가입할 때 함께 동의한 항목이에요. 끄면 이후 AI 요청부터 보내지 않고, 기록과 커뮤니티는 그대로 쓸 수 있어요."
+          ? "현재 AI 정보 처리에 동의한 상태예요. 선택을 해제하고 저장하면 이후 요청부터 전송을 멈춰요. 기록과 커뮤니티는 계속 이용할 수 있어요."
           : "동의하면 AI 요청 때마다 다시 묻지 않아요. 동의하지 않아도 기록과 커뮤니티는 그대로 쓸 수 있어요."}</p>
         <button className="btn block" type="submit" disabled={!terms || saving} aria-busy={saving}>{saving ? "저장하는 중…" : returnTo && ai ? "동의하고 돌아가기" : "선택 저장하기"}</button>
       </form>}

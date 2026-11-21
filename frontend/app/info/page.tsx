@@ -17,6 +17,7 @@ const documents = [
   { href: "/privacy", title: "개인정보 처리방침", description: "내 정보의 이용과 보관에 대한 안내", Icon: IconShield },
   { href: "/info/ai", title: "AI 이용 및 정보 제공 동의", description: "전송하는 정보 확인과 동의 관리", Icon: IconSparkle },
   { href: "/terms", title: "이용약관·커뮤니티 기준", description: "함께 소로우를 이용하기 위한 약속", Icon: IconNote },
+  { href: "/child-safety", title: "아동 안전 기준", description: "금지되는 행위와 신고 방법", Icon: IconShield },
   { href: "/account-deletion", title: "계정 및 데이터 삭제", description: "계정과 기록의 삭제 방법", Icon: IconTrash },
 ];
 
@@ -31,7 +32,7 @@ export default function InfoPage() {
         <div className={styles.brand}>
           {/* The local brand mark is decorative; the adjacent text supplies its name. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={assetUrl("/favicon.svg")} width="54" height="54" alt="" />
+          <img src={assetUrl("/brand/half-mask-192-v1.png")} width="54" height="54" alt="" />
           <div><strong>소로우</strong><small>{SITE.tagline}</small></div>
         </div>
         <h2>이용에 필요한 안내를<br />한곳에 모았어요.</h2>

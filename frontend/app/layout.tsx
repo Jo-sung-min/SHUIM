@@ -45,11 +45,11 @@ export async function generateMetadata(): Promise<Metadata> {
       ? { icon: [{ url: favicon }], shortcut: [{ url: favicon }], apple: [{ url: favicon }] }
       : {
           icon: [
-            { url: assetUrl("/favicon.svg"), type: "image/svg+xml" },
-            { url: assetUrl("/icon-192.png"), type: "image/png", sizes: "192x192" },
+            { url: favicon, type: "image/png", sizes: "48x48" },
+            { url: assetUrl("/brand/half-mask-192-v1.png"), type: "image/png", sizes: "192x192" },
           ],
-          shortcut: [{ url: assetUrl("/favicon.svg") }],
-          apple: [{ url: assetUrl("/apple-icon.png"), sizes: "180x180", type: "image/png" }],
+          shortcut: [{ url: favicon }],
+          apple: [{ url: assetUrl("/brand/half-mask-180-v1.png"), sizes: "180x180", type: "image/png" }],
         },
     // openGraph.title/description 은 비워 두면 각 페이지의 제목·설명이 들어간다
     openGraph: {
@@ -112,7 +112,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       "@type": "Organization",
       name: SITE.fullName,
       url: SITE.url,
-      logo: new URL(faviconHref(s), SITE.url).toString(),
+      logo: new URL(s.faviconAt ? faviconHref(s) : assetUrl("/brand/half-mask-512-v1.png"), SITE.url).toString(),
     },
   };
   return (

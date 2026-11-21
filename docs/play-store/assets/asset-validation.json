@@ -1,26 +1,65 @@
 {
-  "feature-graphic-1024x500.png": {
-    "width": 1024,
-    "height": 500,
-    "format": "png",
-    "channels": 3,
-    "hasAlpha": false,
-    "bytes": 51949
-  },
   "store-icon-512.png": {
     "width": 512,
     "height": 512,
-    "format": "png",
     "channels": 4,
-    "hasAlpha": true,
-    "bytes": 17842
+    "format": "png",
+    "bytes": 217654
   },
-  "icon-512-original.png": {
-    "width": 512,
-    "height": 512,
+  "feature-graphic-1024x500.png": {
+    "width": 1024,
+    "height": 500,
+    "channels": 3,
     "format": "png",
-    "channels": 4,
-    "hasAlpha": true,
-    "bytes": 22074
+    "bytes": 371958
+  },
+  "phone/01-campfire.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 785304
+  },
+  "phone/02-garden.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 1354652
+  },
+  "phone/03-bamboo.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 1039047
+  },
+  "phone/04-lantern.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 718133
+  },
+  "phone/05-home.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 1701988
+  },
+  "phone/06-feed-hope.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 4741283
+  },
+  "phone/07-feed-kindness.png": {
+    "width": 1080,
+    "height": 1920,
+    "channels": 3,
+    "format": "png",
+    "bytes": 3136826
   }
 }

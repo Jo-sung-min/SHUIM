@@ -1,20 +1,19 @@
-# Play 등록 이미지
+# 소로우 Google Play 이미지
 
-2026-10-21 제작. 기존 `frontend/public/favicon.svg`의 보라색과 두 원을 재사용했습니다. 사진·사용자 데이터·실행 화면을 합성하지 않았습니다.
+Play Console의 **기본 스토어 등록정보 → 그래픽**에서 아래 파일을 선택합니다.
 
-| 파일 | 용도 |
+| 입력란 | 파일 |
 | --- | --- |
-| `feature-graphic-1024x500.png` | Play 그래픽 이미지. 1024×500, 불투명 RGB PNG |
-| `store-icon-512.png` | Play 아이콘. 512×512, RGBA PNG. 기존 로고를 유지하고 배경만 사각형 전체로 채워 Play의 모서리 마스킹에 대응 |
-| `icon-512-original.png` | 기존 런처 아이콘 원본 사본. 이미 둥근 모서리가 있으므로 제출에는 `store-icon-512.png` 사용 |
-| `feature-graphic.svg`, `store-icon.svg` | 편집 가능한 원본 |
-| `asset-validation.json` | 이미지 규격 검사 결과 |
-| `build-assets.mjs` | 설치된 프런트엔드의 sharp를 사용한 재생성 도구 |
+| 앱 아이콘 | `store-icon-512.png` (512 × 512, RGBA) |
+| 그래픽 이미지 | `feature-graphic-1024x500.png` (1024 × 500, RGB) |
+| 휴대전화 스크린샷 | `phone/` 안의 PNG 7장 (1080 × 1920, RGB) |
+| 홍보용 콘셉트 컷 | `concept/` 안의 JPG 2장 (1080 × 1920) |
 
-그래픽의 한글은 Windows 맑은 고딕, 영문은 Segoe UI로 렌더링했습니다. 다른 환경에서 재생성하면 해당 글꼴 또는 적절한 한글 대체 글꼴을 설치한 뒤 결과를 다시 확인합니다. PNG에는 이미 글자가 이미지로 반영되어 별도 글꼴 설치가 필요 없습니다.
+아이콘은 운영자가 선택한 `half-mask-original.png`에서 축소했습니다. `icon-512-original.png`는 이전 디자인의 보관본입니다.
+그래픽 이미지는 이번에 제작한 `feature-background.jpg`와 한글 문구를 합성했습니다.
+휴대전화 이미지 01–04는 불멍·수목원·대나무숲·풍등을 담았습니다. 05는 운영 사이트에서 캡처한 홈이고, 06과 07은 위로 피드에서 캡처한 ‘오늘의 희망’과 ‘오늘의 다정함’입니다. 캡처 원본은 `captures/`에 있습니다.
+홍보용 콘셉트 컷은 친구 네 명이 휴대폰을 함께 보는 사진풍 이미지와 아바타 여섯 명이 모닥불에 모인 일러스트입니다. 두 컷은 이미지 생성으로 제작했습니다.
 
-재생성: 저장소 루트에서 `node docs/play-store/assets/build-assets.mjs`.
+웹 자산과 스토어 PNG를 다시 만들려면 프로젝트 루트에서 `node docs/play-store/assets/build-assets.mjs`를 실행합니다. 한글을 포함한 이미지 재생성에는 맑은 고딕과 바탕 계열 글꼴이 필요합니다. `asset-validation.json`에는 출력 규격과 용량이 기록됩니다.
 
-대체 텍스트 제안: “소로우. 슬픔을 나누면, 우리는 가까워진다. 나란히 겹치는 두 원.”
-
-**휴대전화 스크린샷은 아직 없습니다.** 최종 운영 서버와 연결된 Play 설치본에서 직접 캡처하고, 실제 개인정보를 제거한 뒤 별도로 등록합니다. 이 그래픽을 앱 화면 스크린샷으로 제출하지 않습니다.
+S3 연결이 가능한 환경에서 `python scripts/sync-public-assets.py --apply --only brand/`로 이번 웹 이미지 다섯 개만 올릴 수 있습니다. 저장된 `frontend/public-assets.manifest.json`과 변경된 프런트엔드를 함께 배포하면 CDN 주소가 적용됩니다.

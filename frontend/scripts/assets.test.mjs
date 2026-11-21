@@ -74,27 +74,32 @@ test("shared CSS images and anonymous loader credentials follow the same configu
   const api = assetsFor(CDN), loader = { crossOrigin: "use-credentials", withCredentials: true };
   assert.equal(api.assetLoader(loader), loader);
   assert.deepEqual(loader, { crossOrigin: "anonymous", withCredentials: false });
-  assert.equal(api.publicAssetStyles["--sorow-logo-image"], `url("${CDN}/sorow-logo.png")`);
+  assert.equal(api.publicAssetStyles["--sorow-brand-image"], 'url("/brand/half-mask-192-v1.png")');
   assert.equal(api.publicAssetStyles["--beach-character-atlas"], `url("${CDN}/beach/chars-v2.png")`);
   assert.equal(api.publicAssetStyles["--beach-landscape-image"], `url("${CDN}/beach/real/paradise-panorama-v1.webp")`);
 });
 
-test("installation icons and the default favicon need no public image files, while custom site images retain their API", async () => {
+test("bundled brand icons work before S3 publication and administrator overrides retain their API", async () => {
+  const published = assetsFor(CDN, true);
+  for (const file of ["half-mask-48-v1.png", "half-mask-180-v1.png", "half-mask-192-v1.png", "half-mask-512-v1.png", "share-v1.jpg"]) {
+    assert.equal(assetsFor().assetUrl(`/brand/${file}`), `/brand/${file}`);
+    assert.equal(published.assetUrl(`/brand/${file}`), `${CDN}/brand/${file}`);
+  }
   const siteSource = stripTypeScriptTypes(await readFile(new URL("../lib/site.ts", import.meta.url), "utf8"))
     .replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=(?:async\s+)?function\b|const\b)/g, "");
   const siteContext = { ...assetsFor(), process: { env: {} } };
   vm.runInNewContext(`${siteSource}\nglobalThis.api = { SITE, EMPTY_SITE, faviconHref, ogHref, siteDescription, siteTitle };`, siteContext);
   const site = siteContext.api;
-  assert.equal(site.faviconHref(site.EMPTY_SITE), `${CDN}/favicon.svg`);
+  assert.equal(site.faviconHref(site.EMPTY_SITE), "/brand/half-mask-48-v1.png");
   assert.equal(site.faviconHref({ ...site.EMPTY_SITE, faviconAt: 123 }), "/api/site/favicon?v=123");
-  assert.equal(site.ogHref(site.EMPTY_SITE), "/og", "the default share image is drawn by its route");
+  assert.equal(site.ogHref(site.EMPTY_SITE), "/brand/share-v1.jpg");
   assert.equal(site.ogHref({ ...site.EMPTY_SITE, ogAt: 456 }), "/api/site/og?v=456");
   const manifestSource = stripTypeScriptTypes(await readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"))
     .replace(/^import\s+[^\n]+\n/gm, "").replace("export default async function", "async function");
   const context = { ...assetsFor(), ...site, loadSiteSettings: async () => site.EMPTY_SITE };
   vm.runInNewContext(`${manifestSource}\nglobalThis.run = manifest;`, context);
   const manifest = await context.run();
-  assert.deepEqual(Array.from(manifest.icons, icon => icon.src), ["icon-192.png", "icon-512.png", "icon-512-maskable.png"].map(name => `${CDN}/${name}`));
+  assert.deepEqual(Array.from(manifest.icons, icon => icon.src), [192, 512, 512].map(size => `/brand/half-mask-${size}-v1.png`));
   assert.equal(manifest.icons[2].purpose, "maskable");
   assert.equal(manifest.start_url, "/"); assert.equal(manifest.scope, "/");
 });

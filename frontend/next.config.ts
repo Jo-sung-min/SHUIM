@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import publishedAssets from "./public-assets.manifest.json";
 
 /**
  * /api/* 는 Spring 백엔드로 프록시한다. 같은 출처로 보이므로 세션 쿠키(shuim_session)가 그대로 오간다.
@@ -47,5 +48,10 @@ const nextConfig: NextConfig = ait
         return [{ source: "/api/:path*", destination: `${backendOrigin}/api/:path*` }];
       },
     };
+
+// Use bundled brand assets until the project's S3 sync has published every size.
+const brandKeys = [48, 180, 192, 512].map(size => `brand/half-mask-${size}-v1.png`).concat("brand/share-v1.jpg");
+const publishedKeys = new Set(publishedAssets.files.map(file => file.key));
+nextConfig.env = { ...nextConfig.env, NEXT_PUBLIC_SOROW_BRAND_PUBLISHED: brandKeys.every(key => publishedKeys.has(key)) ? "1" : "0" };
 
 export default nextConfig;

@@ -18,9 +18,9 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     background_color: SITE.splashColor, // 홈 화면 앱 실행 직후 색 = 시작 화면 바탕 (밝은 화면이 번쩍이지 않게)
     theme_color: SITE.themeLight,
     icons: [
-      { src: assetUrl("/icon-192.png"), sizes: "192x192", type: "image/png" },
-      { src: assetUrl("/icon-512.png"), sizes: "512x512", type: "image/png" },
-      { src: assetUrl("/icon-512-maskable.png"), sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: assetUrl("/brand/half-mask-192-v1.png"), sizes: "192x192", type: "image/png" },
+      { src: assetUrl("/brand/half-mask-512-v1.png"), sizes: "512x512", type: "image/png" },
+      { src: assetUrl("/brand/half-mask-512-v1.png"), sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

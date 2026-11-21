@@ -25,6 +25,9 @@ export function assetUrl(path: string): string {
   try {
     const url = new URL(path, "https://public-assets.invalid");
     if (url.origin !== "https://public-assets.invalid") return path;
+    if (/^\/brand\/(?:half-mask-(?:48|180|192|512)-v1\.png|share-v1\.jpg)$/.test(url.pathname)) {
+      return process.env.NEXT_PUBLIC_SOROW_BRAND_PUBLISHED === "1" ? `${BASE}${url.pathname}${url.search}${url.hash}` : path;
+    }
     const publicMedia = ROOT_MEDIA.has(url.pathname)
       || (/^\/(?:(?:beach|feed|moru)\/|(?:garden|cloudspa|baikal)\/art\/)/.test(url.pathname) && /\.(?:avif|webp|png|jpe?g|gif|svg|glb|gltf|ktx2|basis|bin|mp3)$/i.test(url.pathname));
     return publicMedia ? `${BASE}${url.pathname}${url.search}${url.hash}` : path;
@@ -42,7 +45,7 @@ export function assetLoader<T extends { crossOrigin?: string; withCredentials?: 
 }
 
 export const publicAssetStyles = {
-  "--sorow-logo-image": assetCssUrl("/sorow-logo.png"),
+  "--sorow-brand-image": assetCssUrl("/brand/half-mask-192-v1.png"),
   "--beach-character-atlas": assetCssUrl("/beach/chars-v2.png"),
   "--beach-landscape-image": assetCssUrl("/beach/real/paradise-panorama-v1.webp"),
 };
