@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { GARDEN_POND_BENCHES, GROUND_Y, LAKE, WATER_Y, gardenPavilionWorld, isWater, lakeSigned } from "./garden-layout";
+import { GARDEN_POND_BENCHES, GROUND_Y, LAKE, WATER_Y, WISTERIA_BENCH_ID, gardenPavilionWorld, isWater, lakeSigned } from "./garden-layout";
 import type { GardenMoment } from "./net";
 
 const DUCK_LIMIT = 24, COIN_LIMIT = 12;
@@ -33,6 +33,7 @@ export class GardenPond {
   private readonly materials = new Set<THREE.Material>();
   private readonly effects: THREE.InstancedMesh[] = [];
   private readonly moments = new Map<string, ActiveMoment>();
+  private readonly pergolaRanges = new Map<THREE.BufferGeometry, number>();
   private readonly body: THREE.InstancedMesh;
   private readonly beaks: THREE.InstancedMesh;
   private readonly eyes: THREE.InstancedMesh;
@@ -113,13 +114,19 @@ export class GardenPond {
     const wood = new THREE.MeshStandardMaterial({ color: 0xbda07a, roughness: .67 });
     const frame = new THREE.MeshStandardMaterial({ color: 0x665b49, roughness: .68, metalness: .12 });
     const batches = new Map<THREE.Material, THREE.BufferGeometry[]>([[wood, []], [frame, []]]);
+    const pergolaVertices = new Map<THREE.Material, number>();
     const softBox = new RoundedBoxGeometry(1, 1, 1, 2, .075);
     const piece = (bench: (typeof GARDEN_POND_BENCHES)[number], material: THREE.Material, lx: number, y: number, lz: number, sx: number, sy: number, sz: number) => {
       const p = gardenPavilionWorld(bench, lx, lz), geometry = softBox.clone();
       this.transform.position.set(p.x, GROUND_Y + y, p.z); this.transform.rotation.set(0, bench.yaw, 0); this.transform.scale.set(sx, sy, sz); this.transform.updateMatrix();
       geometry.applyMatrix4(this.transform.matrix); batches.get(material)!.push(geometry);
+      if (bench.id === WISTERIA_BENCH_ID) {
+        const count = geometry.index?.count ?? geometry.getAttribute("position").count;
+        pergolaVertices.set(material, (pergolaVertices.get(material) ?? 0) + count);
+      }
     };
-    for (const bench of GARDEN_POND_BENCHES) {
+    const ordered = [...GARDEN_POND_BENCHES.filter(b => b.id !== WISTERIA_BENCH_ID), ...GARDEN_POND_BENCHES.filter(b => b.id === WISTERIA_BENCH_ID)];
+    for (const bench of ordered) {
       for (const z of [-.28, -.14, 0, .14, .28]) piece(bench, wood, 0, .405, z, 2.9, .09, .125);
       for (const y of [.67, .87, 1.07]) piece(bench, wood, 0, y, -.37, 2.9, .17, .105);
       for (const side of [-1, 1]) {
@@ -134,11 +141,16 @@ export class GardenPond {
     for (const [material, pieces] of batches) {
       const converted = pieces.map(piece => piece.index ? piece.toNonIndexed() : piece);
       const geometry = mergeGeometries(converted, false)!;
+      this.pergolaRanges.set(geometry, geometry.getAttribute("position").count - (pergolaVertices.get(material) ?? 0));
       for (const piece of new Set([...pieces, ...converted])) piece.dispose();
       const mesh = new THREE.Mesh(geometry, material);
       mesh.name = material === wood ? "garden-pond-bench-wood" : "garden-pond-bench-frame";
       mesh.layers.enable(2); this.root.add(mesh); this.geometries.add(geometry); this.materials.add(material);
     }
+  }
+
+  replacePergolaBench() {
+    for (const [geometry, count] of this.pergolaRanges) geometry.setDrawRange(0, count);
   }
 
   apply(events: GardenMoment[], serverTime: number) {

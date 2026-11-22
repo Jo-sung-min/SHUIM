@@ -13,7 +13,7 @@ async function load(file, dependencies, names) {
   const source = stripTypeScriptTypes(typed, { mode: "transform" }).replace(/^import\s+[^\n]+\n/gm, "").replace(/\bexport\s+(?=function\b|class\b|const\b)/g, "");
   const context = { ...dependencies }; vm.runInNewContext(`${source}\nglobalThis.api = {${names.join(",")}};`, context); return context.api;
 }
-const layout = await load("../lib/beach/garden-layout.ts", hotSpring, ["GARDEN_POND_BENCHES", "GARDEN_SEATS", "GARDEN_PIERS", "GARDEN_WILLOWS", "GROUND_Y", "WATER_Y", "LAKE", "gardenPavilionWorld", "gardenSeat", "isWater", "lakeSigned", "onStructure", "onGardenGround", "resolveGardenWalk"]);
+const layout = await load("../lib/beach/garden-layout.ts", hotSpring, ["GARDEN_POND_BENCHES", "WISTERIA_BENCH_ID", "GARDEN_SEATS", "GARDEN_PIERS", "GARDEN_WILLOWS", "GROUND_Y", "WATER_Y", "LAKE", "gardenPavilionWorld", "gardenSeat", "isWater", "lakeSigned", "onStructure", "onGardenGround", "resolveGardenWalk"]);
 let localTime = 0;
 const { GardenPond, gardenMomentWaterTarget } = await load("../lib/beach/garden-pond.ts", { THREE, mergeGeometries, RoundedBoxGeometry, ...layout, performance: { now: () => localTime } }, ["GardenPond", "gardenMomentWaterTarget"]);
 const benchSeats = layout.GARDEN_SEATS.filter(seat => seat.spotId.startsWith("pond-bench-"));

@@ -9,13 +9,22 @@ export interface GardenFestivalSite {
 /** One circle runs through the original SOROW arch and every photo platform. */
 export const GARDEN_FESTIVAL_RADIUS = Math.hypot(GARDEN_PHOTO_ZONE.x - LAKE.x, GARDEN_PHOTO_ZONE.z - 1.75 - LAKE.z);
 
+/** Open towards the lake with room behind the subjects for the mountain panorama. */
+export const SPRING_PHOTO_COURTS = [
+  { model: "moon-gate", sector: 16, scale: 4.4 },
+  { model: "flower-cart", sector: 18, scale: 2.6 },
+].map(({ model, sector, scale }) => {
+  const angle = sector * Math.PI / 10, radius = GARDEN_FESTIVAL_RADIUS - .65;
+  return { model, scale, x: LAKE.x + Math.cos(angle) * radius, z: LAKE.z + Math.sin(angle) * radius, yaw: -Math.PI / 2 - angle };
+});
+
 /** The lake and the walkable circle share a centre. Keep the castle and the
  * original south court as the two anchors of a continuous perimeter exhibition. */
 export function gardenFestivalSites(): GardenFestivalSite[] {
   const themes = ["heart", "moon", "flower", "orbit"] as const;
   const radius = GARDEN_FESTIVAL_RADIUS;
   const sites: GardenFestivalSite[] = [];
-  for (let i = 0; i < 20; i++) {
+  for (const i of [0, 2, 7, 10, 12, 14, 17]) {
     const angle = i / 20 * Math.PI * 2;
     const x = LAKE.x + Math.cos(angle) * radius, z = LAKE.z + Math.sin(angle) * radius;
     if (insideHall(x, z, 6) || (z < LAKE.z && Math.abs(x) < GARDEN_PHOTO_ZONE.rx)) continue;
@@ -206,7 +215,7 @@ export function buildGardenPhotoZone(parent: THREE.Object3D, mobile: boolean) {
     // the former bare light rods. Lights wrap the foliage rather than dangling
     // from angular branches; every tree remains in the shared material batches.
     const tree = at(3.65, 0, .12);
-    if (!insideHall(tree.x, tree.z, 6) && Math.hypot(tree.x - LAKE.x, tree.z - LAKE.z) < GARDEN_WALK_RADIUS - .25) {
+    if (index % 2 === 0 && !insideHall(tree.x, tree.z, 6) && Math.hypot(tree.x - LAKE.x, tree.z - LAKE.z) < GARDEN_WALK_RADIUS - .25) {
       const scale = .96 + (index % 3) * .07;
       const height = 4.04 * scale;
       christmasTrees.push({ x: tree.x, z: tree.z, height });

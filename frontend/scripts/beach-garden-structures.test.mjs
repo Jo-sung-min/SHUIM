@@ -24,7 +24,7 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
 ]);
 const layout = await load("../lib/beach/garden-layout.ts", trail, [
   "BRIDGE_Y", "GARDEN_BRIDGE", "GARDEN_LANTERNS", "GARDEN_PAVILIONS", "GARDEN_PIERS", "GARDEN_PHOTO_ZONE", "GROUND_Y", "HALL", "HALL_BENCH_HEIGHT", "HALL_SEAT_LX", "HALL_STAIR_HALF", "HALL_STAIR_RUN",
-  "HALL_TIERS", "PIER_Y", "WATER_Y", "gardenPavilionWorld", "pierEnd", "GARDEN_SEATS",
+  "HALL_TIERS", "WINDOW_CHAIR_OFFSET", "PIER_Y", "WATER_Y", "gardenPavilionWorld", "pierEnd", "GARDEN_SEATS",
   "BOAT_STOPS", "GARDEN_POLYLINES", "GARDEN_POND_BENCHES", "GARDEN_WILLOWS", "GARDEN_WALK_RADIUS", "LAKE", "insideHall", "lakeRadiusAt", "lakeSigned", "onBridge", "onPier",
 ]);
 const roofs = await load("../lib/beach/bamboo-pavilions.ts", trail, ["hipRoofGeometry", "hipRidgeGeometry", "roofTileTexture"]);

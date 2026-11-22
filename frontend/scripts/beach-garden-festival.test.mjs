@@ -21,11 +21,16 @@ const trail = await load("../lib/beach/bamboo-trail.ts", {}, [
 const layout = await load("../lib/beach/garden-layout.ts", trail, [
   "GARDEN_PHOTO_ZONE", "GARDEN_WALK_RADIUS", "GROUND_Y", "LAKE", "insideHall", "lakeSigned", "onGardenGround", "GARDEN_POLYLINES", "onPier", "onBridge",
 ]);
-const { buildGardenPhotoZone, gardenFestivalSites, GARDEN_FESTIVAL_RADIUS } = await load("../lib/beach/garden-photo-zone.ts", layout, ["buildGardenPhotoZone", "gardenFestivalSites", "GARDEN_FESTIVAL_RADIUS"]);
+const { buildGardenPhotoZone, gardenFestivalSites, GARDEN_FESTIVAL_RADIUS, SPRING_PHOTO_COURTS } = await load("../lib/beach/garden-photo-zone.ts", layout, ["buildGardenPhotoZone", "gardenFestivalSites", "GARDEN_FESTIVAL_RADIUS", "SPRING_PHOTO_COURTS"]);
 
 test("photo pockets wrap the walkable perimeter while preserving the lake and castle approaches", () => {
   const sites = gardenFestivalSites();
-  assert.equal(sites.length, 16);
+  assert.equal(sites.length, 7);
+  for (const court of SPRING_PHOTO_COURTS) {
+    assert.ok(layout.onGardenGround(court.x, court.z));
+    assert.ok(sites.every(site => Math.hypot(site.x - court.x, site.z - court.z) > 8));
+    assert.ok(trail.nearestOnTrail(court.x, court.z, layout.GARDEN_POLYLINES).distance > 3);
+  }
   assert.equal(new Set(sites.map(site => site.theme)).size, 4);
   assert.ok(Math.abs(GARDEN_FESTIVAL_RADIUS - (layout.LAKE.z - (layout.GARDEN_PHOTO_ZONE.z - 1.75))) < 1e-9, "every space follows the SOROW arch circle");
   for (const site of sites) {
@@ -63,7 +68,7 @@ test("the Christmas festival remains eight draws with finite geometry and no add
       resources.add(object.geometry); resources.add(object.material);
     });
     assert.equal(meshes, 7); assert.equal(photo.root.children.length, 8);
-    assert.ok(points > 1000 && points < 2500, `${points} batched fairy lights`);
+    assert.ok(points > 400 && points < 1000, `${points} batched fairy lights`);
     assert.ok(triangles < 100000, `${triangles} festival triangles`);
     const core = scene.getObjectByName("photo-neon-core").geometry.getAttribute("position");
     for (let vertex = 0; vertex < core.count; vertex++) assert.ok(core.getY(vertex) > layout.GROUND_Y + .07, "no glowing floor outline or perimeter ribbon remains");
@@ -94,7 +99,7 @@ test("Christmas trees have dense tapered evergreen silhouettes, star toppers and
   scene.updateMatrixWorld(true);
   const fir = scene.getObjectByName("photo-christmas-evergreens");
   assert.ok(fir?.isMesh && fir.material.isMeshStandardMaterial);
-  assert.equal(photo.root.userData.christmasTrees.length, 16);
+  assert.equal(photo.root.userData.christmasTrees.length, 4);
   for (const tree of photo.root.userData.christmasTrees) {
     const widthAt = height => {
       const ray = new THREE.Raycaster(new THREE.Vector3(tree.x - 4, layout.GROUND_Y + height, tree.z), new THREE.Vector3(1, 0, 0), 0, 4);

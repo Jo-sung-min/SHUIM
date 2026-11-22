@@ -37,6 +37,8 @@ export const HALL_STAIR_HALF = 2;
 export const HALL_STAIR_RUN = 1.6;
 export const HALL_BENCH_HEIGHT = 0.45;
 export const HALL_SEAT_LX: readonly number[] = [-10.8, -7.2, -3.6, 3.6, 7.2, 10.8];
+export const WINDOW_CHAIR_OFFSET = 3.6;
+export const WISTERIA_BENCH_ID = "pond-bench-sw";
 export const HALL_DOOR_RAMP = 3.2;
 
 const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));

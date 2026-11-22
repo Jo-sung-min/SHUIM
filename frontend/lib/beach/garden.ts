@@ -19,6 +19,7 @@ import { PAVILION_POST_HEIGHT } from "./bamboo-trail";
 import { buildGardenLandscapeDetail } from "./garden-landscape-detail";
 import { GardenSeatLight } from "./garden-seat-light";
 import { GardenPond } from "./garden-pond";
+import { GardenFurniture } from "./garden-furniture";
 import type { GardenMoment } from "./net";
 
 export interface GardenWalker { x: number; z: number; moving: boolean }
@@ -102,6 +103,7 @@ export class GardenWorld {
   private readonly structures: GardenStructures;
   private readonly seatLight: GardenSeatLight;
   private readonly pond: GardenPond;
+  private readonly furniture: GardenFurniture;
   private readonly landscapeDetail: ReturnType<typeof buildGardenLandscapeDetail>;
   private readonly boats: GardenBoats;
   private readonly rain: GardenRain;
@@ -213,6 +215,7 @@ export class GardenWorld {
     this.structures = buildGardenStructures(this.root, textures, this.gradient, mobile);
     this.seatLight = new GardenSeatLight(this.root);
     this.pond = new GardenPond(this.root, mobile);
+    this.furniture = new GardenFurniture(this.root, () => this.structures.replaceWindowChairs(), () => this.pond.replacePergolaBench());
     this.landscapeDetail = buildGardenLandscapeDetail(this.root, mobile);
     this.boats = new GardenBoats(this.root, this.gradient);
     this.rain = new GardenRain(this.root, this.time);
@@ -495,6 +498,7 @@ export class GardenWorld {
     const position = camera.getWorldPosition(new THREE.Vector3());
     (this.water.material.uniforms.uCamPos.value as THREE.Vector3).copy(position);
     const x = walker?.x ?? position.x, z = walker?.z ?? position.z;
+    this.furniture.update(x, z);
     const alighted = this.boats.update(time, dt, { x, z }, riders);
     const wake = this.boats.wake(time);
     if (wake) this.addRipple(wake.x, wake.z, 0.8, time);
@@ -597,6 +601,7 @@ export class GardenWorld {
     if (this.disposed) return;
     this.disposed = true;
     this.seatLight.dispose();
+    this.furniture.dispose();
     this.pond.dispose();
     this.structures.dispose();
     this.landscapeDetail.dispose();

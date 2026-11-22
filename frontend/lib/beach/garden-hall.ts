@@ -7,7 +7,7 @@ import { stoneLanternGeometry } from "./bamboo";
 import { PAVILION_HALF, PAVILION_POST_HEIGHT, PAVILION_RISE, PAVILION_STEP_LENGTH, seededRandom } from "./bamboo-trail";
 import {
   BRIDGE_Y, GARDEN_BRIDGE, GARDEN_LANTERNS, GARDEN_PAVILIONS, GARDEN_PIERS, GROUND_Y, HALL, HALL_BENCH_HEIGHT, HALL_SEAT_LX, HALL_STAIR_HALF, HALL_STAIR_RUN,
-  HALL_TIERS, PIER_Y, WATER_Y, gardenPavilionWorld, pierEnd,
+  HALL_TIERS, PIER_Y, WATER_Y, WINDOW_CHAIR_OFFSET, gardenPavilionWorld, pierEnd,
 } from "./garden-layout";
 import { GARDEN_GLASS_FRAG, GARDEN_GLASS_VERT } from "./garden-shader";
 import { latticeTexture, plasterTexture } from "./garden-ink";
@@ -77,6 +77,7 @@ export interface GardenStructures {
   applyDaylight(d: Daylight, rain: number): void;
   setTime(time: number): void;
   setQuality(low: boolean): void;
+  replaceWindowChairs(): void;
   dispose(): void;
 }
 
@@ -147,6 +148,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   const materials: THREE.Material[] = [stone, darkStone, plinth, wood, darkWood, floorWood, pavilionWood, tile, ridge, frame, plasterMat, underside, ceiling, linen, sageLinen, ceramic, deskShade, latticeMat, paper, crystal, brass, plaque];
   const owned: THREE.BufferGeometry[] = [];
   const parts: Part[] = [];
+  const windowChairs: Part[] = [];
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), euler = new THREE.Euler();
   const box = new THREE.BoxGeometry(1, 1, 1), cylinder = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
   const softWood = new RoundedBoxGeometry(1, 1, 1, 1, 0.035);
@@ -201,6 +203,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
       const upholstery = tierIndex % 2 ? sageLinen : linen;
       for (const lx of HALL_SEAT_LX) if (Math.sign(lx) === side) {
         const x = HALL.x + lx, paired = rear && Math.abs(lx) > 6;
+        const firstChairPart = parts.length;
         place("chair-base", softWood, wood, x, tier.y + HALL_BENCH_HEIGHT - .16, row + .02, 1.4, .2, .88);
         for (const dx of [-.52, .52]) for (const dz of [-.3, .32]) place("chair-foot", box, darkWood, x + dx, tier.y + .13, row + dz, .09, .26, .09);
         // The horizontal cushion still finishes at the original 0.45 m seat height.
@@ -214,6 +217,7 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
         // A soft head cushion and rear timber shell make a sheltered pocket without blocking the view.
         place("chair-head-cushion", softWood, upholstery, x, tier.y + 1.4, row + .49, 1.13, .22, .25);
         place("chair-rear-shell", softWood, wood, x, tier.y + .92, row + .69, 1.43, .99, .1, 0, .075);
+        if (tierIndex === 0 && Math.abs(lx) === WINDOW_CHAIR_OFFSET) windowChairs.push(...parts.splice(firstChairPart));
       }
       if (rear) {
         const sofaX = HALL.x + side * 9;
@@ -480,6 +484,15 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
 
   /* ---------------- 재질별 병합 ---------------- */
   const groups = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  // Pack the two substitute chairs at the end of each material batch. Once
+  // the GLB is ready its draw range can be trimmed without rebuilding the hall.
+  const chairVertices = new Map<THREE.Material, number>();
+  for (const { material, geometry } of windowChairs) {
+    const count = geometry.index?.count ?? geometry.getAttribute("position").count;
+    chairVertices.set(material, (chairVertices.get(material) ?? 0) + count);
+  }
+  parts.push(...windowChairs);
+  const chairRanges = new Map<THREE.BufferGeometry, number>();
   for (const part of parts) {
     if (!groups.has(part.material)) groups.set(part.material, []);
     groups.get(part.material)!.push(part.geometry.index ? part.geometry.toNonIndexed() : part.geometry);
@@ -487,6 +500,8 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   const merged: THREE.BufferGeometry[] = [];
   for (const [material, geometries] of groups) {
     const geometry = mergeGeometries(geometries, false)!;
+    const tail = chairVertices.get(material);
+    if (tail) chairRanges.set(geometry, geometry.getAttribute("position").count - tail);
     for (const piece of geometries) piece.dispose();
     merged.push(geometry);
     const mesh = new THREE.Mesh(geometry, material);
@@ -500,6 +515,9 @@ export function buildGardenStructures(scene: THREE.Object3D, textures: { wood: T
   const crystalGlow = new THREE.Color(0xffd7a2);
   return {
     root,
+    replaceWindowChairs() {
+      for (const [geometry, count] of chairRanges) geometry.setDrawRange(0, count);
+    },
     applyDaylight(d, rain) {
       if (disposed) return;
       const lamps = THREE.MathUtils.clamp(d.lanterns, 0, 1);
