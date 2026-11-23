@@ -48,6 +48,10 @@ for (const path of ["/privacy", "/terms", "/account-deletion", "/child-safety"])
     assert.ok(html.includes("계정 삭제 요청") && html.includes("mailto:"), "계정 삭제 요청 경로 확인 필요");
   } else {
     assert.ok(html.includes('data-policy-status="published"'), "운영 안내 배포·승인 상태 확인 필요");
+    if (path === "/privacy") {
+      assert.match(html, /<time\b[^>]*datetime="\d{4}-\d{2}-\d{2}"/i, "개인정보 처리방침 시행일 누락");
+      assert.doesNotMatch(html, /현재 안내는 검토 중입니다|공개 전 확정 예정/);
+    }
   }
 });
 console.log(results.join("\n"));

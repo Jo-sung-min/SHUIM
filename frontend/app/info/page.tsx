@@ -61,7 +61,7 @@ export default function InfoPage() {
         </div>
       </section>
 
-      {!LEGAL.approved && <div className={styles.draft} role="status"><strong>안내 내용을 확인하고 있어요</strong>현재 정책은 검토 중이에요. 운영 정보와 보관 기간을 확인한 뒤 정식 안내를 공개할게요.</div>}
+      {!LEGAL.approved && <div className={styles.draft} role="status">이용약관과 아동 안전 기준은 검토 중이에요.</div>}
       <dl className={styles.operator}>
         <div><dt>운영자</dt><dd>{LEGAL.operator}</dd></div>
         <div><dt>문의</dt><dd><a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a></dd></div>
