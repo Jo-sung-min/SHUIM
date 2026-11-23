@@ -47,7 +47,7 @@ class PetPostgresTest {
         assertEquals("noa", tx.execute(s -> pets.get(uid)).appearance());
     }
     @Test void everyAppearanceCanBeSavedAndReadBack() {
-        var appearances = List.of("moru", "noa", "leo", "lumi", "moring", "bamu", "mongul");
+        var appearances = List.of("moru", "noa", "leo", "lumi", "moring", "bamu", "mongul", "kkomi");
         assertEquals(appearances, tx.execute(s -> pets.get(uid)).appearances());
         for (String id : appearances) {
             var view = tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput(id)));
@@ -55,7 +55,22 @@ class PetPostgresTest {
             assertEquals(id, tx.execute(s -> pets.get(uid)).appearance());
         }
         assertThrows(Exception.class, () -> tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("dragon"))));
-        assertEquals("mongul", tx.execute(s -> pets.get(uid)).appearance());
+        assertEquals("kkomi", tx.execute(s -> pets.get(uid)).appearance());
+    }
+    @Test void kkomiEarnsDistinctInteractionsOnSelectedDaysWithoutDecay() {
+        tx.execute(s -> pets.get(uid));
+        jdbc.sql("UPDATE user_pets SET xp = 720 WHERE user_id = ?").param(uid).update();
+        assertEquals(0, tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("kkomi"))).affinity());
+        assertEquals(1, tx.execute(s -> pets.care(uid, new PetService.CareInput("touch"))).affinity());
+        assertEquals(1, tx.execute(s -> pets.care(uid, new PetService.CareInput("touch"))).affinity());
+        assertEquals(2, tx.execute(s -> pets.care(uid, new PetService.CareInput("praise"))).affinity());
+        assertEquals(3, tx.execute(s -> pets.care(uid, new PetService.CareInput("love"))).affinity());
+        assertEquals(3, tx.execute(s -> pets.care(uid, new PetService.CareInput("hug"))).affinity());
+        tx.execute(s -> pets.appearance(uid, new PetService.AppearanceInput("moru")));
+        var later = new PetService(jdbc, new ObjectMapper(), Clock.fixed(Instant.parse("2026-11-20T22:00:00Z"), ZoneId.of("Asia/Seoul")));
+        assertEquals(0, tx.execute(s -> later.care(uid, new PetService.CareInput("love"))).affinity());
+        assertEquals(3, tx.execute(s -> later.appearance(uid, new PetService.AppearanceInput("kkomi"))).affinity());
+        assertEquals(4, tx.execute(s -> later.care(uid, new PetService.CareInput("love"))).affinity());
     }
     @Test void visitsAndRecordsPayOnlyOnceAndPurchasesAreIdempotent() throws Exception {
         try (var pool = Executors.newFixedThreadPool(4)) {

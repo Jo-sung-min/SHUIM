@@ -1,0 +1,15 @@
+.sprite { display: block; width: 100%; height: 100%; overflow: visible; }
+.loop { animation: loop var(--duration) steps(4, end) infinite; }
+.gesture { animation: gesture var(--duration) steps(1, end) both; }
+@keyframes loop { to { transform: translateX(-768px); } }
+/* Hold the last pose while the speech bubble remains visible. */
+@keyframes gesture {
+  0% { transform: translateX(0); }
+  24% { transform: translateX(-192px); }
+  48% { transform: translateX(-384px); }
+  76%, 100% { transform: translateX(-576px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loop, .gesture { animation: none; }
+  .gesture { transform: translateX(-384px); }
+}

@@ -439,9 +439,18 @@ export function clearBriefing() {
 /* ---------- 칭찬/사랑하기 캐시 (모드별 하루 1개) ---------- */
 
 type MomentCache = Partial<Record<MomentMode, Moment>>;
-export const loadMoments = () => read<MomentCache>(K.moments, {});
-export function saveMoment(m: Moment) {
-  write(K.moments, { ...loadMoments(), [m.mode]: m });
+type StoredMoments = MomentCache & { kkomi?: MomentCache };
+export function loadMoments(appearance?: string): MomentCache {
+  const saved = read<StoredMoments>(K.moments, {});
+  return appearance === "kkomi" ? saved.kkomi ?? {} : saved;
+}
+export function saveMoment(m: Moment, appearance?: string) {
+  const saved = read<StoredMoments>(K.moments, {});
+  if (appearance === "kkomi") {
+    write(K.moments, { ...saved, kkomi: { ...saved.kkomi, [m.mode]: m } });
+  } else {
+    write(K.moments, { ...saved, [m.mode]: m });
+  }
 }
 export function clearMoments() {
   try {

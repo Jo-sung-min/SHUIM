@@ -10,6 +10,8 @@ export interface PetView {
   date: string; meals: number; earned: number; answers: PetAnswers; reward: number;
   points: number; homeId: number; ownedHomes: number[]; homes: PetHome[];
   appearance: string;
+  /** 현재 선택한 꼬미와 쌓은 호감도(0~100). 이전 서버는 생략한다. */
+  affinity?: number;
   /** 오늘 간식을 줬는지 (하루 한 번) */
   snacked?: boolean;
   /** 돌봄 상태 0~4 (2단계). 예전 서버 응답에는 없다 */

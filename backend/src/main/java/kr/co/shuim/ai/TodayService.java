@@ -65,7 +65,11 @@ public class TodayService {
         String system = override != null && !override.isBlank()
             ? cut(override, Prompts.MAX_LEN) + "\n\n" + Prompts.TEMPORAL_GROUNDING + "\n\n" + Prompts.SAFETY : Prompts.DEFAULTS.get(mode);
         // 정리·칭찬·사랑은 모루가 건넨다: 관리자 프롬프트를 덮어써도 화자와 말투는 서버가 붙인다 (분석하기는 그대로)
-        if (!"review".equals(mode)) system += "\n\n" + Prompts.companion(b.companion());
+        if (!"review".equals(mode)) {
+            String persona = KkomiVoice.applies(b, crisis)
+                ? KkomiVoice.prompt(b.companion(), b.companionAffinity(), mode) : Prompts.companion(b.companion());
+            system += "\n\n" + persona;
+        }
         if (comfort != null && !crisis && ("praise".equals(mode) || "love".equals(mode)))
             system += "\n\n" + Prompts.comfort(comfort.direction(), "praise".equals(mode) ? comfort.praise() : comfort.love(), comfort.avoid());
         if (quote != null) {
@@ -119,8 +123,11 @@ public class TodayService {
     private Map<String, Object> local(Request b, String mode, boolean crisis, Quote quote) {
         Map<String, Object> out = new LinkedHashMap<>();
         switch (mode) {
-            case "praise" -> out.put("moment", withCrisisLine(withPhilosophy(localPraise(b), quote, mode), crisis));
-            case "love" -> out.put("moment", withCrisisLine(withPhilosophy(localLove(b), quote, mode), crisis));
+            case "praise", "love" -> {
+                Moment moment = "praise".equals(mode) ? localPraise(b) : localLove(b);
+                if (KkomiVoice.applies(b, crisis)) moment = KkomiVoice.local(moment, b.companionAffinity(), mode);
+                out.put("moment", withCrisisLine(withPhilosophy(moment, quote, mode), crisis));
+            }
             case "review" -> out.put("review", withCrisisLine(localReview(b), crisis));
             default -> out.put("briefing", withCrisisLine(localBriefing(b), crisis));
         }

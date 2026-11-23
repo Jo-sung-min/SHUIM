@@ -69,6 +69,8 @@ function HomeHeader() {
 /** 나를 위한 시간 한 칸. 기본 4칸은 AI 상태에서, 추가한 칸은 lib/care 의 오늘 기록에서 done 을 정한다 (안 했으면 빨간 점) */
 interface CareTile { action: CareAction; label: string; done: boolean; on: boolean; busy: boolean; disabled: boolean; aria: string; onPress: () => void }
 
+const KKOMI_PRAISE_WAITING = ["잠깐, 소매 좀 걷고.", "해 주고 싶은 말이 있어. 어떻게 말할지 고르는 중이야."];
+const KKOMI_LOVE_WAITING = ["이리 와 봐. 자리 좀 만들게.", "…응. 네 얘기 듣고 있어."];
 const MOMENTS: Record<MomentMode, { label: string; heading: string }> = {
   praise: { label: "나 잘하고 있는거지?", heading: "오늘의 칭찬" },
   love: { label: "그냥.. 사랑해줘", heading: "오늘의 사랑" },
@@ -99,7 +101,21 @@ export default function HomePage() {
   // 정리·칭찬·사랑을 건네는 모루 (이름·모습은 MoruPet 이 서버에서 받아 알려 준다)
   const [companion, setCompanion] = useState<Companion>({ name: "모루", appearance: "moru" });
   const [answeredAt, setAnsweredAt] = useState<number | null>(null);
-  useEffect(() => { setCompanion(loadCompanion()); }, []);
+  const companionRef = useRef(companion);
+  const [momentCue, setMomentCue] = useState<{ mode: MomentMode; at: number } | null>(null);
+  const updateCompanion = useCallback((next: Companion) => {
+    const previous = companionRef.current;
+    companionRef.current = next;
+    if (previous.appearance !== next.appearance) {
+      setMoments(loadMoments(next.appearance));
+      setOpen(null);
+      setMomentCue(null);
+    }
+    if (previous.appearance !== next.appearance || previous.name !== next.name || previous.affinity !== next.affinity) {
+      setCompanion(next);
+    }
+  }, []);
+  useEffect(() => { updateCompanion(loadCompanion()); }, [updateCompanion]);
   const refreshCare = useCallback(() => {
     const ids = loadCareExtras();
     setCareExtras(ids);
@@ -114,7 +130,7 @@ export default function HomePage() {
       if (!active || todayKey() !== today) return;
       setData(readTodayRecords());
       setBriefing(currentAiResult(loadBriefing(), today));
-      const m = loadMoments();
+      const m = loadMoments(companionRef.current.appearance);
       setMoments({ praise: currentAiResult(m.praise, today) ?? undefined, love: currentAiResult(m.love, today) ?? undefined });
       setReview(currentAiResult(loadReview(), today));
       setReviewOpen(false);
@@ -155,6 +171,7 @@ export default function HomePage() {
       // Consent may stay open across midnight; read the day and records at send time.
       requestDay = refreshToday();
       requestUser = sessionUserId();
+      const speaker = companionRef.current;
       const records = readTodayRecords();
       setData(records);
       const res = await fetch("/api/today", {
@@ -162,7 +179,7 @@ export default function HomePage() {
         credentials: "same-origin",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, companion: companion.name, ...buildTodayContext(records, requestDay, mode === "review"),
+        body: JSON.stringify({ mode, companion: speaker.name, companionAppearance: speaker.appearance, companionAffinity: speaker.affinity ?? 0, ...buildTodayContext(records, requestDay, mode === "review"),
           categories: orderCategories(allCategories(loadCustomCategories()), loadCategoryOrder()), prompts: loadPrompts() }),
       });
       if (!res.ok) {
@@ -170,10 +187,10 @@ export default function HomePage() {
       }
       const json = await res.json();
       if (!isCurrent()) return;
-      if (mode !== "review") setAnsweredAt(Date.now());
       const base = { date: requestDay, contextVersion: AI_CONTEXT_VERSION, generatedAt: Date.now(), source: json.source, crisis: json.crisis };
       if (mode === "briefing") {
         const b: Briefing = { ...base, data: json.briefing };
+        if (!b.crisis) setAnsweredAt(Date.now());
         saveBriefing(b);
         setBriefing(b);
       } else if (mode === "review") {
@@ -184,8 +201,13 @@ export default function HomePage() {
         setOpen(null);
       } else {
         const m: Moment = { ...base, mode, data: json.moment, quote: json.quote };
-        saveMoment(m);
+        saveMoment(m, speaker.appearance);
+        if (speaker.appearance !== companionRef.current.appearance) return;
         setMoments((cur) => ({ ...cur, [mode]: m }));
+        if (!m.crisis) {
+          if (speaker.appearance === "kkomi") setMomentCue({ mode, at: Date.now() });
+          else setAnsweredAt(Date.now());
+        }
         setOpen(mode);
         setReviewOpen(false);
       }
@@ -210,7 +232,9 @@ export default function HomePage() {
         setOpen(null);
       } else call("review");
     } else {
-      if (moments[mode]) {
+      const cached = moments[mode];
+      if (cached) {
+        if (open !== mode && companion.appearance === "kkomi" && !cached.crisis) setMomentCue({ mode, at: Date.now() });
         setOpen((cur) => (cur === mode ? null : mode));
         setReviewOpen(false);
       } else call(mode);
@@ -259,8 +283,9 @@ export default function HomePage() {
     ...CARE_BUILTIN.map(tileOf),
     ...careExtras.flatMap((id) => { const action = CARE_CATALOG.find((c) => c.id === id); return action ? [tileOf(action)] : []; }),
   ];
-  const praiseLines = praiseWaiting(companion.appearance); // 칭찬을 기다리는 말: 새싹·리본·깃털처럼 캐릭터마다 한 줄이 다르다
-  const thinking = loading === "praise" ? praiseLines : loading === "love" ? LOVE_WAITING : loading === "briefing" ? BRIEFING_WAITING : null;
+  const praiseLines = companion.appearance === "kkomi" ? KKOMI_PRAISE_WAITING : praiseWaiting(companion.appearance); // 칭찬을 기다리는 말: 새싹·리본·깃털처럼 캐릭터마다 한 줄이 다르다
+  const loveLines = companion.appearance === "kkomi" ? KKOMI_LOVE_WAITING : LOVE_WAITING;
+  const thinking = loading === "praise" ? praiseLines : loading === "love" ? loveLines : loading === "briefing" ? BRIEFING_WAITING : null;
 
   return (
     <>
@@ -268,8 +293,8 @@ export default function HomePage() {
       <div className="screen home">
 
         <DailyQuote />
-        <MoruPet userId={sessionUserId()} thinking={thinking} answeredAt={answeredAt}
-          onCompanion={setCompanion} onRecordsChange={() => setData(readTodayRecords())}
+        <MoruPet userId={sessionUserId()} thinking={thinking} answeredAt={answeredAt} momentCue={momentCue}
+          onCompanion={updateCompanion} onRecordsChange={() => setData(readTodayRecords())}
           journal={data.journal} today={today} onBreathe={empty ? undefined : () => setBreathing(true)} />
 
         {/* 처음 온 날: 위의 오늘의 문장처럼, 문구는 명언과 시적인 한 줄로. 카드는 인용 + 출처 + 무엇을 하는 곳인지 */}
@@ -343,7 +368,7 @@ export default function HomePage() {
 
         {/* 모루가 건네는 말: 칭찬 / 사랑 (기다리는 동안 방 안의 모루도 같은 말을 한다) */}
         {loading === "praise" && <Skeleton messages={praiseLines} />}
-        {loading === "love" && <Skeleton messages={LOVE_WAITING} />}
+        {loading === "love" && <Skeleton messages={loveLines} />}
         {open && openMoment && !loading && (
           <section className="card moment" style={{ marginTop: 12 }}>
             <div className="head">
@@ -473,7 +498,7 @@ export default function HomePage() {
 /** 모루가 건네는 말의 머리: 작은 얼굴 + "모루의 칭찬" */
 function MoruSays({ companion, what }: { companion: Companion; what: string }) {
   return <span className={styles.moruSays}>
-    <span className={styles.moruFace} aria-hidden="true"><MoruCompanion appearance={companion.appearance} mood="happy" /></span>
+    <span className={styles.moruFace} aria-hidden="true"><MoruCompanion appearance={companion.appearance} affinity={companion.affinity} mood="happy" /></span>
     {companion.name}의 {what}
   </span>;
 }

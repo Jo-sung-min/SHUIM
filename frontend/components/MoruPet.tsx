@@ -5,6 +5,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Sheet, SheetBackContext } from "./ui";
 import type { MoruMood } from "./MoruSprite";
 import MoruCompanion, { companionChoices } from "./MoruCompanion";
+import { idleMotion, touchMotion, type KkomiMotion } from "./KkomiSprite";
+import { kkomiLine } from "@/lib/kkomi-lines";
 import MoruHomeScene, { HOME_NAMES } from "./MoruHomeScene";
 import type { Sky } from "./MoruScene";
 import { DECOR_MAX, DecorBox, DecorLayer, FURNITURE, firstSpot, placedOf, type Placed } from "./MoruDecor";
@@ -43,6 +45,7 @@ interface Props {
   thinking?: string[] | null;
   /** 새 결과가 나온 시각: 바뀌면 모루가 "다 적었어" */
   answeredAt?: number | null;
+  momentCue?: { mode: "praise" | "love"; at: number } | null;
   onCompanion?: (companion: Companion) => void;
   /** 마음 기록으로 오늘의 기록이 바뀌었을 때 (홈이 다시 읽는다) */
   onRecordsChange?: () => void;
@@ -63,7 +66,7 @@ export default function MoruPet(props: Props) {
   return <PetRoom key={props.userId || "guest"} {...props} />;
 }
 
-function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRecordsChange, journal = null, today: recordDay, onBreathe }: Props) {
+function PetRoom({ userId, thinking = null, answeredAt = null, momentCue = null, onCompanion, onRecordsChange, journal = null, today: recordDay, onBreathe }: Props) {
   const [pet, setPet] = useState<PetView | null>(() => (userId ? lastPet.get(userId) ?? null : null));
   const [loading, setLoading] = useState(() => Boolean(userId) && !lastPet.has(userId as string));
   useEffect(() => { if (userId && pet) lastPet.set(userId, pet); }, [userId, pet]);
@@ -72,6 +75,8 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const [needsLogin, setNeedsLogin] = useState(false);
   const [message, setMessage] = useState(IDLE_LINE);
   const [mood, setMood] = useState<MoruMood>("idle");
+  const [catMotion, setCatMotion] = useState<KkomiMotion>();
+  const [reactionSerial, setReactionSerial] = useState(0);
   const [talkFeel, setTalkFeel] = useState<string | null>(null); // 말 걸기에서 고른 기분: 감정마다 얼굴이 있는 친구(모링)가 그 얼굴로 답한다
   const [sheet, setSheet] = useState<"mind" | "guide" | "homes" | "companions" | "book" | "decor" | "mood" | "keep" | null>(null);
   // 방 안의 작은 사건 (docs/MORU_HAPPENINGS.md): 화분·주운 것들은 이 기기에 남고, 날아드는 것·물음은 그때그때 뜬다
@@ -138,11 +143,12 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     return () => clearTimeout(timer);
   }, [celebration]);
   /** feel: 감정마다 얼굴이 있는 친구(모링)가 이 반응 동안 지을 얼굴 (말 걸기의 기분 id) */
-  const react = useCallback((next: MoruMood, text: string, feel: string | null = null) => {
+  const react = useCallback((next: MoruMood, text: string, feel: string | null = null, motion?: KkomiMotion) => {
     if (reactionTimer.current) clearTimeout(reactionTimer.current);
-    setMood(next); setMessage(text); setTalkFeel(feel);
+    setMood(next); setMessage(text); setTalkFeel(feel); setCatMotion(motion);
+    if (motion) setReactionSerial((n) => n + 1);
     setMurmur(null);
-    reactionTimer.current = setTimeout(() => { setMood("idle"); setMessage(IDLE_LINE); }, 4200);
+    reactionTimer.current = setTimeout(() => { setMood("idle"); setMessage(IDLE_LINE); setCatMotion(undefined); }, 4200);
   }, []);
   useEffect(() => {
     alive.current = true;
@@ -168,7 +174,9 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       const sleeping = isAsleep(phaseNow, lightsOff(phaseNow, data.lightsOff ?? null)) || phaseNow === "nap";
       const hello = phaseNow === "wake" && (data.energy ?? 0) >= 4 ? RESTED_GREETING : PHASE_GREETING[phaseNow];
       if (meal !== null && !sleeping) react("eat", MEAL_LINES[meal]);
-      else if (!greeted.current && hello && !sleeping) react("pet", hello);
+      else if (!greeted.current && !sleeping && data.appearance === "kkomi") {
+        react("pet", kkomiLine("idle", data.affinity ?? 0), null, idleMotion(data.affinity ?? 0));
+      } else if (!greeted.current && hello && !sleeping) react("pet", hello);
       else if (!greeted.current && !sleeping && data.food === 0 && dueMeals(now) > data.meals) react("sleep", HUNGRY_LINE);
       greeted.current = true;
       return data;
@@ -201,14 +209,15 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
 
   const petName = pet?.name || "모루";
   const appearance = devLook() ?? pet?.appearance ?? "moru";
+  const affinity = pet?.affinity ?? 0;
   /** 처음 받는 중: 어떤 친구·어떤 공간인지 아직 모른다. 방 안과 이름표를 비워 둔다 */
   const waiting = loading && !pet;
   useEffect(() => {
     if (!pet) return;
-    const companion = { name: petName, appearance };
+    const companion = { name: petName, appearance, affinity };
     saveCompanion(companion);
     onCompanion?.(companion);
-  }, [pet, petName, appearance, onCompanion]);
+  }, [pet, petName, appearance, affinity, onCompanion]);
 
   // 칭찬·사랑·정리를 기다리는 동안 말풍선이 천천히 바뀐다. 결과가 오면 "다 적었어"
   useEffect(() => {
@@ -285,7 +294,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       setCelebration({ id: Date.now(), food: 0, level: null, text: `날씨 도감 · ${weatherName(shown)} +${fresh.length * 5} P` });
     }
   }, [pet]);
-  const restMood: MoruMood = asleep || napping || pet?.food === 0 ? "sleep" : "idle";
+  const restMood: MoruMood = asleep || napping || (appearance !== "kkomi" && pet?.food === 0) ? "sleep" : "idle";
   useEffect(() => {
     const tick = () => { if (!document.hidden) setHour(currentHour()); };
     const interval = setInterval(tick, 30_000);
@@ -303,13 +312,13 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     let clear: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       if (document.hidden) return;
-      const line = pickLine(murmurPool(level, energy, stage, appearance), lastLine.current);
+      const line = appearance === "kkomi" ? kkomiLine("idle", affinity, Date.now()) : pickLine(murmurPool(level, energy, stage, appearance), lastLine.current);
       lastLine.current = line;
       setMurmur(line);
       clear = setTimeout(() => setMurmur(null), 4600);
     }, murmurDelay());
     return () => { clearTimeout(timer); if (clear) clearTimeout(clear); };
-  }, [quiet, level, energy, stage, murmur, appearance]);
+  }, [quiet, level, energy, stage, murmur, appearance, affinity]);
 
   // ---------- 창밖 소리: 켜 두면 오늘 날씨에 맞춰 (비는 그대로, 눈은 작게, 맑은 날은 아주 작게). 화면을 떠나면 멈춘다 ----------
   useEffect(() => { rainWanted.current = loadRainPref(); return () => stopRain(); }, []);
@@ -355,8 +364,28 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
       return null;
     } finally { lock.current = false; }
   };
+  const lastMomentCue = useRef(momentCue?.at);
+  useEffect(() => {
+    if (!momentCue || lastMomentCue.current === momentCue.at || appearance !== "kkomi" || !pet) return;
+    lastMomentCue.current = momentCue.at;
+    if (crisisDay) return;
+    setAsk(null);
+    const motion: KkomiMotion = affinity < 8 ? "shy" : momentCue.mode === "love" && affinity >= 16 ? "nuzzle" : "reach";
+    react("happy", kkomiLine(momentCue.mode, affinity, momentCue.at), null, motion);
+    void care(momentCue.mode);
+  }, [momentCue, appearance, pet, affinity, crisisDay, react, care]);
+
   const gesture = (kind: "tap" | "sprout" | "scratch" | "hug" | "tickle") => {
     if (touch === "hide" || touch === "bath" || whileSleeping()) return;
+    if (appearance === "kkomi") {
+      const action = kind === "hug" || kind === "tickle" ? kind : "touch";
+      haptic(action === "hug" ? [12, 60, 12] : 8);
+      setAsk(null);
+      if (crisisDay) react("pet", MOOD_BESIDE_LINE, null, "reach");
+      else react("pet", kkomiLine(action, affinity, Date.now()), null, touchMotion(affinity));
+      void care(action);
+      return;
+    }
     if (kind === "hug") { haptic([12, 60, 12]); flash("hug", 1800); react("happy", say(low ? LOW_HUG_LINES : hugLines(appearance))); void care("hug"); return; }
     if (kind === "tickle") { haptic([6, 40, 6, 40, 6]); flash("tickle", 1400); react("happy", say(tickleLines(appearance))); void care("tickle"); return; }
     const now = Date.now();
@@ -376,7 +405,14 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
   const endPress = () => { press.current = null; if (hugTimer.current) clearTimeout(hugTimer.current); };
 
   /** 말 걸기: 기분을 고르면 모루가 한 줄 답한다 */
-  const talk = (replies: string[], feel: string) => { setPanel(null); if (whileSleeping()) return; haptic(8); react("pet", say(replies)); setTalkFeel(feel); void care("talk"); };
+  const talk = (replies: string[], feel: string) => {
+    setPanel(null);
+    if (whileSleeping()) return;
+    haptic(8);
+    if (appearance === "kkomi") react("pet", crisisDay ? MOOD_BESIDE_LINE : kkomiLine("talk", affinity, Date.now(), feel), feel, affinity < 8 ? "warming" : "reach");
+    else react("pet", say(replies), feel);
+    void care("talk");
+  };
   /** 먼지 뭉치를 톡 눌러 치운다 (말끔함 한 칸). 화면에서 먼저 사라지고 서버가 뒤따른다 */
   const sweep = (spot: number) => {
     haptic(6);
@@ -402,7 +438,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     haptic(10);
     if (napping) setNapWoken(true);
     const data = await mutate("/snack", {}, "POST");
-    if (data) react("eat", say(SNACK_LINES));
+    if (data) react("eat", appearance === "kkomi" ? kkomiLine("snack", affinity, Date.now()) : say(SNACK_LINES));
   };
   /** 불 끄기·켜기 (밤에만). 졸린 시간에 꺼 주면 잠든다 */
   const toggleLight = async () => {
@@ -658,7 +694,7 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
     <div className={styles.room} ref={roomRef} onPointerDownCapture={() => { if (rainWanted.current) { rainWanted.current = false; setRainOn(true); } }}>
       <SketchFilter />
       <div className={styles.world} ref={worldRef}>
-        {!waiting && outing && <MoruOuting place={outing} friend={petName} appearance={appearance} level={pet?.level} night={night}
+        {!waiting && outing && <MoruOuting place={outing} friend={petName} appearance={appearance} level={pet?.level} affinity={affinity} night={night}
           onBanner={banner} onError={setError} onDays={setOutDays} />}
         {!waiting && !outing && <>
         <MoruHomeScene homeId={homeId} sky={sky} />
@@ -691,7 +727,9 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           onPointerCancel={endPress}
           onClick={(e) => { if (e.detail === 0) gesture("tap"); /* 키보드·보조 기기 */ }}
           onContextMenu={(e) => e.preventDefault()}>
-          <MoruCompanion appearance={appearance} mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} stage={stage} talk={thinking ? null : talkFeel} />
+          <MoruCompanion key={appearance === "kkomi" ? reactionSerial : appearance} appearance={appearance}
+            mood={thinking ? "pet" : mood === "idle" ? restMood : mood} level={pet?.level} stage={stage} talk={thinking ? null : talkFeel}
+            affinity={affinity} motion={thinking ? "warming" : catMotion} />
           {touch === "bath" && <span className={styles.bubbles} aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>}
         </button>
         {happen && <MoruPlant state={happen} today={today} who={who} watering={watering} disabled={decorating} onPress={pressPlant} />}
@@ -787,18 +825,23 @@ function PetRoom({ userId, thinking = null, answeredAt = null, onCompanion, onRe
           <label className={styles.noteLabel}>부르고 싶은 이름<input maxLength={20} value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required /></label>
           <button type="submit" className={styles.secondary} disabled={busy || !name.trim() || name.trim() === petName}>이름 바꾸기</button>
         </form>
-        <div className={styles.companionHero}><MoruCompanion appearance={chosenAppearance} mood="idle" level={pet?.level} /></div>
+        <div className={styles.companionHero}><MoruCompanion appearance={chosenAppearance} mood="idle" level={pet?.level} affinity={chosenAppearance === appearance ? affinity : 0} /></div>
         <div className={styles.companionChoices} role="group" aria-label="캐릭터 선택">
           {companionChoices(pet?.appearances).map((friend) => <button key={friend.id} type="button" disabled={busy} aria-pressed={chosenAppearance === friend.id} onClick={() => setChosenAppearance(friend.id)}>
             <MoruCompanion appearance={friend.id} mood={chosenAppearance === friend.id ? "happy" : "idle"} />
             <strong>{friend.name}</strong><small>{friend.detail}</small>
           </button>)}
         </div>
-        <p className={styles.footnote}>모습만 바뀌어요. 이름과 함께 쌓은 기록은 그대로예요.</p>
+        <p className={styles.footnote}>{chosenAppearance === "kkomi" ? "꼬미는 낯을 가려요. 손을 내밀고 이야기를 나누면 조금씩 마음을 열어요." : "모습만 바뀌어요. 이름과 함께 쌓은 기록은 그대로예요."}</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <button type="button" className={styles.primary} disabled={busy || !pet || chosenAppearance === appearance} onClick={async () => {
           const data = await mutate("/appearance", { appearance: chosenAppearance });
-          if (data) { setSheet(null); setMood("idle"); if (reactionTimer.current) clearTimeout(reactionTimer.current); }
+          if (data) {
+            setSheet(null);
+            if (reactionTimer.current) clearTimeout(reactionTimer.current);
+            if (data.appearance === "kkomi") react("pet", kkomiLine("idle", data.affinity ?? 0), null, idleMotion(data.affinity ?? 0));
+            else { setMood("idle"); setCatMotion(undefined); }
+          }
         }}>{busy ? "저장 중…" : !pet ? "연결 후 선택할 수 있어요" : chosenAppearance === appearance ? "함께하는 중" : "이 모습으로 함께하기"}</button>
       </div>
     </Sheet>

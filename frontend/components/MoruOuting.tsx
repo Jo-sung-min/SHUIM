@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import MoruCompanion from "./MoruCompanion";
+import { touchMotion } from "./KkomiSprite";
+import { kkomiLine } from "@/lib/kkomi-lines";
 import { haptic } from "@/lib/haptics";
 import { pickLine } from "@/lib/moru-rules";
 import { EMPTY_OUTING, OUTING_ACTIVITIES, outingRequest, type OutingActivity, type OutingSession, type OutingView } from "@/lib/outing";
@@ -19,17 +21,18 @@ import styles from "./MoruOuting.module.css";
  * 그림은 방과 같은 480×700 무대(바닥 600)에 코드로 그린 SVG 다. 낮과 밤은 방의 시계를 따른다.
  */
 const INK = "#3d2a20";
-type Bubble = { text: string; ask?: RoomSpot } | null;
+type Bubble = { text: string; ask?: RoomSpot; pokedAt?: number } | null;
 type Doing = { spot: RoomSpot; activity: OutingActivity; token: string; startedAt: number; duration: number };
 
-export default function MoruOuting({ place, friend, appearance, level, night, onBanner, onError, onDays }: {
-  place: RoomPlace; friend: string; appearance: string; level?: number; night: boolean;
+export default function MoruOuting({ place, friend, appearance, level, affinity = 0, night, onBanner, onError, onDays }: {
+  place: RoomPlace; friend: string; appearance: string; level?: number; affinity?: number; night: boolean;
   onBanner: (text: string) => void; onError: (text: string) => void;
   /** 함께 나간 날 수가 바뀔 때 (방의 패드가 보여 준다) */
   onDays?: (days: number) => void;
 }) {
   const [view, setView] = useState<OutingView>(EMPTY_OUTING);
-  const [pos, setPos] = useState({ sx: 240, sy: 540 });
+  const [pos, setPos] = useState({ sx: 240, sy: 540, facingLeft: false });
+  const walkerRef = useRef<HTMLButtonElement>(null);
   const [moving, setMoving] = useState(false);
   const [bubble, setBubble] = useState<Bubble>(null);
   const [doing, setDoing] = useState<Doing | null>(null);
@@ -68,7 +71,7 @@ export default function MoruOuting({ place, friend, appearance, level, night, on
   useEffect(() => {
     if (arrive.current) clearTimeout(arrive.current);
     setDoing(null); finishing.current = false; setMoving(false);
-    setPos({ sx: 240, sy: 540 });
+    setPos({ sx: 240, sy: 540, facingLeft: false });
     const hint = hinted.current ? "" : ` ${LOOK_HINT}`;
     hinted.current = true;
     say({ text: `${roomPlace(place)?.arrive ?? ""}${hint}` }, 6400);
@@ -77,8 +80,11 @@ export default function MoruOuting({ place, friend, appearance, level, night, on
   /** 그 자리로 걸어간다. 도착하면 then */
   const walk = (sx: number, sy: number, then?: () => void) => {
     if (arrive.current) clearTimeout(arrive.current);
-    const far = Math.hypot(sx - pos.sx, sy - pos.sy) > 6;
-    setPos({ sx, sy }); setMoving(far);
+    const walker = walkerRef.current;
+    const dx = sx - (walker?.offsetLeft ?? pos.sx);
+    const dy = sy - (walker?.offsetTop ?? pos.sy);
+    const far = Math.hypot(dx, dy) > 6;
+    setPos({ sx, sy, facingLeft: Math.abs(dx) > 2 ? dx < 0 : pos.facingLeft }); setMoving(far);
     arrive.current = setTimeout(() => { if (!alive.current) return; setMoving(false); then?.(); }, far ? 950 : 0);
   };
   const tapSpot = (spot: RoomSpot) => {
@@ -99,7 +105,13 @@ export default function MoruOuting({ place, friend, appearance, level, night, on
     say(null);
     walk(target.sx, target.sy, () => { if (Math.random() < 0.45) say({ text: pick(WALK_LINES) }, 3600); });
   };
-  const poke = () => { if (doing) return; haptic(8); say({ text: pick(POKE_LINES) }); };
+  const poke = () => {
+    if (doing) return;
+    haptic(8);
+    const now = Date.now();
+    if (appearance === "kkomi") say({ text: kkomiLine("touch", affinity, now), pokedAt: now }, 2400);
+    else say({ text: pick(POKE_LINES) });
+  };
   // 가만히 두면 가끔 혼자 몇 걸음 걷는다 (말하는 중·함께하는 중에는 그 자리에 있는다. 움직임을 줄인 기기에서는 걷지 않는다)
   const strollRef = useRef(() => {});
   strollRef.current = () => { const target = strollTarget(pos.sx, Math.random(), Math.random()); walk(target.sx, target.sy); };
@@ -166,9 +178,11 @@ export default function MoruOuting({ place, friend, appearance, level, night, on
       {ROOM_SPOTS[place].map((spot) => <button key={spot.id} type="button" className={styles.spot} disabled={Boolean(doing) || busy}
         style={{ left: spot.x - spot.w / 2, top: spot.y - spot.h / 2, width: spot.w, height: spot.h }}
         aria-label={`풍경 속 ${OUTING_ACTIVITIES.find((a) => a.id === spot.id)?.name ?? "무언가"} 살펴보기`} onClick={() => tapSpot(spot)} />)}
-      <button type="button" className={styles.walker} data-moving={moving ? "" : undefined} data-doing={doing ? "" : undefined}
+      <button type="button" ref={walkerRef} className={styles.walker} data-sheetwalk={appearance === "kkomi" ? "" : undefined}
+        data-left={moving && pos.facingLeft ? "" : undefined} data-moving={moving ? "" : undefined} data-doing={doing ? "" : undefined}
         style={{ left: pos.sx, top: pos.sy, "--s": scale } as CSSProperties} aria-label={`${friend}에게 말 걸기`} onClick={poke}>
-        <MoruCompanion appearance={appearance} mood={doing || bubble?.ask ? "happy" : moving ? "idle" : bubble ? "pet" : "idle"} level={level} />
+        <MoruCompanion key={bubble?.pokedAt} appearance={appearance} mood={doing || bubble?.ask ? "happy" : moving ? "idle" : bubble ? "pet" : "idle"} level={level} affinity={affinity}
+          motion={moving ? "walk" : bubble?.pokedAt ? touchMotion(affinity) : undefined} />
       </button>
       {text && <div className={styles.bubble} aria-live="polite" style={{ left: center, top: pos.sy - 124 * scale, "--tail": `${pos.sx - center}px` } as CSSProperties}>
         <i aria-hidden="true" />

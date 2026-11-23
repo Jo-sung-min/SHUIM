@@ -205,7 +205,7 @@ export function takeMoodIntro(): boolean {
 
 /* ---------- 홈 밖에서 모루를 그릴 때 쓰는 이름·모습 (계정별, 이 기기) ---------- */
 
-export interface Companion { name: string; appearance: string }
+export interface Companion { name: string; appearance: string; affinity?: number }
 const COMPANION_KEY = "moru:companion:v1";
 export const DEFAULT_COMPANION: Companion = { name: "모루", appearance: "moru" };
 export const loadCompanion = (): Companion => ({ ...DEFAULT_COMPANION, ...read<Partial<Companion>>(COMPANION_KEY, {}) });

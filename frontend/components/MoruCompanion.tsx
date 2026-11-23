@@ -1,5 +1,6 @@
 import MoruSprite, { type MoruMood } from "./MoruSprite";
 import MoringSprite from "./MoringSprite";
+import KkomiSprite, { type KkomiMotion } from "./KkomiSprite";
 import CompanionSheetSprite from "./CompanionSheetSprite";
 import type { MoodStage } from "@/lib/moru-rules";
 import styles from "./MoruPet.module.css";
@@ -12,6 +13,7 @@ export const COMPANIONS = [
   { id: "moring", name: "모링", detail: "눈밭의 흰 솜털 새" },
   { id: "bamu", name: "바무", detail: "작은 까만 강아지" },
   { id: "mongul", name: "몽울", detail: "동그란 밤빛 친구" },
+  { id: "kkomi", name: "꼬미", detail: "낯을 가리는 검은 후드 고양이" },
 ];
 /** 서버가 선택 가능한 모습을 보내지 않는 예전 버전에서는 처음 네 모습만 지원한다. */
 const FIRST_LOOKS = ["moru", "noa", "leo", "lumi"];
@@ -33,11 +35,12 @@ const LOOKS: Record<string, { hair: string; dress: string }> = {
  * stage 는 오늘의 기분(docs/MORU_MOOD_SYNC.md, 1 울적해 … 5 행복해): 깨어 있는 평소(idle)의 얼굴만 바꾼다.
  * 가라앉은 날은 눈꺼풀이 내려오고(1단계는 이불을 두른다), 가벼운 날은 입꼬리가 올라간다. 손길·식사·잠의 얼굴은 어느 날이나 같다
  */
-export default function MoruCompanion({ appearance = "moru", mood, level = 1, stage = 3, talk = null }: {
-  appearance?: string; mood: MoruMood; level?: number; stage?: MoodStage;
+export default function MoruCompanion({ appearance = "moru", mood, level = 1, stage = 3, talk = null, affinity = 0, motion }: {
+  appearance?: string; mood: MoruMood; level?: number; stage?: MoodStage; affinity?: number; motion?: KkomiMotion;
   /** 말 걸기에서 고른 기분(TALK_TOPICS id). */
   talk?: string | null;
 }) {
+  if (appearance === "kkomi") return <KkomiSprite mood={mood} affinity={affinity} motion={motion} />;
   if (appearance === "moring") return <MoringSprite mood={mood} level={level} stage={stage} talk={talk} />;
   if (appearance === "bamu" || appearance === "mongul") return <CompanionSheetSprite appearance={appearance} mood={mood} stage={stage} talk={talk} />;
   const look = LOOKS[appearance];

@@ -31,7 +31,15 @@ public final class TodayDtos {
 
     public record Request(String mode, List<Category> categories, String date, Map<String, Entry> today, List<String> todayDid,
                           List<RecentDay> recent, List<MemoIn> memos, List<GoalIn> goals, List<ScheduleIn> schedule,
-                          List<DatedMemo> allMemos, Map<String, String> prompts, String companion) {
+                          List<DatedMemo> allMemos, Map<String, String> prompts, String companion,
+                          String companionAppearance, Integer companionAffinity) {
+
+        /** Existing callers that only know the companion's display name. */
+        public Request(String mode, List<Category> categories, String date, Map<String, Entry> today, List<String> todayDid,
+                       List<RecentDay> recent, List<MemoIn> memos, List<GoalIn> goals, List<ScheduleIn> schedule,
+                       List<DatedMemo> allMemos, Map<String, String> prompts, String companion) {
+            this(mode, categories, date, today, todayDid, recent, memos, goals, schedule, allMemos, prompts, companion, null, null);
+        }
 
         /** 정리·칭찬·사랑의 화자 이름 (사용자가 지어 준 모루의 이름). 비었거나 이상하면 "모루" */
         static String companionName(String raw) {
@@ -44,7 +52,7 @@ public final class TodayDtos {
 
         /** 관리자가 아닌 요청: 작성 지침 덮어쓰기(prompts)만 빼고 그대로 */
         public Request withoutPrompts() {
-            return new Request(mode, categories, date, today, todayDid, recent, memos, goals, schedule, allMemos, Map.of(), companion);
+            return new Request(mode, categories, date, today, todayDid, recent, memos, goals, schedule, allMemos, Map.of(), companion, companionAppearance, companionAffinity);
         }
 
         /*
@@ -82,7 +90,8 @@ public final class TodayDtos {
             String md = "praise".equals(mode) || "love".equals(mode) || "review".equals(mode) ? mode : "briefing";
             return new Request(md, Categories.of(categories), day,
                 today == null ? Map.of() : clean(today), dids(todayDid), r, m, g, s, all, prompts == null ? Map.of() : prompts,
-                companionName(companion));
+                companionName(companion), "kkomi".equals(companionAppearance) ? "kkomi" : null,
+                companionAffinity == null ? 0 : Math.clamp(companionAffinity, 0, 100));
         }
 
         private static String cut(String value, int max) { return kr.co.shuim.common.Korean.cut(value, max); }

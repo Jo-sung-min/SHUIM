@@ -42,6 +42,7 @@ test("a companion the server does not list yet (Moring on an older backend) is n
   assert.equal(ids(undefined), "moru noa leo lumi"); // 옛 서버: 응답에 appearances 가 없다
   assert.equal(ids(["moru", "noa", "leo", "lumi", "moring"]), "moru noa leo lumi moring");
   assert.equal(ids(["bamu", "mongul"]), "bamu mongul");
+  assert.equal(ids(["kkomi"]), "kkomi");
   assert.equal(ids(["moru"]), "moru"); // 서버가 받아 주는 것만
 });
 

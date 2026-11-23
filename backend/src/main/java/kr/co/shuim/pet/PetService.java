@@ -21,7 +21,7 @@ public class PetService {
     public record JournalInput(String date, Answers answers) {}
     public record View(String name, int food, int xp, int level, int levelStart, int levelEnd,
                        String date, int meals, int earned, Answers answers, int reward,
-                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, boolean snacked,
+                       int points, int homeId, List<Integer> ownedHomes, List<PetHomes.Home> homes, String appearance, int affinity, boolean snacked,
                        int warmth, int clean, int energy, boolean bathed, Boolean lightsOff, boolean glow,
                        List<String> appearances,
                        PetDays.Sky sky, List<String> weatherSeen, List<String> newWeather, List<Task> tasks, boolean tasksRewarded,
@@ -32,7 +32,7 @@ public class PetService {
     public record Task(String id, boolean done) {}
     private record DayTasks(List<String> tasks, int done, boolean rewarded) {}
     /** 고를 수 있는 모습. 화면은 이 목록에 있는 것만 보여 준다 (새 모습을 모르는 옛 서버에서는 고르지 못하게) */
-    static final List<String> APPEARANCES = List.of("moru", "noa", "leo", "lumi", "moring", "bamu", "mongul");
+    static final List<String> APPEARANCES = List.of("moru", "noa", "leo", "lumi", "moring", "bamu", "mongul", "kkomi");
     private record CareRow(PetRules.Care care, LocalDate careDate, LocalDate bathDate, LocalDate lightsNight, boolean lightsOff) {}
     private record Pet(String name, PetRules.State state) {}
     private static final Answers EMPTY = new Answers(null, null, null, null, null);
@@ -148,7 +148,7 @@ public class PetService {
         String appearance = jdbc.sql("SELECT appearance FROM user_pets WHERE user_id=?").param(uid).query(String.class).single();
         return new View(p.name(), s.food(), s.xp(), level, PetRules.LEVELS[level - 1],
             level == 10 ? 720 : PetRules.LEVELS[level], s.date().toString(), s.meals(),
-            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, snacked(uid, s.date()),
+            Integer.bitCount(mask(uid, s.date())), answers(uid, s.date()), reward, points, homeId, owned(uid), PetHomes.ALL, appearance, affinity(uid, appearance), snacked(uid, s.date()),
             care.care().warmth(), care.care().clean(), care.care().energy(), s.date().equals(care.bathDate()),
             night != null && night.equals(care.lightsNight()) ? Boolean.valueOf(care.lightsOff()) : null, PetRules.glow(care.care()), APPEARANCES,
             sky(uid, s.date()), jdbc.sql("SELECT weather FROM pet_weather_seen WHERE user_id = ? ORDER BY first_day, weather").param(uid).query(String.class).list(), newWeather,
@@ -288,6 +288,7 @@ public class PetService {
             .param(uid).param("snack:" + s.date()).update();
         if (marked == 0) throw ApiException.badRequest("오늘 간식은 이미 줬어요.");
         writeCare(uid, PetRules.warm(readCare(uid).care()));
+        deepenBond(uid, s.date(), "snack");
         markTask(uid, s.date(), "snack");
         return save(uid, glowBonus(uid, new Pet(p.name(), PetRules.snack(s))), 0);
     }
@@ -300,8 +301,26 @@ public class PetService {
         var s = p.state();
         return new Pet(p.name(), new PetRules.State(s.food(), Math.min(720, s.xp() + 1), s.date(), s.meals()));
     }
+    private int affinity(String uid, String appearance) {
+        if (!"kkomi".equals(appearance)) return 0;
+        return jdbc.sql("SELECT count(*) FROM pet_kkomi_affinity WHERE user_id = ?")
+            .param(uid).query(Integer.class).single();
+    }
+
+    // lock() serializes this user's care and appearance changes until commit.
+    private void deepenBond(String uid, LocalDate day, String action) {
+        jdbc.sql("""
+            INSERT INTO pet_kkomi_affinity(user_id, day, action)
+            SELECT p.user_id, ?, ? FROM user_pets p WHERE p.user_id = ? AND p.appearance = 'kkomi'
+              AND (SELECT count(*) FROM pet_kkomi_affinity WHERE user_id = p.user_id AND day = ?) < 3
+              AND (SELECT count(*) FROM pet_kkomi_affinity WHERE user_id = p.user_id) < 100
+            ON CONFLICT DO NOTHING
+            """).param(day).param(action).param(uid).param(day).update();
+    }
+
     public record CareInput(String action) {}
     private static final Set<String> WARM_ACTIONS = Set.of("hug", "tickle", "talk", "breath");
+    private static final Set<String> BOND_ONLY_ACTIONS = Set.of("touch", "praise", "love");
     /**
      * 돌봄: hug·tickle·talk·breath(온기), dust(먼지 한 뭉치), bath(하루 한 번), lightsOff·lightsOn(밤에만).
      * 상한을 넘은 손길은 거절하지 않고 그대로 둔다 (반응은 화면이 하고, 서버는 칸만 지킨다).
@@ -312,6 +331,10 @@ public class PetService {
         var p = lock(uid, now);
         var row = readCare(uid);
         var today = p.state().date();
+        if (BOND_ONLY_ACTIONS.contains(action)) {
+            deepenBond(uid, today, action);
+            return save(uid, p, 0);
+        }
         if (WARM_ACTIONS.contains(action)) writeCare(uid, PetRules.warm(row.care()));
         else if (action.equals("dust")) writeCare(uid, PetRules.dust(row.care()));
         else if (action.equals("bath")) {
@@ -326,6 +349,7 @@ public class PetService {
             // 자정을 넘긴 뒤라면 오늘의 기운은 이미 정산됐다: 지금 고른 대로 바로 맞춘다
             if (night.isBefore(today)) writeCare(uid, PetRules.rested(row.care(), off));
         } else throw ApiException.badRequest("할 수 없는 돌봄이에요.");
+        if (WARM_ACTIONS.contains(action) || action.equals("bath")) deepenBond(uid, today, action);
         markTask(uid, today, action);
         return save(uid, glowBonus(uid, p), 0);
     }
