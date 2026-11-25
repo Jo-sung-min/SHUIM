@@ -70,6 +70,7 @@ Thumbs.db
 # Generated map artwork is kept in Git at the user's request.
 !frontend/public/garden/art/*.webp
 !frontend/public/cloudspa/art/*.webp
+!frontend/public/seahideout/window.webp
 # Keep the site's identity available at first paint and when the CDN is unreachable.
 !frontend/public/brand/*.png
 !frontend/public/brand/*.jpg

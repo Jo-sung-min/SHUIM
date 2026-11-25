@@ -60,13 +60,41 @@ class BeachSpaceAccessTest {
     }
 
     @Test
+    void hideoutVisitorsArriveOnTheLedgeAndShareTwoWindowSeats() {
+        var map = BeachMap.from("seahideout");
+        var room = new BeachRoom(System::currentTimeMillis, false, map);
+        String bench = "seahideout-window-bench";
+        var first = room.enter("first", "first", Set.of());
+        var second = room.enter("second", "second", Set.of());
+        var third = room.enter("third", "third", Set.of());
+        assertEquals(14, first.x());
+        assertEquals(-6, first.z());
+        assertThrows(ApiException.class, () -> room.rest(first.ticket(), "sit", bench));
+        assertFalse(BeachMap.BAIKAL.supportsRestSpot(bench));
+        for (var visitor : List.of(first, second, third)) {
+            room.tick(visitor.ticket(), -3.45, .1, 0.0, false, null, null);
+        }
+        var seat = room.rest(first.ticket(), "sit", bench);
+        assertEquals(0, seat.slot());
+        assertEquals(-3.5, seat.x(), 1e-9);
+        assertEquals(-.87, seat.z(), 1e-9);
+        assertEquals(0, seat.yaw(), 1e-9);
+        assertEquals(1, room.rest(second.ticket(), "sit", bench).slot());
+        assertEquals(409, assertThrows(ApiException.class, () -> room.rest(third.ticket(), "sit", bench)).status());
+        room.rest(first.ticket(), "stand", null);
+        assertEquals(0, room.rest(third.ticket(), "sit", bench).slot());
+    }
+
+    @Test
     void mapsOpenOneByOneEachTimeTheCircleOutgrowsAFullMap() {
-        assertEquals(List.of(0, 21, 41, 61, 81, 101), SpaceMaps.ORDER.stream().map(SpaceMaps::membersToOpen).toList());
+        assertEquals(List.of(0, 21, 41, 61, 81, 101, 121), SpaceMaps.ORDER.stream().map(SpaceMaps::membersToOpen).toList());
         assertTrue(SpaceMaps.open("beach", 0));
         assertFalse(SpaceMaps.open("uyuni", 20));
         assertTrue(SpaceMaps.open("uyuni", 21));
         assertFalse(SpaceMaps.open("baikal", 100));
         assertTrue(SpaceMaps.open("baikal", 101));
+        assertFalse(SpaceMaps.open("seahideout", 120));
+        assertTrue(SpaceMaps.open("seahideout", 121));
         assertThrows(IllegalArgumentException.class, () -> SpaceMaps.membersToOpen("moon"));
     }
 
@@ -157,6 +185,8 @@ class BeachSpaceAccessTest {
         assertEquals(403, enterStatus("circle-a", "bamboo"));
 
         circle("circle-a", 101, false);
+        assertEquals(403, enterStatus("circle-a", "seahideout"));
+        circle("circle-a", 121, false);
         for (BeachMap map : BeachMap.values()) assertEquals(map.id(), enter("circle-a", map.id()).get("mapId"));
     }
 

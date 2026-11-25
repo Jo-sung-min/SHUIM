@@ -228,7 +228,7 @@ public class BeachController {
     }
 
     /**
-     * POST /api/beach/enter { communityId, character?, mapId?: "beach" | "uyuni" | "bamboo" | "garden" | "cloudspa" | "baikal" } → map-scoped ticket, capabilities and state.
+     * POST /api/beach/enter { communityId, character?, mapId? } → map-scoped ticket, capabilities and state.
      * communityId 가 "public" 이면 공용 공간(이용규칙에 동의한 누구나), 아니면 그 소로우의 승인된 멤버만 들어갈 수 있다.
      * 소로우 공간에서 아직 열리지 않은 풍경은 403, 정원 초과는 409.
      */

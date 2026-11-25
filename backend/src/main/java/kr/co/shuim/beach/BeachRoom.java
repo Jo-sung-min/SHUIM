@@ -165,7 +165,9 @@ public class BeachRoom {
         new Pavilion("baikal-aurora-side", 66, -190, 0, -1, BAIKAL_SIDE_SEAT_LOCAL, BeachMap.BAIKAL),
         new Pavilion("baikal-aurora-hearth", 64.6, -199.6, 0, -1, BAIKAL_HEARTH_SEAT_LOCAL, BeachMap.BAIKAL),
         new Pavilion("baikal-aurora-chair", 69.4, -188.8, 1, 0, BAIKAL_CHAIR_SEAT_LOCAL, BeachMap.BAIKAL),
-        new Pavilion("baikal-aurora-porch", 73.4, -191.6, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL));
+        new Pavilion("baikal-aurora-porch", 73.4, -191.6, 1, 0, BAIKAL_PORCH_SEAT_LOCAL, BeachMap.BAIKAL),
+        new Pavilion("seahideout-window-bench", -2.7, -0.87, 0, -1,
+            new double[][]{{-0.8, 0, 0, 1}, {0.8, 0, 0, 1}}, BeachMap.SEA_HIDEOUT));
     private record RestSpot(String id, double x, double z, int capacity, boolean bed) {
         boolean hotel() { return HOTEL_DAWN_SPOT.equals(id) || HOTEL_DUSK_SPOT.equals(id); }
         boolean chaise() { return HOTEL_DAWN_CHAISE.equals(id) || HOTEL_DUSK_CHAISE.equals(id); }
@@ -227,7 +229,7 @@ public class BeachRoom {
 
     /** Cloud-spa pool edges and the Baikal cabin furniture are bench-style seats: reached from a little farther than a pavilion floor edge. */
     private static boolean benchStyle(Pavilion pavilion) {
-        return pavilion.map() == BeachMap.CLOUDSPA || pavilion.map() == BeachMap.BAIKAL;
+        return pavilion.map() == BeachMap.CLOUDSPA || pavilion.map() == BeachMap.BAIKAL || pavilion.map() == BeachMap.SEA_HIDEOUT;
     }
 
     private static int nearestPavilionSlot(Presence me, RestSpot spot, boolean[] used) {
@@ -951,6 +953,7 @@ public class BeachRoom {
         return switch (map) {
             case CLOUDSPA -> 0;
             case BAIKAL -> 0.17;
+            case SEA_HIDEOUT -> Math.PI;
             default -> Math.atan2(x, z - BeachFireService.FIRE_Z);
         };
     }
@@ -1005,8 +1008,8 @@ public class BeachRoom {
         }
         if (byTicket.size() >= capacity) throw new ApiException(409, "지금 " + capacity + "명이 함께 쉬고 있어요. 잠시 후 다시 와 주세요.");
         ThreadLocalRandom r = ThreadLocalRandom.current();
-        double x = bookmark == null ? r.nextDouble(-1.5, 1.5) : bookmark.x;
-        double z = bookmark == null ? r.nextDouble(map.spawnMinZ(), map.spawnMaxZ()) : bookmark.z;
+        double x = bookmark != null ? bookmark.x : map == BeachMap.SEA_HIDEOUT ? 14 : r.nextDouble(-1.5, 1.5);
+        double z = bookmark != null ? bookmark.z : map.spawnMinZ() == map.spawnMaxZ() ? map.spawnMinZ() : r.nextDouble(map.spawnMinZ(), map.spawnMaxZ());
         Presence p = new Presence(Ids.randomHex(6), Ids.randomHex(16), userId, nick == null ? "" : nick,
             selectedSkin == null ? bookmark == null ? skinOf(userId) : bookmark.skin : selectedSkin, 0,
             excluded == null ? Set.of() : Set.copyOf(excluded), x, z,

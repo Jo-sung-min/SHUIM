@@ -1326,7 +1326,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const toggleStargazing = async (spotId = "starlight") => {
     const engine = engineRef.current;
     const isBench = spotId === "fire-benches";
-    const isPavilion = spotId.startsWith("pavilion-") || spotId.startsWith("hall-tier-") || spotId.startsWith("pond-bench-") || spotId.startsWith("cloud-pool-") || spotId === "cloud-lounge" || spotId.startsWith("baikal-");
+    const isPavilion = spotId.startsWith("pavilion-") || spotId.startsWith("hall-tier-") || spotId.startsWith("pond-bench-") || spotId.startsWith("cloud-pool-") || spotId === "cloud-lounge" || spotId.startsWith("baikal-") || spotId === "seahideout-window-bench";
     const isOnsenSeat = spotId === "onsen-benches", isOnsenFloat = spotId === "onsen-float";
     const isOnsen = isOnsenSeat || isOnsenFloat;
     const isBed = !isBench && !isOnsen && !isPavilion && spotId !== "starlight";
@@ -1342,7 +1342,9 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
     if (isPavilion && !pavilionSeated) {
       const nearby = engine.getPavilionState();
       if (!nearby.near || !nearby.available) {
-        const message = spotId.startsWith("cloud-pool-")
+        const message = spotId === "seahideout-window-bench"
+          ? nearby.near ? "가까운 창가 자리에 누군가 앉아 있어요." : "작은 창 앞 벤치로 다가가 주세요."
+          : spotId.startsWith("cloud-pool-")
           ? nearby.near ? "가까운 자리가 찼어요. 온천의 다른 쪽에서 쉬어가요." : "온천 가장자리 가까이에서 몸을 담글 수 있어요."
           : spotId === "cloud-lounge" ? nearby.near ? "가까운 자리가 찼어요. 소파의 다른 자리로 가 주세요." : "리조트 소파 가까이에서 앉을 수 있어요."
           : spotId.startsWith("baikal-") ? nearby.near ? "가까운 자리가 찼어요. 산장의 다른 자리로 가 주세요." : "소파나 방석 가까이에서 앉을 수 있어요."
@@ -1676,23 +1678,23 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const onsenPhase = restActionSpot?.startsWith("onsen-") ? skyPhase : null;
   const onsenResting = onsen.sitting || onsen.floating;
   const onsenContextVisible = mapId === "beach" && (onsenEnabled || onsenResting) && (onsen.inWater || onsenResting || Boolean(onsenPhase));
-  const pavilionPhase = restActionSpot?.startsWith("pavilion-") || restActionSpot?.startsWith("hall-tier-") || restActionSpot?.startsWith("pond-bench-") || restActionSpot?.startsWith("cloud-pool-") || restActionSpot === "cloud-lounge" || restActionSpot?.startsWith("baikal-") ? skyPhase : null;
-  const pavilionContextVisible = (mapId === "bamboo" || mapId === "garden" || mapId === "cloudspa" || mapId === "baikal") && (pavilion.near || pavilion.seated || Boolean(pavilionPhase)) && !boat?.riding;
+  const pavilionPhase = restActionSpot?.startsWith("pavilion-") || restActionSpot?.startsWith("hall-tier-") || restActionSpot?.startsWith("pond-bench-") || restActionSpot?.startsWith("cloud-pool-") || restActionSpot === "cloud-lounge" || restActionSpot?.startsWith("baikal-") || restActionSpot === "seahideout-window-bench" ? skyPhase : null;
+  const pavilionContextVisible = (mapId === "bamboo" || mapId === "garden" || mapId === "cloudspa" || mapId === "baikal" || mapId === "seahideout") && (pavilion.near || pavilion.seated || Boolean(pavilionPhase)) && !boat?.riding;
   const boatContextVisible = mapId === "garden" && Boolean(boat && (boat.near || boat.riding)) && !pavilion.seated;
   const baikalSeat = mapId === "baikal", cloudPool = pavilion.kind === "pool", cloudLounge = pavilion.kind === "lounge" && !baikalSeat;
   const seatNoun = cloudPool ? "온천" : pavilion.kind === "lounge" ? "소파" : pavilion.kind === "hearth" ? "방석" : pavilion.kind === "deck" ? "전망대" : pavilion.kind === "bench" ? "벤치" : pavilion.kind === "hall" ? "자리" : "정자";
   // The cabin's seats each look at something different: the glass wall, the stove, or the storm from under the eave.
   const baikalView = pavilion.spotId?.endsWith("-side") || pavilion.kind === "hearth" ? "fire" : pavilion.kind === "bench" ? "porch" : "window";
-  const pavilionTitle = pavilionPhase === "standing" ? cloudPool ? "온천에서 나오는 중…" : "일어나는 중" : pavilion.seated ? cloudPool ? "온천에서 나오기" : cloudLounge || baikalSeat ? `${seatNoun}에서 일어나기` : "일어나기" : pavilionPhase === "joining" ? "준비 중…" : !pavilion.available ? "자리 없음" : cloudPool ? "온천에 몸 담그기" : cloudLounge ? "소파에 앉기" : baikalSeat ? pavilion.kind === "hearth" ? "난롯가에 앉기" : `${seatNoun}에 앉기` : "앉기";
+  const pavilionTitle = pavilionPhase === "standing" ? cloudPool ? "온천에서 나오는 중…" : "일어나는 중" : pavilion.seated ? cloudPool ? "온천에서 나오기" : cloudLounge || baikalSeat ? `${seatNoun}에서 일어나기` : "일어나기" : pavilionPhase === "joining" ? "준비 중…" : !pavilion.available ? "자리 없음" : cloudPool ? "온천에 몸 담그기" : cloudLounge ? "소파에 앉기" : baikalSeat ? pavilion.kind === "hearth" ? "난롯가에 앉기" : `${seatNoun}에 앉기` : mapId === "seahideout" ? "창가에 앉기" : "앉기";
   const pavilionDetail = pavilion.seated
     ? (cloudPool ? `${pavilion.name} · 따뜻한 물에 몸을 맡기는 중` : cloudLounge ? "먹구름 리조트의 포근한 소파에서 쉬는 중"
       : baikalSeat ? (baikalView === "fire" ? `${pavilion.name} · 벽난로 불빛을 쬐며 쉬는 중` : baikalView === "porch" ? `${pavilion.name} · 처마 밑에서 눈보라 치는 호수를 바라보는 중` : `${pavilion.name} · 창 너머 눈보라 치는 얼음 호수를 바라보는 중`)
-      : pavilion.kind === "bench" ? "나란히 앉아 연못을 바라보는 중" : pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : pavilion.kind === "hall" ? (rain > 0.05 ? `${pavilion.name} · 비 내리는 호수를 바라보며 머무는 중` : `${pavilion.name} · 통창 너머 호수를 바라보는 중`) : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`)
+      : mapId === "seahideout" ? "작은 창 너머로 파도가 밀려오는 중" : pavilion.kind === "bench" ? "나란히 앉아 연못을 바라보는 중" : pavilion.kind === "deck" ? `${pavilion.name}에서 도시 불빛을 바라보는 중` : pavilion.kind === "hall" ? (rain > 0.05 ? `${pavilion.name} · 비 내리는 호수를 바라보며 머무는 중` : `${pavilion.name} · 통창 너머 호수를 바라보는 중`) : `${pavilion.name}에 걸터앉아 숲을 바라보는 중`)
     : !pavilionEnabled ? "앉을 자리를 준비하고 있어요"
-    : !pavilion.available ? (cloudPool ? "온천의 다른 쪽으로 다가가 주세요" : cloudLounge ? "소파의 다른 자리로 가 주세요" : baikalSeat ? "다른 자리로 가 주세요" : pavilion.kind === "bench" ? "다른 벤치에서 쉬어가요" : pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : pavilion.kind === "hall" ? "벤치의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요")
+    : !pavilion.available ? (cloudPool ? "온천의 다른 쪽으로 다가가 주세요" : cloudLounge ? "소파의 다른 자리로 가 주세요" : mapId === "seahideout" ? "창가의 빈자리로 다가가 주세요" : baikalSeat ? "다른 자리로 가 주세요" : pavilion.kind === "bench" ? "다른 벤치에서 쉬어가요" : pavilion.kind === "deck" ? "의자의 다른 자리로 가 주세요" : pavilion.kind === "hall" ? "벤치의 다른 자리로 가 주세요" : "마루의 다른 쪽으로 가 주세요")
     : cloudPool ? `${pavilion.name} · 구름 위에서 도시의 불빛을 바라봐요` : cloudLounge ? "먹구름 리조트에서 편안하게 쉬어가요"
     : baikalSeat ? (baikalView === "fire" ? `${pavilion.name} · 벽난로 앞에서 불을 쬐어요` : baikalView === "porch" ? `${pavilion.name} · 처마 밑에서 눈보라를 바라봐요` : `${pavilion.name} · 창 너머 얼음 호수와 눈보라를 바라봐요`)
-    : pavilion.kind === "bench" ? "둘이 나란히 · 소원동전과 작은 오리" : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : pavilion.kind === "hall" ? `${pavilion.name} · 벤치에 앉아 통창 너머 호수를 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`;
+    : mapId === "seahideout" ? "창가 벤치에서 먼바다를 바라봐요" : pavilion.kind === "bench" ? "둘이 나란히 · 소원동전과 작은 오리" : pavilion.kind === "deck" ? `${pavilion.name} · 난간 앞 의자에 앉아 야경을 봐요` : pavilion.kind === "hall" ? `${pavilion.name} · 벤치에 앉아 통창 너머 호수를 봐요` : `${pavilion.name} · 마루 끝에 걸터앉아 쉬어요`;
   const boatTitle = !boat ? "" : !boat.riding ? "나룻배 타기" : boat.docked ? "내리기" : boat.alightArmed ? "내리기 취소" : "내리기 예약";
   const restContextVisible = !bunker.inside && !bench.seated && !pavilion.seated && !onsenResting && !onsenPhase && (lying || (Boolean(skyPhase) && !benchPhase && !pavilionPhase) || Boolean(activeBed?.near) || stargazing.near);
   const walking = skyPhase === "walking" || (!bench.seated && (woodBusy || powderPhase === "walking"));
@@ -1746,7 +1748,7 @@ export default function BeachScene({ communityId, mapId = "beach" }: { community
   const lightingTool = lightingControl && lighting && <RoomLightingControls mapId={mapId} mode={lighting.mode} open={lightingOpen}
     busy={lightingBusy} disabled={lost} onOpenChange={openLighting} onSelect={mode => void changeLighting(mode)}
     inline buttonClass={menuStyles.row} />;
-  const fieldSoundTool = (mapId === "beach" || mapId === "bamboo" || mapId === "garden")
+  const fieldSoundTool = (mapId === "seahideout" || mapId === "beach" || mapId === "bamboo" || mapId === "garden")
     ? <FieldSoundControl map={mapId} buttonClass={menuStyles.row} inline volume={fieldVolume} open={fieldOpen}
       onOpenChange={open => {
         if (open) { setActionsOpen(false); setCharacterPickerOpen(false); setCarePrompt(null); engineRef.current?.select(null); }

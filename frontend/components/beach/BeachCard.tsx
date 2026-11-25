@@ -122,7 +122,7 @@ export default function BeachCard({ circles = [], publicSpace }: { circles?: Bea
           const capacity = Math.min(20, current?.capacity ?? publicSpace?.capacity ?? chosen?.spaceCapacity ?? 20);
           const full = current !== undefined && current.count >= capacity;
           const content = <>
-            {!failedPhotos[choice.id] && <img className={styles.photo} src={assetUrl(choice.id === "cloudspa" ? "/cloudspa/art/city-nw-card-v2.webp" : `/beach/places/${choice.id}-v1.webp`)}
+            {!failedPhotos[choice.id] && <img className={styles.photo} src={assetUrl(choice.id === "seahideout" ? "/seahideout/window.webp" : choice.id === "cloudspa" ? "/cloudspa/art/city-nw-card-v2.webp" : `/beach/places/${choice.id}-v1.webp`)}
               alt="" width={960} height={640} loading={index < 2 ? "eager" : "lazy"} decoding="async"
               onError={() => setFailedPhotos((previous) => ({ ...previous, [choice.id]: true }))} />}
             <span className={styles.photoShade} aria-hidden="true" />

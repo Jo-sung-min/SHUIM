@@ -359,3 +359,5 @@
 .orbButton .contextIcon { color:#ffe9a8; filter:drop-shadow(0 0 5px #fff3c8cc); animation:orbTwinkle 2.2s ease-in-out infinite; }
 @keyframes orbTwinkle { 0%,100% { transform:scale(1); opacity:.85; } 50% { transform:scale(1.16); opacity:1; } }
 @media (prefers-reduced-motion: reduce) { .orbButton .contextIcon { animation:none; } }
+
+.root[data-map="seahideout"] .center { background: radial-gradient(ellipse at 24% 74%, #a4704766, transparent 48%), linear-gradient(160deg, #213e46, #25353a 48%, #302524); }

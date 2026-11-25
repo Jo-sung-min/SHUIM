@@ -84,7 +84,7 @@ test("visitors with no joined circles render the discovery card without derefere
   assert.equal(elements(tree, "a").length, mapCount);
   assert.ok(elements(tree, "a").every(link => link.props.href === "/c"));
   assert.equal(occupancyLabels(tree).length, 0, "unknown occupancy is never invented as zero");
-  assert.deepEqual(elements(tree,"img").map(image=>image.props.src),mapIds.map(map => assets.assetUrl(map === "cloudspa" ? "/cloudspa/art/city-nw-card-v2.webp" : `/beach/places/${map}-v1.webp`)));
+  assert.deepEqual(elements(tree,"img").map(image=>image.props.src),mapIds.map(map => assets.assetUrl(map === "seahideout" ? "/seahideout/window.webp" : map === "cloudspa" ? "/cloudspa/art/city-nw-card-v2.webp" : `/beach/places/${map}-v1.webp`)));
 });
 
 test("a pinned private circle precedes the primary circle and respects its four-place limit", async () => {
@@ -103,8 +103,14 @@ test("a pinned private circle precedes the primary circle and respects its four-
   assert.equal(occupancyLabels(tree)[0].props.children, 4);
 });
 
+test("sea hideout follows the cloud spa and opens its own room", () => {
+  assert.equal(mapIds[mapIds.indexOf("cloudspa") + 1], "seahideout");
+  assert.equal(maps.mapHref("seahideout", "public"), "/seahideout?communityId=public");
+});
+
 const PUBLIC = { id: "public", name: "공용 공간", capacity: 20 };
-const ladder = open => mapIds.map((id, index) => ({ id, open: index < open, members: index === 0 ? 0 : index * 20 + 1 }));
+const unlockOrder = ["beach", "uyuni", "bamboo", "garden", "cloudspa", "baikal", "seahideout"];
+const ladder = open => unlockOrder.map((id, index) => ({ id, open: index < open, members: index === 0 ? 0 : index * 20 + 1 }));
 const texts = tree => elements(tree, "p").map(p => [].concat(p.props.children).join(""));
 
 test("the public space opens every landscape to anyone and asks for the community rules before entering", async () => {
@@ -153,7 +159,7 @@ test("a circle's own space locks the landscapes its members have not grown into 
   const locked = placeButtons(tree);
   assert.deepEqual(locked.map(button => button.props["data-place"]), mapIds.slice(1));
   assert.ok(locked.every(button => button.props.disabled === true && button.props["data-locked"] === ""));
-  assert.deepEqual(locked.map(button => button.props["aria-label"]), ["우유니, 멤버 21명부터 열려요", "대나무숲, 멤버 41명부터 열려요", "봄물 정원, 멤버 61명부터 열려요", "구름미그린 온천, 멤버 81명부터 열려요", "바이칼, 멤버 101명부터 열려요"]);
+  assert.deepEqual(locked.map(button => button.props["aria-label"]), ["우유니, 멤버 21명부터 열려요", "대나무숲, 멤버 41명부터 열려요", "봄물 정원, 멤버 61명부터 열려요", "구름미그린 온천, 멤버 81명부터 열려요", "바다아지트, 멤버 121명부터 열려요", "바이칼, 멤버 101명부터 열려요"]);
   assert.ok(texts(tree).some(text => text === "멤버만 들어와요. 멤버 21명부터 우유니도 열려요."));
 
   harness.setCircles([{ id: "small", name: "작은 소로우", slug: "small", primary: true, memberCount: 21, spaceMaps: ladder(2) }]);

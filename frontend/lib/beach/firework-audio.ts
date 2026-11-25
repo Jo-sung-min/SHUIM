@@ -90,7 +90,7 @@ export class FireworkAudio {
     this.backgroundGain = map === "beach" ? DISTANT_SURF : map === "garden" ? 0 : 1;
     this.volumeKey = `sorow:${map}-field-volume`;
     this.recording = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-crickets-v3.mp3")
-      : map === "beach" ? new FieldRecording("/beach/fx/beach-shore-waves-v1.mp3")
+      : (map === "beach" || map === "seahideout") ? new FieldRecording("/beach/fx/beach-shore-waves-v1.mp3")
       : map === "garden" ? new FieldRecording("/beach/fx/garden-rain-outdoor-v1.mp3") : null;
     this.bambooDay = map === "bamboo" ? new FieldRecording("/beach/fx/bamboo-field-wind-day-v1.mp3") : null;
     this.indoorRain = map === "garden" ? new FieldRecording("/beach/fx/garden-rain-indoor-v1.mp3") : null;
@@ -193,6 +193,14 @@ export class FireworkAudio {
   }
 
   /** The beach tide line is near z=-1. The fire and listener use the same XZ world coordinates. */
+  updateHideoutSurf(x: number, dt: number) {
+    const outside = Math.max(0, Math.min(1, (x - 4) / 6));
+    const target = .23 + .65 * outside;
+    if (Math.abs(target - this.backgroundGain) < .001) return;
+    this.backgroundGain += (target - this.backgroundGain) * Math.min(1, 3 * dt);
+    this.recording?.setVolume(this.backgroundGain * this.volume / DEFAULT_FIELD_VOLUME);
+  }
+
   updateBeachSound(person: { x: number; z: number }, fire: { x: number; z: number }, logs: number, dt: number) {
     if (!this.crackle || !this.recording || this.disposed || !Number.isFinite(dt) || !Number.isFinite(person.z)) return;
     const scale = this.volume / DEFAULT_FIELD_VOLUME;

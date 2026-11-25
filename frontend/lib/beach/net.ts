@@ -531,7 +531,7 @@ function acceptsMap(actual: unknown, requested: MapId): boolean {
 }
 
 function requireMap(mapId: MapId): void {
-  if (mapId !== "beach" && mapId !== "uyuni" && mapId !== "bamboo" && mapId !== "garden" && mapId !== "cloudspa" && mapId !== "baikal") throw new BeachUnavailable("다시 쉴 곳을 골라 주세요.", 400);
+  if (mapId !== "beach" && mapId !== "uyuni" && mapId !== "bamboo" && mapId !== "garden" && mapId !== "cloudspa" && mapId !== "baikal" && mapId !== "seahideout") throw new BeachUnavailable("다시 쉴 곳을 골라 주세요.", 400);
 }
 
 export async function enterBeach(communityId: string, character?: BeachCharacter, mapId: MapId = "beach",
@@ -546,19 +546,19 @@ export async function enterBeach(communityId: string, character?: BeachCharacter
   }
   const lighting = readRoomLighting(response.lighting);
   if (response.selfRest != null && (!validRestPresence(response.selfRest) || (mapId !== "uyuni" && response.selfRest.bunkerId != null)
-    || (response.selfRest.pose !== "standing" && ((mapId === "cloudspa") !== isCloudSpaSpot(response.selfRest.spotId) || (mapId === "baikal") !== isBaikalSpot(response.selfRest.spotId)))))
+    || (response.selfRest.pose !== "standing" && ((mapId === "cloudspa") !== isCloudSpaSpot(response.selfRest.spotId) || (mapId === "baikal") !== isBaikalSpot(response.selfRest.spotId) || (mapId === "seahideout") !== (response.selfRest.spotId === "seahideout-window-bench")))))
     throw new Error("머물던 자리를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.");
   if (response.sequence !== undefined && (!Number.isSafeInteger(response.sequence) || response.sequence < 0)) throw new Error("방문 순서를 확인하지 못했어요.");
   const fireworks = readFireworksState(response);
   const moments = readUyuniMomentsState(response);
   const pond = readGardenMomentsState(response);
   return { ...response, mapId, fireEnabled: mapId === "beach" && (response.fireEnabled === undefined || response.fireEnabled === true),
-    restEnabled: mapId === "cloudspa" || mapId === "baikal" ? false : response.restEnabled,
-    bedEnabled: mapId !== "cloudspa" && mapId !== "baikal" && response.bedEnabled === true, bunkerEnabled: mapId === "uyuni" && response.bunkerEnabled === true,
+    restEnabled: mapId === "cloudspa" || mapId === "baikal" || mapId === "seahideout" ? false : response.restEnabled,
+    bedEnabled: mapId !== "cloudspa" && mapId !== "baikal" && mapId !== "seahideout" && response.bedEnabled === true, bunkerEnabled: mapId === "uyuni" && response.bunkerEnabled === true,
     benchEnabled: mapId === "beach" && response.benchEnabled === true,
     careCapabilities: readCareCapabilities(response.careCapabilities), lighting,
     lightingControl: response.lightingControl === true && lighting !== null, onsenEnabled: mapId === "beach" && response.onsenEnabled === true,
-    pavilionEnabled: (mapId === "bamboo" || mapId === "garden" || mapId === "cloudspa" || mapId === "baikal") && response.pavilionEnabled === true,
+    pavilionEnabled: (mapId === "bamboo" || mapId === "garden" || mapId === "cloudspa" || mapId === "baikal" || mapId === "seahideout") && response.pavilionEnabled === true,
     festival: mapId === "bamboo" ? readFestival(response.festival) : undefined,
     fireworksControl: response.fireworksControl === true && fireworks.supported,
     fireworksFree: response.fireworksFree === true,
@@ -622,7 +622,7 @@ export async function tickBeach(body: TickRequest, signal?: AbortSignal): Promis
     if (!validBunkerLayer(player.bunkerId) || ((player.bunkerId != null || player.spotId === "bunker-dawn-sofa" || player.spotId === "bunker-dusk-sofa")
       && !validRestPresence({ ...player, pose: player.pose ?? "standing", spotId: player.spotId ?? null, slot: player.slot ?? null })))
       throw new Error("함께 머무는 층을 확인하지 못했어요.");
-    if ((isCloudSpaSpot(player.spotId) || isBaikalSpot(player.spotId))
+    if ((isCloudSpaSpot(player.spotId) || isBaikalSpot(player.spotId) || player.spotId === "seahideout-window-bench")
       && !validRestPresence({ ...player, pose: player.pose ?? "standing", spotId: player.spotId ?? null, slot: player.slot ?? null }))
       throw new Error("함께 쉬는 자리를 확인하지 못했어요.");
     if (player.festival) player.festival = readFestival(player.festival);
@@ -697,6 +697,11 @@ function validRestPresence(value: unknown): value is RestPresence {
   if (state.pose === "standing") return state.spotId === null && state.slot === null;
   if (!Number.isInteger(state.slot) || state.slot! < 0) return false;
   if (isCloudSpaSpot(state.spotId)) return matchesCloudSpaSeat(state);
+  if (state.spotId === "seahideout-window-bench") {
+    const seatX = state.slot === 0 ? -3.5 : -1.9;
+    return state.pose === "sitting" && state.slot! < 2 && Math.abs(state.x - seatX) <= .02
+      && Math.abs(state.z + .87) <= .02 && Math.abs(Math.atan2(Math.sin(state.yaw), Math.cos(state.yaw))) <= .02;
+  }
   if (isBaikalSpot(state.spotId)) return matchesBaikalSeat(state);
   if (state.spotId === "onsen-benches" || state.spotId === "onsen-float") {
     const sitting = state.spotId === "onsen-benches", perBath = sitting ? ONSEN_SEATS_PER_BATH : ONSEN_FLOATS_PER_BATH;

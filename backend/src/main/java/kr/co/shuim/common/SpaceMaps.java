@@ -12,7 +12,7 @@ public final class SpaceMaps {
     public static final String PUBLIC_ID = "public";
     public static final String PUBLIC_NAME = "공용 공간";
     /** 풍경이 열리는 순서 (BeachMap 과 같은 id). */
-    public static final List<String> ORDER = List.of("beach", "uyuni", "bamboo", "garden", "cloudspa", "baikal");
+    public static final List<String> ORDER = List.of("beach", "uyuni", "bamboo", "garden", "cloudspa", "baikal", "seahideout");
     /** 멤버가 이만큼 늘 때마다 다음 풍경이 열린다: 20명까지는 바닷가만, 21명부터 우유니, 41명부터 대나무숲 … */
     public static final int MEMBERS_PER_MAP = SpaceCapacity.MAX;
 

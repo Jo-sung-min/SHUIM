@@ -87,6 +87,13 @@ export const ORB_GROUNDS: Record<MapId, OrbGround> = {
     // 물속에는 두지 않는다 (탕의 물 반지름)
     avoid: [{ x: 0, z: 66, r: 20.3 }, { x: -18, z: 34.8, r: 19.3 }, { x: 0, z: 3.6, r: 20.3 }, { x: 18, z: -27.6, r: 19.3 }, { x: 0, z: -60.5, r: 23.3 }],
   },
+  seahideout: {
+    spots: [
+      { id: "shore-path", name: "바닷길", x: 14, z: -4, r: .55 },
+      { id: "hideout-entry", name: "아지트로 가는 길", x: 10.5, z: 7.25, r: .48 },
+      { id: "hideout-floor", name: "아지트 안", x: 2, z: 2.7, r: .75 },
+    ],
+  },
   baikal: {
     spots: [
       { id: "shore-ice", name: "호숫가 얼음판", x: 0, z: 34 }, // baikal-layout.ts

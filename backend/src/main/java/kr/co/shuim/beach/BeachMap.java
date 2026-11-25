@@ -4,34 +4,38 @@ import kr.co.shuim.config.ApiException;
 
 /** A map is part of the room identity, never a freely supplied room-key suffix. */
 public enum BeachMap {
-    BEACH("beach"), UYUNI("uyuni"), BAMBOO("bamboo"), GARDEN("garden"), CLOUDSPA("cloudspa"), BAIKAL("baikal");
+    BEACH("beach", BeachRoom.MIN_X, BeachRoom.MAX_X, BeachRoom.MIN_Z, BeachRoom.ONSEN_MAX_Z, 2.8, 4),
+    UYUNI("uyuni", BeachRoom.MIN_X, BeachRoom.MAX_X, -50, BeachRoom.MAX_Z, 2.8, 4),
+    BAMBOO("bamboo", -55, 44, -4, 115, 2.8, 4),
+    GARDEN("garden", -60, 60, -30, 100, -11.5, -10),
+    CLOUDSPA("cloudspa", -76, 76, -98, 130, 90.5, 91.5),
+    BAIKAL("baikal", -120, 120, -240, 70, 39.5, 40.5),
+    SEA_HIDEOUT("seahideout", -15, 27, -13, 15, -6, -6);
 
     private final String id;
-    BeachMap(String id) { this.id = id; }
-    public String id() { return id; }
-    /** Hotels face -Z; the salt-flat promenade is about three times the original frontward reach. The forest trail only needs a little room behind its entrance; the garden keeps its moon gate behind the spawn. Baikal's frozen lake stretches far out in front of the cabin. */
-    public double minZ() {
-        return switch (this) {
-            case UYUNI -> -50;
-            case BAMBOO -> -4;
-            case GARDEN -> -30;
-            case CLOUDSPA -> -98;
-            case BAIKAL -> -240;
-            default -> BeachRoom.MIN_Z;
-        };
+    private final double minX, maxX, minZ, maxZ, spawnMinZ, spawnMaxZ;
+
+    BeachMap(String id, double minX, double maxX, double minZ, double maxZ, double spawnMinZ, double spawnMaxZ) {
+        this.id = id;
+        this.minX = minX;
+        this.maxX = maxX;
+        this.minZ = minZ;
+        this.maxZ = maxZ;
+        this.spawnMinZ = spawnMinZ;
+        this.spawnMaxZ = spawnMaxZ;
     }
-    /** The bamboo mountain is twice as wide as the shore and climbs far beyond it; the garden's lake and hall need a wider, deeper field; the Baikal shore is the widest of all. */
-    public double maxZ() { return this == CLOUDSPA ? 130 : this == BAMBOO ? 115 : this == GARDEN ? 100 : this == BAIKAL ? 70 : this == BEACH ? BeachRoom.ONSEN_MAX_Z : BeachRoom.MAX_Z; }
-    public double minX() { return this == BAIKAL ? -120 : this == CLOUDSPA ? -76 : this == BAMBOO ? -55 : this == GARDEN ? -60 : BeachRoom.MIN_X; }
-    public double maxX() { return this == BAIKAL ? 120 : this == CLOUDSPA ? 76 : this == BAMBOO ? 44 : this == GARDEN ? 60 : BeachRoom.MAX_X; }
-    /** Newcomers arrive beside the fire on the open maps; in the garden they stand inside the south moon gate; at Baikal they step off the shore path behind the cabin. */
-    public double spawnMinZ() { return this == CLOUDSPA ? 90.5 : this == BAIKAL ? 39.5 : this == GARDEN ? -11.5 : 2.8; }
-    public double spawnMaxZ() { return this == CLOUDSPA ? 91.5 : this == BAIKAL ? 40.5 : this == GARDEN ? -10 : 4; }
+    public String id() { return id; }
+    public double minX() { return minX; }
+    public double maxX() { return maxX; }
+    public double minZ() { return minZ; }
+    public double maxZ() { return maxZ; }
+    public double spawnMinZ() { return spawnMinZ; }
+    public double spawnMaxZ() { return spawnMaxZ; }
     public boolean hasBeachFacilities() { return this == BEACH; }
     /** The shared starlight circle belongs to the open maps; the forest, the garden, the cloud spa and the Baikal cabin rest in their pavilion-style seats instead. */
     public boolean hasStarlight() { return this == BEACH || this == UYUNI; }
     public boolean hasBeds() { return this == BEACH || this == UYUNI; }
-    public boolean hasPavilions() { return this == BAMBOO || this == GARDEN || this == CLOUDSPA || this == BAIKAL; }
+    public boolean hasPavilions() { return this == BAMBOO || this == GARDEN || this == CLOUDSPA || this == BAIKAL || this == SEA_HIDEOUT; }
     boolean supportsRestSpot(String spotId) {
         return switch (spotId) {
             case BeachRoom.REST_SPOT -> hasStarlight();
@@ -44,12 +48,8 @@ public enum BeachMap {
     }
 
     public static BeachMap from(String id) {
-        if (id == null || "beach".equals(id)) return BEACH;
-        if ("uyuni".equals(id)) return UYUNI;
-        if ("bamboo".equals(id)) return BAMBOO;
-        if ("garden".equals(id)) return GARDEN;
-        if ("cloudspa".equals(id)) return CLOUDSPA;
-        if ("baikal".equals(id)) return BAIKAL;
+        if (id == null) return BEACH;
+        for (BeachMap map : values()) if (map.id.equals(id)) return map;
         throw ApiException.badRequest("이용할 지도를 다시 골라 주세요.");
     }
 }

@@ -23,12 +23,13 @@ class CircleSpaceMapsTest {
     @Test void aNewCircleStartsWithTheBeachAndEveryMapSaysWhenItOpens() {
         var maps = CircleService.spaceMaps(circle(1, false));
         assertEquals(SpaceMaps.ORDER, maps.stream().map(m -> m.get("id")).toList());
-        assertEquals(List.of(0, 21, 41, 61, 81, 101), maps.stream().map(m -> m.get("members")).toList());
+        assertEquals(List.of(0, 21, 41, 61, 81, 101, 121), maps.stream().map(m -> m.get("members")).toList());
         assertEquals(List.of("beach"), open(circle(1, false)));
         assertEquals(List.of("beach"), open(circle(20, false)));
         assertEquals(List.of("beach", "uyuni"), open(circle(21, false)));
         assertEquals(List.of("beach", "uyuni", "bamboo", "garden"), open(circle(80, false)));
-        assertEquals(SpaceMaps.ORDER, open(circle(101, false)));
+        assertEquals(List.of("beach", "uyuni", "bamboo", "garden", "cloudspa", "baikal"), open(circle(101, false)));
+        assertEquals(SpaceMaps.ORDER, open(circle(121, false)));
     }
 
     @Test void aMapThatOnceOpenedStaysOpenAfterMembersLeave() {
